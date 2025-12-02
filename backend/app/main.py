@@ -268,6 +268,7 @@ def ingest_txt(
                 chapter_internal_id=build_internal_chapter_id(idx),
                 chapter_title=chapter_title,
                 raw_text=chapter_content,
+                original_text_snapshot=chapter_content,
                 normalized_text=normalized,
             )
         )
@@ -344,6 +345,7 @@ def ingest_markdown(
                 chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=stored_chapter_title,
                 raw_text=stored_chapter_content,
+                original_text_snapshot=stored_chapter_content,
                 normalized_text=normalized,
             )
         )
@@ -414,6 +416,7 @@ def ingest_epub(
                 chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=title,
                 raw_text=content,
+                original_text_snapshot=content,
                 normalized_text=normalized,
             )
         )
@@ -519,6 +522,7 @@ def ingest_chapters_dir(
                 chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=chapter_title,
                 raw_text=chapter_content,
+                original_text_snapshot=chapter_content,
                 normalized_text=normalized,
             )
         )
@@ -611,6 +615,7 @@ def append_chapter(
             chapter_internal_id=build_internal_chapter_id(next_chapter_index),
             chapter_title=chapter_title,
             raw_text=chapter_content,
+            original_text_snapshot=chapter_content,
             normalized_text=normalized,
         )
     )
