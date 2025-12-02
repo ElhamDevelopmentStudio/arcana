@@ -104,7 +104,7 @@ Definition of done for each task:
 - [x] [NORM-012] Remove obvious copy artifacts via configurable pattern set.
 - [x] [NORM-013] Normalize em-dash dialogue style.
 - [x] [NORM-014] Implement best-effort quote mismatch repair.
-- [ ] [NORM-015] Emit warning when quote repair confidence is low.
+- [x] [NORM-015] Emit warning when quote repair confidence is low.
 - [x] [NORM-016] Store original text snapshot per chapter.
 - [x] [NORM-017] Store normalized text snapshot per chapter.
 - [ ] [NORM-018] Create original->normalized offset map (chapter granularity).
