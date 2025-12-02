@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     )
     enable_epub_ingestion: bool = Field(default=False, alias="ENABLE_EPUB_INGESTION")
     normalize_quote_style: Literal["straight", "curly"] = Field(default="straight", alias="NORMALIZE_QUOTE_STYLE")
+    copy_artifact_patterns: str = Field(
+        default=r"^\s*Page\s+\d+\s*$||^\s*<<<[^>]+>>>\s*$||^\s*\[?Advertisement\]?\s*$",
+        alias="COPY_ARTIFACT_PATTERNS",
+    )
 
 
 @lru_cache(maxsize=1)
