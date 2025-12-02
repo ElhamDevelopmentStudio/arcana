@@ -50,7 +50,10 @@ from app.services.ingestion import (
 )
 from app.services.mode_profiles import build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_mode_switch
-from app.services.normalization import normalize_text_with_warnings
+from app.services.normalization import (
+    build_original_to_normalized_offset_map,
+    normalize_text_with_warnings,
+)
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.voice import DEFAULT_VOICE_CONFIG
 
@@ -260,6 +263,7 @@ def ingest_txt(
         chapter_title = to_internal_utf8(title)
         chapter_content = to_internal_utf8(content)
         normalized, quote_warnings = normalize_text_with_warnings(chapter_content, source="txt")
+        chapter_offset_map = build_original_to_normalized_offset_map(chapter_content, normalized)
         warnings.extend(quote_warnings)
         session.add(
             Chapter(
@@ -271,6 +275,7 @@ def ingest_txt(
                 original_text_snapshot=chapter_content,
                 normalized_text=normalized,
                 normalized_text_snapshot=normalized,
+                original_to_normalized_offset_map=chapter_offset_map,
             )
         )
 
@@ -338,6 +343,10 @@ def ingest_markdown(
             stored_chapter_content,
             source="markdown",
         )
+        chapter_offset_map = build_original_to_normalized_offset_map(
+            stored_chapter_content,
+            normalized,
+        )
         warnings.extend(quote_warnings)
         session.add(
             Chapter(
@@ -349,6 +358,7 @@ def ingest_markdown(
                 original_text_snapshot=stored_chapter_content,
                 normalized_text=normalized,
                 normalized_text_snapshot=normalized,
+                original_to_normalized_offset_map=chapter_offset_map,
             )
         )
 
@@ -410,6 +420,7 @@ def ingest_epub(
         if not content:
             continue
         normalized, quote_warnings = normalize_text_with_warnings(content, source="epub")
+        chapter_offset_map = build_original_to_normalized_offset_map(content, normalized)
         warnings.extend(quote_warnings)
         session.add(
             Chapter(
@@ -421,6 +432,7 @@ def ingest_epub(
                 original_text_snapshot=content,
                 normalized_text=normalized,
                 normalized_text_snapshot=normalized,
+                original_to_normalized_offset_map=chapter_offset_map,
             )
         )
 
@@ -517,6 +529,7 @@ def ingest_chapters_dir(
             chapter_content,
             source="chapters-dir",
         )
+        chapter_offset_map = build_original_to_normalized_offset_map(chapter_content, normalized)
         warnings.extend(quote_warnings)
         session.add(
             Chapter(
@@ -528,6 +541,7 @@ def ingest_chapters_dir(
                 original_text_snapshot=chapter_content,
                 normalized_text=normalized,
                 normalized_text_snapshot=normalized,
+                original_to_normalized_offset_map=chapter_offset_map,
             )
         )
 
@@ -606,6 +620,7 @@ def append_chapter(
 
     warning = build_encoding_warning("append-chapter", encoding, confidence)
     normalized, quote_warnings = normalize_text_with_warnings(chapter_content, source="append-chapter")
+    chapter_offset_map = build_original_to_normalized_offset_map(chapter_content, normalized)
     warnings: list[dict[str, object]] = [warning] if warning is not None else []
     warnings.extend(quote_warnings)
     combined_titles = [(row[1], row[2]) for row in existing_chapters] + [(chapter_title, chapter_content)]
@@ -622,6 +637,7 @@ def append_chapter(
             original_text_snapshot=chapter_content,
             normalized_text=normalized,
             normalized_text_snapshot=normalized,
+            original_to_normalized_offset_map=chapter_offset_map,
         )
     )
 

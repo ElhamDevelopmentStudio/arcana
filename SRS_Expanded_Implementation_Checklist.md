@@ -107,7 +107,7 @@ Definition of done for each task:
 - [x] [NORM-015] Emit warning when quote repair confidence is low.
 - [x] [NORM-016] Store original text snapshot per chapter.
 - [x] [NORM-017] Store normalized text snapshot per chapter.
-- [ ] [NORM-018] Create original->normalized offset map (chapter granularity).
+- [x] [NORM-018] Create original->normalized offset map (chapter granularity).
 - [ ] [NORM-019] Create original->normalized offset map (segment granularity).
 - [ ] [NORM-020] Emit normalization report with counts and lossy-transformation flags.
 - [ ] [NORM-021] Add regression tests for noisy OCR-like input and quote mismatch edge cases.
