@@ -113,7 +113,7 @@ Definition of done for each task:
 - [x] [NORM-021] Add regression tests for noisy OCR-like input and quote mismatch edge cases.
 
 ## 4.3 Character and Entity Extraction (Ref: SRS.md §4.3)
-- [ ] [CHAR-001] Expand character schema: `name`, `verbalized_form`, `gender`, `aliases[]`, `notes`, `source`, `confidence`.
+- [x] [CHAR-001] Expand character schema: `name`, `verbalized_form`, `gender`, `aliases[]`, `notes`, `source`, `confidence`.
 - [ ] [CHAR-002] Keep PoC JSON/CSV import backward-compatible with new schema.
 - [ ] [CHAR-003] Implement manual row add/edit/delete UI for character map.
 - [ ] [CHAR-004] Add auto-extraction job for candidate character names.
