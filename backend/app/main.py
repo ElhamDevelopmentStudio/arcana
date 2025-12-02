@@ -270,6 +270,7 @@ def ingest_txt(
                 raw_text=chapter_content,
                 original_text_snapshot=chapter_content,
                 normalized_text=normalized,
+                normalized_text_snapshot=normalized,
             )
         )
 
@@ -347,6 +348,7 @@ def ingest_markdown(
                 raw_text=stored_chapter_content,
                 original_text_snapshot=stored_chapter_content,
                 normalized_text=normalized,
+                normalized_text_snapshot=normalized,
             )
         )
 
@@ -418,6 +420,7 @@ def ingest_epub(
                 raw_text=content,
                 original_text_snapshot=content,
                 normalized_text=normalized,
+                normalized_text_snapshot=normalized,
             )
         )
 
@@ -524,6 +527,7 @@ def ingest_chapters_dir(
                 raw_text=chapter_content,
                 original_text_snapshot=chapter_content,
                 normalized_text=normalized,
+                normalized_text_snapshot=normalized,
             )
         )
 
@@ -617,6 +621,7 @@ def append_chapter(
             raw_text=chapter_content,
             original_text_snapshot=chapter_content,
             normalized_text=normalized,
+            normalized_text_snapshot=normalized,
         )
     )
 

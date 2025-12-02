@@ -50,5 +50,7 @@ def test_integration_txt_ingestion_stores_original_text_snapshot_per_chapter() -
         assert chapter.original_text_snapshot == "“Welcome”…\u00A0  to the voyage."
         assert chapter.original_text_snapshot == chapter.raw_text
         assert chapter.normalized_text == '"Welcome"... to the voyage.'
+        assert chapter.normalized_text_snapshot == '"Welcome"... to the voyage.'
+        assert chapter.normalized_text_snapshot == chapter.normalized_text
     finally:
         session.close()

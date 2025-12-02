@@ -43,6 +43,7 @@ class Chapter(Base):
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     original_text_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_text_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
 
     project: Mapped[Project] = relationship("Project", back_populates="chapters")
 
