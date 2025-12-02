@@ -95,3 +95,56 @@ def test_integration_character_import_stores_schema_fields_and_defaults_for_lega
             assert lio.confidence == 0.72
         finally:
             session.close()
+
+
+def test_unit_parse_character_file_legacy_csv_uses_verbalized_header() -> None:
+    csv_payload = "name,verbalized,gender\nKai,Kai,female\nLio,Lee-o,male\n"
+
+    parsed = parse_character_file("characters.csv", csv_payload.encode("utf-8"))
+    assert len(parsed) == 2
+    assert parsed[0].name == "Kai"
+    assert parsed[0].verbalized_form == "Kai"
+    assert parsed[0].gender == "female"
+    assert parsed[0].aliases == []
+    assert parsed[0].source == "user_import"
+    assert parsed[0].confidence == 1.0
+
+
+def test_integration_character_import_keeps_legacy_csv_compatibility() -> None:
+    csv_payload = "name,verbalized,gender\nKai,Kai,female\nLio,Lee-o,male\n"
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Legacy Character CSV"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        import_resp = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={"file": ("characters.csv", io.BytesIO(csv_payload.encode("utf-8")), "text/csv")},
+        )
+        assert import_resp.status_code == 200
+        assert import_resp.json()["imported_count"] == 2
+
+        session = get_session_factory()()
+        try:
+            rows = (
+                session.query(Character)
+                .filter(Character.project_id == project_id)
+                .order_by(Character.name.asc())
+                .all()
+            )
+
+            kai = rows[0]
+            lio = rows[1]
+            assert kai.name == "Kai"
+            assert kai.verbalized_form == "Kai"
+            assert kai.gender == "female"
+            assert kai.aliases == []
+            assert kai.source == "user_import"
+            assert kai.confidence == 1.0
+
+            assert lio.name == "Lio"
+            assert lio.verbalized_form == "Lee-o"
+            assert lio.gender == "male"
+        finally:
+            session.close()
