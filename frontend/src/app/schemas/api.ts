@@ -46,6 +46,25 @@ export const characterImportSchema = z.object({
   imported_count: z.number().int().nonnegative(),
 });
 
+export const characterMapItemSchema = z.object({
+  name: z.string().min(1),
+  verbalized_form: z.string().min(1),
+  gender: z.string().min(1),
+  aliases: z.array(z.string()),
+  notes: z.string().nullable(),
+  source: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+});
+
+export const characterMapSchema = z.object({
+  project_id: z.number().int(),
+  characters: z.array(characterMapItemSchema),
+});
+
+export const characterMapUpdateSchema = z.object({
+  characters: z.array(characterMapItemSchema),
+});
+
 export const voiceConfigSchema = z.object({
   narrator_voice: z.string(),
   male_default_voice: z.string(),
@@ -106,6 +125,9 @@ export type ProjectDto = z.infer<typeof projectSchema>;
 export type ProjectModeSwitchResponseDto = z.infer<typeof projectModeSwitchResponseSchema>;
 export type IngestResponseDto = z.infer<typeof ingestResponseSchema>;
 export type CharacterImportDto = z.infer<typeof characterImportSchema>;
+export type CharacterMapItemDto = z.infer<typeof characterMapItemSchema>;
+export type CharacterMapDto = z.infer<typeof characterMapSchema>;
+export type CharacterMapUpdateDto = z.infer<typeof characterMapUpdateSchema>;
 export type VoiceConfigDto = z.infer<typeof voiceConfigSchema>;
 export type RunRequestDto = z.infer<typeof runRequestSchema>;
 export type RunResponseDto = z.infer<typeof runResponseSchema>;

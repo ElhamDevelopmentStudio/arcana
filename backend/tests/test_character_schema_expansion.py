@@ -148,3 +148,99 @@ def test_integration_character_import_keeps_legacy_csv_compatibility() -> None:
             assert lio.gender == "male"
         finally:
             session.close()
+
+
+def test_integration_character_map_endpoints_list_and_replace() -> None:
+    project_title = "Character Map Endpoint"
+    imported_payload = json.dumps(
+        {
+            "Kai": {"verbalized_form": "Kai", "gender": "male"},
+            "Nephis": {"verbalized_form": "Nephis", "gender": "female"},
+        }
+    ).encode("utf-8")
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": project_title})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        import_resp = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={"file": ("characters.json", io.BytesIO(imported_payload), "application/json")},
+        )
+        assert import_resp.status_code == 200
+
+        list_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert list_resp.status_code == 200
+        list_payload = list_resp.json()
+        assert list_payload["project_id"] == project_id
+        assert len(list_payload["characters"]) == 2
+        assert list_payload["characters"][0]["name"] == "Kai"
+        assert list_payload["characters"][1]["name"] == "Nephis"
+
+        replace_payload = {
+            "characters": [
+                {
+                    "name": " Nephis ",
+                    "verbalized_form": "Nia",
+                    "gender": "FEMALE",
+                    "aliases": ["N"],
+                    "notes": "Lead",
+                    "source": "manual",
+                    "confidence": 0.91,
+                },
+                {
+                    "name": "kai",
+                    "verbalized_form": "Kai",
+                    "gender": "MALE",
+                    "aliases": [],
+                    "notes": "Lead",
+                    "source": "manual",
+                    "confidence": 1.0,
+                },
+                {
+                    "name": "Kai",
+                    "verbalized_form": "KAI-DUP",
+                    "gender": "male",
+                    "aliases": [],
+                    "notes": "",
+                    "source": "manual",
+                    "confidence": 0.79,
+                },
+            ]
+        }
+        save_resp = client.put(f"/api/projects/{project_id}/characters", json=replace_payload)
+        assert save_resp.status_code == 200
+        save_payload = save_resp.json()
+        assert save_payload["project_id"] == project_id
+        assert len(save_payload["characters"]) == 2
+        assert save_payload["characters"][0]["name"] == "Nephis"
+        assert save_payload["characters"][0]["verbalized_form"] == "Nia"
+        assert save_payload["characters"][0]["gender"] == "female"
+        assert save_payload["characters"][1]["name"] == "Kai"
+        assert save_payload["characters"][1]["verbalized_form"] == "KAI-DUP"
+        assert save_payload["characters"][1]["gender"] == "male"
+
+    session = get_session_factory()()
+    try:
+        rows = (
+            session.query(Character)
+            .filter(Character.project_id == project_id)
+            .order_by(Character.name.asc())
+            .all()
+        )
+        assert len(rows) == 2
+        assert rows[0].name == "Kai"
+        assert rows[0].verbalized_form == "KAI-DUP"
+        assert rows[0].gender == "male"
+        assert rows[0].aliases == []
+        assert rows[0].notes is None
+        assert rows[0].source == "manual"
+
+        assert rows[1].name == "Nephis"
+        assert rows[1].verbalized_form == "Nia"
+        assert rows[1].notes == "Lead"
+        assert rows[1].aliases == ["N"]
+        assert rows[1].confidence == 0.91
+    finally:
+        session.close()
