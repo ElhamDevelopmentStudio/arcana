@@ -121,6 +121,37 @@ def build_canonical_name_merge_suggestions(
     return suggestions
 
 
+def detect_alias_conflicts(canonical_rows: list[dict[str, Any]]) -> list[dict[str, object]]:
+    alias_to_canonicals: dict[str, set[str]] = {}
+    alias_display: dict[str, str] = {}
+
+    for row in canonical_rows:
+        canonical_name = str(row.get("name") or "").strip()
+        if not canonical_name:
+            continue
+
+        aliases = _normalize_aliases(row.get("aliases"))
+        for alias in aliases:
+            alias_normalized = normalize_candidate_key(alias)
+            if not alias_normalized:
+                continue
+            alias_to_canonicals.setdefault(alias_normalized, set()).add(canonical_name)
+            alias_display.setdefault(alias_normalized, alias.strip())
+
+    conflicts: list[dict[str, object]] = []
+    for normalized_alias in sorted(alias_to_canonicals):
+        canonical_names = sorted(alias_to_canonicals[normalized_alias])
+        if len(canonical_names) > 1:
+            conflicts.append(
+                {
+                    "alias": alias_display.get(normalized_alias, normalized_alias),
+                    "canonical_names": canonical_names,
+                }
+            )
+
+    return conflicts
+
+
 def resolve_alias_to_canonical_name(
     alias_text: str,
     canonical_rows: list[dict[str, Any]],
@@ -129,33 +160,35 @@ def resolve_alias_to_canonical_name(
     if not normalized_alias:
         return None, "none"
 
-    canonical_matches: tuple[str, str] | None = None
+    canonical_matches: dict[str, str] = {}
     for row in canonical_rows:
         canonical_name = str(row.get("name") or "").strip()
         if not canonical_name:
             continue
 
         if normalize_candidate_key(canonical_name) == normalized_alias:
-            canonical_matches = (canonical_name, "canonical")
-            break
-
-    if canonical_matches is not None:
-        return canonical_matches
+            canonical_matches[canonical_name] = "canonical"
 
     for row in canonical_rows:
         canonical_name = str(row.get("name") or "").strip()
         if not canonical_name:
             continue
 
-        aliases = row.get("aliases") or []
+        aliases = _normalize_aliases(row.get("aliases"))
         for alias in aliases:
-            alias_name = str(alias).strip()
-            if not alias_name:
+            alias_normalized = normalize_candidate_key(alias)
+            if not alias_normalized:
                 continue
-            if normalize_candidate_key(alias_name) == normalized_alias:
-                return canonical_name, "alias"
+            if alias_normalized == normalized_alias:
+                canonical_matches.setdefault(canonical_name, "alias")
 
-    return None, "none"
+    if len(canonical_matches) == 0:
+        return None, "none"
+    if len(canonical_matches) > 1:
+        return None, "conflict"
+
+    canonical_name, match_source = next(iter(canonical_matches.items()))
+    return canonical_name, match_source
 
 
 def _coerce_confidence(value: Any) -> float:

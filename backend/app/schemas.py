@@ -140,6 +140,16 @@ class CharacterAliasLookupResponse(BaseModel):
     match_source: str = Field(default="none", min_length=1, max_length=20)
 
 
+class CharacterAliasCollisionItem(BaseModel):
+    alias: str = Field(min_length=1, max_length=255)
+    canonical_names: list[str]
+
+
+class CharacterAliasCollisionResponse(BaseModel):
+    project_id: int
+    collisions: list[CharacterAliasCollisionItem]
+
+
 class CharacterMapFinalizeResponse(BaseModel):
     project_id: int
     character_map_finalized: bool

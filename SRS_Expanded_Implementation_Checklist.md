@@ -127,7 +127,7 @@ Definition of done for each task:
 - [x] [CHAR-012] Prevent downstream runs from using unfinalized proposed set unless override enabled.
 - [x] [CHAR-013] Implement alias list storage per character.
 - [x] [CHAR-014] Implement alias->canonical lookup service.
-- [ ] [CHAR-015] Add alias collision detector when alias maps to multiple canonicals.
+- [x] [CHAR-015] Add alias collision detector when alias maps to multiple canonicals.
 - [ ] [CHAR-016] Implement per-chapter mention counter.
 - [ ] [CHAR-017] Compute first appearance chapter index.
 - [ ] [CHAR-018] Compute last appearance chapter index.
