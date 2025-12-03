@@ -6,6 +6,8 @@ from typing import Any, Iterable, Mapping
 _STANDARD_GENDERS = frozenset({"male", "female", "neutral"})
 _CUSTOM_GENDER = "custom"
 _UNKNOWN_GENDER = "unknown"
+_MIN_SEVERITY = 0.0
+_MAX_SEVERITY = 1.0
 
 
 def _normalize_gender(value: Any) -> str:
@@ -49,6 +51,25 @@ def _build_comparison_state(manual_gender: str, inferred_gender: str) -> tuple[s
     return "incomparable", False
 
 
+def _build_contradiction_severity(
+    comparison: str,
+    manual_gender: str,
+    inferred_gender: str,
+    manual_confidence: float,
+    inferred_confidence: float,
+) -> float:
+    if comparison != "conflict":
+        return _MIN_SEVERITY
+
+    if not _is_standard_gender(manual_gender) or not _is_standard_gender(inferred_gender):
+        return _MIN_SEVERITY
+
+    return round(
+        max(_MIN_SEVERITY, min(_MAX_SEVERITY, (manual_confidence + inferred_confidence) / 2)),
+        4,
+    )
+
+
 @dataclass(frozen=True)
 class GenderComparisonResult:
     name: str
@@ -57,6 +78,7 @@ class GenderComparisonResult:
     manual_confidence: float
     inferred_confidence: float
     comparison: str
+    contradiction_severity: float
     is_contradiction: bool
     requires_review: bool
 
@@ -68,6 +90,7 @@ class GenderComparisonResult:
             "manual_confidence": self.manual_confidence,
             "inferred_confidence": self.inferred_confidence,
             "comparison": self.comparison,
+            "contradiction_severity": self.contradiction_severity,
             "is_contradiction": self.is_contradiction,
             "requires_review": self.requires_review,
         }
@@ -93,6 +116,13 @@ def compare_manual_and_inferred_gender_fields(
             default=0.0,
         )
         comparison, is_contradiction = _build_comparison_state(manual_gender, inferred_gender)
+        contradiction_severity = _build_contradiction_severity(
+            comparison=comparison,
+            manual_gender=manual_gender,
+            inferred_gender=inferred_gender,
+            manual_confidence=manual_confidence,
+            inferred_confidence=inferred_confidence,
+        )
         result = GenderComparisonResult(
             name=name,
             manual_gender=manual_gender,
@@ -100,6 +130,7 @@ def compare_manual_and_inferred_gender_fields(
             manual_confidence=manual_confidence,
             inferred_confidence=inferred_confidence,
             comparison=comparison,
+            contradiction_severity=contradiction_severity,
             is_contradiction=is_contradiction,
             requires_review=is_contradiction,
         )

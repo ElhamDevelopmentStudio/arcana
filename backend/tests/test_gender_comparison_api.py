@@ -77,6 +77,7 @@ def test_integration_gender_comparison_endpoint_reports_conflicts() -> None:
         by_name = {entry["name"]: entry for entry in body["comparisons"]}
         assert by_name["Nia"]["comparison"] == "conflict"
         assert by_name["Nia"]["is_contradiction"] is True
+        assert by_name["Nia"]["contradiction_severity"] == 0.955
         assert by_name["Kai"]["comparison"] == "manual_unknown"
         assert by_name["Rin"]["comparison"] == "manual_custom"
 
