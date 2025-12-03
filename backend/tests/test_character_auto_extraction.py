@@ -13,7 +13,7 @@ from app.main import app
 import app.main as app_main
 from app.services.character_extraction import extract_character_candidates_from_texts
 from app.services.character_extraction import CandidateEvidence, CandidateSourceTrace
-from app.services.character_merge import merge_character_candidates
+from app.services.character_merge import build_canonical_name_merge_suggestions, merge_character_candidates
 from app.services import character_scrape
 
 
@@ -270,6 +270,77 @@ def test_unit_merge_character_candidates_normalizes_and_merges() -> None:
     ]
 
 
+def test_unit_build_canonical_name_merge_suggestions_identifies_similar_existing_canonical_names() -> None:
+    candidate_payloads = [
+        {
+            "name": "Miran",
+            "verbalized_form": "Miran",
+            "gender": "female",
+            "aliases": [],
+            "notes": None,
+            "source": "auto",
+            "confidence": 0.74,
+            "source_trace": [],
+        },
+        {
+            "name": "Nora",
+            "verbalized_form": "Nora",
+            "gender": "female",
+            "aliases": [],
+            "notes": None,
+            "source": "auto",
+            "confidence": 0.62,
+            "source_trace": [],
+        },
+    ]
+
+    suggestions = build_canonical_name_merge_suggestions(
+        candidate_payloads=candidate_payloads,
+        canonical_names={"Mira", "Lio"},
+    )
+
+    assert len(suggestions) == 1
+    assert suggestions[0]["canonical_name"] == "Mira"
+    assert suggestions[0]["alias_name"] == "Miran"
+    assert suggestions[0]["candidate_source"] == "auto"
+    assert suggestions[0]["canonical_source"] == "user_import"
+    assert suggestions[0]["reason"] == "name_similarity"
+    assert suggestions[0]["score"] >= 0.86
+
+
+def test_unit_build_canonical_name_merge_suggestions_ignores_non_matches_and_existing() -> None:
+    candidate_payloads = [
+        {
+            "name": "Mira",
+            "verbalized_form": "Mira",
+            "gender": "female",
+            "aliases": [],
+            "notes": None,
+            "source": "auto",
+            "confidence": 0.74,
+            "source_trace": [],
+        },
+        {
+            "name": "Brianna",
+            "verbalized_form": "Brianna",
+            "gender": "female",
+            "aliases": [],
+            "notes": None,
+            "source": "auto",
+            "confidence": 0.62,
+            "source_trace": [],
+        },
+    ]
+
+    suggestions = build_canonical_name_merge_suggestions(
+        candidate_payloads=candidate_payloads,
+        canonical_names={"Mira", "Lio"},
+        threshold=0.9,
+    )
+
+    assert suggestions == []
+
+
 def test_integration_character_merge_candidates_endpoint_merges_auto_and_scrape(monkeypatch) -> None:
     def _fake_extract_character_candidates_from_texts(
         _chapter_texts: list[str],
@@ -355,3 +426,77 @@ def test_integration_character_merge_candidates_endpoint_merges_auto_and_scrape(
         assert merged_map["Lena"]["source"] == "merged:auto|scrape"
         assert merged_map["Mira"]["source"] == "merged:auto|user_import"
         assert len(merged_map["Lena"]["source_trace"]) == 2
+
+
+def test_integration_character_merge_candidates_endpoint_returns_canonical_merge_suggestions(monkeypatch) -> None:
+    def _fake_extract_character_candidates_from_texts(
+        _chapter_texts: list[str],
+        known_names: set[str] | None = None,
+    ) -> list[CandidateEvidence]:
+        del known_names
+        return [
+            CandidateEvidence(
+                name="Miran",
+                confidence=0.72,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="dialogue_attribution",
+                        chapter_index=1,
+                        span_start=2,
+                        span_end=7,
+                        excerpt="Miran appeared.",
+                        weight=0.9,
+                    )
+                ],
+            ),
+            CandidateEvidence(
+                name="Lio",
+                confidence=0.52,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="narrative_attribution",
+                        chapter_index=2,
+                        span_start=14,
+                        span_end=17,
+                        excerpt="Lio entered.",
+                        weight=1.0,
+                    )
+                ],
+            ),
+        ]
+
+    monkeypatch.setattr(app_main, "extract_character_candidates_from_texts", _fake_extract_character_candidates_from_texts)
+
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Merge Candidate Suggestions Integration")
+        existing_import = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={
+                "file": (
+                    "characters.json",
+                    io.BytesIO(b'{\"Mira\":{\"verbalized_form\":\"Mira\",\"gender\":\"female\",\"source\":\"manual\",\"confidence\":1.0}}'),
+                    "application/json",
+                )
+            },
+        )
+        assert existing_import.status_code == 200
+
+        merged_resp = client.post(
+            f"/api/projects/{project_id}/characters/merged-candidates",
+            json={"include_auto": True},
+        )
+        assert merged_resp.status_code == 200
+        merged_payload = merged_resp.json()
+        assert merged_payload["status"] == "complete"
+        assert merged_payload["candidate_count"] == len(merged_payload["candidates"]) == 3
+
+        assert merged_payload["canonical_merge_suggestions"]
+        suggestions = merged_payload["canonical_merge_suggestions"]
+        assert len(suggestions) == 1
+        suggestion = suggestions[0]
+        assert suggestion["canonical_name"] == "Mira"
+        assert suggestion["alias_name"] == "Miran"
+        assert suggestion["candidate_source"] == "auto"
+        assert suggestion["canonical_source"] == "user_import"
+        assert suggestion["reason"] == "name_similarity"
+        assert suggestion["score"] >= 0.85

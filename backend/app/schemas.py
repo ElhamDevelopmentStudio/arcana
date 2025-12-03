@@ -140,11 +140,21 @@ class CharacterCandidatesMergeRequest(BaseModel):
         return stripped or None
 
 
+class CanonicalNameMergeSuggestion(BaseModel):
+    canonical_name: str = Field(min_length=1, max_length=255)
+    alias_name: str = Field(min_length=1, max_length=255)
+    score: float = Field(ge=0.0, le=1.0)
+    candidate_source: str = Field(min_length=1, max_length=120)
+    canonical_source: str = Field(min_length=1, max_length=120)
+    reason: str = Field(min_length=1, max_length=200)
+
+
 class CharacterExtractionResponse(BaseModel):
     project_id: int
     status: str
     candidate_count: int
     candidates: list[CharacterMapItem]
+    canonical_merge_suggestions: list[CanonicalNameMergeSuggestion] = Field(default_factory=list)
 
 
 class VoiceConfigRequest(BaseModel):

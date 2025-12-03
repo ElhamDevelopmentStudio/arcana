@@ -91,6 +91,18 @@ export const characterExtractionSchema = z.object({
   status: z.string(),
   candidate_count: z.number().int().nonnegative(),
   candidates: z.array(characterMapItemSchema),
+  canonical_merge_suggestions: z
+    .array(
+      z.object({
+        canonical_name: z.string().min(1),
+        alias_name: z.string().min(1),
+        score: z.number().min(0).max(1),
+        candidate_source: z.string(),
+        canonical_source: z.string(),
+        reason: z.string().min(1),
+      }),
+    )
+    .default([]),
 });
 
 export const voiceConfigSchema = z.object({
