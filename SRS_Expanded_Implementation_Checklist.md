@@ -140,9 +140,9 @@ Definition of done for each task:
 - [x] [GEN-001] Restrict gender values to `male/female/neutral/unknown/custom`.
 - [x] [GEN-002] Add DB constraint/validation for permitted values.
 - [x] [GEN-003] Treat manual gender as authoritative in resolver logic.
-- [ ] [GEN-004] Implement optional gender inference module.
-- [ ] [GEN-005] Persist inferred gender + confidence + evidence trace.
-- [ ] [GEN-006] Add manual/inferred comparison service.
+- [x] [GEN-004] Implement optional gender inference module.
+- [x] [GEN-005] Persist inferred gender + confidence + evidence trace.
+- [x] [GEN-006] Add manual/inferred comparison service.
 - [ ] [GEN-007] Add contradiction severity score.
 - [ ] [GEN-008] Add threshold config for contradiction review requirement.
 - [ ] [GEN-009] Block final export only when contradiction threshold rule requires review.
