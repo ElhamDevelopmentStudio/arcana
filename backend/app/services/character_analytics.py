@@ -19,6 +19,25 @@ class ChapterMentionCounter:
         }
 
 
+def build_character_first_appearance_chapter_indices(
+    chapter_mention_counters: list[ChapterMentionCounter],
+) -> dict[str, int | None]:
+    if not chapter_mention_counters:
+        return {}
+
+    canonical_names = sorted(
+        {name for counter in chapter_mention_counters for name in counter.mention_counts}
+    )
+    first_appearance: dict[str, int | None] = {name: None for name in canonical_names}
+
+    for counter in sorted(chapter_mention_counters, key=lambda row: row.chapter_index):
+        for canonical_name, mentions in counter.mention_counts.items():
+            if mentions > 0 and first_appearance.get(canonical_name) is None:
+                first_appearance[canonical_name] = counter.chapter_index
+
+    return first_appearance
+
+
 def _normalize_counting_text(raw_text: str) -> str:
     normalized = normalize_candidate_key(raw_text)
     return re.sub(r"\s+", " ", normalized).strip()
