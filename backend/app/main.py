@@ -872,6 +872,17 @@ def auto_extract_characters(
             notes=None,
             source="auto",
             confidence=candidate.confidence,
+            source_trace=[
+                {
+                    "kind": trace.kind,
+                    "chapter_index": trace.chapter_index,
+                    "span_start": trace.span_start,
+                    "span_end": trace.span_end,
+                    "excerpt": trace.excerpt,
+                    "weight": trace.weight,
+                }
+                for trace in candidate.source_trace
+            ],
         )
         for candidate in candidates
     ]

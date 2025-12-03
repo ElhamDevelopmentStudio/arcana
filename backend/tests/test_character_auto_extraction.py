@@ -41,6 +41,8 @@ def test_unit_extract_character_candidates_from_dialogue_and_narration() -> None
     assert candidates[0].name == "Aria"
     assert candidates[0].confidence > candidates[1].confidence
     assert 0.35 <= candidates[0].confidence <= 0.99
+    assert all(candidate.source_trace for candidate in candidates)
+    assert any(trace.kind == "dialogue_attribution" for trace in candidates[0].source_trace)
 
 
 def test_unit_extract_character_candidates_filters_known_names_case_insensitive() -> None:
@@ -56,6 +58,8 @@ def test_unit_extract_character_candidates_filters_known_names_case_insensitive(
     names = [candidate.name for candidate in candidates]
     assert names == ["Mira"]
     assert candidates[0].confidence >= 0.45
+    assert candidates[0].source_trace
+    assert any(trace.kind in {"dialogue_attribution", "narrative_attribution"} for trace in candidates[0].source_trace)
 
 
 def _create_project_with_ingested_text(client: TestClient, title: str) -> int:
@@ -105,6 +109,18 @@ def test_integration_character_auto_extraction_returns_only_new_names() -> None:
         assert names == {"Aria", "Nora"}
         assert all(entry["source"] == "auto" for entry in payload["candidates"])
         assert all(0.35 <= entry["confidence"] <= 0.99 for entry in payload["candidates"])
+        for entry in payload["candidates"]:
+            assert isinstance(entry["source_trace"], list)
+            assert entry["source_trace"], "Expected at least one source trace per candidate."
+            trace = entry["source_trace"][0]
+            assert set(trace.keys()) >= {
+                "kind",
+                "chapter_index",
+                "span_start",
+                "span_end",
+                "excerpt",
+                "weight",
+            }
 
 
 def test_integration_character_auto_extraction_rejects_empty_chapters() -> None:
