@@ -31,6 +31,7 @@ type ManualCharacterRow = {
   name: string;
   verbalized: string;
   gender: string;
+  aliases: string;
 };
 
 function createRow(): ManualCharacterRow {
@@ -39,6 +40,7 @@ function createRow(): ManualCharacterRow {
     name: '',
     verbalized: '',
     gender: 'unknown',
+    aliases: '',
   };
 }
 
@@ -52,7 +54,16 @@ function toManualRows(map: CharacterMapDto | undefined): ManualCharacterRow[] {
     name: item.name,
     verbalized: item.verbalized_form,
     gender: item.gender,
+    aliases: item.aliases.join(', '),
   }));
+}
+
+function parseAliases(rawAliases: string): string[] {
+  const normalized = rawAliases
+    .split(',')
+    .map((alias) => alias.trim())
+    .filter(Boolean);
+  return [...new Set(normalized)];
 }
 
 export function ProjectCharactersPage() {
@@ -136,11 +147,11 @@ export function ProjectCharactersPage() {
         name: row.name.trim(),
         verbalized_form: row.verbalized.trim(),
         gender: row.gender.trim().toLowerCase(),
+        aliases: parseAliases(row.aliases),
       }))
       .filter((row) => row.name && row.verbalized_form)
       .map((row) => ({
         ...row,
-        aliases: [],
         notes: null,
         source_trace: [],
         source: 'manual',
@@ -258,6 +269,7 @@ export function ProjectCharactersPage() {
           name: candidate.name,
           verbalized: candidate.verbalized_form,
           gender: candidate.gender,
+          aliases: candidate.aliases.join(', '),
         };
         return nextRows;
       }
@@ -269,6 +281,7 @@ export function ProjectCharactersPage() {
           name: candidate.name,
           verbalized: candidate.verbalized_form,
           gender: candidate.gender,
+          aliases: candidate.aliases.join(', '),
         },
       ];
       return nextRows;
@@ -617,7 +630,7 @@ export function ProjectCharactersPage() {
             <div className="grid max-h-[28rem] gap-1 overflow-auto pr-1">
               {manualRows.map((row) => (
                 <div key={row.id} className="grid gap-2 px-1 py-1.5 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-panel-border/60">
-                  <div className="grid gap-2 lg:grid-cols-[1fr_1fr_160px_auto]">
+                  <div className="grid gap-2 lg:grid-cols-[1fr_1fr_1.3fr_160px_auto]">
                     <Input
                       placeholder="Character name"
                       value={row.name}
@@ -627,6 +640,11 @@ export function ProjectCharactersPage() {
                       placeholder="Verbalized form"
                       value={row.verbalized}
                       onChange={(event) => updateRow(row.id, 'verbalized', event.target.value)}
+                    />
+                    <Input
+                      placeholder="Aliases (comma-separated)"
+                      value={row.aliases}
+                      onChange={(event) => updateRow(row.id, 'aliases', event.target.value)}
                     />
                     <NativeSelect value={row.gender} onChange={(event) => updateRow(row.id, 'gender', event.target.value)}>
                       <option value="male">male</option>

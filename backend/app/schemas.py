@@ -104,7 +104,8 @@ class CharacterMapItem(BaseModel):
     @field_validator("aliases")
     @classmethod
     def aliases_trimmed(cls, values: list[str]) -> list[str]:
-        return [alias.strip() for alias in values if str(alias).strip()]
+        cleaned = [alias.strip() for alias in values if str(alias).strip()]
+        return list(dict.fromkeys(cleaned))
 
     @field_validator("source")
     @classmethod
