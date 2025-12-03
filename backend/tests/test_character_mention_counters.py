@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+import pytest
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_nipc_character_mentions.db"
 
@@ -12,6 +13,7 @@ from app.models import Chapter, Character
 from app.services.character_analytics import (
     build_character_last_appearance_chapter_indices,
     build_character_first_appearance_chapter_indices,
+    build_character_mentions_per_1000_words,
     build_character_mentions_by_chapter,
 )
 
@@ -244,6 +246,72 @@ def test_unit_character_last_appearance_chapter_indices() -> None:
     assert last_appearance["Ghost"] is None
 
 
+def test_unit_character_mentions_per_1000_words() -> None:
+    chapters = [
+        _chapter(1, "Sunny and Captain walked slowly."),
+        _chapter(2, "Nephis and Lio arrived."),
+        _chapter(3, "Sunny and Captain returned with Lio."),
+    ]
+
+    characters = [
+        Character(
+            name="Sunny",
+            verbalized_form="Sunny",
+            gender="female",
+            aliases=["Sun"],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Lio",
+            verbalized_form="Lio",
+            gender="male",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Captain",
+            verbalized_form="Captain",
+            gender="male",
+            aliases=["Cap"],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Nephis",
+            verbalized_form="Nephis",
+            gender="female",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Ghost",
+            verbalized_form="Ghost",
+            gender="male",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+    ]
+
+    chapter_counts = build_character_mentions_by_chapter(chapters=chapters, characters=characters)
+    mentions_per_1000_words = build_character_mentions_per_1000_words(chapter_counts, chapters)
+
+    expected_total_words = 15
+    assert mentions_per_1000_words["Sunny"] == pytest.approx((2 * 1000) / expected_total_words, rel=1e-9)
+    assert mentions_per_1000_words["Captain"] == pytest.approx((2 * 1000) / expected_total_words, rel=1e-9)
+    assert mentions_per_1000_words["Lio"] == pytest.approx((2 * 1000) / expected_total_words, rel=1e-9)
+    assert mentions_per_1000_words["Nephis"] == pytest.approx((1 * 1000) / expected_total_words, rel=1e-9)
+    assert mentions_per_1000_words["Ghost"] == 0.0
+
+
 def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
     sample_text = (
         "Chapter 1\n"
@@ -299,3 +367,6 @@ def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
 
         last_appearance = detail["config"]["character_last_appearance_chapter_index"]
         assert last_appearance == {"Nephis": 1, "Sunny": 1}
+
+        mentions_per_1000_words = detail["config"]["character_mentions_per_1000_words"]
+        assert set(mentions_per_1000_words.keys()) == {"Nephis", "Sunny"}

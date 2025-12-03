@@ -10,6 +10,7 @@ from app.services.llm_router import LLMRequest, LLMRouter
 from app.services.character_analytics import (
     build_character_first_appearance_chapter_indices,
     build_character_last_appearance_chapter_indices,
+    build_character_mentions_per_1000_words,
     build_character_mentions_by_chapter,
 )
 from app.services.phonetics import replace_pronunciations
@@ -123,11 +124,16 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     character_last_appearance_chapter_indices = build_character_last_appearance_chapter_indices(
         chapter_mention_counters
     )
+    character_mentions_per_1000_words = build_character_mentions_per_1000_words(
+        chapter_mention_counters=chapter_mention_counters,
+        chapters=chapters,
+    )
     run.config_json = {
         **(run.config_json or {}),
         "character_mentions_by_chapter": [counter.to_dict() for counter in chapter_mention_counters],
         "character_first_appearance_chapter_index": character_first_appearance_chapter_indices,
         "character_last_appearance_chapter_index": character_last_appearance_chapter_indices,
+        "character_mentions_per_1000_words": character_mentions_per_1000_words,
     }
 
     run.status = "completed"
