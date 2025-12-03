@@ -182,6 +182,7 @@ class RunCreateRequest(BaseModel):
     llm_enabled: bool = False
     provider_name: str = "openrouter"
     max_calls_per_day: int = Field(default=25, ge=1, le=10000)
+    allow_unfinalized_character_map: bool = False
 
     @field_validator("mode")
     @classmethod

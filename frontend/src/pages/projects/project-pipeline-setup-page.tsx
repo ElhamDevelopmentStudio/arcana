@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
-import { useRunPipelineMutation, useSaveVoicesMutation } from '@/features/workflow/api/workflow-hooks';
+import { useCharacterMapQuery, useRunPipelineMutation, useSaveVoicesMutation } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 
 export function ProjectPipelineSetupPage() {
@@ -32,10 +32,14 @@ export function ProjectPipelineSetupPage() {
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [providerName, setProviderName] = useState('openrouter');
   const [maxCallsPerDay, setMaxCallsPerDay] = useState(25);
+  const [allowUnfinalizedCharacterMap, setAllowUnfinalizedCharacterMap] = useState(false);
 
   const saveVoicesMutation = useSaveVoicesMutation(projectId);
   const runPipelineMutation = useRunPipelineMutation(projectId);
+  const characterMapQuery = useCharacterMapQuery(projectId);
   const isRunLocked = selectedMode === null;
+  const hasUnfinalizedCharacterRows =
+    characterMapQuery.data !== undefined && characterMapQuery.data.characters.length > 0 && !characterMapQuery.data.character_map_finalized;
 
   async function handleSaveVoices(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,6 +78,7 @@ export function ProjectPipelineSetupPage() {
         llm_enabled: llmEnabled,
         provider_name: providerName,
         max_calls_per_day: maxCallsPerDay,
+        allow_unfinalized_character_map: allowUnfinalizedCharacterMap,
       });
       setRunId(run.run_id);
       toast.success(`Run #${run.run_id} completed with ${run.segment_count} segments.`);
@@ -169,9 +174,22 @@ export function ProjectPipelineSetupPage() {
                 <span>Enable LLM-assisted refinement</span>
                 <Switch checked={llmEnabled} onCheckedChange={setLlmEnabled} />
               </label>
+              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
+                <span>Run with unfinalized character map</span>
+                <Switch
+                  checked={allowUnfinalizedCharacterMap}
+                  onCheckedChange={setAllowUnfinalizedCharacterMap}
+                  disabled={!hasUnfinalizedCharacterRows}
+                />
+              </label>
+              {hasUnfinalizedCharacterRows ? (
+                <p className="text-sm text-muted-foreground">
+                  This project has an unfinalized character map. Enable override only when you want to proceed with proposed names.
+                </p>
+              ) : null}
               <Button
                 data-testid="run-pipeline-button"
-                disabled={runPipelineMutation.isMutating || projectId === null || isRunLocked}
+                disabled={runPipelineMutation.isMutating || projectId === null || isRunLocked || hasUnfinalizedCharacterRows && !allowUnfinalizedCharacterMap}
                 type="submit"
               >
                 {runPipelineMutation.isMutating ? 'Running...' : 'Run Pipeline'}
