@@ -55,10 +55,12 @@ export const characterSourceTraceSchema = z.object({
   weight: z.number().min(0).max(1),
 });
 
+export const characterGenderSchema = z.enum(['male', 'female', 'neutral', 'unknown', 'custom']);
+
 export const characterMapItemSchema = z.object({
   name: z.string().min(1),
   verbalized_form: z.string().min(1),
-  gender: z.string().min(1),
+  gender: characterGenderSchema,
   aliases: z.array(z.string()),
   notes: z.string().nullable(),
   source: z.string().min(1),
