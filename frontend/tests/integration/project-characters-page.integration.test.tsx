@@ -8,6 +8,9 @@ import { ProjectCharactersPage } from '@/pages/projects/project-characters-page'
 const importTrigger = vi.fn();
 const mutateCharacterMap = vi.fn();
 const saveCharactersMutationTrigger = vi.fn();
+const autoExtractCharactersMutationTrigger = vi.fn();
+const scrapeCharactersMutationTrigger = vi.fn();
+const mergeCharactersMutationTrigger = vi.fn();
 const characterMapQueryData = {
   project_id: 101,
   characters: [
@@ -38,6 +41,18 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isMutating: false,
     trigger: saveCharactersMutationTrigger,
   }),
+  useAutoExtractCharactersMutation: () => ({
+    isMutating: false,
+    trigger: autoExtractCharactersMutationTrigger,
+  }),
+  useScrapeCharactersMutation: () => ({
+    isMutating: false,
+    trigger: scrapeCharactersMutationTrigger,
+  }),
+  useMergeCharactersMutation: () => ({
+    isMutating: false,
+    trigger: mergeCharactersMutationTrigger,
+  }),
 }));
 
 function renderCharacterPage() {
@@ -62,6 +77,9 @@ describe('project characters page manual editor', () => {
     importTrigger.mockReset();
     mutateCharacterMap.mockReset();
     saveCharactersMutationTrigger.mockReset();
+    autoExtractCharactersMutationTrigger.mockReset();
+    scrapeCharactersMutationTrigger.mockReset();
+    mergeCharactersMutationTrigger.mockReset();
     saveCharactersMutationTrigger.mockResolvedValue({
       project_id: 101,
       characters: [
@@ -71,6 +89,7 @@ describe('project characters page manual editor', () => {
           gender: 'female',
           aliases: [],
           notes: null,
+          source_trace: [],
           source: 'manual',
           confidence: 1.0,
         },
@@ -114,6 +133,7 @@ describe('project characters page manual editor', () => {
           gender: 'female',
           aliases: [],
           notes: null,
+          source_trace: [],
           source: 'manual',
           confidence: 1.0,
         },

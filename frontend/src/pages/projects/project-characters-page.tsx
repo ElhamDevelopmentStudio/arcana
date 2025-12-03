@@ -18,6 +18,7 @@ import {
   useAutoExtractCharactersMutation,
   useCharacterMapQuery,
   useScrapeCharactersMutation,
+  useMergeCharactersMutation,
   useImportCharactersMutation,
   useSaveCharacterMapMutation,
 } from '@/features/workflow/api/workflow-hooks';
@@ -68,6 +69,9 @@ export function ProjectCharactersPage() {
   const [scrapeUrl, setScrapeUrl] = useState<string>('');
   const [scrapeWarningAcknowledged, setScrapeWarningAcknowledged] = useState<boolean>(false);
   const [scrapedCandidates, setScrapedCandidates] = useState<CharacterMapDto['characters']>([]);
+  const [mergeCandidates, setMergeCandidates] = useState<CharacterMapDto['characters']>([]);
+  const [mergeScrapeUrl, setMergeScrapeUrl] = useState<string>('');
+  const [mergeScrapeAcknowledged, setMergeScrapeAcknowledged] = useState<boolean>(false);
 
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
   const manualPreviewCount = useMemo(
@@ -79,6 +83,7 @@ export function ProjectCharactersPage() {
   const saveCharactersMutation = useSaveCharacterMapMutation(projectId);
   const autoExtractCharactersMutation = useAutoExtractCharactersMutation(projectId);
   const scrapeCharactersMutation = useScrapeCharactersMutation(projectId);
+  const mergeCharactersMutation = useMergeCharactersMutation(projectId);
 
   useEffect(() => {
     if (characterMapQuery.data === undefined) {
@@ -187,6 +192,33 @@ export function ProjectCharactersPage() {
       toast.success(`Scraped ${payload.candidate_count} character candidates.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Character scrape failed.');
+    }
+  }
+
+  async function handleMergeCharacters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+
+    const normalizedMergeUrl = mergeScrapeUrl.trim();
+    if (normalizedMergeUrl && !mergeScrapeAcknowledged) {
+      toast.error('Acknowledge the scrape warning to include web-scrape data.');
+      return;
+    }
+
+    try {
+      const payload = {
+        include_auto: true,
+        source_url: normalizedMergeUrl || undefined,
+        acknowledge_source_risk: normalizedMergeUrl ? mergeScrapeAcknowledged : false,
+      };
+      const merged = await mergeCharactersMutation.trigger(payload);
+      setMergeCandidates(merged.candidates);
+      toast.success(`Merged ${merged.candidate_count} candidate records.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Character merge failed.');
     }
   }
 
@@ -340,6 +372,64 @@ export function ProjectCharactersPage() {
                         <ul className="space-y-0.5 pl-2 text-[11px]">
                           {candidate.source_trace.map((trace) => (
                             <li key={`scrape-${candidate.name}-${trace.chapter_index}-${trace.span_start}-${trace.span_end}`}>
+                              <span className="font-medium text-foreground">Ch {trace.chapter_index}</span> ·{' '}
+                              {trace.kind.replaceAll('_', ' ')} · weight {Math.round(trace.weight * 100)}% ·{' '}
+                              <span className="italic">{trace.excerpt}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Merged candidates</p>
+              <form className="grid gap-2" onSubmit={handleMergeCharacters}>
+                <p className="text-xs">Combine user-uploaded and auto-discovered candidates; add scrape URL to include external candidates.</p>
+                <Input
+                  id="character-merge-scrape-url"
+                  aria-label="Optional merge scrape source URL"
+                  placeholder="Optional: https://example.com/author-page"
+                  value={mergeScrapeUrl}
+                  onChange={(event) => setMergeScrapeUrl(event.target.value)}
+                />
+                <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={mergeScrapeAcknowledged}
+                    onCheckedChange={(checked) => setMergeScrapeAcknowledged(checked === true)}
+                    disabled={!mergeScrapeUrl.trim()}
+                  />
+                  <span>
+                    Include scraped candidates only after confirming this warning and accepting source limitations.
+                  </span>
+                </label>
+                <Button
+                  variant="outline"
+                  disabled={
+                    mergeCharactersMutation.isMutating || projectId === null || (mergeScrapeUrl.trim() !== '' && !mergeScrapeAcknowledged)
+                  }
+                  type="submit"
+                >
+                  {mergeCharactersMutation.isMutating ? 'Merging...' : 'Merge user + auto + scraped candidates'}
+                </Button>
+                <p data-testid="character-merged-state" className="text-xs">
+                  {mergeCandidates.length === 0 ? 'No merged candidates yet.' : `Merged candidates: ${mergeCandidates.length}`}
+                </p>
+              </form>
+              {mergeCandidates.length === 0 ? null : (
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  {mergeCandidates.map((candidate) => (
+                    <li className="space-y-1" key={`merged-${candidate.name}-${candidate.source}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{candidate.name}</span>
+                        <span>{Math.round(candidate.confidence * 100)}% · {candidate.source}</span>
+                      </div>
+                      {candidate.source_trace.length === 0 ? null : (
+                        <ul className="space-y-0.5 pl-2 text-[11px]">
+                          {candidate.source_trace.map((trace) => (
+                            <li key={`merged-${candidate.name}-${trace.chapter_index}-${trace.span_start}-${trace.span_end}`}>
                               <span className="font-medium text-foreground">Ch {trace.chapter_index}</span> ·{' '}
                               {trace.kind.replaceAll('_', ' ')} · weight {Math.round(trace.weight * 100)}% ·{' '}
                               <span className="italic">{trace.excerpt}</span>

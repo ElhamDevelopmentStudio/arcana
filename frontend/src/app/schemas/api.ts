@@ -80,6 +80,12 @@ export const characterScrapeRequestSchema = z.object({
   acknowledge_source_risk: z.boolean(),
 });
 
+export const characterCandidatesMergeRequestSchema = z.object({
+  include_auto: z.boolean(),
+  source_url: z.string().max(2048).url().optional(),
+  acknowledge_source_risk: z.boolean(),
+});
+
 export const characterExtractionSchema = z.object({
   project_id: z.number().int(),
   status: z.string(),
@@ -151,6 +157,7 @@ export type CharacterMapItemDto = z.infer<typeof characterMapItemSchema>;
 export type CharacterMapDto = z.infer<typeof characterMapSchema>;
 export type CharacterMapUpdateDto = z.infer<typeof characterMapUpdateSchema>;
 export type CharacterScrapeRequestDto = z.infer<typeof characterScrapeRequestSchema>;
+export type CharacterCandidatesMergeRequestDto = z.infer<typeof characterCandidatesMergeRequestSchema>;
 export type CharacterExtractionDto = z.infer<typeof characterExtractionSchema>;
 export type VoiceConfigDto = z.infer<typeof voiceConfigSchema>;
 export type RunRequestDto = z.infer<typeof runRequestSchema>;

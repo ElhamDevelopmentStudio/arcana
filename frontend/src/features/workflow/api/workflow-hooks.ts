@@ -6,6 +6,7 @@ import { nipeApiClient } from '@/services/api-client';
 import type { VoiceConfigDto } from '@/app/schemas/api';
 import type { CharacterMapUpdateDto } from '@/app/schemas/api';
 import type { CharacterScrapeRequestDto } from '@/app/schemas/api';
+import type { CharacterCandidatesMergeRequestDto } from '@/app/schemas/api';
 
 export const workspaceKeys = {
   modeCatalog: ['mode-catalog'] as const,
@@ -162,6 +163,18 @@ export function useScrapeCharactersMutation(projectId: number | null) {
         throw new Error('Project must exist before scraping characters.');
       }
       return nipeApiClient.scrapeCharacters(projectId, arg);
+    },
+  );
+}
+
+export function useMergeCharactersMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['merge-characters', projectId] : null,
+    async (_, { arg }: { arg: CharacterCandidatesMergeRequestDto }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before merging character candidates.');
+      }
+      return nipeApiClient.mergeCharacters(projectId, arg);
     },
   );
 }

@@ -10,7 +10,10 @@ from pathlib import Path  # noqa: E402
 from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
 from app.main import app
+import app.main as app_main
 from app.services.character_extraction import extract_character_candidates_from_texts
+from app.services.character_extraction import CandidateEvidence, CandidateSourceTrace
+from app.services.character_merge import merge_character_candidates
 from app.services import character_scrape
 
 
@@ -194,3 +197,161 @@ def test_integration_character_scrape_returns_candidates(monkeypatch) -> None:
         assert payload["candidates"][0]["name"] == "Jalen"
         assert payload["candidates"][0]["source"] == "scrape"
         assert payload["candidates"][0]["source_trace"]
+
+
+def test_unit_merge_character_candidates_normalizes_and_merges() -> None:
+    merged = merge_character_candidates(
+        [
+            {
+                "name": "Nora",
+                "verbalized_form": "Nora",
+                "gender": "female",
+                "aliases": ["N."],
+                "notes": "core",
+                "source": "manual",
+                "confidence": 1.0,
+                "source_trace": [],
+            },
+            {
+                "name": "  nora  ",
+                "verbalized_form": "Nora",
+                "gender": "unknown",
+                "aliases": [],
+                "notes": None,
+                "source": "auto",
+                "confidence": 0.7,
+                "source_trace": [
+                    {
+                        "kind": "dialogue_attribution",
+                        "chapter_index": 1,
+                        "span_start": 0,
+                        "span_end": 1,
+                        "excerpt": "Nora said...",
+                        "weight": 0.8,
+                    }
+                ],
+            },
+            {
+                "name": "Mira",
+                "verbalized_form": "Mira",
+                "gender": "unknown",
+                "aliases": [],
+                "notes": None,
+                "source": "scrape",
+                "confidence": 0.81,
+                "source_trace": [
+                    {
+                        "kind": "dialogue_attribution",
+                        "chapter_index": 2,
+                        "span_start": 2,
+                        "span_end": 8,
+                        "excerpt": "Mira appeared.",
+                        "weight": 0.6,
+                    }
+                ],
+            },
+        ]
+    )
+
+    assert len(merged) == 2
+
+    merged_map = {entry["name"]: entry for entry in merged}
+    assert merged_map["Nora"]["source"] == "merged:auto|user_import"
+    assert merged_map["Nora"]["aliases"] == ["N."]
+    assert merged_map["Nora"]["source_trace"] == [
+        {
+            "kind": "dialogue_attribution",
+            "chapter_index": 1,
+            "span_start": 0,
+            "span_end": 1,
+            "excerpt": "Nora said...",
+            "weight": 0.8,
+        }
+    ]
+
+
+def test_integration_character_merge_candidates_endpoint_merges_auto_and_scrape(monkeypatch) -> None:
+    def _fake_extract_character_candidates_from_texts(
+        _chapter_texts: list[str],
+        known_names: set[str] | None = None,
+    ) -> list[CandidateEvidence]:
+        del known_names
+        return [
+            CandidateEvidence(
+                name="Lena",
+                confidence=0.62,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="dialogue_attribution",
+                        chapter_index=1,
+                        span_start=0,
+                        span_end=2,
+                        excerpt="Lena stepped forward.",
+                        weight=1.0,
+                    )
+                ],
+            ),
+            CandidateEvidence(
+                name="Mira",
+                confidence=0.52,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="dialogue_attribution",
+                        chapter_index=2,
+                        span_start=10,
+                        span_end=14,
+                        excerpt="Mira replied.",
+                        weight=1.0,
+                    )
+                ],
+            ),
+        ]
+
+    def _fake_extract_scrape_candidates(_: str, config: object | None = None) -> list[CandidateEvidence]:
+        return [
+            CandidateEvidence(
+                name="Lena",
+                confidence=0.88,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="narrative_attribution",
+                        chapter_index=1,
+                        span_start=20,
+                        span_end=25,
+                        excerpt="Lena moved on.",
+                        weight=0.6,
+                    )
+                ],
+            ),
+        ]
+
+    monkeypatch.setattr(app_main, "extract_character_candidates_from_texts", _fake_extract_character_candidates_from_texts)
+    monkeypatch.setattr(app_main, "extract_character_candidates_from_scrape_url", _fake_extract_scrape_candidates)
+
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Merge Candidate Integration")
+        existing_import = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={
+                "file": (
+                    "characters.json",
+                    io.BytesIO(b'{\"Mira\":{\"verbalized_form\":\"Mira\",\"gender\":\"female\",\"source\":\"manual\",\"confidence\":1.0}}'),
+                    "application/json",
+                )
+            },
+        )
+        assert existing_import.status_code == 200
+
+        merged_resp = client.post(
+            f"/api/projects/{project_id}/characters/merged-candidates",
+            json={"source_url": "https://example.com/characters", "acknowledge_source_risk": True, "include_auto": True},
+        )
+        assert merged_resp.status_code == 200
+        merged_payload = merged_resp.json()
+        assert merged_payload["status"] == "complete"
+        names = sorted(entry["name"] for entry in merged_payload["candidates"])
+        assert names == ["Lena", "Mira"]
+        merged_map = {entry["name"]: entry for entry in merged_payload["candidates"]}
+        assert merged_map["Lena"]["source"] == "merged:auto|scrape"
+        assert merged_map["Mira"]["source"] == "merged:auto|user_import"
+        assert len(merged_map["Lena"]["source_trace"]) == 2
