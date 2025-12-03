@@ -11,6 +11,7 @@ from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
 from app.main import app
 from app.services.character_extraction import extract_character_candidates_from_texts
+from app.services import character_scrape
 
 
 def setup_module() -> None:
@@ -132,3 +133,64 @@ def test_integration_character_auto_extraction_rejects_empty_chapters() -> None:
         extract_resp = client.post(f"/api/projects/{project_id}/characters/extract")
         assert extract_resp.status_code == 400
         assert extract_resp.json()["detail"] == "No chapters available for character auto-extraction."
+
+
+def test_integration_character_scrape_requires_warning_ack() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Scrape Warning Test")
+
+        extract_resp = client.post(
+            f"/api/projects/{project_id}/characters/scrape",
+            json={"source_url": "https://example.com", "acknowledge_source_risk": False},
+        )
+        assert extract_resp.status_code == 400
+        assert extract_resp.json()["detail"] == "You must acknowledge scrape risk before proceeding."
+
+
+def test_integration_character_scrape_rejects_invalid_url() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Scrape Invalid URL Test")
+
+        extract_resp = client.post(
+            f"/api/projects/{project_id}/characters/scrape",
+            json={"source_url": "ftp://example.com/guide", "acknowledge_source_risk": True},
+        )
+        assert extract_resp.status_code == 400
+        assert extract_resp.json()["detail"] == "source_url must use http or https scheme."
+
+
+def test_integration_character_scrape_returns_candidates(monkeypatch) -> None:
+    def _fake_fetch_scrape_text(_: str, config: object | None = None) -> str:  # noqa: ARG001
+        return (
+            "<p>Mira looked around. \"The room is quiet,\" she said. "
+            "Later, Jalen answered and spoke."
+        )
+
+    monkeypatch.setattr(character_scrape, "fetch_scrape_text", _fake_fetch_scrape_text)
+
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Scrape Candidate Test")
+        existing_import = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={
+                "file": (
+                    "characters.json",
+                    io.BytesIO(b'{\"Mira\":{\"verbalized_form\":\"Mira\",\"gender\":\"female\",\"source\":\"manual\",\"confidence\":0.9}}'),
+                    "application/json",
+                )
+            },
+        )
+        assert existing_import.status_code == 200
+
+        extract_resp = client.post(
+            f"/api/projects/{project_id}/characters/scrape",
+            json={"source_url": "https://example.com/characters", "acknowledge_source_risk": True},
+        )
+        assert extract_resp.status_code == 200
+        payload = extract_resp.json()
+        assert payload["project_id"] == project_id
+        assert payload["status"] == "complete"
+        assert payload["candidate_count"] == 1
+        assert payload["candidates"][0]["name"] == "Jalen"
+        assert payload["candidates"][0]["source"] == "scrape"
+        assert payload["candidates"][0]["source_trace"]

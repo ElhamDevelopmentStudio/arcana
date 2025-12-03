@@ -118,7 +118,7 @@ Definition of done for each task:
 - [ ] [CHAR-003] Implement manual row add/edit/delete UI for character map.
 - [ ] [CHAR-004] Add auto-extraction job for candidate character names.
 - [ ] [CHAR-005] Store extraction confidence and source trace for each candidate.
-- [ ] [CHAR-006] Add optional web-scrape ingestion with explicit warning acknowledgement.
+- [x] [CHAR-006] Add optional web-scrape ingestion with explicit warning acknowledgement.
 - [ ] [CHAR-007] Normalize and merge user-uploaded + auto + scraped candidates.
 - [ ] [CHAR-008] Implement canonical-name merge suggestions.
 - [ ] [CHAR-009] Create review screen for proposed characters.

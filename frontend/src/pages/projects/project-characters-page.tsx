@@ -17,10 +17,12 @@ import { NativeSelect } from '@/components/ui/native-select';
 import {
   useAutoExtractCharactersMutation,
   useCharacterMapQuery,
+  useScrapeCharactersMutation,
   useImportCharactersMutation,
   useSaveCharacterMapMutation,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
+import { Checkbox } from '@/components/ui/checkbox';
 
 type ManualCharacterRow = {
   id: string;
@@ -63,6 +65,9 @@ export function ProjectCharactersPage() {
   const [importedCount, setImportedCount] = useState<number | null>(null);
   const [lastSavedCount, setLastSavedCount] = useState<number | null>(null);
   const [autoExtractedCandidates, setAutoExtractedCandidates] = useState<CharacterMapDto['characters']>([]);
+  const [scrapeUrl, setScrapeUrl] = useState<string>('');
+  const [scrapeWarningAcknowledged, setScrapeWarningAcknowledged] = useState<boolean>(false);
+  const [scrapedCandidates, setScrapedCandidates] = useState<CharacterMapDto['characters']>([]);
 
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
   const manualPreviewCount = useMemo(
@@ -73,6 +78,7 @@ export function ProjectCharactersPage() {
   const characterMapQuery = useCharacterMapQuery(projectId);
   const saveCharactersMutation = useSaveCharacterMapMutation(projectId);
   const autoExtractCharactersMutation = useAutoExtractCharactersMutation(projectId);
+  const scrapeCharactersMutation = useScrapeCharactersMutation(projectId);
 
   useEffect(() => {
     if (characterMapQuery.data === undefined) {
@@ -154,6 +160,33 @@ export function ProjectCharactersPage() {
       toast.success(`Auto-extracted ${payload.candidate_count} character candidates.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Character auto-extraction failed.');
+    }
+  }
+
+  async function handleScrapeCharacters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    if (!scrapeUrl.trim()) {
+      toast.error('Add a source URL first.');
+      return;
+    }
+    if (!scrapeWarningAcknowledged) {
+      toast.error('Acknowledge the scrape warning to continue.');
+      return;
+    }
+
+    try {
+      const payload = await scrapeCharactersMutation.trigger({
+        source_url: scrapeUrl.trim(),
+        acknowledge_source_risk: true,
+      });
+      setScrapedCandidates(payload.candidates);
+      toast.success(`Scraped ${payload.candidate_count} character candidates.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Character scrape failed.');
     }
   }
 
@@ -253,17 +286,70 @@ export function ProjectCharactersPage() {
                 Scrape candidates
               </p>
               {appEnv.featureScrapeEnabled ? (
-                <Button variant="outline" type="button">
-                  Open scrape flow (placeholder)
-                </Button>
+                <form className="grid gap-2" onSubmit={handleScrapeCharacters}>
+                  <Input
+                    id="character-scrape-url"
+                    aria-label="Character scrape source URL"
+                    placeholder="https://example.com/author-page"
+                    value={scrapeUrl}
+                    onChange={(event) => setScrapeUrl(event.target.value)}
+                  />
+                  <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <Checkbox
+                      checked={scrapeWarningAcknowledged}
+                      onCheckedChange={(checked) => setScrapeWarningAcknowledged(checked === true)}
+                    />
+                    <span>
+                      I understand this source is external and may have accuracy or legal constraints; scraped candidates may be inaccurate and
+                      should be reviewed.
+                    </span>
+                  </label>
+                  <Button
+                    variant="outline"
+                    disabled={
+                      scrapeCharactersMutation.isMutating || !scrapeWarningAcknowledged || projectId === null || !scrapeUrl.trim()
+                    }
+                    type="submit"
+                  >
+                    {scrapeCharactersMutation.isMutating ? 'Scraping...' : 'Scrape candidates'}
+                  </Button>
+                  <p data-testid="character-scrape-state" className="text-xs">
+                    {scrapedCandidates.length === 0
+                      ? 'No scrape results yet.'
+                      : `Scrape candidates: ${scrapedCandidates.length}`}
+                  </p>
+                </form>
               ) : (
                 <div className="space-y-2">
                   <p className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-[0.08em]">
                     <AlertCircle className="size-3.5 text-muted-foreground" />
                     Disabled by environment flag
                   </p>
-                  <p>Enable with `VITE_FEATURE_SCRAPE_ENABLED=true` once backend scrape APIs are implemented.</p>
+                  <p>Enable with `VITE_FEATURE_SCRAPE_ENABLED=true` to allow web-scrape candidate ingestion in this environment.</p>
                 </div>
+              )}
+              {scrapedCandidates.length === 0 ? null : (
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  {scrapedCandidates.map((candidate) => (
+                    <li className="space-y-1" key={`scrape-${candidate.name}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{candidate.name}</span>
+                        <span>{Math.round(candidate.confidence * 100)}% confidence</span>
+                      </div>
+                      {candidate.source_trace.length === 0 ? null : (
+                        <ul className="space-y-0.5 pl-2 text-[11px]">
+                          {candidate.source_trace.map((trace) => (
+                            <li key={`scrape-${candidate.name}-${trace.chapter_index}-${trace.span_start}-${trace.span_end}`}>
+                              <span className="font-medium text-foreground">Ch {trace.chapter_index}</span> ·{' '}
+                              {trace.kind.replaceAll('_', ' ')} · weight {Math.round(trace.weight * 100)}% ·{' '}
+                              <span className="italic">{trace.excerpt}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
             <div className="text-sm text-muted-foreground" data-testid="character-list-state">

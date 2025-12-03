@@ -121,6 +121,11 @@ class CharacterMapUpdateRequest(BaseModel):
     characters: list[CharacterMapItem]
 
 
+class CharacterScrapeRequest(BaseModel):
+    source_url: str = Field(min_length=1, max_length=2048)
+    acknowledge_source_risk: bool
+
+
 class CharacterExtractionResponse(BaseModel):
     project_id: int
     status: str
