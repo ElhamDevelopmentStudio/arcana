@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -56,7 +56,13 @@ class Chapter(Base):
 
 class Character(Base):
     __tablename__ = "characters"
-    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_project_character_name"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_project_character_name"),
+        CheckConstraint(
+            "gender IN ('male', 'female', 'neutral', 'unknown', 'custom')",
+            name="ck_character_gender_allowed",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
