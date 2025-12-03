@@ -4,7 +4,7 @@ import useSWRMutation from 'swr/mutation';
 import { runRequestSchema, type RunRequestDto } from '@/app/schemas/api';
 import { nipeApiClient } from '@/services/api-client';
 import type { VoiceConfigDto } from '@/app/schemas/api';
-import type { CharacterMapDto, CharacterMapUpdateDto } from '@/app/schemas/api';
+import type { CharacterMapUpdateDto } from '@/app/schemas/api';
 
 export const workspaceKeys = {
   modeCatalog: ['mode-catalog'] as const,
@@ -137,6 +137,18 @@ export function useSaveCharacterMapMutation(projectId: number | null) {
         throw new Error('Project must exist before saving character map.');
       }
       return nipeApiClient.saveCharacters(projectId, arg);
+    },
+  );
+}
+
+export function useAutoExtractCharactersMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['extract-characters', projectId] : null,
+    async () => {
+      if (projectId === null) {
+        throw new Error('Project must exist before extracting characters.');
+      }
+      return nipeApiClient.extractCharacters(projectId);
     },
   );
 }

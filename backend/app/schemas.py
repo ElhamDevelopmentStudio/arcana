@@ -111,6 +111,13 @@ class CharacterMapUpdateRequest(BaseModel):
     characters: list[CharacterMapItem]
 
 
+class CharacterExtractionResponse(BaseModel):
+    project_id: int
+    status: str
+    candidate_count: int
+    candidates: list[CharacterMapItem]
+
+
 class VoiceConfigRequest(BaseModel):
     narrator_voice: str = Field(min_length=1)
     male_default_voice: str = Field(min_length=1)
