@@ -238,6 +238,46 @@ export function ProjectCharactersPage() {
     setManualRows((prev) => prev.filter((row) => row.id !== rowId));
   }
 
+  function handleApproveProposedCandidate(index: number) {
+    const candidate = proposedCandidates[index];
+    if (!candidate || !candidate.name.trim()) {
+      return;
+    }
+
+    setManualRows((prev) => {
+      const existingIndex = prev.findIndex(
+        (row) => row.name.trim().toLowerCase() === candidate.name.trim().toLowerCase(),
+      );
+      if (existingIndex >= 0) {
+        const nextRows = [...prev];
+        nextRows[existingIndex] = {
+          ...nextRows[existingIndex],
+          name: candidate.name,
+          verbalized: candidate.verbalized_form,
+          gender: candidate.gender,
+        };
+        return nextRows;
+      }
+
+      const nextRows = [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          name: candidate.name,
+          verbalized: candidate.verbalized_form,
+          gender: candidate.gender,
+        },
+      ];
+      return nextRows;
+    });
+
+    setProposedCandidates((prev) => prev.filter((_, candidateIndex) => candidateIndex !== index));
+  }
+
+  function handleRejectProposedCandidate(index: number) {
+    setProposedCandidates((prev) => prev.filter((_, candidateIndex) => candidateIndex !== index));
+  }
+
   return (
     <WorkflowPageShell
       step="Step 03"
@@ -481,10 +521,10 @@ export function ProjectCharactersPage() {
               </p>
               {proposedCandidates.length === 0 ? null : (
                 <ul className="space-y-1 text-xs text-muted-foreground">
-                  {proposedCandidates.map((candidate) => (
+                  {proposedCandidates.map((candidate, index) => (
                     <li
                       className="space-y-1"
-                      key={`proposed-${candidate.name}-${candidate.source}`}
+                      key={`proposed-${candidate.name}-${candidate.source}-${index}`}
                       data-testid={`proposed-character-${candidate.name.toLowerCase().replace(/\s+/g, '-')}`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -502,6 +542,23 @@ export function ProjectCharactersPage() {
                           ))}
                         </ul>
                       )}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => handleApproveProposedCandidate(index)}
+                          type="button"
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRejectProposedCandidate(index)}
+                          type="button"
+                        >
+                          Reject
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
