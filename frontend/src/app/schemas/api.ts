@@ -91,6 +91,7 @@ export const characterExtractionSchema = z.object({
   status: z.string(),
   candidate_count: z.number().int().nonnegative(),
   candidates: z.array(characterMapItemSchema),
+  proposed_characters: z.array(characterMapItemSchema).default([]),
   canonical_merge_suggestions: z
     .array(
       z.object({

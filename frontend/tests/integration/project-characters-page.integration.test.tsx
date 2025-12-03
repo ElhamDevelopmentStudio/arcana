@@ -147,6 +147,18 @@ describe('project characters page manual editor', () => {
       project_id: 101,
       status: 'complete',
       candidate_count: 2,
+      proposed_characters: [
+        {
+          name: 'Mire',
+          verbalized_form: 'Mire',
+          gender: 'unknown',
+          aliases: [],
+          notes: null,
+          source: 'auto',
+          confidence: 0.6,
+          source_trace: [],
+        },
+      ],
       candidates: [
         {
           name: 'Mira',
@@ -188,6 +200,8 @@ describe('project characters page manual editor', () => {
     expect(mergeCharactersMutationTrigger).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('character-merged-state')).toHaveTextContent('Merged candidates: 2');
     expect(screen.getByTestId('character-merge-suggestions-state')).toHaveTextContent('1 suggestion(s).');
+    expect(screen.getByTestId('character-proposed-state')).toHaveTextContent('1 proposed character(s) ready for review.');
+    expect(screen.getByTestId('proposed-character-mire')).toBeInTheDocument();
     expect(screen.getByText('Mire → Mira')).toBeInTheDocument();
     expect(screen.getByText('Reason: name_similarity')).toBeInTheDocument();
   });

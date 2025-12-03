@@ -154,6 +154,7 @@ class CharacterExtractionResponse(BaseModel):
     status: str
     candidate_count: int
     candidates: list[CharacterMapItem]
+    proposed_characters: list[CharacterMapItem] = Field(default_factory=list)
     canonical_merge_suggestions: list[CanonicalNameMergeSuggestion] = Field(default_factory=list)
 
 

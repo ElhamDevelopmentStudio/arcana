@@ -34,6 +34,7 @@ from app.services.character_extraction import extract_character_candidates_from_
 from app.services.character_scrape import extract_character_candidates_from_scrape_url
 from app.services.epub_ingestion import extract_epub_chapters
 from app.services.character_merge import build_canonical_name_merge_suggestions, merge_character_candidates
+from app.services.character_merge import normalize_candidate_key
 from app.services.export import build_run_export
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
@@ -211,6 +212,22 @@ def _build_mergeable_candidates_from_candidates(
             }
         )
     return payloads
+
+
+def _filter_new_character_payloads(
+    payloads: list[dict[str, object]],
+    canonical_name_keys: set[str],
+) -> list[dict[str, object]]:
+    filtered_payloads: list[dict[str, object]] = []
+    for payload in payloads:
+        candidate_name = str(payload.get("name") or "").strip()
+        if not candidate_name:
+            continue
+        normalized_name = normalize_candidate_key(candidate_name)
+        if normalized_name in canonical_name_keys:
+            continue
+        filtered_payloads.append(payload)
+    return merge_character_candidates(filtered_payloads)
 
 
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -992,13 +1009,14 @@ def merged_candidate_characters(
     _get_project_or_404(session, project_id)
 
     merged_payloads: list[dict[str, object]] = []
+    proposed_source_payloads: list[dict[str, object]] = []
     existing_character_rows = (
         session.query(Character)
         .filter(Character.project_id == project_id)
         .order_by(Character.name.asc())
         .all()
     )
-    canonical_names = [row.name for row in existing_character_rows]
+    canonical_name_keys = {normalize_candidate_key(row.name) for row in existing_character_rows if row.name.strip()}
 
     merged_payloads.extend(
         [
@@ -1021,12 +1039,12 @@ def merged_candidate_characters(
         )
         if chapter_rows:
             auto_candidates = extract_character_candidates_from_texts([row.normalized_text for row in chapter_rows])
-            merged_payloads.extend(
-                _build_mergeable_candidates_from_candidates(
-                    candidates=auto_candidates,
-                    source="auto",
-                )
+            auto_payloads = _build_mergeable_candidates_from_candidates(
+                candidates=auto_candidates,
+                source="auto",
             )
+            merged_payloads.extend(auto_payloads)
+            proposed_source_payloads.extend(auto_payloads)
 
     if payload.source_url is not None:
         if not payload.acknowledge_source_risk:
@@ -1039,17 +1057,21 @@ def merged_candidate_characters(
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-        merged_payloads.extend(
-            _build_mergeable_candidates_from_candidates(
-                candidates=scrape_candidates,
-                source="scrape",
-            )
+        scrape_payloads = _build_mergeable_candidates_from_candidates(
+            candidates=scrape_candidates,
+            source="scrape",
         )
+        merged_payloads.extend(scrape_payloads)
+        proposed_source_payloads.extend(scrape_payloads)
 
     merged_candidates = [CharacterMapItem(**payload) for payload in merge_character_candidates(merged_payloads)]
+    proposed_candidates = [CharacterMapItem(**payload) for payload in _filter_new_character_payloads(
+        payloads=proposed_source_payloads,
+        canonical_name_keys=canonical_name_keys,
+    )]
     canonical_merge_suggestions = build_canonical_name_merge_suggestions(
         candidate_payloads=merged_payloads,
-        canonical_names=canonical_names,
+        canonical_names={row.name for row in existing_character_rows},
     )
 
     return CharacterExtractionResponse(
@@ -1057,6 +1079,7 @@ def merged_candidate_characters(
         status="complete",
         candidate_count=len(merged_candidates),
         candidates=merged_candidates,
+        proposed_characters=proposed_candidates,
         canonical_merge_suggestions=canonical_merge_suggestions,
     )
 
