@@ -11,6 +11,7 @@ from app.services.character_analytics import (
     build_character_first_appearance_chapter_indices,
     build_character_last_appearance_chapter_indices,
     build_character_mentions_per_1000_words,
+    build_character_dialogue_line_counts,
     build_character_mentions_by_chapter,
 )
 from app.services.phonetics import replace_pronunciations
@@ -49,6 +50,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     max_chars = int(run_config.get("max_segment_chars", 255))
     first_segment_text: str | None = None
     total_segments = 0
+    segment_payloads: list[dict[str, object]] = []
 
     for chapter in chapters:
         pieces = segment_text(chapter.normalized_text, max_chars=max_chars)
@@ -98,6 +100,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 },
                 "original_to_normalized_offset_map": segment_offset_map,
             }
+            segment_payloads.append(segment_payload)
 
             session.add(
                 Segment(
@@ -128,12 +131,17 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         chapter_mention_counters=chapter_mention_counters,
         chapters=chapters,
     )
+    character_dialogue_line_counts = build_character_dialogue_line_counts(
+        segments=segment_payloads,
+        characters=characters,
+    )
     run.config_json = {
         **(run.config_json or {}),
         "character_mentions_by_chapter": [counter.to_dict() for counter in chapter_mention_counters],
         "character_first_appearance_chapter_index": character_first_appearance_chapter_indices,
         "character_last_appearance_chapter_index": character_last_appearance_chapter_indices,
         "character_mentions_per_1000_words": character_mentions_per_1000_words,
+        "character_dialogue_line_counts": character_dialogue_line_counts,
     }
 
     run.status = "completed"

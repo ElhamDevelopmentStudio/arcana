@@ -14,6 +14,7 @@ from app.services.character_analytics import (
     build_character_last_appearance_chapter_indices,
     build_character_first_appearance_chapter_indices,
     build_character_mentions_per_1000_words,
+    build_character_dialogue_line_counts,
     build_character_mentions_by_chapter,
 )
 
@@ -312,11 +313,58 @@ def test_unit_character_mentions_per_1000_words() -> None:
     assert mentions_per_1000_words["Ghost"] == 0.0
 
 
+def test_unit_character_dialogue_line_counts() -> None:
+    segments = [
+        {"type": "dialogue", "speaker": "Sunny", "speaker_confidence": 0.9},
+        {"type": "dialogue", "speaker": "Captain", "speaker_confidence": 0.9},
+        {"type": "dialogue", "speaker": "captain", "speaker_confidence": 0.8},
+        {"type": "narration", "speaker": "Sunny", "speaker_confidence": 0.2},
+        {"type": "dialogue", "speaker": "Unknown", "speaker_confidence": 0.2},
+        {"type": "dialogue", "speaker": "Ghost", "speaker_confidence": 0.9},
+        {"type": "dialogue", "speaker": "", "speaker_confidence": 0.2},
+    ]
+
+    characters = [
+        Character(
+            name="Sunny",
+            verbalized_form="Sunny",
+            gender="female",
+            aliases=["Sun"],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Captain",
+            verbalized_form="Captain",
+            gender="male",
+            aliases=["Cap"],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Nephis",
+            verbalized_form="Nephis",
+            gender="female",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+    ]
+
+    counts = build_character_dialogue_line_counts(segments=segments, characters=characters)
+    assert counts["Sunny"] == 1
+    assert counts["Captain"] == 2
+    assert counts["Nephis"] == 0
+
+
 def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
     sample_text = (
         "Chapter 1\n"
-        '"Sunny spoke, "Sunny said hello."\n\n'
-        "Nephis smiled and then Sunny left."
+        '"Hello," Sunny said.\n'
+        'Nephis nodded and then looked away.'
     )
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Mention Counter Integration"})
@@ -360,7 +408,7 @@ def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
         counts = detail["config"]["character_mentions_by_chapter"]
         assert counts and isinstance(counts, list)
         assert counts[0]["chapter_index"] == 1
-        assert counts[0]["mention_counts"]["Sunny"] == 3
+        assert counts[0]["mention_counts"]["Sunny"] == 1
 
         first_appearance = detail["config"]["character_first_appearance_chapter_index"]
         assert first_appearance == {"Nephis": 1, "Sunny": 1}
@@ -370,3 +418,6 @@ def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
 
         mentions_per_1000_words = detail["config"]["character_mentions_per_1000_words"]
         assert set(mentions_per_1000_words.keys()) == {"Nephis", "Sunny"}
+
+        dialogue_line_counts = detail["config"]["character_dialogue_line_counts"]
+        assert dialogue_line_counts == {"Nephis": 0, "Sunny": 1}

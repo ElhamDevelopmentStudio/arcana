@@ -132,7 +132,7 @@ Definition of done for each task:
 - [x] [CHAR-017] Compute first appearance chapter index.
 - [x] [CHAR-018] Compute last appearance chapter index.
 - [x] [CHAR-019] Compute mentions per 1,000 words metric.
-- [ ] [CHAR-020] Compute dialogue line counts where speaker attribution exists.
+- [x] [CHAR-020] Compute dialogue line counts where speaker attribution exists.
 - [ ] [CHAR-021] Add API endpoint for character occurrence analytics.
 - [ ] [CHAR-022] Add tests for merge, alias conflict, and finalize workflow.
 
