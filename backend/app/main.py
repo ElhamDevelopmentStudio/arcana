@@ -15,6 +15,8 @@ from app.schemas import (
     CharacterMapResponse,
     CharacterMapUpdateRequest,
     CharacterMapFinalizeResponse,
+    CharacterAliasLookupRequest,
+    CharacterAliasLookupResponse,
     IngestResponse,
     CharacterExtractionResponse,
     CharacterScrapeRequest,
@@ -36,6 +38,7 @@ from app.services.character_scrape import extract_character_candidates_from_scra
 from app.services.epub_ingestion import extract_epub_chapters
 from app.services.character_merge import build_canonical_name_merge_suggestions, merge_character_candidates
 from app.services.character_merge import normalize_candidate_key
+from app.services.character_merge import resolve_alias_to_canonical_name
 from app.services.export import build_run_export
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
@@ -215,6 +218,16 @@ def _build_mergeable_candidates_from_candidates(
     return payloads
 
 
+def _character_lookup_payloads(session: Session, project_id: int) -> list[dict[str, object]]:
+    rows = (
+        session.query(Character)
+        .filter(Character.project_id == project_id)
+        .order_by(Character.name.asc())
+        .all()
+    )
+    return [{"name": row.name, "aliases": row.aliases or []} for row in rows]
+
+
 def _filter_new_character_payloads(
     payloads: list[dict[str, object]],
     canonical_name_keys: set[str],
@@ -229,6 +242,29 @@ def _filter_new_character_payloads(
             continue
         filtered_payloads.append(payload)
     return merge_character_candidates(filtered_payloads)
+
+
+@app.post(
+    "/api/projects/{project_id}/characters/lookup-alias",
+    response_model=CharacterAliasLookupResponse,
+    status_code=status.HTTP_200_OK,
+)
+def lookup_character_canonical_by_alias(
+    project_id: int,
+    payload: CharacterAliasLookupRequest,
+    session: Session = Depends(get_session),
+) -> CharacterAliasLookupResponse:
+    _get_project_or_404(session, project_id)
+
+    canonical_payloads = _character_lookup_payloads(session, project_id)
+    canonical_name, match_source = resolve_alias_to_canonical_name(payload.alias, canonical_payloads)
+
+    return CharacterAliasLookupResponse(
+        project_id=project_id,
+        alias=payload.alias.strip(),
+        canonical_name=canonical_name,
+        match_source=match_source,
+    )
 
 
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)

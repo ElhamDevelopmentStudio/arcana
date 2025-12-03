@@ -434,3 +434,81 @@ def test_integration_character_aliases_are_saved_and_deduplicated() -> None:
         list_resp = client.get(f"/api/projects/{project_id}/characters")
         assert list_resp.status_code == 200
         assert list_resp.json()["characters"][0]["aliases"] == ["Captain", "C."]
+
+
+def test_integration_character_alias_lookup_matches_canonical_name_and_alias_form() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Alias Lookup"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        save_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Kai",
+                        "verbalized_form": "Kai",
+                        "gender": "male",
+                        "aliases": ["Captain", "K."],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    }
+                ]
+            },
+        )
+        assert save_resp.status_code == 200
+
+        canonical_resp = client.post(
+            f"/api/projects/{project_id}/characters/lookup-alias",
+            json={"alias": "  KAI  "},
+        )
+        assert canonical_resp.status_code == 200
+        assert canonical_resp.json()["canonical_name"] == "Kai"
+        assert canonical_resp.json()["match_source"] == "canonical"
+
+        alias_resp = client.post(
+            f"/api/projects/{project_id}/characters/lookup-alias",
+            json={"alias": " cApTaIn "},
+        )
+        assert alias_resp.status_code == 200
+        assert alias_resp.json()["canonical_name"] == "Kai"
+        assert alias_resp.json()["match_source"] == "alias"
+        assert alias_resp.json()["alias"] == "cApTaIn"
+
+
+def test_integration_character_alias_lookup_returns_none_when_missing() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Alias Lookup Miss"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        save_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Kai",
+                        "verbalized_form": "Kai",
+                        "gender": "male",
+                        "aliases": [],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    }
+                ]
+            },
+        )
+        assert save_resp.status_code == 200
+
+        missing_resp = client.post(
+            f"/api/projects/{project_id}/characters/lookup-alias",
+            json={"alias": "UnknownCharacter"},
+        )
+        assert missing_resp.status_code == 200
+        payload = missing_resp.json()
+        assert payload["canonical_name"] is None
+        assert payload["match_source"] == "none"
