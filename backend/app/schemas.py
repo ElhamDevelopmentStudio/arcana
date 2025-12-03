@@ -241,3 +241,18 @@ class RunDetailResponse(BaseModel):
     finished_at: datetime | None
     segment_count: int
     llm_calls: list[dict[str, Any]]
+
+
+class CharacterMentionsByChapterItem(BaseModel):
+    chapter_index: int
+    mention_counts: dict[str, int]
+
+
+class CharacterOccurrenceAnalyticsResponse(BaseModel):
+    project_id: int
+    run_id: int
+    character_mentions_by_chapter: list[CharacterMentionsByChapterItem]
+    character_first_appearance_chapter_index: dict[str, int | None]
+    character_last_appearance_chapter_index: dict[str, int | None]
+    character_mentions_per_1000_words: dict[str, float]
+    character_dialogue_line_counts: dict[str, int]

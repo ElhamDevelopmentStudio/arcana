@@ -133,7 +133,7 @@ Definition of done for each task:
 - [x] [CHAR-018] Compute last appearance chapter index.
 - [x] [CHAR-019] Compute mentions per 1,000 words metric.
 - [x] [CHAR-020] Compute dialogue line counts where speaker attribution exists.
-- [ ] [CHAR-021] Add API endpoint for character occurrence analytics.
+- [x] [CHAR-021] Add API endpoint for character occurrence analytics.
 - [ ] [CHAR-022] Add tests for merge, alias conflict, and finalize workflow.
 
 ## 4.4 Gender Tagging and Ambiguity (Ref: SRS.md §4.4)

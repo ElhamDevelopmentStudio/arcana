@@ -8,11 +8,7 @@ from app.models import Chapter, Character, LLMCall, Project, Run, Segment
 from app.services.export import build_run_export
 from app.services.llm_router import LLMRequest, LLMRouter
 from app.services.character_analytics import (
-    build_character_first_appearance_chapter_indices,
-    build_character_last_appearance_chapter_indices,
-    build_character_mentions_per_1000_words,
-    build_character_dialogue_line_counts,
-    build_character_mentions_by_chapter,
+    build_character_occurrence_analytics,
 )
 from app.services.phonetics import replace_pronunciations
 from app.services.quota import consume_quota
@@ -120,28 +116,14 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     if llm_enabled and first_segment_text:
         _run_llm_probe(session=session, project=project, run=run, run_config=run_config, input_text=first_segment_text)
 
-    chapter_mention_counters = build_character_mentions_by_chapter(chapters=chapters, characters=characters)
-    character_first_appearance_chapter_indices = build_character_first_appearance_chapter_indices(
-        chapter_mention_counters
-    )
-    character_last_appearance_chapter_indices = build_character_last_appearance_chapter_indices(
-        chapter_mention_counters
-    )
-    character_mentions_per_1000_words = build_character_mentions_per_1000_words(
-        chapter_mention_counters=chapter_mention_counters,
+    character_occurrence_analytics = build_character_occurrence_analytics(
         chapters=chapters,
-    )
-    character_dialogue_line_counts = build_character_dialogue_line_counts(
-        segments=segment_payloads,
         characters=characters,
+        segment_payloads=segment_payloads,
     )
     run.config_json = {
         **(run.config_json or {}),
-        "character_mentions_by_chapter": [counter.to_dict() for counter in chapter_mention_counters],
-        "character_first_appearance_chapter_index": character_first_appearance_chapter_indices,
-        "character_last_appearance_chapter_index": character_last_appearance_chapter_indices,
-        "character_mentions_per_1000_words": character_mentions_per_1000_words,
-        "character_dialogue_line_counts": character_dialogue_line_counts,
+        **character_occurrence_analytics,
     }
 
     run.status = "completed"

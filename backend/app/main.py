@@ -29,6 +29,7 @@ from app.schemas import (
     ProjectModeSwitchResponse,
     ProjectResponse,
     RunCreateRequest,
+    CharacterOccurrenceAnalyticsResponse,
     RunDetailResponse,
     RunResponse,
     VoiceConfigRequest,
@@ -67,6 +68,7 @@ from app.services.ingestion import (
 )
 from app.services.mode_profiles import build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_mode_switch
+from app.services.character_analytics import build_character_occurrence_analytics
 from app.services.normalization import (
     build_original_to_normalized_offset_map,
     build_normalization_report,
@@ -1357,6 +1359,72 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
         finished_at=run.finished_at,
         segment_count=segment_count,
         llm_calls=call_payload,
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/runs/{run_id}/character-analytics",
+    response_model=CharacterOccurrenceAnalyticsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_character_occurrence_analytics(
+    project_id: int,
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> CharacterOccurrenceAnalyticsResponse:
+    _get_project_or_404(session, project_id)
+    run = _get_run_or_404(session, project_id, run_id)
+
+    config_json = run.config_json or {}
+    configured_payload = {
+        "character_mentions_by_chapter": config_json.get("character_mentions_by_chapter"),
+        "character_first_appearance_chapter_index": config_json.get(
+            "character_first_appearance_chapter_index"
+        ),
+        "character_last_appearance_chapter_index": config_json.get("character_last_appearance_chapter_index"),
+        "character_mentions_per_1000_words": config_json.get("character_mentions_per_1000_words"),
+        "character_dialogue_line_counts": config_json.get("character_dialogue_line_counts"),
+    }
+    if all(value is not None for value in configured_payload.values()):
+        return CharacterOccurrenceAnalyticsResponse(
+            project_id=project_id,
+            run_id=run.id,
+            character_mentions_by_chapter=configured_payload["character_mentions_by_chapter"],
+            character_first_appearance_chapter_index=configured_payload[
+                "character_first_appearance_chapter_index"
+            ],
+            character_last_appearance_chapter_index=configured_payload[
+                "character_last_appearance_chapter_index"
+            ],
+            character_mentions_per_1000_words=configured_payload[
+                "character_mentions_per_1000_words"
+            ],
+            character_dialogue_line_counts=configured_payload["character_dialogue_line_counts"],
+        )
+
+    chapters = (
+        session.query(Chapter)
+        .filter(Chapter.project_id == project_id)
+        .order_by(Chapter.chapter_index.asc())
+        .all()
+    )
+    characters = session.query(Character).filter(Character.project_id == project_id).all()
+    segment_rows = (
+        session.query(Segment)
+        .filter(Segment.run_id == run.id)
+        .order_by(Segment.id.asc())
+        .all()
+    )
+    segments = [segment.segment_json for segment in segment_rows]
+    analytics = build_character_occurrence_analytics(
+        chapters=chapters,
+        characters=characters,
+        segment_payloads=segments,
+    )
+    return CharacterOccurrenceAnalyticsResponse(
+        project_id=project_id,
+        run_id=run.id,
+        **analytics,
     )
 
 
