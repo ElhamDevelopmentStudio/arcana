@@ -5,6 +5,7 @@ import {
   characterImportSchema,
   characterMapSchema,
   characterMapUpdateSchema,
+  characterMapFinalizeSchema,
   characterCandidatesMergeRequestSchema,
   characterScrapeRequestSchema,
   exportSchema,
@@ -20,6 +21,7 @@ import {
   type VoiceConfigDto,
   type CharacterMapDto,
   type CharacterMapUpdateDto,
+  type CharacterMapFinalizeDto,
   type CharacterScrapeRequestDto,
   type CharacterCandidatesMergeRequestDto,
   type CharacterExtractionDto,
@@ -189,6 +191,15 @@ export class NipeApiClient {
     try {
       const response = await this.client.put(`/api/projects/${projectId}/characters`, parsedPayload);
       return characterMapSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async finalizeCharacterMap(projectId: number): Promise<CharacterMapFinalizeDto> {
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/characters/finalize`);
+      return characterMapFinalizeSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

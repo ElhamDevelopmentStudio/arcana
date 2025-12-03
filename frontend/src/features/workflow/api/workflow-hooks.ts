@@ -143,6 +143,18 @@ export function useSaveCharacterMapMutation(projectId: number | null) {
   );
 }
 
+export function useFinalizeCharacterMapMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['finalize-characters', projectId] : null,
+    async () => {
+      if (projectId === null) {
+        throw new Error('Project must exist before finalizing character map.');
+      }
+      return nipeApiClient.finalizeCharacterMap(projectId);
+    },
+  );
+}
+
 export function useAutoExtractCharactersMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['extract-characters', projectId] : null,

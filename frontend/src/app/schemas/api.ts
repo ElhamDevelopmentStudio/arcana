@@ -69,10 +69,16 @@ export const characterMapItemSchema = z.object({
 export const characterMapSchema = z.object({
   project_id: z.number().int(),
   characters: z.array(characterMapItemSchema),
+  character_map_finalized: z.boolean(),
 });
 
 export const characterMapUpdateSchema = z.object({
   characters: z.array(characterMapItemSchema),
+});
+
+export const characterMapFinalizeSchema = z.object({
+  project_id: z.number().int(),
+  character_map_finalized: z.boolean(),
 });
 
 export const characterScrapeRequestSchema = z.object({
@@ -169,6 +175,7 @@ export type CharacterImportDto = z.infer<typeof characterImportSchema>;
 export type CharacterMapItemDto = z.infer<typeof characterMapItemSchema>;
 export type CharacterMapDto = z.infer<typeof characterMapSchema>;
 export type CharacterMapUpdateDto = z.infer<typeof characterMapUpdateSchema>;
+export type CharacterMapFinalizeDto = z.infer<typeof characterMapFinalizeSchema>;
 export type CharacterScrapeRequestDto = z.infer<typeof characterScrapeRequestSchema>;
 export type CharacterCandidatesMergeRequestDto = z.infer<typeof characterCandidatesMergeRequestSchema>;
 export type CharacterExtractionDto = z.infer<typeof characterExtractionSchema>;
