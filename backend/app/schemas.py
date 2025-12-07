@@ -242,6 +242,8 @@ class VoiceConfigRequest(BaseModel):
     narrator_voice: str = Field(min_length=1)
     male_default_voice: str = Field(min_length=1)
     female_default_voice: str = Field(min_length=1)
+    neutral_default_voice: str = Field(default="neutral_default", min_length=1)
+    unknown_default_voice: str = Field(default="unknown_default", min_length=1)
 
 
 class VoiceConfigResponse(BaseModel):

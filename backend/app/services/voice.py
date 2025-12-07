@@ -2,6 +2,8 @@ DEFAULT_VOICE_CONFIG = {
     "narrator_voice": "narrator_default",
     "male_default_voice": "male_default",
     "female_default_voice": "female_default",
+    "neutral_default_voice": "neutral_default",
+    "unknown_default_voice": "unknown_default",
 }
 
 
@@ -18,11 +20,11 @@ def resolve_voice(
         return narrator_voice, "unknown"
 
     if not speaker or speaker.lower() == "unknown":
-        return narrator_voice, "unknown"
+        return merged_config["unknown_default_voice"], "unknown"
 
     entry = character_lookup.get(speaker.lower())
     if entry is None:
-        return narrator_voice, "unknown"
+        return merged_config["unknown_default_voice"], "unknown"
 
     if entry.get("voice_id"):
         return str(entry["voice_id"]), str(entry.get("gender", "unknown"))
@@ -32,4 +34,8 @@ def resolve_voice(
         return merged_config["male_default_voice"], gender
     if gender == "female":
         return merged_config["female_default_voice"], gender
-    return narrator_voice, gender
+    if gender == "neutral":
+        return merged_config["neutral_default_voice"], gender
+    if gender == "unknown":
+        return merged_config["unknown_default_voice"], gender
+    return merged_config["unknown_default_voice"], gender
