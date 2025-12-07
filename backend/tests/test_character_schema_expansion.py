@@ -130,6 +130,38 @@ def test_integration_character_import_rejects_invalid_gender() -> None:
         assert "unsupported gender" in import_resp.json()["detail"]
 
 
+def test_integration_character_import_rejects_missing_canonical_name() -> None:
+    payload = json.dumps([{"verbalized_form": "Kai", "gender": "female"}]).encode("utf-8")
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Missing Name Import"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        import_resp = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={"file": ("characters.json", io.BytesIO(payload), "application/json")},
+        )
+        assert import_resp.status_code == 400
+        assert "missing required fields: name" in import_resp.json()["detail"]
+
+
+def test_integration_character_import_rejects_missing_verbalized_form() -> None:
+    payload = json.dumps([{"name": "Kai", "gender": "female"}]).encode("utf-8")
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Missing Verbalized Import"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        import_resp = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={"file": ("characters.json", io.BytesIO(payload), "application/json")},
+        )
+        assert import_resp.status_code == 400
+        assert "missing required fields: verbalized_form" in import_resp.json()["detail"]
+
+
 def test_integration_character_map_rejects_invalid_gender_on_save() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Invalid Gender Save"})
@@ -154,6 +186,58 @@ def test_integration_character_map_rejects_invalid_gender_on_save() -> None:
             },
         )
         assert save_resp.status_code == 422
+
+
+def test_integration_character_map_rejects_missing_verbalized_form_on_save() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Missing Verbalized Save"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        save_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Kai",
+                        "gender": "female",
+                        "aliases": [],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    }
+                ]
+            },
+        )
+        assert save_resp.status_code == 422
+        assert "verbalized_form" in save_resp.text
+
+
+def test_integration_character_map_rejects_missing_name_on_save() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Missing Name Save"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        save_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "verbalized_form": "Kai",
+                        "gender": "female",
+                        "aliases": [],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    }
+                ]
+            },
+        )
+        assert save_resp.status_code == 422
+        assert "name" in save_resp.text
 
 
 def test_unit_character_model_rejects_invalid_gender() -> None:
