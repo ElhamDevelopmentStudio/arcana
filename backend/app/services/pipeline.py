@@ -17,9 +17,42 @@ from app.services.tagging import tag_segment
 from app.services.normalization import build_segment_level_offset_map
 from app.services.voice import resolve_voice
 
+_LOW_GENDER_CONFIDENCE = 0.0
+_LOW_CONFIDENCE_GENDERS = frozenset({"neutral", "unknown"})
+
 
 class PipelineError(RuntimeError):
     pass
+
+
+def _coerce_confidence(value: object) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return _LOW_GENDER_CONFIDENCE
+    if confidence < 0.0:
+        return 0.0
+    if confidence > 1.0:
+        return 1.0
+    return round(confidence, 4)
+
+
+def _resolve_gender_confidence(
+    speaker: str,
+    character_lookup: dict[str, dict[str, object]],
+) -> float:
+    if not speaker or speaker.lower() == "unknown":
+        return _LOW_GENDER_CONFIDENCE
+
+    entry = character_lookup.get(speaker.lower())
+    if entry is None:
+        return _LOW_GENDER_CONFIDENCE
+
+    gender = str(entry.get("gender", "unknown")).strip().lower() or "unknown"
+    if gender in _LOW_CONFIDENCE_GENDERS:
+        return _LOW_GENDER_CONFIDENCE
+
+    return _coerce_confidence(entry.get("confidence"))
 
 
 def execute_pipeline(session: Session, project: Project, run: Run, run_config: dict) -> dict:
@@ -36,7 +69,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     characters = session.query(Character).filter(Character.project_id == project.id).all()
     name_to_verbalized = {character.name: character.verbalized_form for character in characters}
     character_lookup = {
-        character.name.lower(): {"gender": character.gender, "voice_id": character.voice_id}
+        character.name.lower(): {
+            "gender": character.gender,
+            "voice_id": character.voice_id,
+            "confidence": character.confidence,
+        }
         for character in characters
     }
 
@@ -93,6 +130,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "confidence": {
                     "speaker": tags["speaker_confidence"],
                     "emotion": tags["emotion_confidence"],
+                    "gender": _resolve_gender_confidence(speaker=speaker, character_lookup=character_lookup),
                 },
                 "original_to_normalized_offset_map": segment_offset_map,
             }
