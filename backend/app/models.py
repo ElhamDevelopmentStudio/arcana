@@ -27,6 +27,10 @@ class Project(Base):
     chapters: Mapped[list["Chapter"]] = relationship("Chapter", back_populates="project")
     characters: Mapped[list["Character"]] = relationship("Character", back_populates="project")
     runs: Mapped[list["Run"]] = relationship("Run", back_populates="project")
+    pronunciation_dictionary_entries: Mapped[list["PronunciationDictionary"]] = relationship(
+        "PronunciationDictionary",
+        back_populates="project",
+    )
 
 
 class Chapter(Base):
@@ -62,6 +66,10 @@ class Character(Base):
             "gender IN ('male', 'female', 'neutral', 'unknown', 'custom')",
             name="ck_character_gender_allowed",
         ),
+        CheckConstraint(
+            "inferred_gender IN ('male', 'female', 'neutral', 'unknown', 'custom')",
+            name="ck_character_inferred_gender_allowed",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -73,6 +81,13 @@ class Character(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(120), nullable=False, default="user_import")
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    inferred_gender: Mapped[str] = mapped_column(String(50), nullable=False, default="unknown")
+    inferred_confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    inferred_source_trace: Mapped[list[dict[str, object]] | None] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+    )
     voice_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     project: Mapped[Project] = relationship("Project", back_populates="characters")
@@ -91,6 +106,34 @@ class Run(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     project: Mapped[Project] = relationship("Project", back_populates="runs")
+
+
+class PronunciationDictionary(Base):
+    __tablename__ = "pronunciation_dictionary"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "scope",
+            "character_name",
+            "term",
+            name="uq_project_scope_character_term",
+        ),
+        CheckConstraint(
+            "scope IN ('global', 'character')",
+            name="ck_pronunciation_dictionary_scope",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default="global")
+    character_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    term: Mapped[str] = mapped_column(String(255), nullable=False)
+    verbalized_form: Mapped[str] = mapped_column(String(255), nullable=False)
+    source: Mapped[str] = mapped_column(String(120), nullable=False, default="user")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+
+    project: Mapped[Project] = relationship("Project", back_populates="pronunciation_dictionary_entries")
 
 
 class Segment(Base):
