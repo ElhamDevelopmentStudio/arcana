@@ -222,3 +222,63 @@ def test_integration_export_allowed_when_threshold_not_triggered(monkeypatch) ->
             assert export_resp.json()["run_id"] == run_id
     finally:
         clear_settings_cache()
+
+
+def test_integration_export_not_blocked_for_unknown_gender_characters() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Gender Export Unknown Allowed"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("novel.txt", io.BytesIO(b"Chapter 1\nShe appeared, then he returned."), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        upsert_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Unknown Manual",
+                        "verbalized_form": "Unknown Manual",
+                        "gender": "unknown",
+                        "confidence": 1.0,
+                        "inferred_gender": "female",
+                        "inferred_confidence": 0.91,
+                        "inferred_source_trace": [],
+                    },
+                    {
+                        "name": "Unknown Inferred",
+                        "verbalized_form": "Unknown Inferred",
+                        "gender": "male",
+                        "confidence": 0.7,
+                        "inferred_gender": "unknown",
+                        "inferred_confidence": 0.0,
+                        "inferred_source_trace": [],
+                    },
+                ],
+            },
+        )
+        assert upsert_resp.status_code == 200
+
+        comparison_resp = client.get(f"/api/projects/{project_id}/characters/gender-comparison")
+        assert comparison_resp.status_code == 200
+        body = comparison_resp.json()
+        assert body["comparison_count"] == 2
+        assert body["contradiction_count"] == 0
+        assert all(item["requires_review"] is False for item in body["comparisons"])
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        payload = export_resp.json()
+        assert payload["project_id"] == project_id
+        assert payload["run_id"] == run_id
