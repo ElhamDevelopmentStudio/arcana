@@ -152,7 +152,7 @@ Definition of done for each task:
 - [x] [GEN-013] Mark dependent outputs stale when gender is edited.
 - [x] [GEN-014] Trigger voice preview recomputation after gender edits.
 - [x] [GEN-015] Add test cases for manual override precedence.
-- [ ] [GEN-016] Add test cases for contradiction flags and export gating.
+- [x] [GEN-016] Add test cases for contradiction flags and export gating.
 
 ## 4.5 Pronunciation and Verbalization (Ref: SRS.md §4.5)
 - [ ] [VERB-001] Enforce canonical name + verbalized form as required fields.
