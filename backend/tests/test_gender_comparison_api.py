@@ -89,3 +89,43 @@ def test_integration_gender_comparison_endpoint_reports_conflicts() -> None:
         assert only_conflicts_body["comparison_count"] == 1
         assert only_conflicts_body["contradiction_count"] == 1
         assert [entry["name"] for entry in only_conflicts_body["comparisons"]] == ["Nia"]
+
+
+def test_integration_gender_comparison_respects_threshold_setting(monkeypatch) -> None:
+    monkeypatch.setenv("CONTRADICTION_REVIEW_THRESHOLD", "0.99")
+    clear_settings_cache()
+
+    try:
+        with TestClient(app) as client:
+            project_resp = client.post("/api/projects", json={"title": "Gender Comparison Threshold Test"})
+            assert project_resp.status_code == 201
+            project_id = project_resp.json()["id"]
+
+            upsert_resp = client.put(
+                f"/api/projects/{project_id}/characters",
+                json={
+                    "characters": [
+                        {
+                            "name": "Nia",
+                            "verbalized_form": "Nia",
+                            "gender": "male",
+                            "confidence": 1.0,
+                            "inferred_gender": "female",
+                            "inferred_confidence": 0.91,
+                            "inferred_source_trace": [],
+                        },
+                    ]
+                },
+            )
+            assert upsert_resp.status_code == 200
+
+            compare_resp = client.get(f"/api/projects/{project_id}/characters/gender-comparison")
+            assert compare_resp.status_code == 200
+            body = compare_resp.json()
+            assert body["comparison_count"] == 1
+            assert body["comparisons"][0]["is_contradiction"] is True
+            assert body["comparisons"][0]["contradiction_severity"] == 0.955
+            assert body["comparisons"][0]["requires_review"] is False
+            assert body["contradiction_count"] == 1
+    finally:
+        clear_settings_cache()

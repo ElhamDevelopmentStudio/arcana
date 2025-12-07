@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     )
     enable_epub_ingestion: bool = Field(default=False, alias="ENABLE_EPUB_INGESTION")
     normalize_quote_style: Literal["straight", "curly"] = Field(default="straight", alias="NORMALIZE_QUOTE_STYLE")
+    contradiction_review_threshold: float = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        alias="CONTRADICTION_REVIEW_THRESHOLD",
+    )
     copy_artifact_patterns: str = Field(
         default=r"^\s*Page\s+\d+\s*$||^\s*<<<[^>]+>>>\s*$||^\s*\[?Advertisement\]?\s*$",
         alias="COPY_ARTIFACT_PATTERNS",
