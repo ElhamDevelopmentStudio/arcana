@@ -1,3 +1,4 @@
+import io
 import os
 from pathlib import Path
 
@@ -127,5 +128,97 @@ def test_integration_gender_comparison_respects_threshold_setting(monkeypatch) -
             assert body["comparisons"][0]["contradiction_severity"] == 0.955
             assert body["comparisons"][0]["requires_review"] is False
             assert body["contradiction_count"] == 1
+    finally:
+        clear_settings_cache()
+
+
+def test_integration_export_blocked_when_review_required_by_threshold() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Gender Export Blocked"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("novel.txt", io.BytesIO(b"Chapter 1\nHe entered the hall."), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        upsert_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Nia",
+                        "verbalized_form": "Nia",
+                        "gender": "male",
+                        "confidence": 1.0,
+                        "inferred_gender": "female",
+                        "inferred_confidence": 0.91,
+                        "inferred_source_trace": [],
+                    },
+                ],
+            },
+        )
+        assert upsert_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 409
+        detail = export_resp.json()["detail"]
+        assert detail["requires_review_count"] == 1
+        assert detail["threshold"] == 0.75
+
+
+def test_integration_export_allowed_when_threshold_not_triggered(monkeypatch) -> None:
+    monkeypatch.setenv("CONTRADICTION_REVIEW_THRESHOLD", "0.99")
+    clear_settings_cache()
+
+    try:
+        with TestClient(app) as client:
+            project_resp = client.post("/api/projects", json={"title": "Gender Export Allowed"})
+            assert project_resp.status_code == 201
+            project_id = project_resp.json()["id"]
+
+            ingest_resp = client.post(
+                f"/api/projects/{project_id}/ingest/txt",
+                files={"file": ("novel.txt", io.BytesIO(b"Chapter 1\nShe entered the hall."), "text/plain")},
+            )
+            assert ingest_resp.status_code == 200
+
+            upsert_resp = client.put(
+                f"/api/projects/{project_id}/characters",
+                json={
+                    "characters": [
+                        {
+                            "name": "Nia",
+                            "verbalized_form": "Nia",
+                            "gender": "male",
+                            "confidence": 1.0,
+                            "inferred_gender": "female",
+                            "inferred_confidence": 0.91,
+                            "inferred_source_trace": [],
+                        },
+                    ],
+                },
+            )
+            assert upsert_resp.status_code == 200
+
+            run_resp = client.post(
+                f"/api/projects/{project_id}/runs",
+                json={"allow_unfinalized_character_map": True},
+            )
+            assert run_resp.status_code == 200
+            run_id = run_resp.json()["run_id"]
+
+            export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+            assert export_resp.status_code == 200
+            assert export_resp.json()["run_id"] == run_id
     finally:
         clear_settings_cache()
