@@ -109,6 +109,40 @@ def test_integration_preview_global_scope_only_when_character_scope_disabled() -
         assert payload["replacements"][0]["term"] == "Aegis"
 
 
+def test_integration_preview_can_match_substrings() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Substring Matching"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        global_resp = client.put(
+            f"/api/projects/{project_id}/pronunciation-dictionary/global",
+            json={"entries": [{"term": "Aegis", "verbalized_form": "EE-jis", "confidence": 1.0}]},
+        )
+        assert global_resp.status_code == 200
+
+        preview_resp = client.post(
+            f"/api/projects/{project_id}/pronunciation-dictionary/preview",
+            json={
+                "text": "CaptainAegis and Aegis.",
+                "include_global_scope": True,
+                "include_character_scope": False,
+                "match_whole_words": False,
+            },
+        )
+        assert preview_resp.status_code == 200
+        payload = preview_resp.json()
+        assert payload["after"] == "CaptainEE-jis and EE-jis."
+        assert payload["replacements"] == [
+            {
+                "term": "Aegis",
+                "verbalized_form": "EE-jis",
+                "count": 2,
+                "scope": "global",
+            }
+        ]
+
+
 def test_integration_preview_rejects_empty_scopes() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Validation"})

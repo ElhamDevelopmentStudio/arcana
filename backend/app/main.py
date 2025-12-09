@@ -1622,7 +1622,11 @@ def preview_pronunciation_dictionary(
     replacement_map = {**global_map}
     replacement_map.update(character_map)
 
-    after_text, counts = replace_pronunciations_with_counts(payload.text, replacement_map)
+    after_text, counts = replace_pronunciations_with_counts(
+        payload.text,
+        replacement_map,
+        match_whole_words=payload.match_whole_words,
+    )
     replacement_items = []
     for term, count in sorted(counts.items(), key=lambda item: item[0].lower()):
         verbalized = replacement_map.get(term)

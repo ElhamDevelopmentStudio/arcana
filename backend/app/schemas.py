@@ -221,6 +221,7 @@ class PronunciationDictionaryPreviewRequest(BaseModel):
     character_name: str | None = None
     include_global_scope: bool = True
     include_character_scope: bool = True
+    match_whole_words: bool = True
 
     @field_validator("character_name")
     @classmethod

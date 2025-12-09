@@ -17,6 +17,12 @@ def test_replace_pronunciation_whole_word_only() -> None:
     assert "Sunlight" in replaced
 
 
+def test_replace_pronunciation_can_match_substrings_when_disabled() -> None:
+    text = "CaptainAegis glimmered near the aegis."
+    replaced = replace_pronunciations(text, {"Aegis": "EE-jis"}, match_whole_words=False)
+    assert replaced == "CaptainEE-jis glimmered near the aegis."
+
+
 def test_replace_pronunciation_reports_replacement_counts() -> None:
     text = "Sunny, Sunny met Nephis. Nephis smiled after Sunny said hello."
     replaced, counts = replace_pronunciations_with_counts(

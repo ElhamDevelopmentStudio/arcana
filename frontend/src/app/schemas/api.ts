@@ -106,6 +106,7 @@ export const pronunciationDictionaryPreviewRequestSchema = z.object({
   character_name: z.string().trim().transform((value) => value || undefined).optional(),
   include_global_scope: z.boolean().default(true),
   include_character_scope: z.boolean().default(true),
+  match_whole_words: z.boolean().default(true),
 });
 
 export const pronunciationDictionaryPreviewResponseSchema = z.object({
