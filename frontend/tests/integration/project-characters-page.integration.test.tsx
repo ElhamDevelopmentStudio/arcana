@@ -339,6 +339,7 @@ describe('project characters page manual editor', () => {
       text: 'Captain saw the Aegis at dawn.',
       case_sensitive: true,
       match_whole_words: true,
+      alias_aware: false,
       include_global_scope: true,
       include_character_scope: false,
     });
@@ -376,6 +377,7 @@ describe('project characters page manual editor', () => {
       text: 'CaptainAegis and Aegis.',
       case_sensitive: true,
       match_whole_words: false,
+      alias_aware: false,
       include_global_scope: true,
       include_character_scope: false,
     });
@@ -411,6 +413,7 @@ describe('project characters page manual editor', () => {
       text: 'Aegis sailed with aegis and AEGIS in the hold.',
       case_sensitive: false,
       match_whole_words: true,
+      alias_aware: false,
       include_global_scope: true,
       include_character_scope: false,
     });
@@ -418,5 +421,45 @@ describe('project characters page manual editor', () => {
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue(
       'EE-jis sailed with EE-jis and EE-jis in the hold.',
     );
+  });
+
+  it('enables alias-aware substitution mode for pronunciation preview', async () => {
+    const user = userEvent.setup();
+    pronunciationPreviewMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      before: 'Al met Kai.',
+      after: 'A-lise met Kai.',
+      character_name: 'Alice',
+      included_scopes: ['character'],
+      replacements: [
+        {
+          term: 'Al',
+          verbalized_form: 'A-lise',
+          count: 1,
+          scope: 'character',
+        },
+      ],
+    });
+
+    renderCharacterPage();
+
+    await user.type(screen.getByTestId('pronunciation-preview-text'), 'Al met Kai.');
+    await user.click(screen.getByRole('checkbox', { name: 'Global pronunciation dictionary' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Character-specific dictionary' }));
+    await user.selectOptions(screen.getByLabelText('Character scope target'), 'Kai');
+    await user.click(screen.getByRole('checkbox', { name: 'Alias-aware substitution' }));
+    await user.click(screen.getByTestId('pronunciation-preview-button'));
+
+    expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
+      text: 'Al met Kai.',
+      case_sensitive: true,
+      match_whole_words: true,
+      alias_aware: true,
+      include_global_scope: false,
+      include_character_scope: true,
+      character_name: 'Kai',
+    });
+    expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Al met Kai.');
+    expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('A-lise met Kai.');
   });
 });

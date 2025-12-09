@@ -193,3 +193,67 @@ def test_integration_preview_rejects_empty_scopes() -> None:
         )
         assert preview_resp.status_code == 400
         assert preview_resp.json()["detail"] == "Set at least one of include_global_scope or include_character_scope to true."
+
+
+def test_integration_preview_alias_aware_replaces_aliases_when_enabled() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Alias Aware"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        character_map_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Alice",
+                        "verbalized_form": "A-lise",
+                        "gender": "female",
+                        "aliases": ["Al"],
+                        "notes": "alias test",
+                        "source": "manual",
+                        "confidence": 1.0,
+                    },
+                ],
+            },
+        )
+        assert character_map_resp.status_code == 200
+
+        preview_without_alias_aware = client.post(
+            f"/api/projects/{project_id}/pronunciation-dictionary/preview",
+            json={
+                "text": "Al waited by the lantern.",
+                "character_name": "Alice",
+                "include_global_scope": False,
+                "include_character_scope": True,
+                "alias_aware": False,
+            },
+        )
+        assert preview_without_alias_aware.status_code == 200
+        payload_without_alias_aware = preview_without_alias_aware.json()
+        assert payload_without_alias_aware["after"] == "Al waited by the lantern."
+        assert payload_without_alias_aware["replacements"] == []
+        assert payload_without_alias_aware["included_scopes"] == []
+
+        preview_with_alias_aware = client.post(
+            f"/api/projects/{project_id}/pronunciation-dictionary/preview",
+            json={
+                "text": "Al waited by the lantern.",
+                "character_name": "Alice",
+                "include_global_scope": False,
+                "include_character_scope": True,
+                "alias_aware": True,
+            },
+        )
+        assert preview_with_alias_aware.status_code == 200
+        payload_with_alias_aware = preview_with_alias_aware.json()
+        assert payload_with_alias_aware["after"] == "A-lise waited by the lantern."
+        assert payload_with_alias_aware["included_scopes"] == ["character"]
+        assert payload_with_alias_aware["replacements"] == [
+            {
+                "term": "Al",
+                "verbalized_form": "A-lise",
+                "count": 1,
+                "scope": "character",
+            },
+        ]

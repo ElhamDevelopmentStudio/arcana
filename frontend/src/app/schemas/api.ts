@@ -108,6 +108,7 @@ export const pronunciationDictionaryPreviewRequestSchema = z.object({
   include_character_scope: z.boolean().default(true),
   match_whole_words: z.boolean().default(true),
   case_sensitive: z.boolean().default(true),
+  alias_aware: z.boolean().default(false),
 });
 
 export const pronunciationDictionaryPreviewResponseSchema = z.object({

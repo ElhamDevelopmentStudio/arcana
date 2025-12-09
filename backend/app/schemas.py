@@ -223,6 +223,7 @@ class PronunciationDictionaryPreviewRequest(BaseModel):
     include_character_scope: bool = True
     match_whole_words: bool = True
     case_sensitive: bool = True
+    alias_aware: bool = False
 
     @field_validator("character_name")
     @classmethod

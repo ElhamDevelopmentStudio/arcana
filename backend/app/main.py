@@ -1580,6 +1580,30 @@ def _build_pronunciation_preview_scope_map(
     return {entry.term.strip(): entry.verbalized_form.strip() for entry in entries}
 
 
+def _build_pronunciation_preview_alias_map(
+    project_id: int,
+    session: Session,
+    character_name: str | None = None,
+) -> dict[str, str]:
+    if character_name is None:
+        return {}
+
+    query = session.query(Character).filter(
+        Character.project_id == project_id,
+        Character.name == character_name,
+    )
+    alias_map: dict[str, str] = {}
+    for character in query:
+        verbalized_form = character.verbalized_form.strip()
+        for alias in character.aliases:
+            cleaned_alias = str(alias).strip()
+            if not cleaned_alias or cleaned_alias in alias_map:
+                continue
+            alias_map[cleaned_alias] = verbalized_form
+
+    return alias_map
+
+
 @app.post(
     "/api/projects/{project_id}/pronunciation-dictionary/preview",
     response_model=PronunciationDictionaryPreviewResponse,
@@ -1602,12 +1626,17 @@ def preview_pronunciation_dictionary(
 
     global_map: dict[str, str] = {}
     character_map: dict[str, str] = {}
+    alias_map: dict[str, str] = {}
+    replacement_term_scopes: dict[str, str] = {}
     included_scopes: list[str] = []
 
     if payload.include_global_scope:
         global_map = _build_pronunciation_preview_scope_map(project_id, session, "global")
         if global_map:
             included_scopes.append("global")
+        for term in global_map:
+            replacement_term_scopes[term] = "global"
+            replacement_term_scopes[term.lower()] = "global"
 
     if payload.include_character_scope and normalized_character_name is not None:
         character_map = _build_pronunciation_preview_scope_map(
@@ -1618,9 +1647,26 @@ def preview_pronunciation_dictionary(
         )
         if character_map:
             included_scopes.append("character")
+        for term in character_map:
+            replacement_term_scopes[term] = "character"
+            replacement_term_scopes[term.lower()] = "character"
+
+    if payload.include_character_scope and normalized_character_name is not None and payload.alias_aware:
+        alias_map = _build_pronunciation_preview_alias_map(
+            project_id,
+            session,
+            normalized_character_name,
+        )
+        if alias_map:
+            if "character" not in included_scopes:
+                included_scopes.append("character")
+            for term in alias_map:
+                replacement_term_scopes[term] = "character"
+                replacement_term_scopes[term.lower()] = "character"
 
     replacement_map = {**global_map}
     replacement_map.update(character_map)
+    replacement_map.update(alias_map)
 
     after_text, counts = replace_pronunciations_with_counts(
         payload.text,
@@ -1633,7 +1679,7 @@ def preview_pronunciation_dictionary(
         verbalized = replacement_map.get(term)
         if verbalized is None or count <= 0:
             continue
-        scope = "character" if term in character_map else "global"
+        scope = replacement_term_scopes.get(term) or replacement_term_scopes.get(term.lower(), "global")
         replacement_items.append(
             PronunciationDictionaryPreviewItem(
                 term=term,
