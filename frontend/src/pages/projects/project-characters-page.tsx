@@ -97,6 +97,7 @@ export function ProjectCharactersPage() {
   const [includeGlobalPronunciationScope, setIncludeGlobalPronunciationScope] = useState<boolean>(true);
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
   const [pronunciationMatchWholeWords, setPronunciationMatchWholeWords] = useState<boolean>(true);
+  const [pronunciationCaseSensitive, setPronunciationCaseSensitive] = useState<boolean>(true);
   const [pronunciationPreviewCharacterName, setPronunciationPreviewCharacterName] = useState<string>('');
   const [pronunciationPreviewResult, setPronunciationPreviewResult] = useState<
     PronunciationDictionaryPreviewResponseDto | null
@@ -360,6 +361,7 @@ export function ProjectCharactersPage() {
       include_global_scope: includeGlobalPronunciationScope,
       include_character_scope: includeCharacterPronunciationScope,
       match_whole_words: pronunciationMatchWholeWords,
+      case_sensitive: pronunciationCaseSensitive,
       ...(pronunciationPreviewCharacterName.trim() ? { character_name: pronunciationPreviewCharacterName.trim() } : {}),
     };
 
@@ -793,6 +795,13 @@ export function ProjectCharactersPage() {
                     onCheckedChange={(checked) => setPronunciationMatchWholeWords(checked === true)}
                   />
                   <span>Match whole words only</span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={pronunciationCaseSensitive}
+                    onCheckedChange={(checked) => setPronunciationCaseSensitive(checked === true)}
+                  />
+                  <span>Case-sensitive matching</span>
                 </label>
               </div>
               <div className="grid gap-2">

@@ -143,6 +143,40 @@ def test_integration_preview_can_match_substrings() -> None:
         ]
 
 
+def test_integration_preview_can_match_case_insensitively() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Case Sensitivity"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        global_resp = client.put(
+            f"/api/projects/{project_id}/pronunciation-dictionary/global",
+            json={"entries": [{"term": "Aegis", "verbalized_form": "EE-jis", "confidence": 1.0}]},
+        )
+        assert global_resp.status_code == 200
+
+        preview_resp = client.post(
+            f"/api/projects/{project_id}/pronunciation-dictionary/preview",
+            json={
+                "text": "Aegis spoke with aegis and AEGIS.",
+                "include_global_scope": True,
+                "include_character_scope": False,
+                "case_sensitive": False,
+            },
+        )
+        assert preview_resp.status_code == 200
+        payload = preview_resp.json()
+        assert payload["after"] == "EE-jis spoke with EE-jis and EE-jis."
+        assert payload["replacements"] == [
+            {
+                "term": "Aegis",
+                "verbalized_form": "EE-jis",
+                "count": 3,
+                "scope": "global",
+            }
+        ]
+
+
 def test_integration_preview_rejects_empty_scopes() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Validation"})
