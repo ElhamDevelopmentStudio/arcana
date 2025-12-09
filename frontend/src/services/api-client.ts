@@ -8,6 +8,8 @@ import {
   characterMapFinalizeSchema,
   characterCandidatesMergeRequestSchema,
   characterScrapeRequestSchema,
+  pronunciationDictionaryPreviewRequestSchema,
+  pronunciationDictionaryPreviewResponseSchema,
   exportSchema,
   ingestResponseSchema,
   modeCatalogSchema,
@@ -25,6 +27,8 @@ import {
   type CharacterScrapeRequestDto,
   type CharacterCandidatesMergeRequestDto,
   type CharacterExtractionDto,
+  type PronunciationDictionaryPreviewRequestDto,
+  type PronunciationDictionaryPreviewResponseDto,
   characterExtractionSchema,
 } from '@/app/schemas/api';
 
@@ -232,6 +236,22 @@ export class NipeApiClient {
         parsedPayload,
       );
       return characterExtractionSchema.parse(response.data) as CharacterExtractionDto;
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async previewPronunciationDictionary(
+    projectId: number,
+    payload: PronunciationDictionaryPreviewRequestDto,
+  ): Promise<PronunciationDictionaryPreviewResponseDto> {
+    const parsedPayload = pronunciationDictionaryPreviewRequestSchema.parse(payload);
+    try {
+      const response = await this.client.post(
+        `/api/projects/${projectId}/pronunciation-dictionary/preview`,
+        parsedPayload,
+      );
+      return pronunciationDictionaryPreviewResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

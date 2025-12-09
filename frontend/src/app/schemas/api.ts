@@ -94,6 +94,29 @@ export const characterCandidatesMergeRequestSchema = z.object({
   acknowledge_source_risk: z.boolean(),
 });
 
+export const pronunciationDictionaryPreviewItemSchema = z.object({
+  term: z.string().min(1),
+  verbalized_form: z.string().min(1),
+  count: z.number().int().nonnegative(),
+  scope: z.string().min(1),
+});
+
+export const pronunciationDictionaryPreviewRequestSchema = z.object({
+  text: z.string().min(1).max(10000),
+  character_name: z.string().trim().transform((value) => value || undefined).optional(),
+  include_global_scope: z.boolean().default(true),
+  include_character_scope: z.boolean().default(true),
+});
+
+export const pronunciationDictionaryPreviewResponseSchema = z.object({
+  project_id: z.number().int(),
+  before: z.string(),
+  after: z.string(),
+  character_name: z.string().nullable(),
+  replacements: z.array(pronunciationDictionaryPreviewItemSchema).default([]),
+  included_scopes: z.array(z.string()),
+});
+
 export const characterExtractionSchema = z.object({
   project_id: z.number().int(),
   status: z.string(),
@@ -181,6 +204,9 @@ export type CharacterMapUpdateDto = z.infer<typeof characterMapUpdateSchema>;
 export type CharacterMapFinalizeDto = z.infer<typeof characterMapFinalizeSchema>;
 export type CharacterScrapeRequestDto = z.infer<typeof characterScrapeRequestSchema>;
 export type CharacterCandidatesMergeRequestDto = z.infer<typeof characterCandidatesMergeRequestSchema>;
+export type PronunciationDictionaryPreviewItemDto = z.infer<typeof pronunciationDictionaryPreviewItemSchema>;
+export type PronunciationDictionaryPreviewRequestDto = z.infer<typeof pronunciationDictionaryPreviewRequestSchema>;
+export type PronunciationDictionaryPreviewResponseDto = z.infer<typeof pronunciationDictionaryPreviewResponseSchema>;
 export type CharacterExtractionDto = z.infer<typeof characterExtractionSchema>;
 export type VoiceConfigDto = z.infer<typeof voiceConfigSchema>;
 export type RunRequestDto = z.infer<typeof runRequestSchema>;
