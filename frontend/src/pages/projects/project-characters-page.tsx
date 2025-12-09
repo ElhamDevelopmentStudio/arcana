@@ -854,6 +854,28 @@ export function ProjectCharactersPage() {
                       ? 'none'
                       : pronunciationPreviewResult.included_scopes.join(', ')}
                   </div>
+                  {(pronunciationPreviewResult.warnings ?? []).length > 0 ? (
+                    <div className="rounded-md border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-900">
+                      <p className="mb-2 inline-flex items-center gap-2 font-medium">
+                        <AlertCircle className="size-4" />
+                        Ambiguous replacements detected
+                      </p>
+                      <ul className="space-y-2" data-testid="pronunciation-preview-warnings">
+                        {(pronunciationPreviewResult.warnings ?? []).map((warning) => (
+                          <li
+                            className="space-y-1"
+                            key={`${warning.type}-${warning.term}-${warning.scopes.join(',')}-${warning.competing_verbalized_forms.join(',')}`}
+                          >
+                            <p>{warning.message}</p>
+                            <p className="text-xs">
+                              Competing verbalized forms: {warning.competing_verbalized_forms.join(', ')}
+                            </p>
+                            <p className="text-xs">Scopes: {warning.scopes.join(', ')}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                   <div className="grid gap-2">
                     <div className="grid gap-1">
                       <Label htmlFor="pronunciation-preview-before">Before</Label>

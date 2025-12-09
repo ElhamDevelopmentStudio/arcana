@@ -349,6 +349,60 @@ describe('project characters page manual editor', () => {
     expect(screen.getByTestId('pronunciation-preview-replacements')).toHaveTextContent('Aegis → EE-jis');
   });
 
+  it('renders pronunciation ambiguity warnings from the preview response', async () => {
+    const user = userEvent.setup();
+    pronunciationPreviewMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      before: 'Aegis sounded.',
+      after: 'Ah-jeez sounded.',
+      character_name: 'Kai',
+      included_scopes: ['global', 'character'],
+      warnings: [
+        {
+          type: 'ambiguous_replacement',
+          term: 'Aegis',
+          message: "Ambiguous replacement for 'Aegis' from scopes: character, global.",
+          scopes: ['character', 'global'],
+          competing_verbalized_forms: ['Ah-jeez', 'EE-jis'],
+        },
+      ],
+      replacements: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'Ah-jeez',
+          count: 1,
+          scope: 'character',
+        },
+      ],
+    });
+
+    renderCharacterPage();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Character-specific dictionary' }));
+    await user.selectOptions(screen.getByLabelText('Character scope target'), 'Kai');
+    await user.type(screen.getByTestId('pronunciation-preview-text'), 'Aegis sounded.');
+    await user.click(screen.getByTestId('pronunciation-preview-button'));
+
+    expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
+      text: 'Aegis sounded.',
+      case_sensitive: true,
+      match_whole_words: true,
+      alias_aware: false,
+      include_global_scope: true,
+      include_character_scope: true,
+      character_name: 'Kai',
+    });
+    expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Aegis sounded.');
+    expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('Ah-jeez sounded.');
+    expect(screen.getByTestId('pronunciation-preview-warnings')).toHaveTextContent(
+      "Ambiguous replacement for 'Aegis' from scopes: character, global.",
+    );
+    expect(screen.getByTestId('pronunciation-preview-warnings')).toHaveTextContent(
+      'Competing verbalized forms: Ah-jeez, EE-jis',
+    );
+    expect(screen.getByTestId('pronunciation-preview-warnings')).toHaveTextContent('Scopes: character, global');
+  });
+
   it('switches whole-word matching mode for pronunciation preview', async () => {
     const user = userEvent.setup();
     pronunciationPreviewMutationTrigger.mockResolvedValue({
