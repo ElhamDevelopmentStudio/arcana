@@ -96,6 +96,7 @@ export function ProjectCharactersPage() {
   const [pronunciationPreviewText, setPronunciationPreviewText] = useState<string>('');
   const [includeGlobalPronunciationScope, setIncludeGlobalPronunciationScope] = useState<boolean>(true);
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
+  const [includePlacePronunciationScope, setIncludePlacePronunciationScope] = useState<boolean>(false);
   const [pronunciationMatchWholeWords, setPronunciationMatchWholeWords] = useState<boolean>(true);
   const [pronunciationCaseSensitive, setPronunciationCaseSensitive] = useState<boolean>(true);
   const [pronunciationAliasAware, setPronunciationAliasAware] = useState<boolean>(false);
@@ -348,7 +349,7 @@ export function ProjectCharactersPage() {
       toast.error('Provide sample text for preview.');
       return;
     }
-    if (!includeGlobalPronunciationScope && !includeCharacterPronunciationScope) {
+    if (!includeGlobalPronunciationScope && !includeCharacterPronunciationScope && !includePlacePronunciationScope) {
       toast.error('Enable at least one pronunciation scope before previewing.');
       return;
     }
@@ -361,6 +362,7 @@ export function ProjectCharactersPage() {
       text: pronunciationPreviewText.trim(),
       include_global_scope: includeGlobalPronunciationScope,
       include_character_scope: includeCharacterPronunciationScope,
+      ...(includePlacePronunciationScope ? { include_place_scope: true } : {}),
       match_whole_words: pronunciationMatchWholeWords,
       case_sensitive: pronunciationCaseSensitive,
       alias_aware: pronunciationAliasAware,
@@ -787,6 +789,13 @@ export function ProjectCharactersPage() {
                     />
                     <span>Character-specific dictionary</span>
                   </label>
+                  <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                    <Checkbox
+                      checked={includePlacePronunciationScope}
+                      onCheckedChange={(checked) => setIncludePlacePronunciationScope(checked === true)}
+                    />
+                    <span>Place-name pronunciation dictionary</span>
+                  </label>
                 </div>
               </div>
               <div className="grid gap-2">
@@ -835,7 +844,7 @@ export function ProjectCharactersPage() {
                   pronunciationPreviewMutation.isMutating ||
                   !pronunciationPreviewText.trim() ||
                   projectId === null ||
-                  (!includeGlobalPronunciationScope && !includeCharacterPronunciationScope) ||
+                  (!includeGlobalPronunciationScope && !includeCharacterPronunciationScope && !includePlacePronunciationScope) ||
                   (includeCharacterPronunciationScope && !pronunciationPreviewCharacterName.trim())
                 }
                 type="submit"

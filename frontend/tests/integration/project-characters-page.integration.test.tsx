@@ -349,6 +349,46 @@ describe('project characters page manual editor', () => {
     expect(screen.getByTestId('pronunciation-preview-replacements')).toHaveTextContent('Aegis → EE-jis');
   });
 
+  it('runs pronunciation preview with place-name dictionary scope', async () => {
+    const user = userEvent.setup();
+    pronunciationPreviewMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      before: 'They entered Narnia at dawn.',
+      after: 'They entered Nar-nia at dawn.',
+      character_name: null,
+      included_scopes: ['place'],
+      replacements: [
+        {
+          term: 'Narnia',
+          verbalized_form: 'Nar-nia',
+          count: 1,
+          scope: 'place',
+        },
+      ],
+    });
+
+    renderCharacterPage();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Global pronunciation dictionary' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Place-name pronunciation dictionary' }));
+    await user.type(screen.getByTestId('pronunciation-preview-text'), 'They entered Narnia at dawn.');
+    await user.click(screen.getByTestId('pronunciation-preview-button'));
+
+    expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
+      text: 'They entered Narnia at dawn.',
+      case_sensitive: true,
+      match_whole_words: true,
+      alias_aware: false,
+      include_global_scope: false,
+      include_character_scope: false,
+      include_place_scope: true,
+    });
+    expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('They entered Narnia at dawn.');
+    expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('They entered Nar-nia at dawn.');
+    expect(screen.getByText('Included scopes: place')).toBeInTheDocument();
+    expect(screen.getByTestId('pronunciation-preview-replacements')).toHaveTextContent('Narnia → Nar-nia');
+  });
+
   it('renders pronunciation ambiguity warnings from the preview response', async () => {
     const user = userEvent.setup();
     pronunciationPreviewMutationTrigger.mockResolvedValue({
