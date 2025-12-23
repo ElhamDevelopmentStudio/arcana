@@ -230,6 +230,7 @@ class PronunciationDictionaryPreviewRequest(BaseModel):
     include_global_scope: bool = True
     include_character_scope: bool = True
     include_place_scope: bool = False
+    include_artifact_scope: bool = False
     match_whole_words: bool = True
     case_sensitive: bool = True
     alias_aware: bool = False
