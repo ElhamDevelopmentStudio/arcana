@@ -1,11 +1,42 @@
 import re
 
 PARAGRAPH_SPLIT_RE = re.compile(r"\n{2,}")
-SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 MAX_SEGMENT_CHARS_HARD_CAP = 255
 _INTELLIGIBILITY_MIN_TAIL_CHARS = 20
 _PUNCTUATION_PREFERENCE_WINDOW = 18
 _PREFERRED_SPLIT_PUNCTUATION = (".", "!", "?", ";", ":", ",")
+_COMMON_ABBREVIATIONS = {
+    "mr.",
+    "mrs.",
+    "ms.",
+    "dr.",
+    "sr.",
+    "jr.",
+    "st.",
+    "mt.",
+    "vs.",
+    "e.g.",
+    "i.e.",
+    "etc.",
+    "ph.d.",
+    "u.s.",
+    "u.s.a.",
+    "u.k.",
+    "p.m.",
+    "a.m.",
+    "jan.",
+    "feb.",
+    "mar.",
+    "apr.",
+    "jun.",
+    "jul.",
+    "aug.",
+    "sep.",
+    "sept.",
+    "oct.",
+    "nov.",
+    "dec.",
+}
 _CLAUSE_CONNECTOR_PREFIXES = (
     "and ",
     "but ",
@@ -69,6 +100,55 @@ def _is_split_inside_quote(split_index: int, quote_spans: list[tuple[int, int]])
     return any(start < split_index < end for start, end in quote_spans)
 
 
+def _is_abbreviation_cut(remaining: str, split_index: int) -> bool:
+    if split_index <= 0 or split_index > len(remaining):
+        return False
+    if remaining[split_index - 1] != ".":
+        return False
+
+    token_start = split_index - 1
+    while token_start - 1 >= 0 and (
+        remaining[token_start - 1].isalpha() or remaining[token_start - 1] == "."
+    ):
+        token_start -= 1
+
+    token = remaining[token_start : split_index]
+    token_lower = token.lower()
+
+    if token in _COMMON_ABBREVIATIONS:
+        return True
+    if token_lower in _COMMON_ABBREVIATIONS:
+        return True
+
+    if re.fullmatch(r"(?:[A-Za-z]\.){2,}", token):
+        return True
+
+    if re.fullmatch(r"[A-Za-z]\.", token):
+        return True
+
+    base = token[:-1]
+    if not base:
+        return False
+
+    return len(base) <= 2 and base.isalpha() and base.isupper()
+
+
+def _split_points_by_sentence_end(text: str) -> list[int]:
+    split_points: list[int] = []
+    for i, char in enumerate(text):
+        if char not in ".!?":
+            continue
+
+        if char == "." and _is_abbreviation_cut(text, i + 1):
+            continue
+        next_index = i + 1
+        if next_index < len(text) and text[next_index].isspace():
+            split_points.append(next_index)
+        elif next_index >= len(text):
+            split_points.append(next_index)
+    return split_points
+
+
 def _find_split_point(remaining: str, max_chars: int) -> int:
     candidates = [index for index, char in enumerate(remaining[: max_chars + 1]) if char == " "]
     if not candidates:
@@ -81,6 +161,7 @@ def _find_split_point(remaining: str, max_chars: int) -> int:
         cut
         for cut in candidates
         if not _is_split_inside_quote(cut, quote_spans)
+        and not _is_abbreviation_cut(remaining, cut)
         and cut >= punctuation_window_floor
         and cut - 1 >= 0
         and remaining[cut - 1] in _PREFERRED_SPLIT_PUNCTUATION
@@ -94,6 +175,8 @@ def _find_split_point(remaining: str, max_chars: int) -> int:
         tail = remaining[cut:]
         if _is_split_inside_quote(cut, quote_spans):
             continue
+        if _is_abbreviation_cut(remaining, cut):
+            continue
         if _starts_with_clause_connector(tail):
             continue
         if len(tail) >= _INTELLIGIBILITY_MIN_TAIL_CHARS:
@@ -102,6 +185,8 @@ def _find_split_point(remaining: str, max_chars: int) -> int:
     for cut in reversed(candidates):
         tail = remaining[cut:]
         if _is_split_inside_quote(cut, quote_spans):
+            continue
+        if _is_abbreviation_cut(remaining, cut):
             continue
         if len(tail) >= _INTELLIGIBILITY_MIN_TAIL_CHARS:
             return cut
@@ -116,7 +201,25 @@ def split_paragraphs(text: str) -> list[str]:
 
 
 def split_sentences(text: str) -> list[str]:
-    sentences = [part.strip() for part in SENTENCE_SPLIT_RE.split(text) if part.strip()]
+    split_points = _split_points_by_sentence_end(text)
+    if not split_points:
+        return [text.strip()] if text.strip() else []
+
+    sentences: list[str] = []
+    start = 0
+    for point in split_points:
+        if point < start:
+            continue
+        part = text[start:point].strip()
+        if part:
+            sentences.append(part)
+        start = point
+        while start < len(text) and text[start].isspace():
+            start += 1
+    tail = text[start:].strip()
+    if tail:
+        sentences.append(tail)
+
     return sentences if sentences else [text.strip()]
 
 

@@ -1,6 +1,11 @@
 from app.services.ingestion import detect_chapters
 from app.services.phonetics import replace_pronunciations, replace_pronunciations_with_counts
-from app.services.segmentation import segment_text, split_paragraphs, split_paragraphs_into_sentences
+from app.services.segmentation import (
+    segment_text,
+    split_paragraphs,
+    split_paragraphs_into_sentences,
+    split_sentences,
+)
 
 
 def test_detect_chapters_fallback_when_no_header() -> None:
@@ -132,3 +137,25 @@ def test_segment_text_prefers_quote_boundaries_when_possible() -> None:
     assert '"' not in segments[0]
     assert len(segments[0]) < opening_quote_index
     assert segments[1].lstrip().startswith('"')
+
+
+def test_split_sentences_keeps_abbreviations_and_initials() -> None:
+    text = (
+        "Dr. A. B. arrived at dawn and then said the team should wait, "
+        "while Colonel A. reviewed his notes. They then departed."
+    )
+    sentences = split_sentences(text)
+    assert sentences == [
+        "Dr. A. B. arrived at dawn and then said the team should wait, while Colonel A. reviewed his notes.",
+        "They then departed.",
+    ]
+
+
+def test_segment_text_avoids_splitting_on_abbreviation_periods() -> None:
+    text = (
+        "The witness cited Dr. A. B. Carlton, who arrived before dawn, and then discussed "
+        "the mission details at length."
+    )
+    segments = segment_text(text, max_chars=28)
+    assert segments[0] == "The witness cited"
+    assert segments[1].startswith("Dr.")
