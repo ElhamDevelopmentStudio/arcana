@@ -103,3 +103,13 @@ def test_segment_text_avoids_clause_connector_starts() -> None:
         assert not segment.strip().lower().startswith(
             ("and ", "but ", "or ", "so ", "then ", "because ", "if ", "when ", "while ", "as ", "although ")
         )
+
+
+def test_segment_text_prefers_punctuation_boundaries() -> None:
+    text = (
+        "alpha one, alpha two, alpha three, alpha four, alpha five, alpha six, alpha seven, "
+        "alpha eight, alpha nine, alpha ten, alpha eleven, alpha twelve."
+    )
+    segments = segment_text(text, max_chars=100)
+    assert len(segments) > 1
+    assert segments[0].endswith(",") or segments[0].endswith(".")

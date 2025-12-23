@@ -4,6 +4,8 @@ PARAGRAPH_SPLIT_RE = re.compile(r"\n{2,}")
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 MAX_SEGMENT_CHARS_HARD_CAP = 255
 _INTELLIGIBILITY_MIN_TAIL_CHARS = 20
+_PUNCTUATION_PREFERENCE_WINDOW = 18
+_PREFERRED_SPLIT_PUNCTUATION = (".", "!", "?", ";", ":", ",")
 _CLAUSE_CONNECTOR_PREFIXES = (
     "and ",
     "but ",
@@ -35,6 +37,20 @@ def _find_split_point(remaining: str, max_chars: int) -> int:
     candidates = [index for index, char in enumerate(remaining[: max_chars + 1]) if char == " "]
     if not candidates:
         return max_chars
+
+    min_tail_ok_cutoff = _INTELLIGIBILITY_MIN_TAIL_CHARS
+    punctuation_window_floor = max(1, max_chars - _PUNCTUATION_PREFERENCE_WINDOW)
+    preferred_punctuation_candidates = [
+        cut
+        for cut in candidates
+        if cut >= punctuation_window_floor
+        and cut - 1 >= 0
+        and remaining[cut - 1] in _PREFERRED_SPLIT_PUNCTUATION
+        and len(remaining[cut:]) >= min_tail_ok_cutoff
+        and not _starts_with_clause_connector(remaining[cut:])
+    ]
+    if preferred_punctuation_candidates:
+        return preferred_punctuation_candidates[-1]
 
     for cut in reversed(candidates):
         tail = remaining[cut:]
