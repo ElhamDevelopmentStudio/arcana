@@ -171,7 +171,7 @@ Definition of done for each task:
 - [ ] [VERB-014] Add tests for false positive replacement prevention.
 
 ## 4.6 Segmentation for TTS and Analysis (Ref: SRS.md §4.6)
-- [ ] [SEG-001] Add chapter->paragraph segmentation layer.
+- [x] [SEG-001] Add chapter->paragraph segmentation layer.
 - [ ] [SEG-002] Add paragraph->sentence segmentation layer.
 - [ ] [SEG-003] Add dialogue block detector.
 - [ ] [SEG-004] Add narration block detector.
