@@ -98,6 +98,7 @@ export function ProjectCharactersPage() {
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
   const [includePlacePronunciationScope, setIncludePlacePronunciationScope] = useState<boolean>(false);
   const [includeArtifactPronunciationScope, setIncludeArtifactPronunciationScope] = useState<boolean>(false);
+  const [includeInventedPronunciationScope, setIncludeInventedPronunciationScope] = useState<boolean>(false);
   const [pronunciationMatchWholeWords, setPronunciationMatchWholeWords] = useState<boolean>(true);
   const [pronunciationCaseSensitive, setPronunciationCaseSensitive] = useState<boolean>(true);
   const [pronunciationAliasAware, setPronunciationAliasAware] = useState<boolean>(false);
@@ -354,7 +355,8 @@ export function ProjectCharactersPage() {
       !includeGlobalPronunciationScope &&
       !includeCharacterPronunciationScope &&
       !includePlacePronunciationScope &&
-      !includeArtifactPronunciationScope
+      !includeArtifactPronunciationScope &&
+      !includeInventedPronunciationScope
     ) {
       toast.error('Enable at least one pronunciation scope before previewing.');
       return;
@@ -370,6 +372,7 @@ export function ProjectCharactersPage() {
       include_character_scope: includeCharacterPronunciationScope,
       include_place_scope: includePlacePronunciationScope,
       include_artifact_scope: includeArtifactPronunciationScope,
+      include_invented_scope: includeInventedPronunciationScope,
       match_whole_words: pronunciationMatchWholeWords,
       case_sensitive: pronunciationCaseSensitive,
       alias_aware: pronunciationAliasAware,
@@ -810,6 +813,13 @@ export function ProjectCharactersPage() {
                     />
                     <span>Artifact terminology dictionary</span>
                   </label>
+                  <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                    <Checkbox
+                      checked={includeInventedPronunciationScope}
+                      onCheckedChange={(checked) => setIncludeInventedPronunciationScope(checked === true)}
+                    />
+                    <span>Invented word dictionary</span>
+                  </label>
                 </div>
               </div>
               <div className="grid gap-2">
@@ -861,7 +871,8 @@ export function ProjectCharactersPage() {
                   (!includeGlobalPronunciationScope &&
                     !includeCharacterPronunciationScope &&
                     !includePlacePronunciationScope &&
-                    !includeArtifactPronunciationScope) ||
+                    !includeArtifactPronunciationScope &&
+                    !includeInventedPronunciationScope) ||
                   (includeCharacterPronunciationScope && !pronunciationPreviewCharacterName.trim())
                 }
                 type="submit"

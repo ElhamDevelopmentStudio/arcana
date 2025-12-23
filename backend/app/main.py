@@ -1481,6 +1481,82 @@ def set_artifact_pronunciation_dictionary(
 
 
 @app.get(
+    "/api/projects/{project_id}/pronunciation-dictionary/invented",
+    response_model=PronunciationDictionaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_invented_pronunciation_dictionary(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> PronunciationDictionaryResponse:
+    _get_project_or_404(session, project_id)
+
+    entries = (
+        session.query(PronunciationDictionary)
+        .filter(PronunciationDictionary.project_id == project_id, PronunciationDictionary.scope == "invented")
+        .order_by(PronunciationDictionary.term.asc())
+        .all()
+    )
+    return PronunciationDictionaryResponse(
+        project_id=project_id,
+        scope="invented",
+        entries=[_build_pronunciation_dictionary_payload(entry) for entry in entries],
+    )
+
+
+@app.put(
+    "/api/projects/{project_id}/pronunciation-dictionary/invented",
+    response_model=PronunciationDictionaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def set_invented_pronunciation_dictionary(
+    project_id: int,
+    payload: PronunciationDictionaryUpdateRequest,
+    session: Session = Depends(get_session),
+) -> PronunciationDictionaryResponse:
+    project = _get_project_or_404(session, project_id)
+
+    deduped: dict[str, PronunciationDictionaryItem] = {}
+    for row in payload.entries:
+        deduped[row.term.strip().lower()] = row
+
+    session.query(PronunciationDictionary).filter(
+        PronunciationDictionary.project_id == project_id,
+        PronunciationDictionary.scope == "invented",
+    ).delete()
+
+    for row in deduped.values():
+        session.add(
+            PronunciationDictionary(
+                project_id=project_id,
+                scope="invented",
+                character_name="",
+                term=row.term.strip(),
+                verbalized_form=row.verbalized_form.strip(),
+                source=row.source,
+                confidence=row.confidence,
+            )
+        )
+
+    session.commit()
+    saved_entries = (
+        session.query(PronunciationDictionary)
+        .filter(
+            PronunciationDictionary.project_id == project_id,
+            PronunciationDictionary.scope == "invented",
+        )
+        .order_by(PronunciationDictionary.term.asc())
+        .all()
+    )
+
+    return PronunciationDictionaryResponse(
+        project_id=project.id,
+        scope="invented",
+        entries=[_build_pronunciation_dictionary_payload(entry) for entry in saved_entries],
+    )
+
+
+@app.get(
     "/api/projects/{project_id}/pronunciation-dictionary/global",
     response_model=PronunciationDictionaryResponse,
     status_code=status.HTTP_200_OK,
@@ -1812,12 +1888,13 @@ def preview_pronunciation_dictionary(
         and not payload.include_character_scope
         and not payload.include_place_scope
         and not payload.include_artifact_scope
+        and not payload.include_invented_scope
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Set at least one of include_global_scope, include_character_scope, "
-                "include_place_scope, or include_artifact_scope to true."
+                "include_place_scope, include_artifact_scope, or include_invented_scope to true."
             ),
         )
 
@@ -1827,6 +1904,7 @@ def preview_pronunciation_dictionary(
     character_map: dict[str, str] = {}
     place_map: dict[str, str] = {}
     artifact_map: dict[str, str] = {}
+    invented_map: dict[str, str] = {}
     alias_map: dict[str, str] = {}
     replacement_term_scopes: dict[str, str] = {}
     included_scopes: list[str] = []
@@ -1881,17 +1959,27 @@ def preview_pronunciation_dictionary(
             replacement_term_scopes[term] = "artifact"
             replacement_term_scopes[term.lower()] = "artifact"
 
+    if payload.include_invented_scope:
+        invented_map = _build_pronunciation_preview_scope_map(project_id, session, "invented")
+        if invented_map:
+            included_scopes.append("invented")
+        for term in invented_map:
+            replacement_term_scopes[term] = "invented"
+            replacement_term_scopes[term.lower()] = "invented"
+
     replacement_map = {**global_map}
     replacement_map.update(place_map)
     replacement_map.update(character_map)
     replacement_map.update(alias_map)
     replacement_map.update(artifact_map)
+    replacement_map.update(invented_map)
     replacement_candidates: list[tuple[str, str, str]] = []
     replacement_candidates.extend((term, verbalized, "global") for term, verbalized in global_map.items())
     replacement_candidates.extend((term, verbalized, "place") for term, verbalized in place_map.items())
     replacement_candidates.extend((term, verbalized, "character") for term, verbalized in character_map.items())
     replacement_candidates.extend((term, verbalized, "character") for term, verbalized in alias_map.items())
     replacement_candidates.extend((term, verbalized, "artifact") for term, verbalized in artifact_map.items())
+    replacement_candidates.extend((term, verbalized, "invented") for term, verbalized in invented_map.items())
 
     warnings = _build_pronunciation_preview_ambiguity_warnings(
         candidates=replacement_candidates,

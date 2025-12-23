@@ -88,6 +88,16 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         )
         .all()
     }
+    invented_pronunciations = {
+        entry.term.strip(): entry.verbalized_form.strip()
+        for entry in session.query(PronunciationDictionary)
+        .filter(
+            PronunciationDictionary.project_id == project.id,
+            PronunciationDictionary.scope == "invented",
+            PronunciationDictionary.character_name == "",
+        )
+        .all()
+    }
     artifact_pronunciations = {
         entry.term.strip(): entry.verbalized_form.strip()
         for entry in session.query(PronunciationDictionary)
@@ -110,7 +120,12 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         character_map = character_pronunciations.setdefault(normalized_name, {})
         character_map[entry.term.strip()] = entry.verbalized_form.strip()
 
-    name_to_verbalized = {**global_pronunciations, **place_pronunciations, **artifact_pronunciations}
+    name_to_verbalized = {
+        **global_pronunciations,
+        **place_pronunciations,
+        **artifact_pronunciations,
+        **invented_pronunciations,
+    }
     for character in characters:
         name_to_verbalized[character.name.strip()] = character.verbalized_form.strip()
     character_lookup = {

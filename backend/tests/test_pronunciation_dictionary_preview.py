@@ -293,6 +293,41 @@ def test_integration_preview_includes_artifact_scope_terms() -> None:
         ]
 
 
+def test_integration_preview_includes_invented_scope_terms() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Invented Terms"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        invented_resp = client.put(
+            f"/api/projects/{project_id}/pronunciation-dictionary/invented",
+            json={"entries": [{"term": "drakene", "verbalized_form": "dra-ke-n", "confidence": 1.0}]},
+        )
+        assert invented_resp.status_code == 200
+
+        preview_resp = client.post(
+            f"/api/projects/{project_id}/pronunciation-dictionary/preview",
+            json={
+                "text": "The drakene rose from the crypt.",
+                "include_global_scope": False,
+                "include_character_scope": False,
+                "include_invented_scope": True,
+            },
+        )
+        assert preview_resp.status_code == 200
+        payload = preview_resp.json()
+        assert payload["after"] == "The dra-ke-n rose from the crypt."
+        assert payload["included_scopes"] == ["invented"]
+        assert payload["replacements"] == [
+            {
+                "term": "drakene",
+                "verbalized_form": "dra-ke-n",
+                "count": 1,
+                "scope": "invented",
+            }
+        ]
+
+
 def test_integration_preview_rejects_empty_scopes() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Validation"})
@@ -310,7 +345,7 @@ def test_integration_preview_rejects_empty_scopes() -> None:
         assert preview_resp.status_code == 400
         assert (
             preview_resp.json()["detail"]
-            == "Set at least one of include_global_scope, include_character_scope, include_place_scope, or include_artifact_scope to true."
+            == "Set at least one of include_global_scope, include_character_scope, include_place_scope, include_artifact_scope, or include_invented_scope to true."
         )
 
 
