@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -12,7 +12,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
-import { useCharacterMapQuery, useRunPipelineMutation, useSaveVoicesMutation } from '@/features/workflow/api/workflow-hooks';
+import {
+  useCharacterMapQuery,
+  useModeCatalogQuery,
+  useRunPipelineMutation,
+  useSaveVoicesMutation,
+} from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 
 export function ProjectPipelineSetupPage() {
@@ -33,13 +38,27 @@ export function ProjectPipelineSetupPage() {
   const [providerName, setProviderName] = useState('openrouter');
   const [maxCallsPerDay, setMaxCallsPerDay] = useState(25);
   const [allowUnfinalizedCharacterMap, setAllowUnfinalizedCharacterMap] = useState(false);
+  const [hasCustomMaxSegmentChars, setHasCustomMaxSegmentChars] = useState(false);
 
   const saveVoicesMutation = useSaveVoicesMutation(projectId);
   const runPipelineMutation = useRunPipelineMutation(projectId);
   const characterMapQuery = useCharacterMapQuery(projectId);
+  const modeCatalogQuery = useModeCatalogQuery(projectId !== null);
   const isRunLocked = selectedMode === null;
   const hasUnfinalizedCharacterRows =
     characterMapQuery.data !== undefined && characterMapQuery.data.characters.length > 0 && !characterMapQuery.data.character_map_finalized;
+  const runMode = selectedMode ?? modeCatalogQuery.data?.default_mode ?? null;
+  const selectedProfile = runMode !== null ? modeCatalogQuery.data?.mode_profiles?.[runMode] : null;
+
+  useEffect(() => {
+    setHasCustomMaxSegmentChars(false);
+  }, [runMode]);
+
+  useEffect(() => {
+    if (!hasCustomMaxSegmentChars && selectedProfile !== null && selectedProfile !== undefined) {
+      setMaxSegmentChars(selectedProfile.max_segment_chars);
+    }
+  }, [hasCustomMaxSegmentChars, selectedProfile]);
 
   async function handleSaveVoices(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -145,11 +164,14 @@ export function ProjectPipelineSetupPage() {
                 <Label htmlFor="max-segment-chars">Max segment chars</Label>
                 <Input
                   id="max-segment-chars"
-                  min={64}
-                  max={1000}
+                  min={80}
+                  max={255}
                   type="number"
                   value={maxSegmentChars}
-                  onChange={(event) => setMaxSegmentChars(Number(event.target.value))}
+                  onChange={(event) => {
+                    setHasCustomMaxSegmentChars(true);
+                    setMaxSegmentChars(Number(event.target.value));
+                  }}
                 />
               </div>
               <div className="grid gap-2">

@@ -127,3 +127,43 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
             "profile_intent": "user-tuned baseline with conservative defaults",
         },
     }
+
+
+def test_integration_audiobook_target_length_config_is_respected_in_export_segments() -> None:
+    long_text = (
+        "Chapter 1\n"
+        '"Hello," said the traveler. The traveler nodded and kept walking through the crowded streets. '
+    ) * 20
+    long_text = f"{long_text}\n\nChapter 2\n" + ('"Another day," the traveler said. ' * 20)
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Segmentation target length"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(long_text.encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        default_run = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "audiobook"},
+        )
+        assert default_run.status_code == 200
+        default_export = client.get(f"/api/projects/{project_id}/exports/{default_run.json()['run_id']}.json")
+        assert default_export.status_code == 200
+        default_segments = default_export.json()["segments"]
+        assert all(len(segment["original_text"]) <= 120 for segment in default_segments)
+
+        tuned_run = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "audiobook", "max_segment_chars": 80},
+        )
+        assert tuned_run.status_code == 200
+        tuned_export = client.get(f"/api/projects/{project_id}/exports/{tuned_run.json()['run_id']}.json")
+        assert tuned_export.status_code == 200
+        tuned_segments = tuned_export.json()["segments"]
+        assert all(len(segment["original_text"]) <= 80 for segment in tuned_segments)
+        assert len(tuned_segments) >= len(default_segments)
