@@ -173,7 +173,7 @@ Definition of done for each task:
 ## 4.6 Segmentation for TTS and Analysis (Ref: SRS.md §4.6)
 - [x] [SEG-001] Add chapter->paragraph segmentation layer.
 - [x] [SEG-002] Add paragraph->sentence segmentation layer.
-- [ ] [SEG-003] Add dialogue block detector.
+- [x] [SEG-003] Add dialogue block detector.
 - [ ] [SEG-004] Add narration block detector.
 - [ ] [SEG-005] Implement audiobook max target length config.
 - [ ] [SEG-006] Implement hard max segment length ceiling.

@@ -30,10 +30,65 @@ NEGATIVE_WORDS = {
 }
 
 SPEAKER_PATTERN = re.compile(r'"[^"]+"\s+([A-Za-z][A-Za-z0-9_-]*)\s+said\b', re.IGNORECASE)
+DIALOGUE_QUOTE_RE = re.compile(
+    r'"[^"]+"\s*(?:[,;:]?\s*(?:[A-Za-z][A-Za-z0-9_-]*\s+)?'
+    r"(?:said|asked|replied|whispered|murmured|shouted|yelled|answered)\b[^.!?\n]*[.!?]?)",
+    re.IGNORECASE,
+)
+DIALOGUE_QUOTE_MARKER_RE = re.compile(r'(["“])[^"“”]*["”]')
+DASH_LEADER_RE = re.compile(r"(?m)^\s*-\s+[^\n]+")
+
+
+def detect_dialogue_blocks(text: str) -> list[dict[str, str]]:
+    quoted_spans: list[tuple[int, int]] = [
+        (match.start(), match.end()) for match in DIALOGUE_QUOTE_RE.finditer(text)
+    ]
+    if not quoted_spans:
+        quoted_spans = [
+            (match.start(), match.end()) for match in DIALOGUE_QUOTE_MARKER_RE.finditer(text)
+        ]
+    dash_line_spans: list[tuple[int, int]] = []
+    for match in DASH_LEADER_RE.finditer(text):
+        line_start = match.start()
+        line_end = text.find("\n", match.end())
+        if line_end < 0:
+            line_end = len(text)
+        dash_line_spans.append((line_start, line_end))
+
+    candidate_spans = sorted(set(quoted_spans + dash_line_spans))
+    if not candidate_spans:
+        return [{"type": "narration", "text": text.strip()}] if text.strip() else []
+
+    merged_spans: list[tuple[int, int]] = []
+    for start, end in candidate_spans:
+        if not merged_spans or start > merged_spans[-1][1]:
+            merged_spans.append((start, end))
+            continue
+        merged_spans[-1] = (merged_spans[-1][0], max(merged_spans[-1][1], end))
+
+    blocks: list[dict[str, str]] = []
+    cursor = 0
+    for start, end in merged_spans:
+        if start > cursor:
+            narrative = text[cursor:start].strip()
+            if narrative:
+                blocks.append({"type": "narration", "text": narrative})
+
+        dialogue = text[start:end].strip()
+        if dialogue:
+            blocks.append({"type": "dialogue", "text": dialogue})
+        cursor = end
+
+    if cursor < len(text):
+        trailing = text[cursor:].strip()
+        if trailing:
+            blocks.append({"type": "narration", "text": trailing})
+
+    return blocks
 
 
 def detect_structure(text: str) -> str:
-    return "dialogue" if '"' in text else "narration"
+    return "dialogue" if any(block["type"] == "dialogue" for block in detect_dialogue_blocks(text)) else "narration"
 
 
 def compute_valence(text: str) -> tuple[float, float, float]:
@@ -58,12 +113,14 @@ def resolve_speaker(text: str) -> tuple[str, float]:
 
 
 def tag_segment(text: str) -> dict[str, object]:
+    blocks = detect_dialogue_blocks(text)
     structure = detect_structure(text)
     speaker, speaker_confidence = resolve_speaker(text) if structure == "dialogue" else ("unknown", 0.2)
     valence, intensity, emotion_confidence = compute_valence(text)
 
     return {
         "type": structure,
+        "dialogue_blocks": blocks,
         "speaker": speaker,
         "speaker_confidence": speaker_confidence,
         "emotion_valence": valence,
