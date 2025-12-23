@@ -87,6 +87,10 @@ def detect_dialogue_blocks(text: str) -> list[dict[str, str]]:
     return blocks
 
 
+def detect_narration_blocks(text: str) -> list[dict[str, str]]:
+    return [block for block in detect_dialogue_blocks(text) if block["type"] == "narration"]
+
+
 def detect_structure(text: str) -> str:
     return "dialogue" if any(block["type"] == "dialogue" for block in detect_dialogue_blocks(text)) else "narration"
 
@@ -113,14 +117,16 @@ def resolve_speaker(text: str) -> tuple[str, float]:
 
 
 def tag_segment(text: str) -> dict[str, object]:
-    blocks = detect_dialogue_blocks(text)
+    dialogue_blocks = detect_dialogue_blocks(text)
+    narration_blocks = detect_narration_blocks(text)
     structure = detect_structure(text)
     speaker, speaker_confidence = resolve_speaker(text) if structure == "dialogue" else ("unknown", 0.2)
     valence, intensity, emotion_confidence = compute_valence(text)
 
     return {
         "type": structure,
-        "dialogue_blocks": blocks,
+        "dialogue_blocks": dialogue_blocks,
+        "narration_blocks": narration_blocks,
         "speaker": speaker,
         "speaker_confidence": speaker_confidence,
         "emotion_valence": valence,
