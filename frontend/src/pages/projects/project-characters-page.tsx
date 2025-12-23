@@ -175,7 +175,7 @@ export function ProjectCharactersPage() {
       .map((row) => ({
         name: row.name.trim(),
         verbalized_form: row.verbalized.trim(),
-        gender: row.gender.trim().toLowerCase(),
+        gender: row.gender.trim().toLowerCase() as CharacterMapDto['characters'][number]['gender'],
         aliases: parseAliases(row.aliases),
       }))
       .filter((row) => row.name && row.verbalized_form)
@@ -362,7 +362,7 @@ export function ProjectCharactersPage() {
       text: pronunciationPreviewText.trim(),
       include_global_scope: includeGlobalPronunciationScope,
       include_character_scope: includeCharacterPronunciationScope,
-      ...(includePlacePronunciationScope ? { include_place_scope: true } : {}),
+      include_place_scope: includePlacePronunciationScope,
       match_whole_words: pronunciationMatchWholeWords,
       case_sensitive: pronunciationCaseSensitive,
       alias_aware: pronunciationAliasAware,

@@ -96,6 +96,41 @@ def test_unit_pronunciation_dictionary_character_scope_terms_can_be_created() ->
         session.close()
 
 
+def test_unit_pronunciation_dictionary_place_scope_terms_can_be_created() -> None:
+    session = get_session_factory()()
+    try:
+        project = Project(title="Place Pronunciation Dictionary")
+        session.add(project)
+        session.flush()
+
+        entry = PronunciationDictionary(
+            project_id=project.id,
+            scope="place",
+            character_name="",
+            term="Narnia",
+            verbalized_form="Nar-nia",
+            source="manual",
+            confidence=0.95,
+        )
+        session.add(entry)
+        session.commit()
+
+        persisted = (
+            session.query(PronunciationDictionary)
+            .filter(
+                PronunciationDictionary.project_id == project.id,
+                PronunciationDictionary.scope == "place",
+                PronunciationDictionary.term == "Narnia",
+            )
+            .one()
+        )
+        assert persisted.scope == "place"
+        assert persisted.character_name == ""
+        assert persisted.verbalized_form == "Nar-nia"
+    finally:
+        session.close()
+
+
 def test_unit_pronunciation_dictionary_rejects_duplicate_term_per_project_scope_character() -> None:
     session = get_session_factory()()
     try:

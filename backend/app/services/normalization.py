@@ -58,6 +58,105 @@ def build_original_to_normalized_offset_map(
     ]
 
 
+_LOSSY_TRANSFORM_FLAG_KEYS = (
+    "unicode_normalization",
+    "quote_repair_applied",
+    "quote_style_normalization",
+    "ellipsis_normalization",
+    "em_dash_dialogue_style_normalization",
+    "copy_artifact_removal",
+    "whitespace_normalization",
+)
+
+
+def build_normalization_report(
+    source: str,
+    *,
+    chapter_count: int,
+    chapter_reports: list[dict[str, object]],
+    suspected_duplicate_title_count: int,
+    encoding_issue_count: int,
+) -> dict[str, object]:
+    lossy_transform_flags: dict[str, bool] = {
+        key: False for key in _LOSSY_TRANSFORM_FLAG_KEYS
+    }
+    total_quote_repair_count = 0
+    total_copy_artifact_removed_lines = 0
+
+    for chapter_report in chapter_reports:
+        report_counts = chapter_report.get("counts", {})
+        if isinstance(report_counts, dict):
+            total_quote_repair_count += int(report_counts.get("quote_repair_count", 0))
+            total_copy_artifact_removed_lines += int(report_counts.get("copy_artifact_removed_lines", 0))
+
+        report_flags = chapter_report.get("lossy_transform_flags", {})
+        if isinstance(report_flags, dict):
+            for flag, default_value in lossy_transform_flags.items():
+                lossy_transform_flags[flag] = default_value or bool(report_flags.get(flag, False))
+
+    return {
+        "source": source,
+        "counts": {
+            "chapters_detected": chapter_count,
+            "suspected_duplicates": suspected_duplicate_title_count,
+            "quote_repair_count": total_quote_repair_count,
+            "encoding_issues": encoding_issue_count,
+            "copy_artifact_removed_lines": total_copy_artifact_removed_lines,
+        },
+        "lossy_transform_flags": lossy_transform_flags,
+    }
+
+
+def build_segment_level_offset_map(
+    chapter_offset_map: list[dict[str, int | str]],
+    normalized_segment_start: int,
+    normalized_segment_text: str,
+) -> list[dict[str, int]]:
+    normalized_segment_end = normalized_segment_start + len(normalized_segment_text)
+    segment_offset_map: list[dict[str, int]] = []
+
+    for entry in chapter_offset_map:
+        normalized_start = int(entry["normalized_start"])
+        normalized_end = int(entry["normalized_end"])
+        original_start = int(entry["original_start"])
+        original_end = int(entry["original_end"])
+        op_type = str(entry["type"])
+
+        overlap_start = max(normalized_start, normalized_segment_start)
+        overlap_end = min(normalized_end, normalized_segment_end)
+        if overlap_start >= overlap_end:
+            continue
+
+        local_start = overlap_start - normalized_segment_start
+        local_end = overlap_end - normalized_segment_start
+        overlap_length = overlap_end - overlap_start
+        if op_type == "equal":
+            mapped_start = original_start + (overlap_start - normalized_start)
+            mapped_end = mapped_start + overlap_length
+        elif op_type == "replace":
+            orig_len = max(original_end - original_start, 1)
+            norm_len = max(normalized_end - normalized_start, 1)
+            mapped_start = original_start + int((overlap_start - normalized_start) * orig_len / norm_len)
+            mapped_end = original_start + int((overlap_end - normalized_start) * orig_len / norm_len)
+        elif op_type == "insert":
+            mapped_start = -1
+            mapped_end = -1
+        else:
+            continue
+
+        segment_offset_map.append(
+            {
+                "original_start": mapped_start,
+                "original_end": mapped_end,
+                "normalized_start": local_start,
+                "normalized_end": local_end,
+                "type": op_type,
+            }
+        )
+
+    return segment_offset_map
+
+
 def normalize_line_breaks_and_paragraph_separators(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.translate(UNICODE_LINE_BREAK_TRANSLATION)
@@ -229,8 +328,16 @@ def normalize_text_with_warnings(
     text: str,
     source: str = "text",
 ) -> tuple[str, list[dict[str, object]]]:
-    normalized = normalize_unicode_variants(text)
-    normalized, repair_events = repair_quote_mismatch_with_metadata(normalized)
+    normalized, warnings, _ = normalize_text_with_report(text, source=source)
+    return normalized, warnings
+
+
+def normalize_text_with_report(
+    text: str,
+    source: str = "text",
+) -> tuple[str, list[dict[str, object]], dict[str, object]]:
+    normalized_unicode = normalize_unicode_variants(text)
+    repaired, repair_events = repair_quote_mismatch_with_metadata(normalized_unicode)
     warnings: list[dict[str, object]] = []
 
     low_confidence_repairs = [
@@ -247,11 +354,31 @@ def normalize_text_with_warnings(
             )
         )
 
-    normalized = normalize_quotes(normalized)
-    normalized = normalize_ellipsis_variants(normalized)
-    normalized = normalize_em_dash_dialogue_style(normalized)
-    normalized = remove_copy_artifacts(normalized)
-    return normalize_whitespace(normalized), warnings
+    normalized_quotes = normalize_quotes(repaired)
+    normalized_ellipsis = normalize_ellipsis_variants(normalized_quotes)
+    normalized_dash = normalize_em_dash_dialogue_style(normalized_ellipsis)
+    copy_artifact_removed = remove_copy_artifacts(normalized_dash)
+    final = normalize_whitespace(copy_artifact_removed)
+
+    lossy_transform_flags = {
+        "unicode_normalization": normalized_unicode != text,
+        "quote_repair_applied": bool(repair_events),
+        "quote_style_normalization": normalized_quotes != repaired,
+        "ellipsis_normalization": normalized_ellipsis != normalized_quotes,
+        "em_dash_dialogue_style_normalization": normalized_dash != normalized_ellipsis,
+        "copy_artifact_removal": copy_artifact_removed != normalized_dash,
+        "whitespace_normalization": final != copy_artifact_removed,
+    }
+
+    normalized_line_count = len(normalized_dash.splitlines())
+    cleaned_line_count = len(copy_artifact_removed.splitlines())
+    return final, warnings, {
+        "lossy_transform_flags": lossy_transform_flags,
+        "counts": {
+            "quote_repair_count": len(repair_events),
+            "copy_artifact_removed_lines": max(normalized_line_count - cleaned_line_count, 0),
+        },
+    }
 
 
 def normalize_ellipsis_variants(text: str) -> str:

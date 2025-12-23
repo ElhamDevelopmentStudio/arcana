@@ -223,6 +223,41 @@ def test_integration_preview_can_match_case_insensitively() -> None:
         ]
 
 
+def test_integration_preview_includes_place_scope_terms() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Place Terms"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        place_resp = client.put(
+            f"/api/projects/{project_id}/pronunciation-dictionary/places",
+            json={"entries": [{"term": "Narnia", "verbalized_form": "Nar-nia", "confidence": 1.0}]},
+        )
+        assert place_resp.status_code == 200
+
+        preview_resp = client.post(
+            f"/api/projects/{project_id}/pronunciation-dictionary/preview",
+            json={
+                "text": "They reached the gates of Narnia.",
+                "include_global_scope": True,
+                "include_character_scope": False,
+                "include_place_scope": True,
+            },
+        )
+        assert preview_resp.status_code == 200
+        payload = preview_resp.json()
+        assert payload["after"] == "They reached the gates of Nar-nia."
+        assert payload["included_scopes"] == ["place"]
+        assert payload["replacements"] == [
+            {
+                "term": "Narnia",
+                "verbalized_form": "Nar-nia",
+                "count": 1,
+                "scope": "place",
+            }
+        ]
+
+
 def test_integration_preview_rejects_empty_scopes() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Validation"})
@@ -238,7 +273,10 @@ def test_integration_preview_rejects_empty_scopes() -> None:
             },
         )
         assert preview_resp.status_code == 400
-        assert preview_resp.json()["detail"] == "Set at least one of include_global_scope or include_character_scope to true."
+        assert (
+            preview_resp.json()["detail"]
+            == "Set at least one of include_global_scope, include_character_scope, or include_place_scope to true."
+        )
 
 
 def test_integration_preview_alias_aware_replaces_aliases_when_enabled() -> None:

@@ -1478,6 +1478,81 @@ def set_global_pronunciation_dictionary(
 
 
 @app.get(
+    "/api/projects/{project_id}/pronunciation-dictionary/places",
+    response_model=PronunciationDictionaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_place_pronunciation_dictionary(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> PronunciationDictionaryResponse:
+    _get_project_or_404(session, project_id)
+
+    entries = (
+        session.query(PronunciationDictionary)
+        .filter(PronunciationDictionary.project_id == project_id, PronunciationDictionary.scope == "place")
+        .order_by(PronunciationDictionary.term.asc())
+        .all()
+    )
+    return PronunciationDictionaryResponse(
+        project_id=project_id,
+        scope="place",
+        entries=[_build_pronunciation_dictionary_payload(entry) for entry in entries],
+    )
+
+
+@app.put(
+    "/api/projects/{project_id}/pronunciation-dictionary/places",
+    response_model=PronunciationDictionaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def set_place_pronunciation_dictionary(
+    project_id: int,
+    payload: PronunciationDictionaryUpdateRequest,
+    session: Session = Depends(get_session),
+) -> PronunciationDictionaryResponse:
+    project = _get_project_or_404(session, project_id)
+
+    deduped: dict[str, PronunciationDictionaryItem] = {}
+    for row in payload.entries:
+        deduped[row.term.strip().lower()] = row
+
+    session.query(PronunciationDictionary).filter(
+        PronunciationDictionary.project_id == project_id,
+        PronunciationDictionary.scope == "place",
+    ).delete()
+
+    for row in deduped.values():
+        session.add(
+            PronunciationDictionary(
+                project_id=project_id,
+                scope="place",
+                character_name="",
+                term=row.term.strip(),
+                verbalized_form=row.verbalized_form.strip(),
+                source=row.source,
+                confidence=row.confidence,
+            )
+        )
+    session.commit()
+    saved_entries = (
+        session.query(PronunciationDictionary)
+        .filter(
+            PronunciationDictionary.project_id == project_id,
+            PronunciationDictionary.scope == "place",
+        )
+        .order_by(PronunciationDictionary.term.asc())
+        .all()
+    )
+
+    return PronunciationDictionaryResponse(
+        project_id=project.id,
+        scope="place",
+        entries=[_build_pronunciation_dictionary_payload(entry) for entry in saved_entries],
+    )
+
+
+@app.get(
     "/api/projects/{project_id}/pronunciation-dictionary/character/{character_name}",
     response_model=PronunciationDictionaryResponse,
     status_code=status.HTTP_200_OK,
@@ -1656,16 +1731,24 @@ def preview_pronunciation_dictionary(
 ) -> PronunciationDictionaryPreviewResponse:
     _get_project_or_404(session, project_id)
 
-    if not payload.include_global_scope and not payload.include_character_scope:
+    if (
+        not payload.include_global_scope
+        and not payload.include_character_scope
+        and not payload.include_place_scope
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Set at least one of include_global_scope or include_character_scope to true.",
+            detail=(
+                "Set at least one of include_global_scope, include_character_scope, "
+                "or include_place_scope to true."
+            ),
         )
 
     normalized_character_name = payload.character_name.strip() if payload.character_name else None
 
     global_map: dict[str, str] = {}
     character_map: dict[str, str] = {}
+    place_map: dict[str, str] = {}
     alias_map: dict[str, str] = {}
     replacement_term_scopes: dict[str, str] = {}
     included_scopes: list[str] = []
@@ -1704,11 +1787,21 @@ def preview_pronunciation_dictionary(
                 replacement_term_scopes[term] = "character"
                 replacement_term_scopes[term.lower()] = "character"
 
+    if payload.include_place_scope:
+        place_map = _build_pronunciation_preview_scope_map(project_id, session, "place")
+        if place_map:
+            included_scopes.append("place")
+        for term in place_map:
+            replacement_term_scopes[term] = "place"
+            replacement_term_scopes[term.lower()] = "place"
+
     replacement_map = {**global_map}
+    replacement_map.update(place_map)
     replacement_map.update(character_map)
     replacement_map.update(alias_map)
     replacement_candidates: list[tuple[str, str, str]] = []
     replacement_candidates.extend((term, verbalized, "global") for term, verbalized in global_map.items())
+    replacement_candidates.extend((term, verbalized, "place") for term, verbalized in place_map.items())
     replacement_candidates.extend((term, verbalized, "character") for term, verbalized in character_map.items())
     replacement_candidates.extend((term, verbalized, "character") for term, verbalized in alias_map.items())
 
