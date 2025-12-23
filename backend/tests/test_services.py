@@ -82,3 +82,11 @@ def test_segment_text_is_built_from_paragraph_sentence_layer() -> None:
     text = "A short line. Another line.\n\nNext paragraph starts cleanly."
     segments = segment_text(text, max_chars=120)
     assert segments == ["A short line. Another line.", "Next paragraph starts cleanly."]
+
+
+def test_segment_text_hard_caps_overlarge_max_chars() -> None:
+    text = "One very long sentence " * 40
+    segments = segment_text(text, max_chars=999)
+    assert segments
+    assert all(len(segment) <= 255 for segment in segments)
+    assert len(segments) > 1

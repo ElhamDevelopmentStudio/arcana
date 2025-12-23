@@ -2,6 +2,7 @@ import re
 
 PARAGRAPH_SPLIT_RE = re.compile(r"\n{2,}")
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+MAX_SEGMENT_CHARS_HARD_CAP = 255
 
 
 def split_paragraphs(text: str) -> list[str]:
@@ -39,16 +40,20 @@ def _split_long_sentence(sentence: str, max_chars: int) -> list[str]:
 
 
 def segment_text(text: str, max_chars: int = 255) -> list[str]:
+    hard_cap = min(int(max_chars), MAX_SEGMENT_CHARS_HARD_CAP)
+    if hard_cap < 1:
+        hard_cap = 1
+
     paragraphs_and_sentences = split_paragraphs_into_sentences(text)
     segments: list[str] = []
 
     for sentences in paragraphs_and_sentences:
         buffer = ""
         for sentence in sentences:
-            sentence_parts = _split_long_sentence(sentence, max_chars)
+            sentence_parts = _split_long_sentence(sentence, hard_cap)
             for part in sentence_parts:
                 candidate = part if not buffer else f"{buffer} {part}"
-                if len(candidate) <= max_chars:
+                if len(candidate) <= hard_cap:
                     buffer = candidate
                     continue
 
