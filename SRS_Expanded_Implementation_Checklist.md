@@ -181,7 +181,7 @@ Definition of done for each task:
 - [x] [SEG-008] Prefer punctuation boundaries when splitting.
 - [x] [SEG-009] Avoid split inside quoted utterance where possible.
 - [x] [SEG-010] Add abbreviation/initial-aware split protection.
-- [ ] [SEG-011] Add metadata: chapter id.
+- [x] [SEG-011] Add metadata: chapter id.
 - [ ] [SEG-012] Add metadata: segment index.
 - [ ] [SEG-013] Add metadata: original span pointer.
 - [ ] [SEG-014] Add metadata: normalized text.

@@ -183,6 +183,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
 
             segment_payload = {
                 "chapter_id": chapter.chapter_index,
+                "chapter_internal_id": chapter.chapter_internal_id,
                 "segment_id": f"{chapter.chapter_index}-{segment_index:03d}",
                 "original_text": original_text,
                 "phonetic_text": phonetic_text,
