@@ -189,7 +189,7 @@ Definition of done for each task:
 - [x] [SEG-016] Add metadata: parent paragraph reference.
 - [x] [SEG-017] Add metadata: parent sentence reference.
 - [x] [SEG-018] Implement chapter reconstruction from segments.
-- [ ] [SEG-019] Implement corpus reconstruction from chapter artifacts.
+- [x] [SEG-019] Implement corpus reconstruction from chapter artifacts.
 - [ ] [SEG-020] Add round-trip audit test (reconstructed text consistency).
 
 ## 4.7 Tagging System (Ref: SRS.md §4.7)

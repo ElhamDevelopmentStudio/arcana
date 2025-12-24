@@ -8,6 +8,7 @@ from app.services.segmentation import (
     split_sentences,
 )
 from app.services.segment_reconstruction import reconstruct_chapter_text_from_segments
+from app.services.segment_reconstruction import reconstruct_corpus_from_chapter_artifacts
 
 
 def test_detect_chapters_fallback_when_no_header() -> None:
@@ -148,6 +149,72 @@ def test_reconstruct_chapter_text_from_segments_falls_back_to_normalized_text_or
 
     reconstructed_text = reconstruct_chapter_text_from_segments("first second", segment_payloads)
     assert reconstructed_text == "firstsecond"
+
+
+def test_reconstruct_corpus_from_chapter_artifacts_orders_by_chapter_index() -> None:
+    chapter_payloads = [
+        {
+            "chapter_index": 2,
+            "normalized_text": "Chapter 2 text.",
+            "segment_payloads": [
+                {
+                    "segment_index": 1,
+                    "normalized_text": "Chapter",
+                    "original_text": "Chapter",
+                    "original_span_pointer": {
+                        "normalized_start_char": 0,
+                        "normalized_end_char": 7,
+                    },
+                },
+                {
+                    "segment_index": 2,
+                    "normalized_text": "2 text.",
+                    "original_text": "2 text.",
+                    "original_span_pointer": {
+                        "normalized_start_char": 8,
+                        "normalized_end_char": 15,
+                    },
+                },
+            ],
+        },
+        {
+            "chapter_index": 1,
+            "normalized_text": "Chapter 1 text.",
+            "segment_payloads": [
+                {
+                    "segment_index": 1,
+                    "normalized_text": "Chapter",
+                    "original_text": "Chapter",
+                    "original_span_pointer": {
+                        "normalized_start_char": 0,
+                        "normalized_end_char": 7,
+                    },
+                },
+                {
+                    "segment_index": 2,
+                    "normalized_text": "1 text.",
+                    "original_text": "1 text.",
+                    "original_span_pointer": {
+                        "normalized_start_char": 8,
+                        "normalized_end_char": 15,
+                    },
+                },
+            ],
+        },
+    ]
+
+    reconstructed = reconstruct_corpus_from_chapter_artifacts(chapter_payloads)
+    assert reconstructed == "Chapter 1 text.\n\nChapter 2 text."
+
+
+def test_reconstruct_corpus_from_chapter_artifacts_falls_back_to_normalized_text() -> None:
+    chapter_payloads = [
+        {"chapter_index": 1, "normalized_text": "Only one"},
+        {"chapter_index": 0, "chapter_text": "Second text"},
+    ]
+
+    reconstructed = reconstruct_corpus_from_chapter_artifacts(chapter_payloads)
+    assert reconstructed == "Second text\n\nOnly one"
 
 
 def test_segment_text_is_built_from_paragraph_sentence_layer() -> None:
