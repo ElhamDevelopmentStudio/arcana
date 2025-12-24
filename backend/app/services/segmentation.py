@@ -284,28 +284,39 @@ def segment_text_with_parent_paragraph(text: str, max_chars: int = 255) -> list[
 
     for paragraph_index, sentences in enumerate(paragraphs_and_sentences, start=1):
         buffer = ""
-        for sentence in sentences:
+        sentence_indexes: set[int] = set()
+
+        for sentence_index, sentence in enumerate(sentences, start=1):
             sentence_parts = _split_long_sentence(sentence, hard_cap)
             for part in sentence_parts:
                 candidate = part if not buffer else f"{buffer} {part}"
                 if len(candidate) <= hard_cap:
                     buffer = candidate
+                    sentence_indexes.add(sentence_index)
                     continue
 
                 if buffer:
+                    start_sentence = min(sentence_indexes) if sentence_indexes else sentence_index
                     segments.append(
                         {
                             "text": buffer,
                             "paragraph_index": paragraph_index,
+                            "sentence_start_index": start_sentence,
+                            "sentence_end_index": max(sentence_indexes) if sentence_indexes else start_sentence,
                         }
                     )
+                    sentence_indexes = set()
                 buffer = part
+                sentence_indexes.add(sentence_index)
 
         if buffer:
+            start_sentence = min(sentence_indexes) if sentence_indexes else 1
             segments.append(
                 {
                     "text": buffer,
                     "paragraph_index": paragraph_index,
+                    "sentence_start_index": start_sentence,
+                    "sentence_end_index": max(sentence_indexes) if sentence_indexes else start_sentence,
                 }
             )
             buffer = ""

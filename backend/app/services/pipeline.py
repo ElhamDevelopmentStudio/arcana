@@ -151,6 +151,10 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         for segment_index, piece in enumerate(pieces, start=1):
             original_text = str(piece.get("text", ""))
             parent_paragraph_index = int(piece.get("paragraph_index", 1))
+            parent_sentence_start_index = int(piece.get("sentence_start_index", 1))
+            parent_sentence_end_index = int(piece.get("sentence_end_index", parent_sentence_start_index))
+            if parent_sentence_end_index < parent_sentence_start_index:
+                parent_sentence_end_index = parent_sentence_start_index
             tags = tag_segment(original_text)
             speaker = str(tags["speaker"])
             normalized_speaker = speaker.strip().lower()
@@ -205,6 +209,14 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "parent_paragraph_reference": {
                     "paragraph_index": parent_paragraph_index,
                     "paragraph_id": f"{chapter.chapter_index:03d}-p{parent_paragraph_index:03d}",
+                },
+                "parent_sentence_reference": {
+                    "sentence_start_index": parent_sentence_start_index,
+                    "sentence_end_index": parent_sentence_end_index,
+                    "sentence_id": (
+                        f"{chapter.chapter_index:03d}-p{parent_paragraph_index:03d}"
+                        f"-s{parent_sentence_start_index:03d}"
+                    ),
                 },
                 "type": tags["type"],
                 "speaker": speaker,
