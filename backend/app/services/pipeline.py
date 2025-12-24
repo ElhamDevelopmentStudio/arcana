@@ -166,6 +166,17 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                     segment_start,
                     original_text,
                 )
+            segment_offset_candidates = [
+                (entry["original_start"], entry["original_end"])
+                for entry in segment_offset_map
+                if entry.get("original_start") != -1 and entry.get("original_end") != -1
+            ]
+            if segment_offset_candidates:
+                original_span_start = min(start for start, _ in segment_offset_candidates)
+                original_span_end = max(end for _, end in segment_offset_candidates)
+            else:
+                original_span_start = -1
+                original_span_end = -1
             chapter_search_cursor = segment_start + len(original_text)
 
             speaker = str(tags["speaker"])
@@ -198,6 +209,12 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                     "speaker": tags["speaker_confidence"],
                     "emotion": tags["emotion_confidence"],
                     "gender": _resolve_gender_confidence(speaker=speaker, character_lookup=character_lookup),
+                },
+                "original_span_pointer": {
+                    "original_start_char": original_span_start,
+                    "original_end_char": original_span_end,
+                    "normalized_start_char": segment_start,
+                    "normalized_end_char": segment_start + len(original_text),
                 },
                 "original_to_normalized_offset_map": segment_offset_map,
             }

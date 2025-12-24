@@ -183,7 +183,7 @@ Definition of done for each task:
 - [x] [SEG-010] Add abbreviation/initial-aware split protection.
 - [x] [SEG-011] Add metadata: chapter id.
 - [x] [SEG-012] Add metadata: segment index.
-- [ ] [SEG-013] Add metadata: original span pointer.
+- [x] [SEG-013] Add metadata: original span pointer.
 - [ ] [SEG-014] Add metadata: normalized text.
 - [ ] [SEG-015] Add metadata: phonetic-ready text.
 - [ ] [SEG-016] Add metadata: parent paragraph reference.
