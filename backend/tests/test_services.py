@@ -7,6 +7,7 @@ from app.services.segmentation import (
     split_paragraphs_into_sentences,
     split_sentences,
 )
+from app.services.segment_reconstruction import reconstruct_chapter_text_from_segments
 
 
 def test_detect_chapters_fallback_when_no_header() -> None:
@@ -95,6 +96,58 @@ def test_segment_text_with_parent_paragraph_exposes_sentence_reference() -> None
     assert segments[1]["paragraph_index"] == 2
     assert segments[1]["sentence_start_index"] == 1
     assert segments[1]["sentence_end_index"] == 1
+
+
+def test_reconstruct_chapter_text_from_segments_is_order_invariant() -> None:
+    chapter_text = (
+        "The tower opened at dawn. Birds called from the rooftops.\n\n"
+        "A messenger arrived in silver boots, breathless and late."
+    )
+    pieces = segment_text_with_parent_paragraph(chapter_text, max_chars=40)
+    segment_payloads = []
+    cursor = 0
+
+    for index, piece in enumerate(pieces, start=1):
+        segment_text_value = str(piece["text"])
+        start = chapter_text.find(segment_text_value, cursor)
+        if start < 0:
+            continue
+        end = start + len(segment_text_value)
+        cursor = end
+        segment_payloads.append(
+            {
+                "segment_index": index,
+                "normalized_text": segment_text_value,
+                "original_text": segment_text_value,
+                "original_span_pointer": {
+                    "normalized_start_char": start,
+                    "normalized_end_char": end,
+                },
+            }
+        )
+
+    reconstructed_text = reconstruct_chapter_text_from_segments(chapter_text, list(reversed(segment_payloads)))
+    assert reconstructed_text == chapter_text
+
+
+def test_reconstruct_chapter_text_from_segments_falls_back_to_normalized_text_order() -> None:
+    segment_payloads = [
+        {
+            "segment_index": 2,
+            "normalized_text": "second",
+            "original_text": "second",
+            "original_span_pointer": {"normalized_start_char": -1, "normalized_end_char": -1},
+        },
+        {
+            "segment_index": 1,
+            "normalized_text": "first",
+            "original_text": "first",
+            "original_span_pointer": {"normalized_start_char": -1, "normalized_end_char": -1},
+        },
+    ]
+
+    reconstructed_text = reconstruct_chapter_text_from_segments("first second", segment_payloads)
+    assert reconstructed_text == "firstsecond"
 
 
 def test_segment_text_is_built_from_paragraph_sentence_layer() -> None:
