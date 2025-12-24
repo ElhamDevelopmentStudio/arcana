@@ -166,9 +166,9 @@ Definition of done for each task:
 - [x] [VERB-009] Implement alias-aware substitution mode.
 - [x] [VERB-010] Emit warnings for ambiguous replacement candidates.
 - [x] [VERB-011] Support place-name verbalizations.
-- [ ] [VERB-012] Support artifact terminology verbalizations.
-- [ ] [VERB-013] Support invented word verbalizations.
-- [ ] [VERB-014] Add tests for false positive replacement prevention.
+- [x] [VERB-012] Support artifact terminology verbalizations.
+- [x] [VERB-013] Support invented word verbalizations.
+- [x] [VERB-014] Add tests for false positive replacement prevention.
 
 ## 4.6 Segmentation for TTS and Analysis (Ref: SRS.md §4.6)
 - [x] [SEG-001] Add chapter->paragraph segmentation layer.
