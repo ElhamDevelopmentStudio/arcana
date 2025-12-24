@@ -8,8 +8,10 @@ from fastapi.testclient import TestClient
 os.environ["DATABASE_URL"] = "sqlite:///./test_nipc_poc.db"
 
 from app.config import clear_settings_cache
-from app.database import init_db, reset_engine
+from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
+from app.models import Chapter, Segment
+from app.services.segment_reconstruction import reconstruct_chapter_text_from_segments, reconstruct_corpus_from_chapter_artifacts
 
 
 def setup_module() -> None:
@@ -203,3 +205,70 @@ def test_integration_export_segments_include_chapter_id_metadata() -> None:
 
         for _, segment_indexes in chapter_segment_indexes.items():
             assert segment_indexes == list(range(1, len(segment_indexes) + 1))
+
+
+def test_integration_round_trip_reconstruction_audit_matches_normalized_text() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Reconstruction Audit"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_segmentation_metadata_text().encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 2
+
+        run_resp = client.post(f"/api/projects/{project_id}/runs", json={"max_segment_chars": 80})
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        session = get_session_factory()()
+        try:
+            chapters = (
+                session.query(Chapter)
+                .filter(Chapter.project_id == project_id)
+                .order_by(Chapter.chapter_index.asc())
+                .all()
+            )
+            segment_rows = (
+                session.query(Segment)
+                .filter(Segment.run_id == run_id)
+                .order_by(Segment.id.asc())
+                .all()
+            )
+
+            assert len(chapters) == 2
+            assert len(segment_rows) > 0
+
+            segments_by_chapter: dict[int, list[dict]] = {}
+            for segment in segment_rows:
+                payload = segment.segment_json
+                if not isinstance(payload, dict):
+                    payload = {}
+                segments_by_chapter.setdefault(segment.chapter_id, []).append(payload)
+
+            reconstructed_chapters = []
+            chapter_artifacts = []
+            for chapter in chapters:
+                assert chapter.id in segments_by_chapter
+                reconstructed = reconstruct_chapter_text_from_segments(
+                    chapter.normalized_text,
+                    segments_by_chapter[chapter.id],
+                )
+                assert reconstructed == chapter.normalized_text
+                reconstructed_chapters.append(reconstructed)
+                chapter_artifacts.append(
+                    {
+                        "chapter_index": chapter.chapter_index,
+                        "normalized_text": chapter.normalized_text,
+                        "segment_payloads": segments_by_chapter[chapter.id],
+                    }
+                )
+
+            reconstructed_corpus = reconstruct_corpus_from_chapter_artifacts(chapter_artifacts)
+            expected_corpus = "\n\n".join(reconstructed_chapters)
+            assert reconstructed_corpus == expected_corpus
+        finally:
+            session.close()
