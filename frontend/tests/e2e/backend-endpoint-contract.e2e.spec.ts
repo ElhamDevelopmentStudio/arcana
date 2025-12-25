@@ -624,6 +624,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
         speaker_id: number | null;
         confidence: { speaker: number; emotion?: number };
         speaker_evidence?: { status?: string; method?: string };
+        speaker_state?: string;
       }>;
     };
 
@@ -635,6 +636,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(resolvedSegment?.confidence.speaker).toBeGreaterThan(0.0);
     expect(typeof resolvedSegment?.speaker_evidence).toBe('object');
     expect(resolvedSegment?.speaker_evidence?.status).toBe('found');
+    expect(typeof resolvedSegment?.speaker_state).toBe('string');
   });
 
   test('export includes emotion labels and valence-intensity details for real run', async ({ request }) => {
@@ -675,6 +677,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
         emotion_secondary_label: string;
         confidence: { emotion?: number };
         emotion_evidence?: { method?: string };
+        emotion_state?: string;
       }>;
     };
 
@@ -688,6 +691,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(typeof segment.confidence.emotion).toBe('number');
     expect(typeof segment.emotion_evidence).toBe('object');
     expect(typeof segment.emotion_evidence?.method).toBe('string');
+    expect(typeof segment.emotion_state).toBe('string');
   });
 
   test('export includes per-segment tension contribution details', async ({ request }) => {
@@ -726,6 +730,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
           value: number;
           level: string;
           confidence?: number;
+          state?: string;
           evidence?: Record<string, unknown>;
         };
       }>;
@@ -738,6 +743,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(typeof firstSegment.tension_contribution?.value).toBe('number');
     expect(typeof firstSegment.tension_contribution?.level).toBe('string');
     expect(typeof firstSegment.tension_contribution?.confidence).toBe('number');
+    expect(typeof firstSegment.tension_contribution?.state).toBe('string');
     expect(typeof firstSegment.tension_contribution?.evidence).toBe('object');
     expect(firstSegment.tension_contribution?.value).toBeGreaterThan(0);
     expect(firstSegment.tension_contribution?.value).toBeLessThanOrEqual(1);
@@ -1112,8 +1118,16 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
 
     const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
     expect(exportResponse.status()).toBe(200);
-    const exportPayload = (await exportResponse.json()) as {
-      segments: Array<{ dominance_contribution?: { value: number; level: string; dominant_agent: string; evidence: Record<string, unknown> } }>;
+  const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        dominance_contribution?: {
+          value: number;
+          level: string;
+          dominant_agent: string;
+          state?: string;
+          evidence: Record<string, unknown>;
+        };
+      }>;
     };
 
     expect(exportPayload.segments.length).toBeGreaterThan(0);
@@ -1124,6 +1138,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(typeof firstSegment.dominance_contribution?.level).toBe('string');
     expect(typeof firstSegment.dominance_contribution?.dominant_agent).toBe('string');
     expect(typeof firstSegment.dominance_contribution?.confidence).toBe('number');
+    expect(typeof firstSegment.dominance_contribution?.state).toBe('string');
     expect(firstSegment.dominance_contribution?.dominant_agent.length).toBeGreaterThan(0);
     expect(typeof firstSegment.dominance_contribution?.evidence).toBe('object');
     expect(firstSegment.dominance_contribution?.value).toBeGreaterThanOrEqual(0);
@@ -1163,6 +1178,14 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(exportResponse.status()).toBe(200);
     const exportPayload = (await exportResponse.json()) as {
       segments: Array<{
+        tag_states?: {
+          type?: string;
+          speaker?: string;
+          emotion?: string;
+          tension?: string;
+          dominance?: string;
+          summary?: string;
+        };
         type_confidence?: number;
         type_evidence?: { signals?: unknown[] };
         confidence?: {
@@ -1179,6 +1202,8 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(firstSegment.type_confidence).toBeGreaterThan(0);
     expect(typeof firstSegment.type_evidence).toBe('object');
     expect(Array.isArray(firstSegment.type_evidence?.signals)).toBe(true);
+    expect(typeof firstSegment.tag_states).toBe('object');
+    expect(typeof firstSegment.tag_states?.type).toBe('string');
     expect(typeof firstSegment.confidence?.type).toBe('number');
     expect(typeof firstSegment.confidence?.tension).toBe('number');
     expect(typeof firstSegment.confidence?.dominance).toBe('number');

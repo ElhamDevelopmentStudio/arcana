@@ -120,6 +120,7 @@ def test_full_poc_api_flow_deterministic_export() -> None:
                     "voice_id",
                     "emotion_valence",
                     "emotion_intensity",
+                    "tag_states",
                     "type_evidence",
                     "speaker_evidence",
                     "emotion_evidence",
@@ -129,6 +130,8 @@ def test_full_poc_api_flow_deterministic_export() -> None:
             assert set(segment["confidence"].keys()).issuperset(
                 {"speaker", "emotion", "gender", "type", "tension", "dominance"}
             )
+            assert isinstance(segment["tag_states"], dict)
+            assert set(segment["tag_states"].keys()) >= {"type", "speaker", "emotion", "tension", "dominance", "summary"}
             assert isinstance(segment["type_evidence"], dict)
             assert isinstance(segment["speaker_evidence"], dict)
             assert isinstance(segment["emotion_evidence"], dict)
