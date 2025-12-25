@@ -784,6 +784,62 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     }
   });
 
+  test('export includes narration/internal thought shift details', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-narration-internal-shift'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'narration-internal-thought-shift.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nShe thought the rain would stop, but the sirens kept wailing.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 180,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        narration_internal_thought_shift?: {
+          has_shift: boolean;
+          from: { type: string; text: string; start_char: number; end_char: number } | null;
+          to: { type: string; text: string; start_char: number; end_char: number } | null;
+          confidence: number;
+        };
+      }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const firstSegment = exportPayload.segments[0];
+    expect(firstSegment.narration_internal_thought_shift).toBeDefined();
+    expect(typeof firstSegment.narration_internal_thought_shift?.has_shift).toBe('boolean');
+    expect(typeof firstSegment.narration_internal_thought_shift?.confidence).toBe('number');
+    if (firstSegment.narration_internal_thought_shift?.has_shift) {
+      expect(firstSegment.narration_internal_thought_shift?.from).toBeDefined();
+      expect(firstSegment.narration_internal_thought_shift?.to).toBeDefined();
+      expect(firstSegment.narration_internal_thought_shift?.from?.type).toBeTruthy();
+      expect(firstSegment.narration_internal_thought_shift?.to?.type).toBeTruthy();
+      expect(firstSegment.narration_internal_thought_shift?.from?.type)
+        .not.toBe(firstSegment.narration_internal_thought_shift?.to?.type);
+    }
+  });
+
   test('export includes per-segment dominance contribution details', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-dominance-tags'));
     const projectId = project.id;

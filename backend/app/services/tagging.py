@@ -40,6 +40,14 @@ EMOTION_SHIFT_CONNECTOR_HINTS = {
 }
 
 EMOTION_SHIFT_MIN_DELTA = 0.35
+NARRATION_INTERNAL_THOUGHT_CONNECTORS = {
+    "but",
+    "however",
+    "though",
+    "while",
+    "when",
+    "yet",
+}
 
 TENSION_SIGNAL_WORDS = {
     "danger",
@@ -287,6 +295,169 @@ def _extract_emotion_units(text: str) -> list[dict[str, object]]:
     return units
 
 
+def _classify_internal_or_narrative_unit(text: str) -> str:
+    if INTERNAL_THOUGHT_RE.search(text):
+        return STRUCTURAL_TYPE_INTERNAL_THOUGHT
+    if DIALOGUE_QUOTE_RE.search(text) or DIALOGUE_QUOTE_MARKER_RE.search(text):
+        return STRUCTURAL_TYPE_DIALOGUE
+    return STRUCTURAL_TYPE_NARRATION
+
+
+def _extract_narration_internal_units(text: str) -> list[dict[str, object]]:
+    raw_units = list(re.finditer(r"[^.!?;]+(?:[.!?;]+|$)", text))
+    if not raw_units:
+        return []
+
+    units: list[dict[str, object]] = []
+    split_pattern = re.compile(
+        r"\b(?:but|however|though|although|while|when|yet)\b",
+        re.IGNORECASE,
+    )
+
+    for match in raw_units:
+        raw = match.group(0)
+        start, end = match.span()
+        trimmed = raw.strip()
+        if not trimmed:
+            continue
+
+        unit_start_offset = start + len(raw) - len(raw.lstrip())
+        unit_end_offset = end - len(raw.rstrip())
+        clause_body = trimmed
+
+        split_matches = list(split_pattern.finditer(clause_body))
+        if not split_matches:
+            units.append(
+                {
+                    "text": trimmed,
+                    "start_char": unit_start_offset,
+                    "end_char": unit_end_offset,
+                    "type": _classify_internal_or_narrative_unit(trimmed),
+                }
+            )
+            continue
+
+        segment_cursor = 0
+        for split_match in split_matches:
+            candidate = clause_body[segment_cursor:split_match.start()].strip()
+            if candidate:
+                candidate_start = unit_start_offset + segment_cursor
+                candidate_end = unit_start_offset + split_match.start()
+                units.append(
+                    {
+                        "text": candidate,
+                        "start_char": candidate_start,
+                        "end_char": candidate_end,
+                        "type": _classify_internal_or_narrative_unit(candidate),
+                    }
+                )
+            segment_cursor = split_match.start()
+
+        tail = clause_body[segment_cursor:].strip()
+        if tail:
+            units.append(
+                {
+                    "text": tail,
+                    "start_char": unit_start_offset + segment_cursor,
+                    "end_char": unit_end_offset,
+                    "type": _classify_internal_or_narrative_unit(tail),
+                }
+            )
+
+    return units
+
+
+def detect_narration_internal_thought_shift(text: str) -> dict[str, object]:
+    units = _extract_narration_internal_units(text)
+    if len(units) < 2:
+        return {
+            "has_shift": False,
+            "from": None,
+            "to": None,
+            "confidence": 0.0,
+            "evidence": {
+                "unit_count": len(units),
+                "shift_count": 0,
+                "transition_count": 0,
+            },
+        }
+
+    transitions: list[dict[str, object]] = []
+    for index in range(1, len(units)):
+        prev = units[index - 1]
+        current = units[index]
+        prev_type = str(prev["type"])
+        current_type = str(current["type"])
+
+        if prev_type == current_type:
+            continue
+        if {prev_type, current_type} != {
+            STRUCTURAL_TYPE_NARRATION,
+            STRUCTURAL_TYPE_INTERNAL_THOUGHT,
+        }:
+            continue
+
+        transition_span = text[max(0, int(prev["end_char"]) - 24) : int(current["start_char"]) + 24].lower()
+        has_connector = any(hint in transition_span for hint in NARRATION_INTERNAL_THOUGHT_CONNECTORS)
+        confidence = 0.62 if has_connector else 0.5
+        transitions.append(
+            {
+                "from_type": prev_type,
+                "to_type": current_type,
+                "from": prev,
+                "to": current,
+                "has_connector": has_connector,
+                "confidence": round(confidence, 4),
+            }
+        )
+
+    if not transitions:
+        return {
+            "has_shift": False,
+            "from": None,
+            "to": None,
+            "confidence": 0.0,
+            "evidence": {
+                "unit_count": len(units),
+                "shift_count": 0,
+                "transition_count": 0,
+            },
+        }
+
+    strongest = transitions[0]
+    if len(transitions) > 1:
+        strongest = max(
+            transitions,
+            key=lambda entry: (
+                float(entry["confidence"]),
+                -int(entry["from"]["start_char"]),
+            ),
+        )
+
+    return {
+        "has_shift": True,
+        "from": {
+            "type": str(strongest["from_type"]),
+            "text": str(strongest["from"]["text"]),
+            "start_char": int(strongest["from"]["start_char"]),
+            "end_char": int(strongest["from"]["end_char"]),
+        },
+        "to": {
+            "type": str(strongest["to_type"]),
+            "text": str(strongest["to"]["text"]),
+            "start_char": int(strongest["to"]["start_char"]),
+            "end_char": int(strongest["to"]["end_char"]),
+        },
+        "confidence": float(strongest["confidence"]),
+        "evidence": {
+            "unit_count": len(units),
+            "shift_count": len(transitions),
+            "transition_count": len(transitions),
+            "has_connector": bool(strongest["has_connector"]),
+        },
+    }
+
+
 def detect_emotion_shift(text: str) -> dict[str, object]:
     units = _extract_emotion_units(text)
     if len(units) < 2:
@@ -517,6 +688,7 @@ def tag_segment(text: str) -> dict[str, object]:
     speaker, speaker_confidence = resolve_speaker(text) if structure == "dialogue" else ("unknown", 0.2)
     valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
     emotion_shift = detect_emotion_shift(text)
+    narration_internal_thought_shift = detect_narration_internal_thought_shift(text)
     tension = compute_tension_contribution(
         text=text,
         valence=valence,
@@ -541,6 +713,7 @@ def tag_segment(text: str) -> dict[str, object]:
         "emotion_secondary_label": secondary_label,
         "emotion_confidence": emotion_confidence,
         "emotion_shift": emotion_shift,
+        "narration_internal_thought_shift": narration_internal_thought_shift,
         "tension_contribution": {
             "value": tension,
             "level": _tension_contribution_level(tension),
