@@ -193,7 +193,7 @@ Definition of done for each task:
 - [x] [SEG-020] Add round-trip audit test (reconstructed text consistency).
 
 ## 4.7 Tagging System (Ref: SRS.md §4.7)
-- [ ] [TAG-001] Implement structural type tag set (`narration/dialogue/internal thought/mixed/description/action`).
+- [x] [TAG-001] Implement structural type tag set (`narration/dialogue/internal thought/mixed/description/action`).
 - [ ] [TAG-002] Implement speaker attribution output (`speaker_id`, confidence).
 - [ ] [TAG-003] Implement emotion outputs (`valence`, `intensity`, primary label, secondary label, confidence).
 - [ ] [TAG-004] Implement shift marker detector scaffolding.

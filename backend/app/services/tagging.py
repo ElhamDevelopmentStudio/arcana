@@ -29,6 +29,13 @@ NEGATIVE_WORDS = {
     "blood",
 }
 
+STRUCTURAL_TYPE_NARRATION = "narration"
+STRUCTURAL_TYPE_DIALOGUE = "dialogue"
+STRUCTURAL_TYPE_INTERNAL_THOUGHT = "internal thought"
+STRUCTURAL_TYPE_MIXED = "mixed"
+STRUCTURAL_TYPE_DESCRIPTION = "description"
+STRUCTURAL_TYPE_ACTION = "action"
+
 SPEAKER_PATTERN = re.compile(r'"[^"]+"\s+([A-Za-z][A-Za-z0-9_-]*)\s+said\b', re.IGNORECASE)
 DIALOGUE_QUOTE_RE = re.compile(
     r'"[^"]+"\s*(?:[,;:]?\s*(?:[A-Za-z][A-Za-z0-9_-]*\s+)?'
@@ -37,6 +44,18 @@ DIALOGUE_QUOTE_RE = re.compile(
 )
 DIALOGUE_QUOTE_MARKER_RE = re.compile(r'(["“])[^"“”]*["”]')
 DASH_LEADER_RE = re.compile(r"(?m)^\s*-\s+[^\n]+")
+INTERNAL_THOUGHT_RE = re.compile(
+    r"\b(?:thought|wondered|wondering|realized|realizing|remembered|remembering|decided|deciding|figured|figuring|imagined|imagine|suspected|considered|knew|sensed)\b",
+    re.IGNORECASE,
+)
+ACTION_VERB_RE = re.compile(
+    r"\b(?:dashed|rushed|sprinted|entered|entered|opened|closed|smashed|slammed|grabbed|dropped|threw|stabbed|struck|leapt|ran|run|walked|walk|stumbled|collided|lurched|drew|pulled|pushed|shouted|whispered)\b",
+    re.IGNORECASE,
+)
+DESCRIPTION_HINT_RE = re.compile(
+    r"\b(?:moonlight|sunlight|silence|shadows|window|door|street|forest|field|hall|room|sky|rain|fog|mist|light|shadow|wind|air|smell|echo)\b",
+    re.IGNORECASE,
+)
 
 
 def detect_dialogue_blocks(text: str) -> list[dict[str, str]]:
@@ -92,7 +111,24 @@ def detect_narration_blocks(text: str) -> list[dict[str, str]]:
 
 
 def detect_structure(text: str) -> str:
-    return "dialogue" if any(block["type"] == "dialogue" for block in detect_dialogue_blocks(text)) else "narration"
+    blocks = detect_dialogue_blocks(text)
+    has_dialogue = any(block["type"] == STRUCTURAL_TYPE_DIALOGUE for block in blocks)
+    has_narration = any(block["type"] == STRUCTURAL_TYPE_NARRATION for block in blocks)
+    has_internal_thought = bool(INTERNAL_THOUGHT_RE.search(text))
+    has_action = bool(ACTION_VERB_RE.search(text))
+    has_description = bool(DESCRIPTION_HINT_RE.search(text))
+
+    if has_dialogue and (has_internal_thought or has_narration):
+        return STRUCTURAL_TYPE_MIXED
+    if has_dialogue:
+        return STRUCTURAL_TYPE_DIALOGUE
+    if has_internal_thought:
+        return STRUCTURAL_TYPE_INTERNAL_THOUGHT
+    if has_action:
+        return STRUCTURAL_TYPE_ACTION
+    if has_description:
+        return STRUCTURAL_TYPE_DESCRIPTION
+    return STRUCTURAL_TYPE_NARRATION
 
 
 def compute_valence(text: str) -> tuple[float, float, float]:
