@@ -195,7 +195,7 @@ Definition of done for each task:
 ## 4.7 Tagging System (Ref: SRS.md §4.7)
 - [x] [TAG-001] Implement structural type tag set (`narration/dialogue/internal thought/mixed/description/action`).
 - [x] [TAG-002] Implement speaker attribution output (`speaker_id`, confidence).
-- [ ] [TAG-003] Implement emotion outputs (`valence`, `intensity`, primary label, secondary label, confidence).
+- [x] [TAG-003] Implement emotion outputs (`valence`, `intensity`, primary label, secondary label, confidence).
 - [ ] [TAG-004] Implement shift marker detector scaffolding.
 - [ ] [TAG-005] Implement tension contribution tag per segment.
 - [ ] [TAG-006] Implement dominance contribution tag per segment.

@@ -29,6 +29,24 @@ NEGATIVE_WORDS = {
     "blood",
 }
 
+EMOTION_SECONDARY_LABEL_HINTS = {
+    "positive": [
+        ("joyful", {"joy", "happy", "smile", "great"}),
+        ("hopeful", {"hope", "warm", "relief"}),
+        ("gratitude", {"grateful", "thank"}),
+        ("calm", {"calm"}),
+    ],
+    "negative": [
+        ("fearful", {"fear", "despair"}),
+        ("angry", {"angry", "hate", "grim", "cold"}),
+        ("grief", {"sad", "bad"}),
+        ("violent", {"blood", "terrible"}),
+    ],
+    "neutral": [
+        ("neutral", {"neutral"}),
+    ],
+}
+
 STRUCTURAL_TYPE_NARRATION = "narration"
 STRUCTURAL_TYPE_DIALOGUE = "dialogue"
 STRUCTURAL_TYPE_INTERNAL_THOUGHT = "internal thought"
@@ -131,18 +149,38 @@ def detect_structure(text: str) -> str:
     return STRUCTURAL_TYPE_NARRATION
 
 
-def compute_valence(text: str) -> tuple[float, float, float]:
+def _pick_secondary_label(sentiment: str, tokens: list[str]) -> str:
+    for label, hints in EMOTION_SECONDARY_LABEL_HINTS.get(sentiment, []):
+        if any(token in tokens for token in hints):
+            return label
+    return "neutral" if sentiment == "neutral" else sentiment
+
+
+def compute_valence(text: str) -> tuple[float, float, float, str, str]:
     tokens = re.findall(r"[A-Za-z']+", text.lower())
     if not tokens:
-        return 0.0, 0.0, 0.4
+        return 0.0, 0.0, 0.4, "neutral", "neutral"
 
     positive = sum(1 for token in tokens if token in POSITIVE_WORDS)
     negative = sum(1 for token in tokens if token in NEGATIVE_WORDS)
     raw_valence = (positive - negative) / len(tokens)
     valence = max(-1.0, min(1.0, raw_valence))
     intensity = abs(valence)
-    confidence = 0.6 if (positive + negative) > 0 else 0.4
-    return round(valence, 4), round(intensity, 4), confidence
+    sentiment_signal_total = positive + negative
+    if sentiment_signal_total > 0:
+        confidence = 0.6
+    else:
+        confidence = 0.4
+
+    if valence >= 0.2:
+        primary_label = "positive"
+    elif valence <= -0.2:
+        primary_label = "negative"
+    else:
+        primary_label = "neutral"
+
+    secondary_label = _pick_secondary_label(sentiment=primary_label, tokens=tokens)
+    return round(valence, 4), round(intensity, 4), confidence, primary_label, secondary_label
 
 
 def resolve_speaker(text: str) -> tuple[str, float]:
@@ -157,7 +195,7 @@ def tag_segment(text: str) -> dict[str, object]:
     narration_blocks = detect_narration_blocks(text)
     structure = detect_structure(text)
     speaker, speaker_confidence = resolve_speaker(text) if structure == "dialogue" else ("unknown", 0.2)
-    valence, intensity, emotion_confidence = compute_valence(text)
+    valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
 
     return {
         "type": structure,
@@ -167,5 +205,7 @@ def tag_segment(text: str) -> dict[str, object]:
         "speaker_confidence": speaker_confidence,
         "emotion_valence": valence,
         "emotion_intensity": intensity,
+        "emotion_primary_label": primary_label,
+        "emotion_secondary_label": secondary_label,
         "emotion_confidence": emotion_confidence,
     }

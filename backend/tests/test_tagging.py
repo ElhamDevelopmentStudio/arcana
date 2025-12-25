@@ -43,6 +43,24 @@ def test_tag_segment_includes_dialogue_blocks_for_traceability() -> None:
     assert tags["narration_blocks"] == []
 
 
+def test_tag_segment_emotion_outputs_include_valence_intensity_and_labels() -> None:
+    tags = tag_segment("The night was calm and good, and hope was rising.")
+    assert tags["emotion_valence"] > 0
+    assert tags["emotion_intensity"] == abs(tags["emotion_valence"])
+    assert tags["emotion_primary_label"] == "positive"
+    assert tags["emotion_secondary_label"] in {"joyful", "hopeful", "gratitude", "calm"}
+    assert tags["emotion_confidence"] == 0.6
+
+
+def test_tag_segment_emotion_outputs_default_to_neutral_for_no_signal_words() -> None:
+    tags = tag_segment("A branch crossed the floor.")
+    assert tags["emotion_valence"] == 0.0
+    assert tags["emotion_intensity"] == 0.0
+    assert tags["emotion_primary_label"] == "neutral"
+    assert tags["emotion_secondary_label"] == "neutral"
+    assert tags["emotion_confidence"] == 0.4
+
+
 def test_detect_narration_blocks_identifies_outside_dialogue_ranges() -> None:
     text = '"She spoke," said Alex.\nThen silence returned.\n- Another reply.'
     blocks = detect_narration_blocks(text)
