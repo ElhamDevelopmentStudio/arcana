@@ -339,6 +339,15 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(exportPayload.project_id).toBe(projectId);
     expect(exportPayload.run_id).toBe(runId);
     expect(Array.isArray(exportPayload.segments)).toBe(true);
+    expect(exportPayload.segments.every((segment) => Object.hasOwn(segment as Record<string, unknown>, 'speaker_id'))).toBe(true);
+    expect(
+      exportPayload.segments.every(
+        (segment) =>
+          typeof (segment as Record<string, unknown>).confidence === 'object' &&
+          Object.hasOwn(segment as Record<string, unknown>, 'confidence') &&
+          Object.hasOwn((segment as Record<string, unknown>).confidence as Record<string, unknown>, 'speaker'),
+      ),
+    ).toBe(true);
 
     const pronunciationScopes: Array<[string, string, string, string]> = [
       ['global', 'global', 'Nimble', 'Nim-ble'],
@@ -542,5 +551,68 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await page.getByRole('button', { name: 'Continue to Export' }).click();
     await expect(page).toHaveURL(`/projects/${projectId}/export`);
     await expect(page.getByRole('button', { name: /Download JSON/i })).toBeEnabled();
+  });
+
+  test('speaker attribution fields include speaker_id and speaker confidence in exports', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-speaker-attribution'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'speaker-attribution.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\n"Come closer," Alice said.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const upsertResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Alice',
+            verbalized_form: 'Alice',
+            gender: 'female',
+            aliases: ['Al'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(upsertResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+    expect(runPayload.run_id).toBeGreaterThan(0);
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        speaker: string;
+        speaker_id: number | null;
+        confidence: { speaker: number; emotion?: number };
+      }>;
+    };
+
+    const resolvedSegment = exportPayload.segments.find((segment) => segment.speaker.toLowerCase() === 'alice');
+    expect(resolvedSegment).toBeDefined();
+    expect(typeof resolvedSegment?.speaker_id).toBe('number');
+    expect(resolvedSegment?.speaker_id).toBeGreaterThan(0);
+    expect(typeof resolvedSegment?.confidence.speaker).toBe('number');
+    expect(resolvedSegment?.confidence.speaker).toBeGreaterThan(0.0);
   });
 });
