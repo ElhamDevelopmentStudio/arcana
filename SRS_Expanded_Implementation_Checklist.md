@@ -203,8 +203,8 @@ Definition of done for each task:
 - [x] [TAG-008] Detect narration<->internal thought shift.
 - [x] [TAG-009] Detect internal<->external speech shift.
 - [x] [TAG-010] Add tone reversal/dark irony marker when triggered.
-- [ ] [TAG-011] Create sub-segment boundary records on shift.
-- [ ] [TAG-012] Store sub-segment tags independently.
+- [x] [TAG-011] Create sub-segment boundary records on shift.
+- [x] [TAG-012] Store sub-segment tags independently.
 - [ ] [TAG-013] Store parent segment summary tag (dominant tone/state).
 - [ ] [TAG-014] Add confidence field for every tag category.
 - [ ] [TAG-015] Add evidence pointer store for every tag category.
