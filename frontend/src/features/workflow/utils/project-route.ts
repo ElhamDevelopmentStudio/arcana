@@ -17,6 +17,7 @@ export function projectRoute(
     | 'pipeline-setup'
     | 'run-monitor'
     | 'review/speakers'
+    | 'review/emotions'
     | 'export'
     | 'dashboards',
 ) {
