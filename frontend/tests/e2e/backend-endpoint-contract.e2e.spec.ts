@@ -356,6 +356,11 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
           Object.hasOwn((segment as Record<string, unknown>).confidence as Record<string, unknown>, 'emotion'),
       ),
     ).toBe(true);
+    expect(
+      exportPayload.segments.every((segment) =>
+        Object.hasOwn(segment as Record<string, unknown>, 'tension_contribution'),
+      ),
+    ).toBe(true);
 
     const pronunciationScopes: Array<[string, string, string, string]> = [
       ['global', 'global', 'Nimble', 'Nim-ble'],
@@ -672,5 +677,50 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(segment.emotion_primary_label).toMatch(/(positive|negative|neutral)/);
     expect(segment.emotion_secondary_label).toBeTruthy();
     expect(typeof segment.confidence.emotion).toBe('number');
+  });
+
+  test('export includes per-segment tension contribution details', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-tension-tags'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'tension-tags.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nHe grabbed a knife and dashed toward the open gate.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{ tension_contribution?: { value: number; level: string } }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const firstSegment = exportPayload.segments[0];
+    expect(firstSegment.tension_contribution).toBeDefined();
+    expect(typeof firstSegment.tension_contribution).toBe('object');
+    expect(typeof firstSegment.tension_contribution?.value).toBe('number');
+    expect(typeof firstSegment.tension_contribution?.level).toBe('string');
+    expect(firstSegment.tension_contribution?.value).toBeGreaterThan(0);
+    expect(firstSegment.tension_contribution?.value).toBeLessThanOrEqual(1);
+    expect(['calm', 'low', 'moderate', 'high']).toContain(firstSegment.tension_contribution?.level);
   });
 });

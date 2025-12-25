@@ -29,6 +29,56 @@ NEGATIVE_WORDS = {
     "blood",
 }
 
+TENSION_SIGNAL_WORDS = {
+    "danger",
+    "dangerous",
+    "threat",
+    "threatened",
+    "escape",
+    "chase",
+    "fight",
+    "attacked",
+    "attack",
+    "attackers",
+    "blood",
+    "knife",
+    "gun",
+    "gunfire",
+    "scream",
+    "screamed",
+    "alarm",
+    "afraid",
+    "panic",
+    "urgent",
+    "desperate",
+    "desperately",
+    "trapped",
+    "siege",
+    "battle",
+    "collapse",
+    "ambush",
+    "rushed",
+    "racing",
+    "breathed",
+    "sudden",
+    "suddenly",
+}
+
+TENSION_INTENSIFIERS = {
+    "so",
+    "very",
+    "deeply",
+    "barely",
+    "hardly",
+    "almost",
+    "just",
+    "now",
+    "still",
+    "then",
+    "before",
+    "while",
+}
+
 EMOTION_SECONDARY_LABEL_HINTS = {
     "positive": [
         ("joyful", {"joy", "happy", "smile", "great"}),
@@ -74,6 +124,10 @@ DESCRIPTION_HINT_RE = re.compile(
     r"\b(?:moonlight|sunlight|silence|shadows|window|door|street|forest|field|hall|room|sky|rain|fog|mist|light|shadow|wind|air|smell|echo)\b",
     re.IGNORECASE,
 )
+
+
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"[A-Za-z']+", text.lower())
 
 
 def detect_dialogue_blocks(text: str) -> list[dict[str, str]]:
@@ -157,7 +211,7 @@ def _pick_secondary_label(sentiment: str, tokens: list[str]) -> str:
 
 
 def compute_valence(text: str) -> tuple[float, float, float, str, str]:
-    tokens = re.findall(r"[A-Za-z']+", text.lower())
+    tokens = _tokenize(text)
     if not tokens:
         return 0.0, 0.0, 0.4, "neutral", "neutral"
 
@@ -183,6 +237,40 @@ def compute_valence(text: str) -> tuple[float, float, float, str, str]:
     return round(valence, 4), round(intensity, 4), confidence, primary_label, secondary_label
 
 
+def _tension_contribution_level(value: float) -> str:
+    if value >= 0.75:
+        return "high"
+    if value >= 0.5:
+        return "moderate"
+    if value >= 0.25:
+        return "low"
+    return "calm"
+
+
+def compute_tension_contribution(text: str, valence: float, intensity: float, structure: str) -> float:
+    tokens = _tokenize(text)
+    signal_count = sum(1 for token in tokens if token in TENSION_SIGNAL_WORDS)
+    intensifier_count = sum(1 for token in tokens if token in TENSION_INTENSIFIERS)
+
+    base_tension = intensity
+    if structure in {STRUCTURAL_TYPE_ACTION, STRUCTURAL_TYPE_MIXED, STRUCTURAL_TYPE_DIALOGUE}:
+        base_tension += 0.18
+    elif structure == STRUCTURAL_TYPE_DESCRIPTION:
+        base_tension -= 0.12
+
+    signal_boost = min(0.45, 0.12 * signal_count)
+    intensifier_boost = min(0.15, 0.03 * intensifier_count)
+    tension_value = base_tension + signal_boost + intensifier_boost
+
+    if valence > 0.25:
+        tension_value *= 0.7
+    elif valence < -0.2:
+        tension_value *= 1.1
+
+    normalized = max(0.0, min(1.0, round(tension_value, 4)))
+    return normalized
+
+
 def resolve_speaker(text: str) -> tuple[str, float]:
     match = SPEAKER_PATTERN.search(text)
     if match:
@@ -196,6 +284,12 @@ def tag_segment(text: str) -> dict[str, object]:
     structure = detect_structure(text)
     speaker, speaker_confidence = resolve_speaker(text) if structure == "dialogue" else ("unknown", 0.2)
     valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
+    tension = compute_tension_contribution(
+        text=text,
+        valence=valence,
+        intensity=intensity,
+        structure=structure,
+    )
 
     return {
         "type": structure,
@@ -208,4 +302,8 @@ def tag_segment(text: str) -> dict[str, object]:
         "emotion_primary_label": primary_label,
         "emotion_secondary_label": secondary_label,
         "emotion_confidence": emotion_confidence,
+        "tension_contribution": {
+            "value": tension,
+            "level": _tension_contribution_level(tension),
+        },
     }

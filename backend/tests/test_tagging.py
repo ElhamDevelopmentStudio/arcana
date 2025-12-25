@@ -43,6 +43,25 @@ def test_tag_segment_includes_dialogue_blocks_for_traceability() -> None:
     assert tags["narration_blocks"] == []
 
 
+def test_tag_segment_includes_tension_contribution_tag() -> None:
+    tags = tag_segment("He bolted to the door as she shouted, \"Help!\" then the alarm rang.")
+    tension = tags["tension_contribution"]
+    assert isinstance(tension, dict)
+    assert set(tension.keys()) == {"value", "level"}
+    assert isinstance(tension["value"], float)
+    assert 0.0 <= tension["value"] <= 1.0
+    assert tension["level"] in {"high", "moderate", "low", "calm"}
+    assert tension["value"] > 0.0
+
+
+def test_tag_segment_tension_contribution_remains_low_for_stable_description() -> None:
+    tags = tag_segment("The moonlight painted the room in silver lines.")
+    tension = tags["tension_contribution"]
+    assert isinstance(tension, dict)
+    assert tension["level"] in {"calm", "low"}
+    assert tension["value"] < 0.35
+
+
 def test_tag_segment_emotion_outputs_include_valence_intensity_and_labels() -> None:
     tags = tag_segment("The night was calm and good, and hope was rising.")
     assert tags["emotion_valence"] > 0
