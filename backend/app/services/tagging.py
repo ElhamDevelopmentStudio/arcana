@@ -29,6 +29,18 @@ NEGATIVE_WORDS = {
     "blood",
 }
 
+EMOTION_SHIFT_CONNECTOR_HINTS = {
+    "but",
+    "however",
+    "though",
+    "although",
+    "nevertheless",
+    "instead",
+    "yet",
+}
+
+EMOTION_SHIFT_MIN_DELTA = 0.35
+
 TENSION_SIGNAL_WORDS = {
     "danger",
     "dangerous",
@@ -227,6 +239,156 @@ def _pick_secondary_label(sentiment: str, tokens: list[str]) -> str:
     return "neutral" if sentiment == "neutral" else sentiment
 
 
+def _extract_emotion_units(text: str) -> list[dict[str, object]]:
+    raw_units = list(re.finditer(r"[^.!?;]+(?:[.!?;]+|$)", text))
+    if not raw_units:
+        return []
+
+    units: list[dict[str, object]] = []
+    split_pattern = re.compile(
+        r"\b(?:but|however|though|although|nevertheless|instead|yet)\b",
+        re.IGNORECASE,
+    )
+
+    for match in raw_units:
+        raw = match.group(0)
+        start, end = match.span()
+
+        trimmed = raw.strip()
+        if not trimmed:
+            continue
+
+        unit_start_offset = start + len(raw) - len(raw.lstrip())
+        unit_end_offset = end - len(raw.rstrip())
+        clause_body = trimmed
+
+        split_matches = list(split_pattern.finditer(clause_body))
+        if not split_matches:
+            units.append({"text": trimmed, "start_char": unit_start_offset, "end_char": unit_end_offset})
+            continue
+
+        segment_cursor = 0
+        for split_match in split_matches:
+            candidate = clause_body[segment_cursor:split_match.start()].strip()
+            if candidate:
+                sub_start = unit_start_offset + segment_cursor
+                sub_end = unit_start_offset + split_match.start()
+                units.append({"text": candidate, "start_char": sub_start, "end_char": sub_end})
+            segment_cursor = split_match.start()
+
+        tail = clause_body[segment_cursor:].strip()
+        if tail:
+            units.append({
+                "text": tail,
+                "start_char": unit_start_offset + segment_cursor,
+                "end_char": unit_end_offset,
+            })
+
+    return units
+
+
+def detect_emotion_shift(text: str) -> dict[str, object]:
+    units = _extract_emotion_units(text)
+    if len(units) < 2:
+        return {
+            "has_shift": False,
+            "from": None,
+            "to": None,
+            "confidence": 0.0,
+            "evidence": {
+                "unit_count": len(units),
+                "shift_count": 0,
+                "max_delta": 0.0,
+            },
+        }
+
+    evaluated: list[dict[str, object]] = []
+    for unit in units:
+        valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(str(unit["text"]))
+        evaluated.append(
+            {
+                "text": unit["text"],
+                "start_char": int(unit["start_char"]),
+                "end_char": int(unit["end_char"]),
+                "valence": valence,
+                "intensity": intensity,
+                "primary_label": primary_label,
+                "secondary_label": secondary_label,
+                "emotion_confidence": emotion_confidence,
+            }
+        )
+
+    transitions: list[dict[str, object]] = []
+    for index in range(1, len(evaluated)):
+        prev = evaluated[index - 1]
+        current = evaluated[index]
+        delta = float(abs(float(current["valence"]) - float(prev["valence"])))
+        if delta < EMOTION_SHIFT_MIN_DELTA:
+            continue
+
+        from_label = str(prev["primary_label"])
+        to_label = str(current["primary_label"])
+        if from_label == to_label:
+            continue
+
+        connector_span = text[max(0, int(prev["end_char"]) - 30) : int(current["start_char"]) + 30].lower()
+        has_connector = any(hint in connector_span for hint in EMOTION_SHIFT_CONNECTOR_HINTS)
+        confidence = min(0.95, 0.35 + delta + (0.15 if has_connector else 0.0))
+
+        transitions.append(
+            {
+                "index": index - 1,
+                "from": prev,
+                "to": current,
+                "delta": delta,
+                "has_connector": has_connector,
+                "confidence": round(confidence, 4),
+            }
+        )
+
+    if not transitions:
+        return {
+            "has_shift": False,
+            "from": None,
+            "to": None,
+            "confidence": 0.0,
+            "evidence": {
+                "unit_count": len(units),
+                "shift_count": 0,
+                "max_delta": 0.0,
+            },
+        }
+
+    strongest = max(transitions, key=lambda entry: float(entry["delta"]))
+    return {
+        "has_shift": True,
+        "from": {
+            "label": str(strongest["from"]["primary_label"]),
+            "secondary_label": str(strongest["from"]["secondary_label"]),
+            "valence": float(strongest["from"]["valence"]),
+            "intensity": float(strongest["from"]["intensity"]),
+            "start_char": int(strongest["from"]["start_char"]),
+            "end_char": int(strongest["from"]["end_char"]),
+        },
+        "to": {
+            "label": str(strongest["to"]["primary_label"]),
+            "secondary_label": str(strongest["to"]["secondary_label"]),
+            "valence": float(strongest["to"]["valence"]),
+            "intensity": float(strongest["to"]["intensity"]),
+            "start_char": int(strongest["to"]["start_char"]),
+            "end_char": int(strongest["to"]["end_char"]),
+        },
+        "confidence": float(strongest["confidence"]),
+        "evidence": {
+            "unit_count": len(units),
+            "shift_count": len(transitions),
+            "max_delta": float(strongest["delta"]),
+            "has_connector": bool(strongest["has_connector"]),
+            "transition_index": int(strongest["index"]),
+        },
+    }
+
+
 def compute_valence(text: str) -> tuple[float, float, float, str, str]:
     tokens = _tokenize(text)
     if not tokens:
@@ -354,6 +516,7 @@ def tag_segment(text: str) -> dict[str, object]:
     structure = detect_structure(text)
     speaker, speaker_confidence = resolve_speaker(text) if structure == "dialogue" else ("unknown", 0.2)
     valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
+    emotion_shift = detect_emotion_shift(text)
     tension = compute_tension_contribution(
         text=text,
         valence=valence,
@@ -377,6 +540,7 @@ def tag_segment(text: str) -> dict[str, object]:
         "emotion_primary_label": primary_label,
         "emotion_secondary_label": secondary_label,
         "emotion_confidence": emotion_confidence,
+        "emotion_shift": emotion_shift,
         "tension_contribution": {
             "value": tension,
             "level": _tension_contribution_level(tension),

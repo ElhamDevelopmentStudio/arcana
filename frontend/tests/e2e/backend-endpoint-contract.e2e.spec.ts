@@ -729,6 +729,61 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(['calm', 'low', 'moderate', 'high']).toContain(firstSegment.tension_contribution?.level);
   });
 
+  test('export includes per-segment emotion shift details', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-emotion-shift'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'emotion-shift-tags.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nThe moonlight was warm, but fear and despair arrived.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 160,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        emotion_shift?: {
+          has_shift: boolean;
+          from: { label: string; valence: number; start_char: number; end_char: number } | null;
+          to: { label: string; valence: number; start_char: number; end_char: number } | null;
+          confidence: number;
+        };
+      }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const firstSegment = exportPayload.segments[0];
+    expect(firstSegment.emotion_shift).toBeDefined();
+    expect(typeof firstSegment.emotion_shift?.has_shift).toBe('boolean');
+    expect(typeof firstSegment.emotion_shift?.confidence).toBe('number');
+    if (firstSegment.emotion_shift?.has_shift) {
+      expect(firstSegment.emotion_shift?.from).toBeDefined();
+      expect(firstSegment.emotion_shift?.to).toBeDefined();
+      expect(firstSegment.emotion_shift?.from?.label).toBeTruthy();
+      expect(firstSegment.emotion_shift?.to?.label).toBeTruthy();
+      expect(firstSegment.emotion_shift?.from?.label).not.toBe(firstSegment.emotion_shift?.to?.label);
+    }
+  });
+
   test('export includes per-segment dominance contribution details', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-dominance-tags'));
     const projectId = project.id;
