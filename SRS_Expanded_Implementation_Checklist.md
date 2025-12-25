@@ -198,7 +198,7 @@ Definition of done for each task:
 - [x] [TAG-003] Implement emotion outputs (`valence`, `intensity`, primary label, secondary label, confidence).
 - [ ] [TAG-004] Implement shift marker detector scaffolding.
 - [x] [TAG-005] Implement tension contribution tag per segment.
-- [ ] [TAG-006] Implement dominance contribution tag per segment.
+- [x] [TAG-006] Implement dominance contribution tag per segment.
 - [ ] [TAG-007] Detect emotion shift within a segment.
 - [ ] [TAG-008] Detect narration<->internal thought shift.
 - [ ] [TAG-009] Detect internal<->external speech shift.

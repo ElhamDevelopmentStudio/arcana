@@ -79,6 +79,23 @@ TENSION_INTENSIFIERS = {
     "while",
 }
 
+DOMINANCE_PRONOUN_TOKENS = {
+    "he",
+    "she",
+    "they",
+    "his",
+    "her",
+    "their",
+    "them",
+    "him",
+    "i",
+    "me",
+    "we",
+    "us",
+    "my",
+    "our",
+}
+
 EMOTION_SECONDARY_LABEL_HINTS = {
     "positive": [
         ("joyful", {"joy", "happy", "smile", "great"}),
@@ -271,6 +288,59 @@ def compute_tension_contribution(text: str, valence: float, intensity: float, st
     return normalized
 
 
+def _dominance_contribution_level(value: float) -> str:
+    if value >= 0.8:
+        return "dominant"
+    if value >= 0.6:
+        return "strong"
+    if value >= 0.35:
+        return "moderate"
+    return "low"
+
+
+def compute_dominance_contribution(
+    text: str,
+    speaker: str,
+    structure: str,
+) -> tuple[float, str, str, dict]:
+    tokens = _tokenize(text)
+    proper_noun_hits = re.findall(r"\b[A-Z][a-z]{1,}\b", text)
+
+    if speaker and speaker != "unknown":
+        base = 0.72
+    elif structure == STRUCTURAL_TYPE_DIALOGUE:
+        base = 0.55
+    elif structure == STRUCTURAL_TYPE_MIXED:
+        base = 0.48
+    elif structure == STRUCTURAL_TYPE_INTERNAL_THOUGHT:
+        base = 0.44
+    else:
+        base = 0.32
+
+    if structure == STRUCTURAL_TYPE_ACTION:
+        base += 0.08
+    if structure == STRUCTURAL_TYPE_DESCRIPTION:
+        base -= 0.08
+
+    reference_boost = min(0.2, 0.03 * len(set(token for token in tokens if token in DOMINANCE_PRONOUN_TOKENS)))
+    proper_noun_boost = min(0.15, 0.02 * len(proper_noun_hits))
+    dominance_value = base + reference_boost + proper_noun_boost
+
+    dominance_value = max(0.0, min(1.0, round(dominance_value, 4)))
+    dominant_agent = speaker.lower() if speaker and speaker != "unknown" else "narrative_guide"
+    evidence = {
+        "speaker_resolved": speaker != "unknown",
+        "pronoun_reference_count": sum(token in DOMINANCE_PRONOUN_TOKENS for token in tokens),
+        "proper_noun_hits": len(proper_noun_hits),
+    }
+    return (
+        dominance_value,
+        _dominance_contribution_level(dominance_value),
+        dominant_agent,
+        evidence,
+    )
+
+
 def resolve_speaker(text: str) -> tuple[str, float]:
     match = SPEAKER_PATTERN.search(text)
     if match:
@@ -290,6 +360,11 @@ def tag_segment(text: str) -> dict[str, object]:
         intensity=intensity,
         structure=structure,
     )
+    dominance_value, dominance_level, dominant_agent, dominance_evidence = compute_dominance_contribution(
+        text=text,
+        speaker=speaker,
+        structure=structure,
+    )
 
     return {
         "type": structure,
@@ -305,5 +380,11 @@ def tag_segment(text: str) -> dict[str, object]:
         "tension_contribution": {
             "value": tension,
             "level": _tension_contribution_level(tension),
+        },
+        "dominance_contribution": {
+            "value": dominance_value,
+            "level": dominance_level,
+            "dominant_agent": dominant_agent,
+            "evidence": dominance_evidence,
         },
     }

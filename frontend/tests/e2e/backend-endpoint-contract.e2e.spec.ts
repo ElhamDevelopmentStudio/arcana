@@ -361,6 +361,11 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
         Object.hasOwn(segment as Record<string, unknown>, 'tension_contribution'),
       ),
     ).toBe(true);
+    expect(
+      exportPayload.segments.every((segment) =>
+        Object.hasOwn(segment as Record<string, unknown>, 'dominance_contribution'),
+      ),
+    ).toBe(true);
 
     const pronunciationScopes: Array<[string, string, string, string]> = [
       ['global', 'global', 'Nimble', 'Nim-ble'],
@@ -722,5 +727,53 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(firstSegment.tension_contribution?.value).toBeGreaterThan(0);
     expect(firstSegment.tension_contribution?.value).toBeLessThanOrEqual(1);
     expect(['calm', 'low', 'moderate', 'high']).toContain(firstSegment.tension_contribution?.level);
+  });
+
+  test('export includes per-segment dominance contribution details', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-dominance-tags'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'dominance-tags.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nAlice said, "Move now."'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{ dominance_contribution?: { value: number; level: string; dominant_agent: string; evidence: Record<string, unknown> } }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const firstSegment = exportPayload.segments[0];
+    expect(firstSegment.dominance_contribution).toBeDefined();
+    expect(typeof firstSegment.dominance_contribution).toBe('object');
+    expect(typeof firstSegment.dominance_contribution?.value).toBe('number');
+    expect(typeof firstSegment.dominance_contribution?.level).toBe('string');
+    expect(typeof firstSegment.dominance_contribution?.dominant_agent).toBe('string');
+    expect(firstSegment.dominance_contribution?.dominant_agent.length).toBeGreaterThan(0);
+    expect(typeof firstSegment.dominance_contribution?.evidence).toBe('object');
+    expect(firstSegment.dominance_contribution?.value).toBeGreaterThanOrEqual(0);
+    expect(firstSegment.dominance_contribution?.value).toBeLessThanOrEqual(1);
+    expect(['dominant', 'strong', 'moderate', 'low']).toContain(firstSegment.dominance_contribution?.level);
   });
 });
