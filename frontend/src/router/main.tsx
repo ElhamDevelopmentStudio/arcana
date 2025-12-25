@@ -31,6 +31,11 @@ const ProjectSpeakerReviewPage = lazy(() =>
 const ProjectEmotionReviewPage = lazy(() =>
   import('@/pages/projects/project-emotion-review-page').then((module) => ({ default: module.ProjectEmotionReviewPage })),
 );
+const ProjectLowConfidenceReviewPage = lazy(() =>
+  import('@/pages/projects/project-low-confidence-review-page').then((module) => ({
+    default: module.ProjectLowConfidenceReviewPage,
+  })),
+);
 
 const ROUTE_SUSPENSE_FALLBACK = (
   <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">Loading step...</div>
@@ -75,6 +80,10 @@ export const mainRouter: RouteObject[] = [
       {
         path: 'projects/:project_id/review/emotions',
         element: <SuspendedRoute><ProjectEmotionReviewPage /></SuspendedRoute>,
+      },
+      {
+        path: 'projects/:project_id/review/low-confidence',
+        element: <SuspendedRoute><ProjectLowConfidenceReviewPage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id/export',
