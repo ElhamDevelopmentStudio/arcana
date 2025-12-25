@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Waves } from 'lucide-react';
+import { ChevronRight, Waves } from 'lucide-react';
 
 export function ProjectRunMonitorPage() {
   const navigate = useNavigate();
@@ -28,9 +28,18 @@ export function ProjectRunMonitorPage() {
       description="Observe run execution state, logs, and progress events for a single project run."
       action={
         projectId !== null ? (
-          <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>
-            Continue to Export
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={runId === null}
+              onClick={() => navigate(projectRoute(projectId, 'review/speakers'))}
+              variant="outline"
+            >
+              Review speaker tags
+            </Button>
+            <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>
+              Continue to Export <ChevronRight className="size-4" />
+            </Button>
+          </div>
         ) : (
           <Badge variant="outline">Project required</Badge>
         )

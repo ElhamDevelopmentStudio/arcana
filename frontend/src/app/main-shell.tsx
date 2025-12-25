@@ -45,6 +45,11 @@ const ROUTE_META: Array<{ pattern: RegExp; title: string; description: string }>
     description: 'Track run status, segment counts, and operational details.',
   },
   {
+    pattern: /\/projects\/[^/]+\/review\/speakers$/,
+    title: 'Speaker Review',
+    description: 'Optionally review low-confidence speaker tags before export.',
+  },
+  {
     pattern: /\/projects\/[^/]+\/export$/,
     title: 'Export Delivery',
     description: 'Review readiness and package outputs for downstream consumers.',
