@@ -724,6 +724,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(typeof firstSegment.tension_contribution).toBe('object');
     expect(typeof firstSegment.tension_contribution?.value).toBe('number');
     expect(typeof firstSegment.tension_contribution?.level).toBe('string');
+    expect(typeof firstSegment.tension_contribution?.confidence).toBe('number');
     expect(firstSegment.tension_contribution?.value).toBeGreaterThan(0);
     expect(firstSegment.tension_contribution?.value).toBeLessThanOrEqual(1);
     expect(['calm', 'low', 'moderate', 'high']).toContain(firstSegment.tension_contribution?.level);
@@ -1108,10 +1109,61 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(typeof firstSegment.dominance_contribution?.value).toBe('number');
     expect(typeof firstSegment.dominance_contribution?.level).toBe('string');
     expect(typeof firstSegment.dominance_contribution?.dominant_agent).toBe('string');
+    expect(typeof firstSegment.dominance_contribution?.confidence).toBe('number');
     expect(firstSegment.dominance_contribution?.dominant_agent.length).toBeGreaterThan(0);
     expect(typeof firstSegment.dominance_contribution?.evidence).toBe('object');
     expect(firstSegment.dominance_contribution?.value).toBeGreaterThanOrEqual(0);
     expect(firstSegment.dominance_contribution?.value).toBeLessThanOrEqual(1);
     expect(['dominant', 'strong', 'moderate', 'low']).toContain(firstSegment.dominance_contribution?.level);
+  });
+
+  test('export includes structural confidence score on each segment', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-structure-confidence'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'structure-confident.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\n"Move quickly," Alice said. The room grew quieter.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 180,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        type_confidence?: number;
+        confidence?: {
+          type?: number;
+          tension?: number;
+          dominance?: number;
+        };
+      }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const firstSegment = exportPayload.segments[0];
+    expect(typeof firstSegment.type_confidence).toBe('number');
+    expect(firstSegment.type_confidence).toBeGreaterThan(0);
+    expect(typeof firstSegment.confidence?.type).toBe('number');
+    expect(typeof firstSegment.confidence?.tension).toBe('number');
+    expect(typeof firstSegment.confidence?.dominance).toBe('number');
   });
 });
