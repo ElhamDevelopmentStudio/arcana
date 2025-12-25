@@ -50,6 +50,10 @@ def test_tag_segment_includes_type_confidence() -> None:
     assert isinstance(tags["type_confidence"], float)
     assert 0.0 <= tags["type_confidence"] <= 1.0
     assert tags["type_confidence"] > 0.6
+    assert isinstance(tags["type_evidence"], dict)
+    assert set(tags["type_evidence"].keys()) >= {"method", "signals"}
+    assert isinstance(tags["type_evidence"]["signals"], list)
+    assert len(tags["type_evidence"]["signals"]) >= 1
 
 
 def test_tag_segment_includes_dialogue_blocks_for_traceability() -> None:
@@ -59,17 +63,48 @@ def test_tag_segment_includes_dialogue_blocks_for_traceability() -> None:
     assert tags["narration_blocks"] == []
 
 
+def test_tag_segment_includes_speaker_evidence() -> None:
+    tags = tag_segment('"Wait," she said.')
+    assert isinstance(tags["speaker_evidence"], dict)
+    assert tags["speaker_evidence"]["status"] == "found"
+    assert tags["speaker_evidence"]["method"] == "speaker_pattern_lookup"
+    speaker_span = tags["speaker_evidence"]["speaker_span"]
+    assert isinstance(speaker_span, dict)
+    assert speaker_span["text"] == "she"
+    assert speaker_span["start_char"] < speaker_span["end_char"]
+
+
 def test_tag_segment_includes_tension_contribution_tag() -> None:
     tags = tag_segment("He bolted to the door as she shouted, \"Help!\" then the alarm rang.")
     tension = tags["tension_contribution"]
     assert isinstance(tension, dict)
-    assert set(tension.keys()) == {"value", "level", "confidence"}
+    assert set(tension.keys()) == {"value", "level", "confidence", "evidence"}
     assert isinstance(tension["value"], float)
     assert 0.0 <= tension["value"] <= 1.0
     assert tension["level"] in {"high", "moderate", "low", "calm"}
     assert tension["value"] > 0.0
     assert isinstance(tension["confidence"], float)
     assert 0.0 <= tension["confidence"] <= 1.0
+    assert isinstance(tension["evidence"], dict)
+    assert tension["evidence"]["signal_count"] >= 0
+    assert tension["evidence"]["intensifier_count"] >= 0
+
+
+def test_tag_segment_includes_emotion_evidence() -> None:
+    tags = tag_segment("He was happy, calm, and hopeful.")
+    emotion_evidence = tags["emotion_evidence"]
+    assert isinstance(emotion_evidence, dict)
+    assert set(emotion_evidence.keys()) >= {
+        "method",
+        "positive_signals",
+        "negative_signals",
+        "positive_signal_count",
+        "negative_signal_count",
+        "total_signal_count",
+    }
+    assert emotion_evidence["positive_signal_count"] >= 1
+    assert isinstance(emotion_evidence["positive_signals"], list)
+    assert isinstance(emotion_evidence["negative_signals"], list)
 
 
 def test_tag_segment_tension_contribution_remains_low_for_stable_description() -> None:
@@ -95,6 +130,7 @@ def test_tag_segment_includes_dominance_contribution_tag() -> None:
     assert "speaker_resolved" in dominance["evidence"]
     assert "pronoun_reference_count" in dominance["evidence"]
     assert "proper_noun_hits" in dominance["evidence"]
+    assert "proper_noun_spans" in dominance["evidence"]
     assert isinstance(dominance["confidence"], float)
     assert 0.0 <= dominance["confidence"] <= 1.0
 
@@ -264,6 +300,7 @@ def test_tag_segment_includes_parent_segment_summary_tag() -> None:
         "dominant_state",
         "dominant_agent",
         "confidence",
+        "evidence",
     }
     assert summary["tag_type"] == "segment_summary"
     assert summary["dominant_state"] == tags["type"]
