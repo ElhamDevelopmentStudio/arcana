@@ -48,6 +48,15 @@ NARRATION_INTERNAL_THOUGHT_CONNECTORS = {
     "when",
     "yet",
 }
+INTERNAL_EXTERNAL_SPEECH_CONNECTORS = {
+    "but",
+    "however",
+    "while",
+    "when",
+    "then",
+    "after",
+    "yet",
+}
 
 TENSION_SIGNAL_WORDS = {
     "danger",
@@ -97,6 +106,31 @@ TENSION_INTENSIFIERS = {
     "then",
     "before",
     "while",
+}
+TONE_REVERSAL_CONNECTORS = {
+    "but",
+    "however",
+    "though",
+    "although",
+    "nevertheless",
+    "instead",
+    "yet",
+    "still",
+}
+TONE_REVERSAL_MARKERS = {
+    "yeah right",
+    "as if",
+    "sure",
+    "of course",
+    "just my luck",
+    "what a surprise",
+    "great",
+    "wonderful",
+    "amazing",
+    "lucky",
+    "brilliant",
+    "perfect",
+    "excellent",
 }
 
 DOMINANCE_PRONOUN_TOKENS = {
@@ -303,6 +337,14 @@ def _classify_internal_or_narrative_unit(text: str) -> str:
     return STRUCTURAL_TYPE_NARRATION
 
 
+def _classify_internal_or_dialogue_unit(text: str) -> str:
+    if INTERNAL_THOUGHT_RE.search(text):
+        return STRUCTURAL_TYPE_INTERNAL_THOUGHT
+    if DIALOGUE_QUOTE_RE.search(text) or DIALOGUE_QUOTE_MARKER_RE.search(text):
+        return STRUCTURAL_TYPE_DIALOGUE
+    return STRUCTURAL_TYPE_NARRATION
+
+
 def _extract_narration_internal_units(text: str) -> list[dict[str, object]]:
     raw_units = list(re.finditer(r"[^.!?;]+(?:[.!?;]+|$)", text))
     if not raw_units:
@@ -361,6 +403,70 @@ def _extract_narration_internal_units(text: str) -> list[dict[str, object]]:
                     "start_char": unit_start_offset + segment_cursor,
                     "end_char": unit_end_offset,
                     "type": _classify_internal_or_narrative_unit(tail),
+                }
+            )
+
+    return units
+
+
+def _extract_internal_external_units(text: str) -> list[dict[str, object]]:
+    raw_units = list(re.finditer(r"[^.!?;]+(?:[.!?;]+|$)", text))
+    if not raw_units:
+        return []
+
+    units: list[dict[str, object]] = []
+    split_pattern = re.compile(
+        r"\b(?:but|however|though|although|while|when|then|after|yet)\b",
+        re.IGNORECASE,
+    )
+
+    for match in raw_units:
+        raw = match.group(0)
+        start, end = match.span()
+        trimmed = raw.strip()
+        if not trimmed:
+            continue
+
+        unit_start_offset = start + len(raw) - len(raw.lstrip())
+        unit_end_offset = end - len(raw.rstrip())
+        clause_body = trimmed
+
+        split_matches = list(split_pattern.finditer(clause_body))
+        if not split_matches:
+            units.append(
+                {
+                    "text": trimmed,
+                    "start_char": unit_start_offset,
+                    "end_char": unit_end_offset,
+                    "type": _classify_internal_or_dialogue_unit(trimmed),
+                }
+            )
+            continue
+
+        segment_cursor = 0
+        for split_match in split_matches:
+            candidate = clause_body[segment_cursor:split_match.start()].strip()
+            if candidate:
+                candidate_start = unit_start_offset + segment_cursor
+                candidate_end = unit_start_offset + split_match.start()
+                units.append(
+                    {
+                        "text": candidate,
+                        "start_char": candidate_start,
+                        "end_char": candidate_end,
+                        "type": _classify_internal_or_dialogue_unit(candidate),
+                    }
+                )
+            segment_cursor = split_match.start()
+
+        tail = clause_body[segment_cursor:].strip()
+        if tail:
+            units.append(
+                {
+                    "text": tail,
+                    "start_char": unit_start_offset + segment_cursor,
+                    "end_char": unit_end_offset,
+                    "type": _classify_internal_or_dialogue_unit(tail),
                 }
             )
 
@@ -454,6 +560,234 @@ def detect_narration_internal_thought_shift(text: str) -> dict[str, object]:
             "shift_count": len(transitions),
             "transition_count": len(transitions),
             "has_connector": bool(strongest["has_connector"]),
+        },
+    }
+
+
+def detect_internal_external_speech_shift(text: str) -> dict[str, object]:
+    units = _extract_internal_external_units(text)
+    if len(units) < 2:
+        return {
+            "has_shift": False,
+            "from": None,
+            "to": None,
+            "confidence": 0.0,
+            "evidence": {
+                "unit_count": len(units),
+                "shift_count": 0,
+                "transition_count": 0,
+            },
+        }
+
+    transitions: list[dict[str, object]] = []
+    for index in range(1, len(units)):
+        prev = units[index - 1]
+        current = units[index]
+        prev_type = str(prev["type"])
+        current_type = str(current["type"])
+
+        if prev_type == current_type:
+            continue
+        if {prev_type, current_type} != {
+            STRUCTURAL_TYPE_INTERNAL_THOUGHT,
+            STRUCTURAL_TYPE_DIALOGUE,
+        }:
+            continue
+
+        transition_span = text[max(0, int(prev["end_char"]) - 26) : int(current["start_char"]) + 26].lower()
+        has_connector = any(hint in transition_span for hint in INTERNAL_EXTERNAL_SPEECH_CONNECTORS)
+        confidence = 0.64 if has_connector else 0.52
+        transitions.append(
+            {
+                "from_type": prev_type,
+                "to_type": current_type,
+                "from": prev,
+                "to": current,
+                "has_connector": has_connector,
+                "confidence": round(confidence, 4),
+            }
+        )
+
+    if not transitions:
+        return {
+            "has_shift": False,
+            "from": None,
+            "to": None,
+            "confidence": 0.0,
+            "evidence": {
+                "unit_count": len(units),
+                "shift_count": 0,
+                "transition_count": 0,
+            },
+        }
+
+    strongest = transitions[0]
+    if len(transitions) > 1:
+        strongest = max(
+            transitions,
+            key=lambda entry: (
+                float(entry["confidence"]),
+                -int(entry["from"]["start_char"]),
+            ),
+        )
+
+    return {
+        "has_shift": True,
+        "from": {
+            "type": str(strongest["from_type"]),
+            "text": str(strongest["from"]["text"]),
+            "start_char": int(strongest["from"]["start_char"]),
+            "end_char": int(strongest["from"]["end_char"]),
+        },
+        "to": {
+            "type": str(strongest["to_type"]),
+            "text": str(strongest["to"]["text"]),
+            "start_char": int(strongest["to"]["start_char"]),
+            "end_char": int(strongest["to"]["end_char"]),
+        },
+        "confidence": float(strongest["confidence"]),
+        "evidence": {
+            "unit_count": len(units),
+            "shift_count": len(transitions),
+            "transition_count": len(transitions),
+            "has_connector": bool(strongest["has_connector"]),
+        },
+    }
+
+
+def detect_tone_reversal(text: str) -> dict[str, object]:
+    units = _extract_emotion_units(text)
+    if len(units) < 2:
+        return {
+            "has_tone_reversal": False,
+            "tone": None,
+            "from": None,
+            "to": None,
+            "confidence": 0.0,
+            "evidence": {
+                "unit_count": len(units),
+                "candidate_count": 0,
+                "transition_count": 0,
+            },
+        }
+
+    evaluated: list[dict[str, object]] = []
+    for unit in units:
+        valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(str(unit["text"]))
+        if primary_label == "neutral":
+            continue
+
+        evaluated.append(
+            {
+                "text": unit["text"],
+                "start_char": int(unit["start_char"]),
+                "end_char": int(unit["end_char"]),
+                "valence": valence,
+                "intensity": intensity,
+                "primary_label": primary_label,
+                "secondary_label": secondary_label,
+                "emotion_confidence": emotion_confidence,
+            }
+        )
+
+    if len(evaluated) < 2:
+        return {
+            "has_tone_reversal": False,
+            "tone": None,
+            "from": None,
+            "to": None,
+            "confidence": 0.0,
+            "evidence": {
+                "unit_count": len(units),
+                "candidate_count": 0,
+                "transition_count": 0,
+            },
+        }
+
+    candidates: list[dict[str, object]] = []
+    for index in range(1, len(evaluated)):
+        prev = evaluated[index - 1]
+        current = evaluated[index]
+        prev_label = str(prev["primary_label"])
+        current_label = str(current["primary_label"])
+
+        if prev_label == current_label:
+            continue
+        if {prev_label, current_label} != {"positive", "negative"}:
+            continue
+
+        transition_span = text[max(0, int(prev["end_char"]) - 36) : int(current["start_char"]) + 36].lower()
+        has_connector = any(connector in transition_span for connector in TONE_REVERSAL_CONNECTORS)
+        detected_markers = [marker for marker in TONE_REVERSAL_MARKERS if marker in transition_span]
+        has_irony_marker = bool(detected_markers)
+        delta = abs(float(current["valence"]) - float(prev["valence"]))
+
+        if delta < 0.4 and not (has_connector or has_irony_marker):
+            continue
+
+        confidence = min(
+            0.97,
+            round(0.33 + 0.05 * delta + (0.20 if has_connector else 0.0) + (0.18 if has_irony_marker else 0.0), 4),
+        )
+        candidates.append(
+            {
+                "index": index - 1,
+                "from": prev,
+                "to": current,
+                "from_label": prev_label,
+                "to_label": current_label,
+                "has_connector": has_connector,
+                "has_irony_marker": has_irony_marker,
+                "detected_markers": detected_markers,
+                "delta": delta,
+                "confidence": confidence,
+            }
+        )
+
+    if not candidates:
+        return {
+            "has_tone_reversal": False,
+            "tone": None,
+            "from": None,
+            "to": None,
+            "confidence": 0.0,
+            "evidence": {
+                "unit_count": len(units),
+                "candidate_count": 0,
+                "transition_count": 0,
+            },
+        }
+
+    strongest = max(candidates, key=lambda entry: (float(entry["confidence"]), -int(entry["from"]["start_char"])))
+    return {
+        "has_tone_reversal": True,
+        "tone": "dark_irony",
+        "from": {
+            "label": str(strongest["from_label"]),
+            "secondary_label": str(strongest["from"]["secondary_label"]),
+            "valence": float(strongest["from"]["valence"]),
+            "intensity": float(strongest["from"]["intensity"]),
+            "start_char": int(strongest["from"]["start_char"]),
+            "end_char": int(strongest["from"]["end_char"]),
+        },
+        "to": {
+            "label": str(strongest["to_label"]),
+            "secondary_label": str(strongest["to"]["secondary_label"]),
+            "valence": float(strongest["to"]["valence"]),
+            "intensity": float(strongest["to"]["intensity"]),
+            "start_char": int(strongest["to"]["start_char"]),
+            "end_char": int(strongest["to"]["end_char"]),
+        },
+        "confidence": float(strongest["confidence"]),
+        "evidence": {
+            "unit_count": len(units),
+            "candidate_count": len(candidates),
+            "transition_count": len(candidates),
+            "selected_transition_index": int(strongest["index"]),
+            "has_connector": bool(strongest["has_connector"]),
+            "has_irony_marker": bool(strongest["has_irony_marker"]),
+            "detected_markers": list(strongest["detected_markers"]),
+            "delta": float(strongest["delta"]),
         },
     }
 
@@ -689,6 +1023,8 @@ def tag_segment(text: str) -> dict[str, object]:
     valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
     emotion_shift = detect_emotion_shift(text)
     narration_internal_thought_shift = detect_narration_internal_thought_shift(text)
+    internal_external_speech_shift = detect_internal_external_speech_shift(text)
+    tone_reversal = detect_tone_reversal(text)
     tension = compute_tension_contribution(
         text=text,
         valence=valence,
@@ -714,6 +1050,8 @@ def tag_segment(text: str) -> dict[str, object]:
         "emotion_confidence": emotion_confidence,
         "emotion_shift": emotion_shift,
         "narration_internal_thought_shift": narration_internal_thought_shift,
+        "internal_external_speech_shift": internal_external_speech_shift,
+        "tone_reversal": tone_reversal,
         "tension_contribution": {
             "value": tension,
             "level": _tension_contribution_level(tension),

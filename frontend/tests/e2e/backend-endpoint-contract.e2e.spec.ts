@@ -840,6 +840,120 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     }
   });
 
+  test('export includes internal<->external speech shift details', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-internal-external-shift'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'internal-external-shift.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nShe thought he would answer. "We should go now."'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 200,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        internal_external_speech_shift?: {
+          has_shift: boolean;
+          from: { type: string; text: string; start_char: number; end_char: number } | null;
+          to: { type: string; text: string; start_char: number; end_char: number } | null;
+          confidence: number;
+        };
+      }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const firstSegment = exportPayload.segments[0];
+    expect(firstSegment.internal_external_speech_shift).toBeDefined();
+    expect(typeof firstSegment.internal_external_speech_shift?.has_shift).toBe('boolean');
+    expect(typeof firstSegment.internal_external_speech_shift?.confidence).toBe('number');
+    if (firstSegment.internal_external_speech_shift?.has_shift) {
+      expect(firstSegment.internal_external_speech_shift?.from).toBeDefined();
+      expect(firstSegment.internal_external_speech_shift?.to).toBeDefined();
+      expect(firstSegment.internal_external_speech_shift?.from?.type).toBeTruthy();
+      expect(firstSegment.internal_external_speech_shift?.to?.type).toBeTruthy();
+      expect(firstSegment.internal_external_speech_shift?.from?.type)
+        .not.toBe(firstSegment.internal_external_speech_shift?.to?.type);
+    }
+  });
+
+  test('export includes tone reversal / dark irony marker details', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-tone-reversal'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'tone-reversal.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nGreat, but the outcome was terrible.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 180,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        tone_reversal?: {
+          has_tone_reversal: boolean;
+          tone: string | null;
+          from: { label: string; valence: number; start_char: number; end_char: number } | null;
+          to: { label: string; valence: number; start_char: number; end_char: number } | null;
+          confidence: number;
+        };
+      }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const firstSegment = exportPayload.segments[0];
+    expect(firstSegment.tone_reversal).toBeDefined();
+    expect(typeof firstSegment.tone_reversal?.has_tone_reversal).toBe('boolean');
+    expect(typeof firstSegment.tone_reversal?.confidence).toBe('number');
+    if (firstSegment.tone_reversal?.has_tone_reversal) {
+      expect(firstSegment.tone_reversal?.tone).toBe('dark_irony');
+      expect(firstSegment.tone_reversal?.from).toBeDefined();
+      expect(firstSegment.tone_reversal?.to).toBeDefined();
+      expect(firstSegment.tone_reversal?.from?.label).toBeTruthy();
+      expect(firstSegment.tone_reversal?.to?.label).toBeTruthy();
+      expect(firstSegment.tone_reversal?.from?.label)
+        .not.toBe(firstSegment.tone_reversal?.to?.label);
+    }
+  });
+
   test('export includes per-segment dominance contribution details', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-dominance-tags'));
     const projectId = project.id;
