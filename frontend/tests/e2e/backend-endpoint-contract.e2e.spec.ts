@@ -896,6 +896,119 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     }
   });
 
+  test('export includes sub-segment boundary records for detected shifts', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-sub-segment-boundaries'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'sub-segment-boundaries.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nShe thought he would answer. "No," he said. Great, but the outcome was terrible.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 220,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        sub_segment_boundaries?: Array<{
+          shift_type: string;
+          boundary_start_char: number;
+          boundary_end_char: number;
+          from_label: string | null;
+          to_label: string | null;
+          from_text: string;
+          to_text: string;
+          confidence: number;
+        }>;
+      }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const firstSegment = exportPayload.segments[0];
+    expect(firstSegment.sub_segment_boundaries).toBeDefined();
+    expect(Array.isArray(firstSegment.sub_segment_boundaries)).toBe(true);
+    if ((firstSegment.sub_segment_boundaries ?? []).length > 0) {
+      const boundary = firstSegment.sub_segment_boundaries?.[0];
+      expect(boundary?.shift_type).toBeTruthy();
+      expect(typeof boundary?.boundary_start_char).toBe('number');
+      expect(typeof boundary?.boundary_end_char).toBe('number');
+      expect(typeof boundary?.from_label).toBe('string');
+      expect(typeof boundary?.to_label).toBe('string');
+      expect(boundary?.from_text).toBeTruthy();
+      expect(boundary?.to_text).toBeTruthy();
+    }
+  });
+
+  test('export includes parent segment summary tag', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-summary-tag'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'segment-summary.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nGreat, but the outcome was terrible.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 160,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        type?: string;
+        summary_tag?: {
+          tag_type: string;
+          dominant_tone: string;
+          dominant_state: string;
+          dominant_agent: string;
+          confidence: number;
+        };
+      }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const firstSegment = exportPayload.segments[0];
+    expect(firstSegment.summary_tag).toBeDefined();
+    expect(firstSegment.summary_tag?.tag_type).toBe('segment_summary');
+    expect(firstSegment.summary_tag?.dominant_tone).toBe('dark_irony');
+    expect(firstSegment.summary_tag?.dominant_state).toBe(firstSegment.type);
+    expect(typeof firstSegment.summary_tag?.confidence).toBe('number');
+  });
+
   test('export includes tone reversal / dark irony marker details', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-tone-reversal'));
     const projectId = project.id;

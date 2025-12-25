@@ -201,6 +201,16 @@ def _tokenize(text: str) -> list[str]:
     return re.findall(r"[A-Za-z']+", text.lower())
 
 
+def _build_trimmed_span(raw_text: str, raw_start: int, candidate: str) -> tuple[int, int]:
+    if not candidate:
+        return raw_start, raw_start
+    leading = len(candidate) - len(candidate.lstrip())
+    trailing = len(candidate) - len(candidate.rstrip())
+    span_start = raw_start + leading
+    span_end = max(span_start, raw_start + len(candidate) - trailing)
+    return span_start, span_end
+
+
 def detect_dialogue_blocks(text: str) -> list[dict[str, str]]:
     quoted_spans: list[tuple[int, int]] = [
         (match.start(), match.end()) for match in DIALOGUE_QUOTE_RE.finditer(text)
@@ -301,7 +311,7 @@ def _extract_emotion_units(text: str) -> list[dict[str, object]]:
             continue
 
         unit_start_offset = start + len(raw) - len(raw.lstrip())
-        unit_end_offset = end - len(raw.rstrip())
+        unit_end_offset = unit_start_offset + len(trimmed)
         clause_body = trimmed
 
         split_matches = list(split_pattern.finditer(clause_body))
@@ -311,19 +321,29 @@ def _extract_emotion_units(text: str) -> list[dict[str, object]]:
 
         segment_cursor = 0
         for split_match in split_matches:
-            candidate = clause_body[segment_cursor:split_match.start()].strip()
+            candidate_raw = clause_body[segment_cursor:split_match.start()]
+            candidate = candidate_raw.strip()
             if candidate:
-                sub_start = unit_start_offset + segment_cursor
-                sub_end = unit_start_offset + split_match.start()
+                sub_start, sub_end = _build_trimmed_span(
+                    raw_text=clause_body,
+                    raw_start=unit_start_offset + segment_cursor,
+                    candidate=candidate_raw,
+                )
                 units.append({"text": candidate, "start_char": sub_start, "end_char": sub_end})
             segment_cursor = split_match.start()
 
-        tail = clause_body[segment_cursor:].strip()
+        tail_raw = clause_body[segment_cursor:]
+        tail = tail_raw.strip()
         if tail:
+            tail_start, tail_end = _build_trimmed_span(
+                raw_text=clause_body,
+                raw_start=unit_start_offset + segment_cursor,
+                candidate=tail_raw,
+            )
             units.append({
                 "text": tail,
-                "start_char": unit_start_offset + segment_cursor,
-                "end_char": unit_end_offset,
+                "start_char": tail_start,
+                "end_char": tail_end,
             })
 
     return units
@@ -364,7 +384,7 @@ def _extract_narration_internal_units(text: str) -> list[dict[str, object]]:
             continue
 
         unit_start_offset = start + len(raw) - len(raw.lstrip())
-        unit_end_offset = end - len(raw.rstrip())
+        unit_end_offset = unit_start_offset + len(trimmed)
         clause_body = trimmed
 
         split_matches = list(split_pattern.finditer(clause_body))
@@ -381,10 +401,14 @@ def _extract_narration_internal_units(text: str) -> list[dict[str, object]]:
 
         segment_cursor = 0
         for split_match in split_matches:
-            candidate = clause_body[segment_cursor:split_match.start()].strip()
+            candidate_raw = clause_body[segment_cursor:split_match.start()]
+            candidate = candidate_raw.strip()
             if candidate:
-                candidate_start = unit_start_offset + segment_cursor
-                candidate_end = unit_start_offset + split_match.start()
+                candidate_start, candidate_end = _build_trimmed_span(
+                    raw_text=clause_body,
+                    raw_start=unit_start_offset + segment_cursor,
+                    candidate=candidate_raw,
+                )
                 units.append(
                     {
                         "text": candidate,
@@ -397,11 +421,17 @@ def _extract_narration_internal_units(text: str) -> list[dict[str, object]]:
 
         tail = clause_body[segment_cursor:].strip()
         if tail:
+            tail_raw = clause_body[segment_cursor:]
+            tail_start, tail_end = _build_trimmed_span(
+                raw_text=clause_body,
+                raw_start=unit_start_offset + segment_cursor,
+                candidate=tail_raw,
+            )
             units.append(
                 {
                     "text": tail,
-                    "start_char": unit_start_offset + segment_cursor,
-                    "end_char": unit_end_offset,
+                    "start_char": tail_start,
+                    "end_char": tail_end,
                     "type": _classify_internal_or_narrative_unit(tail),
                 }
             )
@@ -428,7 +458,7 @@ def _extract_internal_external_units(text: str) -> list[dict[str, object]]:
             continue
 
         unit_start_offset = start + len(raw) - len(raw.lstrip())
-        unit_end_offset = end - len(raw.rstrip())
+        unit_end_offset = unit_start_offset + len(trimmed)
         clause_body = trimmed
 
         split_matches = list(split_pattern.finditer(clause_body))
@@ -445,10 +475,16 @@ def _extract_internal_external_units(text: str) -> list[dict[str, object]]:
 
         segment_cursor = 0
         for split_match in split_matches:
-            candidate = clause_body[segment_cursor:split_match.start()].strip()
+            candidate_raw = clause_body[segment_cursor:split_match.start()]
+            candidate = candidate_raw.strip()
             if candidate:
                 candidate_start = unit_start_offset + segment_cursor
                 candidate_end = unit_start_offset + split_match.start()
+                candidate_start, candidate_end = _build_trimmed_span(
+                    raw_text=clause_body,
+                    raw_start=unit_start_offset + segment_cursor,
+                    candidate=candidate_raw,
+                )
                 units.append(
                     {
                         "text": candidate,
@@ -461,11 +497,17 @@ def _extract_internal_external_units(text: str) -> list[dict[str, object]]:
 
         tail = clause_body[segment_cursor:].strip()
         if tail:
+            tail_raw = clause_body[segment_cursor:]
+            tail_start, tail_end = _build_trimmed_span(
+                raw_text=clause_body,
+                raw_start=unit_start_offset + segment_cursor,
+                candidate=tail_raw,
+            )
             units.append(
                 {
                     "text": tail,
-                    "start_char": unit_start_offset + segment_cursor,
-                    "end_char": unit_end_offset,
+                    "start_char": tail_start,
+                    "end_char": tail_end,
                     "type": _classify_internal_or_dialogue_unit(tail),
                 }
             )
@@ -792,6 +834,88 @@ def detect_tone_reversal(text: str) -> dict[str, object]:
     }
 
 
+def _extract_sub_segment_label(unit: dict[str, object] | None, keys: tuple[str, ...]) -> str | None:
+    if not unit or not isinstance(unit, dict):
+        return None
+    for key in keys:
+        value = unit.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _build_sub_segment_boundaries(*, segment_text: str, tag_payloads: list[tuple[str, dict[str, object]]]) -> list[dict[str, object]]:
+    boundaries: list[dict[str, object]] = []
+
+    for shift_type, shift_payload in tag_payloads:
+        if not shift_payload:
+            continue
+
+        if "has_shift" in shift_payload:
+            has_shift = bool(shift_payload.get("has_shift", False))
+        else:
+            has_shift = bool(shift_payload.get("has_tone_reversal", False))
+
+        if not has_shift:
+            continue
+
+        from_payload = shift_payload.get("from")
+        to_payload = shift_payload.get("to")
+        if not isinstance(from_payload, dict) or not isinstance(to_payload, dict):
+            continue
+
+        from_end = int(from_payload.get("end_char", -1))
+        to_start = int(to_payload.get("start_char", from_end))
+        if from_end < 0 or to_start < 0:
+            continue
+
+        from_start = int(from_payload.get("start_char", 0))
+        to_end = int(to_payload.get("end_char", 0))
+
+        segment_end = len(segment_text)
+        boundary_start = max(0, min(from_end, segment_end))
+        boundary_end = max(boundary_start, min(to_start, segment_end))
+
+        if "has_shift" in shift_payload:
+            from_key = "type"
+            to_key = "type"
+        else:
+            from_key = "label"
+            to_key = "label"
+
+        from_label = _extract_sub_segment_label(
+            from_payload,
+            keys=(from_key, "primary_label", "secondary_label"),
+        )
+        to_label = _extract_sub_segment_label(to_payload, keys=(to_key, "primary_label", "secondary_label"))
+
+        from_text = str(from_payload.get("text", ""))
+        to_text = str(to_payload.get("text", ""))
+        if not from_text.strip():
+            from_slice_end = max(0, min(from_end, len(segment_text)))
+            from_slice_start = max(0, min(from_start, from_slice_end))
+            from_text = segment_text[from_slice_start:from_slice_end]
+        if not to_text.strip():
+            to_slice_end = max(0, min(to_end, len(segment_text)))
+            to_slice_start = max(0, min(to_start, to_slice_end))
+            to_text = segment_text[to_slice_start:to_slice_end]
+
+        boundaries.append(
+            {
+                "shift_type": shift_type,
+                "boundary_start_char": boundary_start,
+                "boundary_end_char": boundary_end,
+                "from_label": from_label,
+                "to_label": to_label,
+                "from_text": from_text,
+                "to_text": to_text,
+                "confidence": float(shift_payload.get("confidence", 0.0)),
+            }
+        )
+
+    return boundaries
+
+
 def detect_emotion_shift(text: str) -> dict[str, object]:
     units = _extract_emotion_units(text)
     if len(units) < 2:
@@ -1025,6 +1149,15 @@ def tag_segment(text: str) -> dict[str, object]:
     narration_internal_thought_shift = detect_narration_internal_thought_shift(text)
     internal_external_speech_shift = detect_internal_external_speech_shift(text)
     tone_reversal = detect_tone_reversal(text)
+    sub_segment_boundaries = _build_sub_segment_boundaries(
+        segment_text=text,
+        tag_payloads=[
+            ("emotion_shift", emotion_shift),
+            ("narration_internal_thought_shift", narration_internal_thought_shift),
+            ("internal_external_speech_shift", internal_external_speech_shift),
+            ("tone_reversal", tone_reversal),
+        ],
+    )
     tension = compute_tension_contribution(
         text=text,
         valence=valence,
@@ -1036,6 +1169,31 @@ def tag_segment(text: str) -> dict[str, object]:
         speaker=speaker,
         structure=structure,
     )
+    summary_tag = {
+        "tag_type": "segment_summary",
+        "dominant_tone": (
+            str(tone_reversal["tone"])
+            if isinstance(tone_reversal, dict) and bool(tone_reversal.get("has_tone_reversal", False))
+            else (
+                str(emotion_shift["to"]["label"])
+                if isinstance(emotion_shift, dict)
+                and bool(emotion_shift.get("has_shift", False)
+                and isinstance(emotion_shift.get("to"), dict))
+                else primary_label
+            )
+        ),
+        "dominant_state": structure,
+        "dominant_agent": dominant_agent,
+        "confidence": max(
+            float(emotion_confidence),
+            float(emotion_shift.get("confidence", 0.0))
+            if isinstance(emotion_shift, dict)
+            else 0.0,
+            float(tone_reversal.get("confidence", 0.0))
+            if isinstance(tone_reversal, dict)
+            else 0.0,
+        ),
+    }
 
     return {
         "type": structure,
@@ -1052,6 +1210,8 @@ def tag_segment(text: str) -> dict[str, object]:
         "narration_internal_thought_shift": narration_internal_thought_shift,
         "internal_external_speech_shift": internal_external_speech_shift,
         "tone_reversal": tone_reversal,
+        "summary_tag": summary_tag,
+        "sub_segment_boundaries": sub_segment_boundaries,
         "tension_contribution": {
             "value": tension,
             "level": _tension_contribution_level(tension),

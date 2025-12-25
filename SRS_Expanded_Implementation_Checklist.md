@@ -205,7 +205,7 @@ Definition of done for each task:
 - [x] [TAG-010] Add tone reversal/dark irony marker when triggered.
 - [x] [TAG-011] Create sub-segment boundary records on shift.
 - [x] [TAG-012] Store sub-segment tags independently.
-- [ ] [TAG-013] Store parent segment summary tag (dominant tone/state).
+- [x] [TAG-013] Store parent segment summary tag (dominant tone/state).
 - [ ] [TAG-014] Add confidence field for every tag category.
 - [ ] [TAG-015] Add evidence pointer store for every tag category.
 - [ ] [TAG-016] Add explicit `unknown/uncertain` states for low confidence.
