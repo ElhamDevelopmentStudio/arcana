@@ -1146,6 +1146,49 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(['dominant', 'strong', 'moderate', 'low']).toContain(firstSegment.dominance_contribution?.level);
   });
 
+  test('pipeline can execute and export without relying on manual review steps', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-no-review-required'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'no-review-required.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nThe corridor lights flickered while someone whispered warnings into the dark.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+    expect(runPayload.run_id).toBeGreaterThan(0);
+
+    const runDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runPayload.run_id}`);
+    expect(runDetailResponse.status()).toBe(200);
+    const runDetail = (await runDetailResponse.json()) as { status: string; segment_count: number };
+    expect(runDetail.status).toBe('completed');
+    expect(runDetail.segment_count).toBeGreaterThan(0);
+
+    const exportResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`,
+    );
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as { segments: object[] };
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+  });
+
   test('export includes structural confidence score on each segment', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-structure-confidence'));
     const projectId = project.id;

@@ -147,6 +147,40 @@ def test_full_poc_api_flow_deterministic_export() -> None:
         assert data_1["segments"] == data_2["segments"]
 
 
+def test_pipeline_exports_without_manual_review_dependency() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "No Manual Review Run"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("no-review-required.txt", io.BytesIO("Chapter 1\nThe lamps went out before dawn.".encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 1
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "author", "max_segment_chars": 140, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+        assert run_id > 0
+
+        run_detail = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+        assert run_detail.status_code == 200
+        detail_payload = run_detail.json()
+        assert detail_payload["status"] == "completed"
+        assert detail_payload["segment_count"] > 0
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+        assert isinstance(export_payload["segments"], list)
+        assert len(export_payload["segments"]) > 0
+
+
 def test_integration_export_segments_include_chapter_id_metadata() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Segment Chapter Metadata"})
