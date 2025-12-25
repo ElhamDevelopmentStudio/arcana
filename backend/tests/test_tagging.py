@@ -1,6 +1,7 @@
 from app.services.tagging import (
     detect_dialogue_blocks,
     detect_emotion_shift,
+    detect_shift_markers,
     detect_internal_external_speech_shift,
     detect_narration_internal_thought_shift,
     detect_narration_blocks,
@@ -275,6 +276,22 @@ def test_detect_tone_reversal_stays_false_for_flat_positive_tone() -> None:
     assert reversal["to"] is None
     assert reversal["state"] in {"certain", "uncertain", "unknown"}
     assert reversal["evidence"]["transition_count"] == 0
+
+
+def test_detect_shift_markers_runs_registered_shift_detectors() -> None:
+    text = "She thought he might be late, but then she heard the gate creak and said, \"Finally.\""
+    shift_markers = detect_shift_markers(text)
+
+    assert set(shift_markers.keys()) == {
+        "emotion_shift",
+        "narration_internal_thought_shift",
+        "internal_external_speech_shift",
+        "tone_reversal",
+    }
+    assert shift_markers["emotion_shift"] == detect_emotion_shift(text)
+    assert shift_markers["narration_internal_thought_shift"] == detect_narration_internal_thought_shift(text)
+    assert shift_markers["internal_external_speech_shift"] == detect_internal_external_speech_shift(text)
+    assert shift_markers["tone_reversal"] == detect_tone_reversal(text)
 
 
 def test_tag_segment_includes_tone_reversal_field() -> None:

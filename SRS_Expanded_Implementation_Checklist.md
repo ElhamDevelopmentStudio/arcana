@@ -196,7 +196,7 @@ Definition of done for each task:
 - [x] [TAG-001] Implement structural type tag set (`narration/dialogue/internal thought/mixed/description/action`).
 - [x] [TAG-002] Implement speaker attribution output (`speaker_id`, confidence).
 - [x] [TAG-003] Implement emotion outputs (`valence`, `intensity`, primary label, secondary label, confidence).
-- [ ] [TAG-004] Implement shift marker detector scaffolding.
+- [x] [TAG-004] Implement shift marker detector scaffolding.
 - [x] [TAG-005] Implement tension contribution tag per segment.
 - [x] [TAG-006] Implement dominance contribution tag per segment.
 - [x] [TAG-007] Detect emotion shift within a segment.
