@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Alice",
+    "verbalized_form": "Alice",
+    "gender": "female",
+    "aliases": ["Al", "Ace"],
+    "source": "user_import",
+    "confidence": 1.0
+  },
+  {
+    "name": "Alicia",
+    "verbalized_form": "Alicia",
+    "gender": "female",
+    "aliases": ["Ace", "Lia"],
+    "source": "user_import",
+    "confidence": 1.0
+  },
+  {
+    "name": "Bob",
+    "verbalized_form": "Bob",
+    "gender": "male",
+    "aliases": ["Bobby"],
+    "source": "user_import",
+    "confidence": 1.0
+  }
+]
