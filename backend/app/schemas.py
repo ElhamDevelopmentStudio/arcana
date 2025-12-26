@@ -99,6 +99,7 @@ class CharacterMapItem(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     verbalized_form: str = Field(min_length=1, max_length=255)
     gender: str = Field(min_length=1, max_length=50)
+    voice_id: str | None = Field(default=None)
     aliases: list[str] = Field(default_factory=list)
     notes: str | None = None
     source: str = Field(default="manual", min_length=1, max_length=120)
@@ -112,6 +113,19 @@ class CharacterMapItem(BaseModel):
     @classmethod
     def gender_normalized(cls, value: str) -> str:
         return _normalize_gender_or_raise(value)
+
+    @field_validator("voice_id")
+    @classmethod
+    def voice_id_normalized(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        trimmed = str(value).strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 255:
+            raise ValueError("voice_id must be 255 characters or fewer")
+        return trimmed
 
     @field_validator("aliases")
     @classmethod
