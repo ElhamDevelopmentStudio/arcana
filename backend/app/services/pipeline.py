@@ -207,6 +207,10 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     voice_config = build_effective_voice_config(
         project.voice_config_json,
         default_narrator_voice=project.default_narrator_voice,
+        default_male_voice=project.default_male_voice,
+        default_female_voice=project.default_female_voice,
+        default_neutral_voice=project.default_neutral_voice,
+        default_unknown_voice=project.default_unknown_voice,
     )
 
     session.query(Segment).filter(Segment.run_id == run.id).delete()

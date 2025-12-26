@@ -219,7 +219,7 @@ Definition of done for each task:
 ## 4.8 Voice Mapping (Ref: SRS.md §4.8)
 - [x] [VOICE-001] Add voice map table with per-character assignment.
 - [x] [VOICE-002] Add default narrator voice field.
-- [ ] [VOICE-003] Add default male/female/neutral/unknown voice fields.
+- [x] [VOICE-003] Add default male/female/neutral/unknown voice fields.
 - [ ] [VOICE-004] Add per-character override field and precedence rule.
 - [ ] [VOICE-005] Implement resolver output for each dialogue segment.
 - [ ] [VOICE-006] Include `resolved_voice_id` in export.

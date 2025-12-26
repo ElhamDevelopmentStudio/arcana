@@ -493,6 +493,9 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     const voicesPayload = (await voicesResponse.json()) as { voice_config: Record<string, string> };
     expect(voicesPayload.voice_config).toHaveProperty('narrator_voice', 'narrator_default');
     expect(voicesPayload.voice_config).toHaveProperty('male_default_voice', 'male_default');
+    expect(voicesPayload.voice_config).toHaveProperty('female_default_voice', 'female_default');
+    expect(voicesPayload.voice_config).toHaveProperty('neutral_default_voice', 'neutral_default');
+    expect(voicesPayload.voice_config).toHaveProperty('unknown_default_voice', 'unknown_default');
 
     const scrapeRejectedResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/characters/scrape`, {
       data: {
