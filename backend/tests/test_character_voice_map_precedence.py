@@ -283,3 +283,52 @@ def test_integration_speaker_id_field_present_and_resolved() -> None:
             project_id=project_id,
             character_name="Maya",
         )
+
+
+def test_integration_exported_segments_include_gender_used_in_resolution() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_dialogue_and_character(client=client, character_name="Eli")
+        _set_character_voice(
+            project_id=project_id,
+            character_name="Eli",
+            legacy_voice="legacy_eli_voice",
+            map_voice="eli_voice",
+        )
+
+        segments = _run_and_get_segment_payloads(project_id=project_id, client=client)
+        assert all("gender" in segment for segment in segments)
+
+        dialogue_segments = [segment for segment in segments if segment.get("type") == "dialogue"]
+        assert dialogue_segments
+        assert dialogue_segments[0]["gender"] == "male"
+
+
+def test_integration_gender_resolution_defaults_to_unknown_for_unmapped_speaker() -> None:
+    text = 'Chapter 1\n"Hello there," Phantom said.'
+
+    with TestClient(app) as client:
+        create_resp = client.post("/api/projects", json={"title": "Unknown Speaker Gender"})
+        assert create_resp.status_code == 201
+        project_id = create_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("novel.txt", io.BytesIO(text.encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        segments = export_resp.json()["segments"]
+
+        assert len(segments) >= 1
+        first_dialogue = [segment for segment in segments if segment.get("type") == "dialogue"][0]
+        assert first_dialogue["speaker_id"] is None
+        assert first_dialogue["gender"] == "unknown"

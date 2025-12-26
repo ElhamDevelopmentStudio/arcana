@@ -224,7 +224,7 @@ Definition of done for each task:
 - [x] [VOICE-005] Implement resolver output for each dialogue segment.
 - [x] [VOICE-006] Include `resolved_voice_id` in export.
 - [x] [VOICE-007] Include `speaker_id` used in resolution in export.
-- [ ] [VOICE-008] Include gender used for resolution in export.
+- [x] [VOICE-008] Include gender used for resolution in export.
 - [ ] [VOICE-009] Include speaker+gender confidence in export.
 - [ ] [VOICE-010] Implement internal-thought voice policy options.
 - [ ] [VOICE-011] Persist selected thought policy in mode setup.
