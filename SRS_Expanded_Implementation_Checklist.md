@@ -221,7 +221,7 @@ Definition of done for each task:
 - [x] [VOICE-002] Add default narrator voice field.
 - [x] [VOICE-003] Add default male/female/neutral/unknown voice fields.
 - [x] [VOICE-004] Add per-character override field and precedence rule.
-- [ ] [VOICE-005] Implement resolver output for each dialogue segment.
+- [x] [VOICE-005] Implement resolver output for each dialogue segment.
 - [ ] [VOICE-006] Include `resolved_voice_id` in export.
 - [ ] [VOICE-007] Include `speaker_id` used in resolution in export.
 - [ ] [VOICE-008] Include gender used for resolution in export.

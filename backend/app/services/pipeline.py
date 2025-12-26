@@ -264,7 +264,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             chapter_search_cursor = segment_start + len(original_text)
 
             speaker = str(tags["speaker"])
-            voice_id, resolved_gender = resolve_voice(
+            resolved_voice_id, resolved_gender = resolve_voice(
                 segment_type=str(tags["type"]),
                 speaker=speaker,
                 character_lookup=character_lookup,
@@ -319,7 +319,8 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                     "dominance": tags.get("dominance_contribution", {}).get("state", "uncertain"),
                     "summary": tags.get("summary_tag", {}).get("state", "uncertain"),
                 },
-                "voice_id": voice_id,
+                "voice_id": resolved_voice_id,
+                "resolved_voice_id": resolved_voice_id,
                 "emotion_valence": tags["emotion_valence"],
                 "emotion_intensity": tags["emotion_intensity"],
                 "emotion_primary_label": tags["emotion_primary_label"],
