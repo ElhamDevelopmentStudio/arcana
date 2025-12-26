@@ -206,12 +206,15 @@ def test_integration_dialogue_segments_emit_resolved_voice_output() -> None:
         )
 
         segments = _run_and_get_segment_payloads(project_id=project_id, client=client)
+        assert all("resolved_voice_id" in segment for segment in segments)
+
         dialogue_segments = [segment for segment in segments if segment["type"] == "dialogue"]
         assert dialogue_segments
 
         first_dialogue = dialogue_segments[0]
         assert first_dialogue["voice_id"] == resolved_voice
         assert first_dialogue["resolved_voice_id"] == resolved_voice
+        assert first_dialogue["resolved_voice_id"] == first_dialogue["voice_id"]
         assert isinstance(first_dialogue["speaker_id"], int)
         assert first_dialogue["speaker_id"] > 0
         assert first_dialogue["gender"] == "male"
