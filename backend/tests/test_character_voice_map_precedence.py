@@ -125,6 +125,19 @@ def _run_and_get_segment_payloads(project_id: int, client: TestClient) -> list[d
     return export_resp.json()["segments"]
 
 
+def _get_character_id(project_id: int, character_name: str) -> int:
+    session = get_session_factory()()
+    try:
+        character = (
+            session.query(Character)
+            .filter(Character.project_id == project_id, Character.name == character_name)
+            .one()
+        )
+        return character.id
+    finally:
+        session.close()
+
+
 def test_integration_run_prefers_voice_map_voice_id_over_legacy_field() -> None:
     with TestClient(app) as client:
         project_id = _create_project_with_dialogue_and_character(client=client, character_name="Lena")
@@ -212,9 +225,61 @@ def test_integration_dialogue_segments_emit_resolved_voice_output() -> None:
         assert dialogue_segments
 
         first_dialogue = dialogue_segments[0]
+        assert first_dialogue["speaker_id"] == _get_character_id(project_id=project_id, character_name="Iris")
         assert first_dialogue["voice_id"] == resolved_voice
         assert first_dialogue["resolved_voice_id"] == resolved_voice
         assert first_dialogue["resolved_voice_id"] == first_dialogue["voice_id"]
         assert isinstance(first_dialogue["speaker_id"], int)
         assert first_dialogue["speaker_id"] > 0
         assert first_dialogue["gender"] == "male"
+
+
+def test_integration_speaker_id_field_present_and_resolved() -> None:
+    unresolved_text = 'Chapter 1\n"Hello there," Maya said.'
+
+    with TestClient(app) as client:
+        create_resp = client.post("/api/projects", json={"title": "Speaker ID Presence"})
+        assert create_resp.status_code == 201
+        project_id = create_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("novel.txt", io.BytesIO(unresolved_text.encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        upsert_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Maya",
+                        "verbalized_form": "Maya",
+                        "gender": "female",
+                        "aliases": [],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "inferred_gender": "female",
+                        "inferred_confidence": 1.0,
+                        "inferred_source_trace": [],
+                    }
+                ]
+            },
+        )
+        assert upsert_resp.status_code == 200
+
+        segments = _run_and_get_segment_payloads(project_id=project_id, client=client)
+        assert all("speaker_id" in segment for segment in segments)
+
+        resolved_speaker_segments = [
+            segment
+            for segment in segments
+            if str(segment.get("speaker", "")).strip().lower() == "maya"
+        ]
+
+        assert resolved_speaker_segments
+        assert resolved_speaker_segments[0]["speaker_id"] == _get_character_id(
+            project_id=project_id,
+            character_name="Maya",
+        )
