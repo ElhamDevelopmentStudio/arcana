@@ -22,6 +22,7 @@ class ProjectResponse(BaseModel):
 
 
 ALLOWED_GENDER_VALUES = frozenset({"male", "female", "neutral", "unknown", "custom"})
+INTERNAL_THOUGHT_VOICE_POLICIES = frozenset({"character", "narrator", "thought_voice"})
 
 
 def _normalize_mode_or_raise(value: str) -> str:
@@ -39,6 +40,17 @@ def _normalize_gender_or_raise(value: str) -> str:
         raise ValueError("gender must not be blank")
     if stripped not in ALLOWED_GENDER_VALUES:
         raise ValueError("gender must be one of: male, female, neutral, unknown, custom")
+    return stripped
+
+
+def _normalize_internal_thought_voice_policy_or_raise(value: str) -> str:
+    stripped = value.strip().lower()
+    if not stripped:
+        raise ValueError("internal_thought_voice_policy must not be blank")
+    if stripped not in INTERNAL_THOUGHT_VOICE_POLICIES:
+        raise ValueError(
+            "internal_thought_voice_policy must be one of: character, narrator, thought_voice"
+        )
     return stripped
 
 
@@ -343,6 +355,25 @@ class VoiceConfigRequest(BaseModel):
     female_default_voice: str = Field(min_length=1)
     neutral_default_voice: str = Field(default="neutral_default", min_length=1)
     unknown_default_voice: str = Field(default="unknown_default", min_length=1)
+    internal_thought_voice_policy: str = "character"
+    internal_thought_voice: str | None = None
+
+    @field_validator("internal_thought_voice_policy")
+    @classmethod
+    def internal_thought_voice_policy_must_be_valid(cls, value: str) -> str:
+        return _normalize_internal_thought_voice_policy_or_raise(value)
+
+    @field_validator("internal_thought_voice")
+    @classmethod
+    def internal_thought_voice_must_be_trimmed(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 255:
+            raise ValueError("internal_thought_voice must be 255 characters or fewer")
+        return trimmed
 
 
 class VoiceConfigResponse(BaseModel):
@@ -357,6 +388,8 @@ class RunCreateRequest(BaseModel):
     provider_name: str = "openrouter"
     max_calls_per_day: int = Field(default=25, ge=1, le=10000)
     allow_unfinalized_character_map: bool = False
+    internal_thought_voice_policy: str = "character"
+    internal_thought_voice: str | None = None
 
     @field_validator("mode")
     @classmethod
@@ -370,6 +403,23 @@ class RunCreateRequest(BaseModel):
         if not stripped:
             raise ValueError("provider_name must not be blank")
         return stripped.lower()
+
+    @field_validator("internal_thought_voice_policy")
+    @classmethod
+    def internal_thought_voice_policy_must_be_valid(cls, value: str) -> str:
+        return _normalize_internal_thought_voice_policy_or_raise(value)
+
+    @field_validator("internal_thought_voice")
+    @classmethod
+    def internal_thought_voice_must_be_trimmed(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 255:
+            raise ValueError("internal_thought_voice must be 255 characters or fewer")
+        return trimmed
 
 
 class RunResponse(BaseModel):

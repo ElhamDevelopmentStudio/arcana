@@ -487,15 +487,41 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
         female_default_voice: 'female_default',
         neutral_default_voice: 'neutral_default',
         unknown_default_voice: 'unknown_default',
+        internal_thought_voice_policy: 'thought_voice',
+        internal_thought_voice: 'custom_thought_voice',
       },
     });
     expect(voicesResponse.status()).toBe(200);
-    const voicesPayload = (await voicesResponse.json()) as { voice_config: Record<string, string> };
+    const voicesPayload = (await voicesResponse.json()) as { voice_config: Record<string, string | undefined> };
     expect(voicesPayload.voice_config).toHaveProperty('narrator_voice', 'narrator_default');
     expect(voicesPayload.voice_config).toHaveProperty('male_default_voice', 'male_default');
     expect(voicesPayload.voice_config).toHaveProperty('female_default_voice', 'female_default');
     expect(voicesPayload.voice_config).toHaveProperty('neutral_default_voice', 'neutral_default');
     expect(voicesPayload.voice_config).toHaveProperty('unknown_default_voice', 'unknown_default');
+    expect(voicesPayload.voice_config).toHaveProperty('internal_thought_voice_policy', 'thought_voice');
+    expect(voicesPayload.voice_config).toHaveProperty('thought_voice', 'custom_thought_voice');
+
+    const voicesInheritedRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        allow_unfinalized_character_map: true,
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+      },
+    });
+    expect(voicesInheritedRunResponse.status()).toBe(200);
+
+    const voicesInheritedRunPayload = (await voicesInheritedRunResponse.json()) as { run_id: number };
+    const voicesInheritedRunDetailResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${voicesInheritedRunPayload.run_id}`,
+    );
+    expect(voicesInheritedRunDetailResponse.status()).toBe(200);
+    const voicesInheritedRunDetail = (await voicesInheritedRunDetailResponse.json()) as {
+      config: { internal_thought_voice_policy: string; internal_thought_voice?: string };
+    };
+    expect(voicesInheritedRunDetail.config.internal_thought_voice_policy).toBe('thought_voice');
+    expect(voicesInheritedRunDetail.config.internal_thought_voice).toBe('custom_thought_voice');
 
     const scrapeRejectedResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/characters/scrape`, {
       data: {

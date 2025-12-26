@@ -158,6 +158,8 @@ export const voiceConfigSchema = z.object({
   female_default_voice: z.string(),
   neutral_default_voice: z.string(),
   unknown_default_voice: z.string(),
+  internal_thought_voice_policy: z.enum(['character', 'narrator', 'thought_voice']),
+  internal_thought_voice: z.string().trim().transform((value) => value || undefined).optional(),
 });
 
 export const voiceConfigResponseSchema = z.object({
@@ -172,6 +174,8 @@ export const runRequestSchema = z.object({
   provider_name: z.string(),
   max_calls_per_day: z.number().int().positive(),
   allow_unfinalized_character_map: z.boolean().default(false),
+  internal_thought_voice_policy: z.enum(['character', 'narrator', 'thought_voice']).default('character'),
+  internal_thought_voice: z.string().trim().transform((value) => value || undefined).optional(),
 });
 
 export const runResponseSchema = z.object({

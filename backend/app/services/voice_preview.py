@@ -5,7 +5,11 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import Character, Project, Run, Segment
-from app.services.voice import build_effective_voice_config, resolve_voice
+from app.services.voice import (
+    _normalize_internal_thought_voice_policy,
+    build_effective_voice_config,
+    resolve_voice,
+)
 
 
 def _build_character_lookup(characters: list[Character]) -> dict[str, dict[str, str | None]]:
@@ -98,6 +102,13 @@ def recompute_voice_previews_for_runs(
 
     runs_recomputed = 0
     for run in runs:
+        run_config = run.config_json or {}
+        run_voice_config = dict(voice_config)
+        run_voice_config["internal_thought_voice_policy"] = _normalize_internal_thought_voice_policy(
+            run_config.get("internal_thought_voice_policy")
+        )
+        if run_config.get("internal_thought_voice"):
+            run_voice_config["thought_voice"] = str(run_config["internal_thought_voice"]).strip()
         segment_rows = (
             session.query(Segment)
             .filter(Segment.run_id == run.id)
@@ -110,7 +121,7 @@ def recompute_voice_previews_for_runs(
                 "segments": _build_voice_preview_payload(
                     segments=segment_rows,
                     character_lookup=character_lookup,
-                    voice_config=voice_config,
+                    voice_config=run_voice_config,
                     max_segments=max_segments,
                 ),
                 "recomputed_at": recomputed_at,

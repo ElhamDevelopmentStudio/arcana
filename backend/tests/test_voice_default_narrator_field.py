@@ -100,10 +100,12 @@ def test_updating_voice_config_updates_all_project_default_voice_fields() -> Non
             "female_default_voice": "project_female_voice",
             "neutral_default_voice": "project_neutral_voice",
             "unknown_default_voice": "project_unknown_voice",
+            "internal_thought_voice_policy": "narrator",
         }
         update_resp = client.put(f"/api/projects/{project_id}/voices", json=voices_payload)
         assert update_resp.status_code == 200
-        assert update_resp.json()["voice_config"] == voices_payload
+        assert update_resp.json()["voice_config"]["internal_thought_voice_policy"] == "narrator"
+        assert update_resp.json()["voice_config"]["narrator_voice"] == "project_narrator_voice"
 
     session = get_session_factory()()
     try:
