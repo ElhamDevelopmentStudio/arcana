@@ -7,6 +7,17 @@ DEFAULT_VOICE_CONFIG = {
 }
 
 
+def build_effective_voice_config(
+    voice_config: dict[str, str] | None,
+    *,
+    default_narrator_voice: str | None = None,
+) -> dict[str, str]:
+    merged = DEFAULT_VOICE_CONFIG | (voice_config or {})
+    if default_narrator_voice:
+        merged["narrator_voice"] = default_narrator_voice
+    return merged
+
+
 def resolve_voice(
     segment_type: str,
     speaker: str,

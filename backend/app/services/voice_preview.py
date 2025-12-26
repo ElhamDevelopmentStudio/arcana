@@ -5,14 +5,22 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import Character, Project, Run, Segment
-from app.services.voice import resolve_voice
+from app.services.voice import build_effective_voice_config, resolve_voice
 
 
 def _build_character_lookup(characters: list[Character]) -> dict[str, dict[str, str | None]]:
+    def _character_voice_id(character_row: Character) -> str | None:
+        assigned_voice = getattr(character_row, "voice_map", None)
+        if assigned_voice is not None and assigned_voice.voice_id:
+            return str(assigned_voice.voice_id)
+        if character_row.voice_id:
+            return str(character_row.voice_id)
+        return None
+
     return {
         character.name.lower(): {
             "gender": character.gender,
-            "voice_id": character.voice_id,
+            "voice_id": _character_voice_id(character),
         }
         for character in characters
     }
@@ -78,7 +86,10 @@ def recompute_voice_previews_for_runs(
     character_lookup = _build_character_lookup(
         list(session.query(Character).filter(Character.project_id == project.id).all())
     )
-    voice_config = project.voice_config_json or {}
+    voice_config = build_effective_voice_config(
+        project.voice_config_json,
+        default_narrator_voice=project.default_narrator_voice,
+    )
     recomputed_at = datetime.now(timezone.utc).isoformat()
 
     runs_recomputed = 0

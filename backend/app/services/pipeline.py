@@ -25,7 +25,7 @@ from app.services.quota import consume_quota
 from app.services.segmentation import segment_text_with_parent_paragraph
 from app.services.tagging import tag_segment
 from app.services.normalization import build_segment_level_offset_map
-from app.services.voice import resolve_voice
+from app.services.voice import build_effective_voice_config, resolve_voice
 
 _LOW_GENDER_CONFIDENCE = 0.0
 _LOW_CONFIDENCE_GENDERS = frozenset({"neutral", "unknown"})
@@ -96,11 +96,20 @@ def _build_character_lookup(rows: list[Character]) -> dict[str, dict[str, object
             return
         lookup[normalized_key] = _AMBIGUOUS_CHARACTER_REFERENCE
 
+    def _character_voice_id(character_row: Character) -> str | None:
+        assigned_voice = getattr(character_row, "voice_map", None)
+        if assigned_voice is not None and assigned_voice.voice_id:
+            return str(assigned_voice.voice_id)
+        if character_row.voice_id:
+            return str(character_row.voice_id)
+        return None
+
     for character in rows:
+        voice_id = _character_voice_id(character)
         speaker_entry: dict[str, object] = {
             "id": character.id,
             "gender": character.gender,
-            "voice_id": character.voice_id,
+            "voice_id": voice_id,
             "confidence": character.confidence,
         }
         add_lookup_key(normalize_candidate_key(character.name), speaker_entry)
@@ -195,6 +204,10 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     for character in characters:
         name_to_verbalized[character.name.strip()] = character.verbalized_form.strip()
     character_lookup = _build_character_lookup(rows=characters)
+    voice_config = build_effective_voice_config(
+        project.voice_config_json,
+        default_narrator_voice=project.default_narrator_voice,
+    )
 
     session.query(Segment).filter(Segment.run_id == run.id).delete()
     session.query(LLMCall).filter(LLMCall.run_id == run.id).delete()
@@ -251,7 +264,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 segment_type=str(tags["type"]),
                 speaker=speaker,
                 character_lookup=character_lookup,
-                voice_config=project.voice_config_json,
+                voice_config=voice_config,
             )
 
             canonical_entry = speaker_entry

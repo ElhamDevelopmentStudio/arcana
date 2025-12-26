@@ -217,8 +217,8 @@ Definition of done for each task:
 - [x] [TAG-022] Add evaluation fixtures for mixed narration/dialogue segments.
 
 ## 4.8 Voice Mapping (Ref: SRS.md §4.8)
-- [ ] [VOICE-001] Add voice map table with per-character assignment.
-- [ ] [VOICE-002] Add default narrator voice field.
+- [x] [VOICE-001] Add voice map table with per-character assignment.
+- [x] [VOICE-002] Add default narrator voice field.
 - [ ] [VOICE-003] Add default male/female/neutral/unknown voice fields.
 - [ ] [VOICE-004] Add per-character override field and precedence rule.
 - [ ] [VOICE-005] Implement resolver output for each dialogue segment.

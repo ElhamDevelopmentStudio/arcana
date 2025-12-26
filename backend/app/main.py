@@ -476,6 +476,7 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         selected_mode=DEFAULT_MODE,
         selected_modes=[DEFAULT_MODE],
         voice_config_json=dict(DEFAULT_VOICE_CONFIG),
+        default_narrator_voice=DEFAULT_VOICE_CONFIG["narrator_voice"],
     )
     session.add(project)
     session.commit()
@@ -2030,13 +2031,21 @@ def update_voice_config(
 ) -> VoiceConfigResponse:
     project = _get_project_or_404(session, project_id)
 
+    narrator_voice = payload.narrator_voice.strip()
+    if not narrator_voice:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="narrator_voice must not be blank",
+        )
+
     project.voice_config_json = {
-        "narrator_voice": payload.narrator_voice,
-        "male_default_voice": payload.male_default_voice,
-        "female_default_voice": payload.female_default_voice,
-        "neutral_default_voice": payload.neutral_default_voice,
-        "unknown_default_voice": payload.unknown_default_voice,
+        "narrator_voice": narrator_voice,
+        "male_default_voice": payload.male_default_voice.strip(),
+        "female_default_voice": payload.female_default_voice.strip(),
+        "neutral_default_voice": payload.neutral_default_voice.strip(),
+        "unknown_default_voice": payload.unknown_default_voice.strip(),
     }
+    project.default_narrator_voice = narrator_voice
     session.add(project)
     session.commit()
     session.refresh(project)
