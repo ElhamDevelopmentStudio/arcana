@@ -234,7 +234,7 @@ Definition of done for each task:
 - [x] [AUD-001] Define audiobook export package manifest structure.
 - [x] [AUD-002] Include ordered segment list for entire corpus.
 - [x] [AUD-003] Include phonetic-ready text per segment.
-- [ ] [AUD-004] Include per-segment voice resolution outputs.
+- [x] [AUD-004] Include per-segment voice resolution outputs.
 - [ ] [AUD-005] Include per-segment tag bundle and confidence.
 - [ ] [AUD-006] Include project config snapshot in export package.
 - [ ] [AUD-007] Include logs/reports in export package.
