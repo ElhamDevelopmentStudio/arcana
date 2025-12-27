@@ -1,8 +1,57 @@
+from collections.abc import Mapping
+from datetime import datetime, timezone
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
 
 from app.models import Chapter, Project, Run, Segment
+
+
+def _to_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _build_tag_bundle(segment_json: Mapping[str, Any]) -> dict[str, Any]:
+    confidence = _to_dict(segment_json.get("confidence"))
+    return {
+        "type": segment_json.get("type"),
+        "speaker": segment_json.get("speaker"),
+        "speaker_id": segment_json.get("speaker_id"),
+        "gender": segment_json.get("gender"),
+        "emotion": {
+            "valence": segment_json.get("emotion_valence"),
+            "intensity": segment_json.get("emotion_intensity"),
+            "primary_label": segment_json.get("emotion_primary_label"),
+            "secondary_label": segment_json.get("emotion_secondary_label"),
+            "state": segment_json.get("emotion_state"),
+            "evidence": _to_dict(segment_json.get("emotion_evidence")),
+            "confidence": confidence.get("emotion"),
+        },
+        "type_confidence": confidence.get("type"),
+        "speaker_confidence": confidence.get("speaker"),
+        "tension": {
+            **_to_dict(segment_json.get("tension_contribution")),
+            "confidence": confidence.get("tension"),
+        },
+        "dominance": {
+            **_to_dict(segment_json.get("dominance_contribution")),
+            "confidence": confidence.get("dominance"),
+        },
+        "summary_tag": _to_dict(segment_json.get("summary_tag")),
+        "type_evidence": _to_dict(segment_json.get("type_evidence")),
+        "speaker_evidence": _to_dict(segment_json.get("speaker_evidence")),
+        "sub_segment_boundaries": segment_json.get("sub_segment_boundaries", []),
+        "confidence": confidence,
+    }
+
+
+def _normalize_segment_for_export(segment_json: Any) -> dict[str, Any]:
+    if not isinstance(segment_json, Mapping):
+        return {}
+    segment_payload = dict(segment_json)
+    segment_payload["tag_bundle"] = _build_tag_bundle(segment_payload)
+    return segment_payload
 
 
 def build_run_export(session: Session, project: Project, run: Run) -> dict:
@@ -14,7 +63,7 @@ def build_run_export(session: Session, project: Project, run: Run) -> dict:
         .order_by(Chapter.chapter_index.asc(), Segment.segment_index.asc())
     ).scalars()
 
-    segments = list(rows)
+    segments = [_normalize_segment_for_export(row) for row in list(rows)]
     manifest = {
         "schema_version": "1.0.0",
         "export_type": "audiobook_tts_package",
