@@ -445,6 +445,43 @@ def test_integration_internal_thought_uses_run_level_thought_voice() -> None:
     assert all(segment["voice_id"] == "thought_voice_bucket" for segment in internal_thought_segments)
 
 
+def test_integration_internal_thought_run_level_blank_thought_uses_project_level_value() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_internal_thought_text(
+            client=client,
+            text='Chapter 1\nShe thought the moon had finally cleared.',
+        )
+        voices_payload = {
+            "narrator_voice": "run_narrator_voice",
+            "male_default_voice": "male_default",
+            "female_default_voice": "female_default",
+            "neutral_default_voice": "neutral_default",
+            "unknown_default_voice": "unknown_default",
+            "internal_thought_voice_policy": "thought_voice",
+            "internal_thought_voice": "project_thought_voice",
+        }
+        update_resp = client.put(f"/api/projects/{project_id}/voices", json=voices_payload)
+        assert update_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "internal_thought_voice_policy": "thought_voice",
+                "internal_thought_voice": "   ",
+                "allow_unfinalized_character_map": True,
+            },
+        )
+        assert run_resp.status_code == 200
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_resp.json()['run_id']}.json")
+        assert export_resp.status_code == 200
+        segments = export_resp.json()["segments"]
+
+    internal_thought_segments = [segment for segment in segments if segment.get("type") == "internal thought"]
+    assert internal_thought_segments
+    assert all(segment["voice_id"] == "project_thought_voice" for segment in internal_thought_segments)
+
+
 def test_integration_gender_resolution_defaults_to_unknown_for_unmapped_speaker() -> None:
     text = 'Chapter 1\n"Hello there," Phantom said.'
 

@@ -228,7 +228,7 @@ Definition of done for each task:
 - [x] [VOICE-009] Include speaker+gender confidence in export.
 - [x] [VOICE-010] Implement internal-thought voice policy options.
 - [x] [VOICE-011] Persist selected thought policy in mode setup.
-- [ ] [VOICE-012] Add tests for every fallback path.
+- [x] [VOICE-012] Add tests for every fallback path.
 
 ## 4.9 Audiobook Outputs (Ref: SRS.md §4.9)
 - [ ] [AUD-001] Define audiobook export package manifest structure.

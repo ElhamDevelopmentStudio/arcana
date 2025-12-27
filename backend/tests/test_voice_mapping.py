@@ -1,4 +1,8 @@
-from app.services.voice import DEFAULT_VOICE_CONFIG, resolve_voice
+from app.services.voice import (
+    DEFAULT_VOICE_CONFIG,
+    _normalize_internal_thought_voice_policy,
+    resolve_voice,
+)
 
 
 def test_unit_resolve_voice_maps_gender_defaults_to_neutral_and_unknown_buckets() -> None:
@@ -138,3 +142,73 @@ def test_unit_resolve_voice_internal_thought_uses_thought_voice_policy() -> None
 
     assert internal_voice == "thought_default"
     assert gender == "unknown"
+
+
+def test_unit_normalize_internal_thought_voice_policy_defaults_to_character_for_bad_values() -> None:
+    assert _normalize_internal_thought_voice_policy("thought_voice") == "thought_voice"
+    assert _normalize_internal_thought_voice_policy("CHARACTER") == "character"
+    assert _normalize_internal_thought_voice_policy("mystery") == "character"
+    assert _normalize_internal_thought_voice_policy("") == "character"
+    assert _normalize_internal_thought_voice_policy(None) == "character"
+
+
+def test_unit_resolve_voice_internal_thought_defaults_to_narrator_when_policy_thought_voice_and_no_voice() -> None:
+    config = {
+        "narrator_voice": "narrator_voice",
+        "male_default_voice": "male",
+        "female_default_voice": "female",
+        "neutral_default_voice": "neutral",
+        "unknown_default_voice": "unknown_default",
+        "internal_thought_voice_policy": "thought_voice",
+    }
+
+    internal_voice, gender = resolve_voice(
+        segment_type="internal thought",
+        speaker="Kai",
+        character_lookup={},
+        voice_config=config,
+    )
+
+    assert internal_voice == "narrator_voice"
+    assert gender == "unknown"
+
+
+def test_unit_resolve_voice_unknown_segment_type_uses_narrator_fallback() -> None:
+    config = {
+        "narrator_voice": "narrator_voice",
+        "male_default_voice": "male",
+        "female_default_voice": "female",
+        "neutral_default_voice": "neutral",
+        "unknown_default_voice": "unknown_default",
+    }
+
+    fallback_voice, fallback_gender = resolve_voice(
+        segment_type="flashback",
+        speaker="Kai",
+        character_lookup={"kai": {"gender": "male", "voice_id": "explicit"}},
+        voice_config=config,
+    )
+
+    assert fallback_voice == "narrator_voice"
+    assert fallback_gender == "unknown"
+
+
+def test_unit_resolve_voice_unknown_lookup_falls_back_for_custom_gender_values() -> None:
+    config = {
+        "narrator_voice": "narrator",
+        "male_default_voice": "male",
+        "female_default_voice": "female",
+        "neutral_default_voice": "neutral",
+        "unknown_default_voice": "unknown_default",
+    }
+    character_lookup = {"kai": {"gender": "custom", "voice_id": None}}
+
+    fallback_voice, fallback_gender = resolve_voice(
+        segment_type="dialogue",
+        speaker="Kai",
+        character_lookup=character_lookup,
+        voice_config=config,
+    )
+
+    assert fallback_voice == "unknown_default"
+    assert fallback_gender == "custom"
