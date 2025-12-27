@@ -54,6 +54,22 @@ def _normalize_segment_for_export(segment_json: Any) -> dict[str, Any]:
     return segment_payload
 
 
+def _build_project_config_snapshot(project: Project) -> dict[str, Any]:
+    return {
+        "configuration_snapshot_id": project.configuration_snapshot_id,
+        "selected_mode": project.selected_mode,
+        "selected_modes": list(project.selected_modes or []),
+        "voice_config": dict(project.voice_config_json or {}),
+        "default_voices": {
+            "narrator": project.default_narrator_voice,
+            "male": project.default_male_voice,
+            "female": project.default_female_voice,
+            "neutral": project.default_neutral_voice,
+            "unknown": project.default_unknown_voice,
+        },
+    }
+
+
 def build_run_export(session: Session, project: Project, run: Run) -> dict:
     generated_at = run.finished_at or run.started_at or datetime.now(timezone.utc)
     rows = session.execute(
@@ -72,7 +88,10 @@ def build_run_export(session: Session, project: Project, run: Run) -> dict:
         "project": {
             "id": project.id,
             "title": project.title,
+            "configuration_snapshot_id": project.configuration_snapshot_id,
+            "selected_mode": project.selected_mode,
         },
+        "project_config_snapshot": _build_project_config_snapshot(project),
         "run": {
             "id": run.id,
             "status": run.status,
