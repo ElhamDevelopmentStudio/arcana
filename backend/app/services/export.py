@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Chapter, Project, Run, Segment
+from app.models import Chapter, LLMCall, Project, Run, Segment
 
 
 def _to_dict(value: Any) -> dict[str, Any]:
@@ -70,6 +70,60 @@ def _build_project_config_snapshot(project: Project) -> dict[str, Any]:
     }
 
 
+def _load_run_llm_calls(session: Session, run: Run) -> list[dict[str, Any]]:
+    llm_calls = (
+        session.query(LLMCall)
+        .filter(LLMCall.run_id == run.id)
+        .order_by(LLMCall.created_at.asc(), LLMCall.id.asc())
+        .all()
+    )
+    return [
+        {
+            "id": call.id,
+            "provider": call.provider,
+            "task_type": call.task_type,
+            "success": call.success,
+            "request_count": call.request_count,
+            "detail": call.detail,
+            "created_at": call.created_at.isoformat(),
+        }
+        for call in llm_calls
+    ]
+
+
+def _build_export_reports(project: Project, run: Run, segment_count: int, ordered_by: list[str]) -> dict[str, Any]:
+    run_snapshot = dict(run.config_json or {})
+    project_ingestion_log = dict(project.ingestion_log_json or {})
+    return {
+        "project": {
+            "id": project.id,
+            "title": project.title,
+            "configuration_snapshot_id": project.configuration_snapshot_id,
+            "selected_mode": project.selected_mode,
+        },
+        "run": {
+            "id": run.id,
+            "status": run.status,
+            "segment_count": segment_count,
+            "ordered_by": ordered_by,
+        },
+        "normalization_report": project_ingestion_log.get("normalization_report", {}),
+        "character_analytics_snapshot": {
+            key: run_snapshot.get(key)
+            for key in (
+                "character_mentions_by_chapter",
+                "character_first_appearance_chapter_index",
+                "character_last_appearance_chapter_index",
+                "character_mentions_per_1000_words",
+                "character_dialogue_line_counts",
+            )
+            if run_snapshot.get(key) is not None
+        },
+        "mode_profile_snapshot": _to_dict(run_snapshot.get("voice_config")),
+        "generated_at": run.finished_at.isoformat() if run.finished_at else run.started_at.isoformat(),
+    }
+
+
 def build_run_export(session: Session, project: Project, run: Run) -> dict:
     generated_at = run.finished_at or run.started_at or datetime.now(timezone.utc)
     rows = session.execute(
@@ -80,6 +134,9 @@ def build_run_export(session: Session, project: Project, run: Run) -> dict:
     ).scalars()
 
     segments = [_normalize_segment_for_export(row) for row in list(rows)]
+    ordered_by = ["chapter_index", "segment_index"]
+    llm_calls = _load_run_llm_calls(session, run)
+    ingestion_log = dict(project.ingestion_log_json or {})
     manifest = {
         "schema_version": "1.0.0",
         "export_type": "audiobook_tts_package",
@@ -98,7 +155,17 @@ def build_run_export(session: Session, project: Project, run: Run) -> dict:
             "config_snapshot": run.config_json,
         },
         "segment_count": len(segments),
-        "ordered_by": ["chapter_index", "segment_index"],
+        "ordered_by": ordered_by,
+        "logs": {
+            "ingestion_log": ingestion_log,
+            "llm_calls": llm_calls,
+        },
+        "reports": _build_export_reports(
+            project=project,
+            run=run,
+            segment_count=len(segments),
+            ordered_by=ordered_by,
+        ),
     }
 
     return {
