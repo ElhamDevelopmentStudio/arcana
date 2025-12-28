@@ -242,7 +242,7 @@ Definition of done for each task:
 - [x] [AUD-009] Implement CSV export writer.
 - [x] [AUD-010] Implement time-series export arrays.
 - [x] [AUD-011] Enforce stable chapter->segment ordering.
-- [ ] [AUD-012] Implement resumable export by chapter/segment cursor.
+- [x] [AUD-012] Implement resumable export by chapter/segment cursor.
 - [ ] [AUD-013] Guarantee stable segment IDs across equivalent reruns.
 - [ ] [AUD-014] Emit emotional delta metadata between adjacent segments.
 - [ ] [AUD-015] Emit scene state and volatility markers.

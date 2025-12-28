@@ -182,6 +182,63 @@ def test_export_csv_contains_tts_ready_segments() -> None:
         assert rows[1][header.index("segment_id")] != ""
 
 
+def test_export_json_supports_resumable_cursor() -> None:
+    source_text = (
+        "Chapter 1\n"
+        "In the beginning there was a lantern and a hallway and a door and another door and a hallway "
+        "that stretched beyond the edge of sight. The moon rose high and the rain whispered across the "
+        "roof while footsteps echoed in distant corridors and voices floated from somewhere else. "
+        "No one answered when called, and yet each room seemed to keep listening, collecting each word "
+        "like a promise. The narrator counted every breath, every shadow. "
+        "The mystery deepened with every step, and the wind carried paper across the tile floor. "
+        "Then came the storm, and all the candles in the corridor flared into life, one after another, "
+        "as if someone had already made their decision. "
+    )
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Resume Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(source_text.encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        full_export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert full_export_resp.status_code == 200
+        full_payload = full_export_resp.json()
+
+        assert full_payload["cursor"]["returned_segment_count"] == len(full_payload["segments"])
+        assert full_payload["cursor"]["has_more_segments"] is False
+        assert full_payload["cursor"]["total_segment_count"] == len(full_payload["segments"])
+        assert full_payload["cursor"]["next_resume_from"] == {
+            "chapter_index": full_payload["segments"][-1]["chapter_id"],
+            "segment_index": full_payload["segments"][-1]["segment_index"],
+        }
+
+        cursor_payload = client.get(
+            f"/api/projects/{project_id}/exports/{run_id}.json",
+            params={
+                "from_chapter_index": full_payload["segments"][0]["chapter_id"],
+                "from_segment_index": full_payload["segments"][0]["segment_index"],
+            },
+        )
+        assert cursor_payload.status_code == 200
+        resumed = cursor_payload.json()
+        assert resumed["cursor"]["from_chapter_index"] == full_payload["segments"][0]["chapter_id"]
+        assert resumed["cursor"]["from_segment_index"] == full_payload["segments"][0]["segment_index"]
+        assert resumed["cursor"]["returned_segment_count"] == max(len(full_payload["segments"]) - 1, 0)
+        assert len(resumed["segments"]) == max(len(full_payload["segments"]) - 1, 0)
+
+
 def test_export_json_includes_project_config_snapshot_after_project_customization() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Project With Snapshot"})
