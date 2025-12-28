@@ -127,6 +127,47 @@ def _build_export_reports(project: Project, run: Run, segment_count: int, ordere
     }
 
 
+def _to_number(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    emotion_valence = []
+    emotion_intensity = []
+    tension = []
+    dominance = []
+
+    for position, segment in enumerate(segments, start=1):
+        chapter_id = segment.get("chapter_id")
+        segment_id = segment.get("segment_id")
+        segment_index = segment.get("segment_index")
+        timestamped_point = {
+            "position": position,
+            "chapter_id": chapter_id,
+            "segment_index": segment_index,
+            "segment_id": segment_id,
+        }
+
+        valence = _to_number(segment.get("emotion_valence"))
+        intensity = _to_number(segment.get("emotion_intensity"))
+        tension_value = _to_number(_to_dict(segment.get("tension_contribution")).get("value"))
+        dominance_value = _to_number(_to_dict(segment.get("dominance_contribution")).get("value"))
+
+        emotion_valence.append({**timestamped_point, "value": valence if valence is not None else 0.0})
+        emotion_intensity.append({**timestamped_point, "value": intensity if intensity is not None else 0.0})
+        tension.append({**timestamped_point, "value": tension_value if tension_value is not None else 0.0})
+        dominance.append({**timestamped_point, "value": dominance_value if dominance_value is not None else 0.0})
+
+    return {
+        "emotion_valence": emotion_valence,
+        "emotion_intensity": emotion_intensity,
+        "tension": tension,
+        "dominance": dominance,
+    }
+
+
 def _csv_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -312,4 +353,5 @@ def build_run_export(session: Session, project: Project, run: Run) -> dict:
         "status": run.status,
         "manifest": manifest,
         "segments": segments,
+        "time_series": _build_time_series(segments),
     }

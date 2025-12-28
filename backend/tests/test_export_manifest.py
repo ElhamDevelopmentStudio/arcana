@@ -52,6 +52,16 @@ def test_export_json_includes_manifest_metadata() -> None:
         assert export_payload["run_id"] == run_id
         assert export_payload["status"] == "completed"
         assert isinstance(export_payload["segments"], list)
+        time_series = export_payload["time_series"]
+        assert isinstance(time_series, dict)
+        assert set(time_series.keys()) == {"emotion_valence", "emotion_intensity", "tension", "dominance"}
+        assert len(time_series["emotion_valence"]) == len(export_payload["segments"])
+        assert len(time_series["emotion_intensity"]) == len(export_payload["segments"])
+        assert len(time_series["tension"]) == len(export_payload["segments"])
+        assert len(time_series["dominance"]) == len(export_payload["segments"])
+        first_point = time_series["emotion_valence"][0]
+        assert first_point["position"] == 1
+        assert first_point["value"] is not None
 
         manifest = export_payload.get("manifest")
         assert isinstance(manifest, dict)
