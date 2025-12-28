@@ -60,11 +60,14 @@ def test_export_json_includes_manifest_metadata() -> None:
             "tension",
             "dominance",
             "emotion_delta",
+            "scene_states",
+            "volatility_markers",
         }
         assert len(time_series["emotion_valence"]) == len(export_payload["segments"])
         assert len(time_series["emotion_intensity"]) == len(export_payload["segments"])
         assert len(time_series["tension"]) == len(export_payload["segments"])
         assert len(time_series["dominance"]) == len(export_payload["segments"])
+        assert len(time_series["scene_states"]) == len(export_payload["segments"])
         if len(export_payload["segments"]) > 1:
             assert len(time_series["emotion_delta"]) == len(export_payload["segments"]) - 1
             assert set(time_series["emotion_delta"][0].keys()) >= {
@@ -74,9 +77,25 @@ def test_export_json_includes_manifest_metadata() -> None:
                 "valence_delta",
                 "intensity_delta",
             }
+            assert len(time_series["volatility_markers"]) == len(export_payload["segments"]) - 1
+            volatility_marker = time_series["volatility_markers"][0]
+            assert set(volatility_marker.keys()) >= {
+                "position",
+                "from_segment_id",
+                "segment_id",
+                "volatility_index",
+                "level",
+            }
+            assert volatility_marker["level"] in {"low", "moderate", "high"}
         first_point = time_series["emotion_valence"][0]
         assert first_point["position"] == 1
         assert first_point["value"] is not None
+        first_scene_state = time_series["scene_states"][0]
+        assert first_scene_state["position"] == 1
+        assert first_scene_state["segment_id"] == export_payload["segments"][0]["segment_id"]
+        assert isinstance(first_scene_state["state"], str)
+        assert isinstance(first_scene_state["reasons"], list)
+        assert isinstance(first_scene_state["evidence"], dict)
         segment_order = [(segment["chapter_id"], segment["segment_index"]) for segment in export_payload["segments"]]
         assert segment_order == sorted(segment_order, key=lambda item: (item[0], item[1]))
 
