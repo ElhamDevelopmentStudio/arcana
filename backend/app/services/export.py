@@ -162,6 +162,9 @@ def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[st
     emotion_intensity = []
     tension = []
     dominance = []
+    emotion_delta = []
+    previous_segment = None
+    previous_values = {"valence": None, "intensity": None, "tension": None, "dominance": None}
 
     for position, segment in enumerate(segments, start=1):
         chapter_id = segment.get("chapter_id")
@@ -179,16 +182,35 @@ def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[st
         tension_value = _to_number(_to_dict(segment.get("tension_contribution")).get("value"))
         dominance_value = _to_number(_to_dict(segment.get("dominance_contribution")).get("value"))
 
+        if previous_segment is not None:
+            emotion_delta.append(
+                {
+                    "position": position,
+                    "segment_id": segment_id,
+                    "from_segment_id": previous_segment.get("segment_id"),
+                    "valence_delta": (valence or 0.0) - (previous_values["valence"] or 0.0),
+                    "intensity_delta": (intensity or 0.0) - (previous_values["intensity"] or 0.0),
+                    "tension_delta": (tension_value or 0.0) - (previous_values["tension"] or 0.0),
+                    "dominance_delta": (dominance_value or 0.0) - (previous_values["dominance"] or 0.0),
+                }
+            )
+
         emotion_valence.append({**timestamped_point, "value": valence if valence is not None else 0.0})
         emotion_intensity.append({**timestamped_point, "value": intensity if intensity is not None else 0.0})
         tension.append({**timestamped_point, "value": tension_value if tension_value is not None else 0.0})
         dominance.append({**timestamped_point, "value": dominance_value if dominance_value is not None else 0.0})
+        previous_segment = segment
+        previous_values["valence"] = valence if valence is not None else 0.0
+        previous_values["intensity"] = intensity if intensity is not None else 0.0
+        previous_values["tension"] = tension_value if tension_value is not None else 0.0
+        previous_values["dominance"] = dominance_value if dominance_value is not None else 0.0
 
     return {
         "emotion_valence": emotion_valence,
         "emotion_intensity": emotion_intensity,
         "tension": tension,
         "dominance": dominance,
+        "emotion_delta": emotion_delta,
     }
 
 

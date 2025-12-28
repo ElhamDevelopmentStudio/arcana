@@ -54,11 +54,26 @@ def test_export_json_includes_manifest_metadata() -> None:
         assert isinstance(export_payload["segments"], list)
         time_series = export_payload["time_series"]
         assert isinstance(time_series, dict)
-        assert set(time_series.keys()) == {"emotion_valence", "emotion_intensity", "tension", "dominance"}
+        assert set(time_series.keys()) == {
+            "emotion_valence",
+            "emotion_intensity",
+            "tension",
+            "dominance",
+            "emotion_delta",
+        }
         assert len(time_series["emotion_valence"]) == len(export_payload["segments"])
         assert len(time_series["emotion_intensity"]) == len(export_payload["segments"])
         assert len(time_series["tension"]) == len(export_payload["segments"])
         assert len(time_series["dominance"]) == len(export_payload["segments"])
+        if len(export_payload["segments"]) > 1:
+            assert len(time_series["emotion_delta"]) == len(export_payload["segments"]) - 1
+            assert set(time_series["emotion_delta"][0].keys()) >= {
+                "position",
+                "segment_id",
+                "from_segment_id",
+                "valence_delta",
+                "intensity_delta",
+            }
         first_point = time_series["emotion_valence"][0]
         assert first_point["position"] == 1
         assert first_point["value"] is not None
