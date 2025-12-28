@@ -62,6 +62,7 @@ def test_export_json_includes_manifest_metadata() -> None:
             "emotion_delta",
             "scene_states",
             "volatility_markers",
+            "avoid_abrupt_change_hints",
         }
         assert len(time_series["emotion_valence"]) == len(export_payload["segments"])
         assert len(time_series["emotion_intensity"]) == len(export_payload["segments"])
@@ -77,6 +78,27 @@ def test_export_json_includes_manifest_metadata() -> None:
                 "valence_delta",
                 "intensity_delta",
             }
+            assert len(time_series["avoid_abrupt_change_hints"]) == len(export_payload["segments"]) - 1
+            abrupt_hint = time_series["avoid_abrupt_change_hints"][0]
+            assert set(abrupt_hint.keys()) >= {
+                "position",
+                "from_segment_id",
+                "segment_id",
+                "avoid",
+                "severity",
+                "volatility_index",
+                "fields_to_smooth",
+                "suggestions",
+                "from_raw_tags",
+                "to_raw_tags",
+            }
+            assert isinstance(abrupt_hint["severity"], str)
+            assert abrupt_hint["severity"] in {"low", "moderate", "high"}
+            first_segment = export_payload["segments"][0]
+            second_segment = export_payload["segments"][1]
+            assert abrupt_hint["from_raw_tags"]["type"] == first_segment["type"]
+            assert abrupt_hint["to_raw_tags"]["type"] == second_segment["type"]
+            assert abrupt_hint["suggestions"]["preserve_raw_tags"] is True
             assert len(time_series["volatility_markers"]) == len(export_payload["segments"]) - 1
             volatility_marker = time_series["volatility_markers"][0]
             assert set(volatility_marker.keys()) >= {
