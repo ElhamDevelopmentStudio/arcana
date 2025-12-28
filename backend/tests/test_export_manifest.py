@@ -1,4 +1,5 @@
 import io
+import csv
 import os
 from pathlib import Path
 
@@ -133,6 +134,40 @@ def test_export_json_includes_warning_report_summary() -> None:
         reports = manifest["reports"]
         assert reports["normalization_report"]["lossy_transform_flags"]["quote_repair_applied"] is True
         assert reports["normalization_report"]["counts"]["quote_repair_count"] >= 1
+
+
+def test_export_csv_contains_tts_ready_segments() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest CSV Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(b"Chapter 1\nThe lantern burned low and the rain beat softly outside."), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_csv_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.csv")
+        assert export_csv_resp.status_code == 200
+        assert export_csv_resp.headers["content-type"] == "text/csv; charset=utf-8"
+        assert export_csv_resp.headers["content-disposition"] == f"attachment; filename=\"project-{project_id}-run-{run_id}.csv\""
+
+        rows = list(csv.reader(export_csv_resp.text.splitlines()))
+        assert len(rows) >= 2
+        header = rows[0]
+        assert "segment_id" in header
+        assert "normalized_text" in header
+        assert "phonetic_text" in header
+        assert "resolved_voice_id" in header
+        assert rows[1][header.index("segment_id")] != ""
 
 
 def test_export_json_includes_project_config_snapshot_after_project_customization() -> None:
