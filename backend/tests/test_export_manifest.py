@@ -62,6 +62,8 @@ def test_export_json_includes_manifest_metadata() -> None:
         first_point = time_series["emotion_valence"][0]
         assert first_point["position"] == 1
         assert first_point["value"] is not None
+        segment_order = [(segment["chapter_id"], segment["segment_index"]) for segment in export_payload["segments"]]
+        assert segment_order == sorted(segment_order, key=lambda item: (item[0], item[1]))
 
         manifest = export_payload.get("manifest")
         assert isinstance(manifest, dict)
