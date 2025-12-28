@@ -164,6 +164,77 @@ def test_export_json_includes_manifest_metadata() -> None:
         assert isinstance(reports["mode_profile_snapshot"], dict)
 
 
+def test_export_json_includes_chapter_level_valence_means() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-001 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "The lantern burned low and the rain beat softly outside. "
+                            "A detective wrote in a notebook with careful hands and deliberate pauses. "
+                            "He heard the floorboards groan behind him once more, then again.\n\n"
+                            "Chapter 2\n"
+                            "The hallway narrowed and the air smelled of dust and damp stone. "
+                            "Footsteps echoed from the stairwell while shutters rattled against wind. "
+                            "Every thought seemed to ask a louder question than before."
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 100, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        means = academic_reports.get("chapter_level_valence_means")
+        assert isinstance(means, list)
+        assert means, "Expected at least one chapter mean entry"
+
+        by_chapter: dict[int, list[float]] = {}
+        for segment in export_payload["segments"]:
+            chapter_id = segment.get("chapter_id")
+            valence = segment.get("emotion_valence")
+            if isinstance(chapter_id, int) and isinstance(valence, (int, float)):
+                by_chapter.setdefault(chapter_id, []).append(float(valence))
+
+        assert len(means) == len(by_chapter)
+
+        for chapter_mean in means:
+            assert set(chapter_mean.keys()) >= {
+                "chapter_id",
+                "valence_mean",
+                "segment_count",
+            }
+            chapter_id = chapter_mean["chapter_id"]
+            assert chapter_id in by_chapter
+
+            values = by_chapter[chapter_id]
+            expected_mean = round(sum(values) / len(values), 4)
+            assert chapter_mean["segment_count"] == len(values)
+            assert chapter_mean["valence_mean"] == expected_mean
+
+
 def test_export_json_includes_warning_report_summary() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})

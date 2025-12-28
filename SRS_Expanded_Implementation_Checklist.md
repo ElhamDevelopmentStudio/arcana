@@ -249,7 +249,7 @@ Definition of done for each task:
 - [x] [AUD-016] Emit “avoid abrupt change” smoothing hints while preserving raw tags.
 
 ## 4.10 Academic Outputs (Ref: SRS.md §4.10)
-- [ ] [ACAD-001] Compute chapter-level valence mean.
+- [x] [ACAD-001] Compute chapter-level valence mean.
 - [ ] [ACAD-002] Compute chapter-level valence variance.
 - [ ] [ACAD-003] Compute emotional volatility index.
 - [ ] [ACAD-004] Compute rolling-window emotional curves.
