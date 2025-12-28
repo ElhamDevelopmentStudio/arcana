@@ -239,6 +239,53 @@ def test_export_json_supports_resumable_cursor() -> None:
         assert len(resumed["segments"]) == max(len(full_payload["segments"]) - 1, 0)
 
 
+def test_export_segment_ids_stable_across_equivalent_reruns() -> None:
+    source_text = (
+        "Chapter 1\nA lantern glowed in the study as rain traced silver lines across the windows. "
+        "The detective waited for the truth to arrive, or the truth to confess. "
+        "The clock in the hall counted each heartbeat with perfect indifference.\n\n"
+        "Chapter 2\nHe moved through the old wing with careful steps, listening to the groan of timber "
+        "and the thin scrape of paper in a locked drawer. "
+        "Every choice now had a shadow, and every shadow had a name."
+    ).encode("utf-8")
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Stable Segment IDs"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(source_text), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        first_run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 120, "allow_unfinalized_character_map": True},
+        )
+        assert first_run_resp.status_code == 200
+        first_run_id = first_run_resp.json()["run_id"]
+
+        second_run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 120, "mode": "audiobook", "allow_unfinalized_character_map": True},
+        )
+        assert second_run_resp.status_code == 200
+        second_run_id = second_run_resp.json()["run_id"]
+
+        first_export = client.get(f"/api/projects/{project_id}/exports/{first_run_id}.json")
+        second_export = client.get(f"/api/projects/{project_id}/exports/{second_run_id}.json")
+        assert first_export.status_code == 200
+        assert second_export.status_code == 200
+
+        first_segments = first_export.json()["segments"]
+        second_segments = second_export.json()["segments"]
+        assert [segment["segment_id"] for segment in first_segments] == [
+            segment["segment_id"] for segment in second_segments
+        ]
+
+
 def test_export_json_includes_project_config_snapshot_after_project_customization() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Project With Snapshot"})
