@@ -556,6 +556,81 @@ def test_export_json_includes_chapter_level_raw_tension() -> None:
             assert chapter_entry["raw_tension_mean"] == expected_mean
 
 
+def test_export_json_includes_smoothed_tension_curve() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-006 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "The lantern burned low and the rain beat softly outside.\n"
+                            "A detective wrote in a notebook with careful hands and deliberate pauses.\n"
+                            "He heard the floorboards groan behind him, then again, softly.\n\n"
+                            "Chapter 2\n"
+                            "Shutters rattled as footsteps approached from the stairwell.\n"
+                            "The air grew colder with each breath, and no one came through the door.\n"
+                            "The lock turned, but it was already empty."
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 90, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        smoothed_curve_report = academic_reports.get("smoothed_tension_curve")
+        assert isinstance(smoothed_curve_report, dict)
+        assert isinstance(smoothed_curve_report.get("window_size"), int)
+        assert smoothed_curve_report["window_size"] == 5
+
+        tension_curve = smoothed_curve_report.get("tension_curve")
+        assert isinstance(tension_curve, list)
+        assert len(tension_curve) == len(export_payload["segments"])
+
+        values_tension: list[float] = []
+        for segment in export_payload["segments"]:
+            tension_data = segment.get("tension_contribution")
+            if not isinstance(tension_data, dict):
+                tension_data = segment.get("tag_bundle", {}).get("tension", {})
+            if not isinstance(tension_data, dict):
+                values_tension.append(0.0)
+                continue
+            tension_value = tension_data.get("value")
+            values_tension.append(float(tension_value) if isinstance(tension_value, (int, float)) else 0.0)
+
+        for i, segment in enumerate(export_payload["segments"]):
+            start = max(0, i - 4)
+            expected_tension = round(
+                sum(values_tension[start : i + 1]) / (i - start + 1),
+                4,
+            )
+            tension_point = tension_curve[i]
+            assert tension_point["position"] == i + 1
+            assert tension_point["segment_id"] == segment["segment_id"]
+            assert tension_point["smoothed_tension"] == expected_tension
+
+
 def test_export_json_includes_warning_report_summary() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})
