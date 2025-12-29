@@ -589,6 +589,55 @@ def _build_chapter_level_emotional_volatility_index(
     return chapter_level_emotional_volatility_index
 
 
+def _build_rolling_emotional_curves(
+    segments: list[dict[str, Any]],
+    window_size: int,
+) -> dict[str, Any]:
+    if window_size < 1:
+        window_size = 1
+
+    valence_values: list[float] = []
+    intensity_values: list[float] = []
+    for segment in segments:
+        valence_values.append(_to_number(segment.get("emotion_valence")) or 0.0)
+        intensity_values.append(_to_number(segment.get("emotion_intensity")) or 0.0)
+
+    rolling_valence = []
+    rolling_intensity = []
+    for index, segment in enumerate(segments):
+        start = max(0, index - window_size + 1)
+        valence_window = valence_values[start : index + 1]
+        intensity_window = intensity_values[start : index + 1]
+        valence_mean = sum(valence_window) / len(valence_window) if valence_window else 0.0
+        intensity_mean = (
+            sum(intensity_window) / len(intensity_window) if intensity_window else 0.0
+        )
+        point_meta = {
+            "position": index + 1,
+            "chapter_id": segment.get("chapter_id"),
+            "segment_index": segment.get("segment_index"),
+            "segment_id": segment.get("segment_id"),
+        }
+        rolling_valence.append(
+            {
+                **point_meta,
+                "rolling_mean_valence": round(valence_mean, 4),
+            }
+        )
+        rolling_intensity.append(
+            {
+                **point_meta,
+                "rolling_mean_intensity": round(intensity_mean, 4),
+            }
+        )
+
+    return {
+        "window_size": window_size,
+        "valence_curve": rolling_valence,
+        "intensity_curve": rolling_intensity,
+    }
+
+
 def _csv_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -779,6 +828,10 @@ def build_run_export(
             "chapter_level_emotional_volatility_index": _build_chapter_level_emotional_volatility_index(
                 segments=segments,
                 volatility_markers=time_series["volatility_markers"],
+            ),
+            "rolling_window_emotional_curves": _build_rolling_emotional_curves(
+                segments=segments,
+                window_size=5,
             ),
         },
     }

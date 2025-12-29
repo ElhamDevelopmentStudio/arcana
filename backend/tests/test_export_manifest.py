@@ -389,6 +389,91 @@ def test_export_json_includes_chapter_level_emotional_volatility_index() -> None
             assert chapter_volatility["emotional_volatility_index"] == expected_index
 
 
+def test_export_json_includes_rolling_window_emotional_curves() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-004 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "The city slept under a gray sky while fog rolled along the river.\n"
+                            "A clock struck three and no one answered to the call.\n"
+                            "Footsteps stopped near the archive and returned to silence.\n"
+                            "Ink on paper waited for the truth that might never arrive.\n"
+                            "Only the heater hissed beneath the closed door.\n\n"
+                            "Chapter 2\n"
+                            "By dawn, messages had stacked in the corridor like unpaid debts.\n"
+                            "The detective finally saw the pattern and nearly laughed.\n"
+                            "Someone was waiting outside with the wrong name."
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 90, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        rolling_reports = academic_reports.get("rolling_window_emotional_curves")
+        assert isinstance(rolling_reports, dict)
+        assert isinstance(rolling_reports.get("window_size"), int)
+        assert rolling_reports["window_size"] == 5
+
+        valence_curve = rolling_reports.get("valence_curve")
+        intensity_curve = rolling_reports.get("intensity_curve")
+        assert isinstance(valence_curve, list)
+        assert isinstance(intensity_curve, list)
+        assert len(valence_curve) == len(export_payload["segments"])
+        assert len(intensity_curve) == len(export_payload["segments"])
+
+        values_valence: list[float] = [
+            float(segment.get("emotion_valence", 0.0)) for segment in export_payload["segments"]
+        ]
+        values_intensity: list[float] = [
+            float(segment.get("emotion_intensity", 0.0)) for segment in export_payload["segments"]
+        ]
+
+        for i, segment in enumerate(export_payload["segments"]):
+            start = max(0, i - 4)
+            expected_valence = round(
+                sum(values_valence[start : i + 1]) / (i - start + 1),
+                4,
+            )
+            expected_intensity = round(
+                sum(values_intensity[start : i + 1]) / (i - start + 1),
+                4,
+            )
+            valence_point = valence_curve[i]
+            intensity_point = intensity_curve[i]
+
+            assert valence_point["position"] == i + 1
+            assert intensity_point["position"] == i + 1
+            assert valence_point["segment_id"] == segment["segment_id"]
+            assert intensity_point["segment_id"] == segment["segment_id"]
+            assert valence_point["rolling_mean_valence"] == expected_valence
+            assert intensity_point["rolling_mean_intensity"] == expected_intensity
+
+
 def test_export_json_includes_warning_report_summary() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})
