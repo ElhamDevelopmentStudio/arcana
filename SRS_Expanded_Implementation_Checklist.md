@@ -257,7 +257,7 @@ Definition of done for each task:
 - [x] [ACAD-006] Compute smoothed tension curve.
 - [x] [ACAD-007] Detect and mark minor/major tension peaks.
 - [x] [ACAD-008] Detect and mark plateau regions.
-- [ ] [ACAD-009] Compute chapter-level character dominance for key characters.
+- [x] [ACAD-009] Compute chapter-level character dominance for key characters.
 - [ ] [ACAD-010] Build character co-occurrence graph nodes/edges.
 - [ ] [ACAD-011] Compute graph centrality metrics table.
 - [ ] [ACAD-012] Implement academic JSON export schema.
