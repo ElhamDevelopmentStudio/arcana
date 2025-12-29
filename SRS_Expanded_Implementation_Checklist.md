@@ -258,8 +258,8 @@ Definition of done for each task:
 - [x] [ACAD-007] Detect and mark minor/major tension peaks.
 - [x] [ACAD-008] Detect and mark plateau regions.
 - [x] [ACAD-009] Compute chapter-level character dominance for key characters.
-- [ ] [ACAD-010] Build character co-occurrence graph nodes/edges.
-- [ ] [ACAD-011] Compute graph centrality metrics table.
+- [x] [ACAD-010] Build character co-occurrence graph nodes/edges.
+- [x] [ACAD-011] Compute graph centrality metrics table.
 - [ ] [ACAD-012] Implement academic JSON export schema.
 - [ ] [ACAD-013] Implement academic CSV export schema.
 - [ ] [ACAD-014] Implement graph JSON export schema.
