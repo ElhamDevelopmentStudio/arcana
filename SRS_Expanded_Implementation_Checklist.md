@@ -253,7 +253,7 @@ Definition of done for each task:
 - [x] [ACAD-002] Compute chapter-level valence variance.
 - [x] [ACAD-003] Compute emotional volatility index.
 - [x] [ACAD-004] Compute rolling-window emotional curves.
-- [ ] [ACAD-005] Compute raw tension per chapter.
+- [x] [ACAD-005] Compute raw tension per chapter.
 - [ ] [ACAD-006] Compute smoothed tension curve.
 - [ ] [ACAD-007] Detect and mark minor/major tension peaks.
 - [ ] [ACAD-008] Detect and mark plateau regions.
