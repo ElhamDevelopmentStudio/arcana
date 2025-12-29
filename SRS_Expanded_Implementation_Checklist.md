@@ -260,7 +260,7 @@ Definition of done for each task:
 - [x] [ACAD-009] Compute chapter-level character dominance for key characters.
 - [x] [ACAD-010] Build character co-occurrence graph nodes/edges.
 - [x] [ACAD-011] Compute graph centrality metrics table.
-- [ ] [ACAD-012] Implement academic JSON export schema.
+- [x] [ACAD-012] Implement academic JSON export schema.
 - [ ] [ACAD-013] Implement academic CSV export schema.
 - [ ] [ACAD-014] Implement graph JSON export schema.
 - [ ] [ACAD-015] Include reproducible run snapshot in academic exports.
