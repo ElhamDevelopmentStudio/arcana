@@ -743,6 +743,136 @@ def test_export_json_includes_tension_peak_markers() -> None:
             assert expected_peak == actual_peak
 
 
+def test_export_json_includes_tension_plateau_regions() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-008 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "The rain tapped on the old shingles while the fire stayed low.\n"
+                            "He set the tea down and listened, then listened again.\n"
+                            "A soft knock came from the attic and no one answered.\n"
+                            "The hallway remained empty as the hour slowly passed.\n"
+                            "Another soft knock came from deeper in the dark.\n"
+                            "By then the quiet had become a pressure in his chest.\n"
+                            "The pressure stayed, steady and patient.\n\n"
+                            "Chapter 2\n"
+                            "Outside, the storm moved farther off.\n"
+                            "The same low hum of rain returned once more.\n"
+                            "The quiet returned, low and constant.\n"
+                            "Nothing changed for the next sentence either."
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        smoothed_curve_report = academic_reports.get("smoothed_tension_curve")
+        assert isinstance(smoothed_curve_report, dict)
+        tension_curve = smoothed_curve_report.get("tension_curve")
+        assert isinstance(tension_curve, list)
+        assert len(tension_curve) == len(export_payload["segments"])
+
+        plateau_report = academic_reports.get("tension_plateau_regions")
+        assert isinstance(plateau_report, dict)
+        assert isinstance(plateau_report.get("flatness_tolerance"), float)
+        assert plateau_report["flatness_tolerance"] == 0.05
+        assert plateau_report["min_region_length"] == 3
+        regions = plateau_report.get("regions")
+        assert isinstance(regions, list)
+
+        values_smoothed: list[float] = []
+        for point in tension_curve:
+            smoothed_value = point.get("smoothed_tension")
+            assert isinstance(smoothed_value, (int, float))
+            values_smoothed.append(float(smoothed_value))
+
+        expected_regions: list[dict[str, Any]] = []
+        min_region_length = 3
+        tolerance = 0.05
+        index = 0
+        while index < len(values_smoothed):
+            region_end = index + 1
+            while region_end < len(values_smoothed) and abs(
+                values_smoothed[region_end] - values_smoothed[region_end - 1]
+            ) <= tolerance:
+                region_end += 1
+
+            region_length = region_end - index
+            if region_length >= min_region_length:
+                region_slice = tension_curve[index:region_end]
+                region_values = values_smoothed[index:region_end]
+                region_segment_ids: list[str] = []
+                region_segment_indices: list[int] = []
+                region_chapters: list[int] = []
+
+                for region_point in region_slice:
+                    segment_id = region_point.get("segment_id")
+                    segment_index = region_point.get("segment_index")
+                    chapter_id = region_point.get("chapter_id")
+                    if isinstance(segment_id, str):
+                        region_segment_ids.append(segment_id)
+                    if isinstance(segment_index, int):
+                        region_segment_indices.append(segment_index)
+                    if isinstance(chapter_id, int):
+                        region_chapters.append(chapter_id)
+
+                unique_chapters: list[int] = []
+                for chapter_id in region_chapters:
+                    if chapter_id not in unique_chapters:
+                        unique_chapters.append(chapter_id)
+
+                expected_regions.append(
+                    {
+                        "region_type": "tension_plateau",
+                        "start_position": region_slice[0].get("position"),
+                        "end_position": region_slice[-1].get("position"),
+                        "length": region_length,
+                        "segment_count": region_length,
+                        "segment_ids": region_segment_ids,
+                        "segment_indices": region_segment_indices,
+                        "chapter_ids": unique_chapters,
+                        "average_tension": round(sum(region_values) / region_length, 4),
+                        "tension_value_range": {
+                            "min": round(min(region_values), 4),
+                            "max": round(max(region_values), 4),
+                            "delta": round(max(region_values) - min(region_values), 4),
+                        },
+                    }
+                )
+
+            index = region_end
+
+        assert plateau_report["plateau_region_count"] == len(expected_regions)
+        assert len(regions) == len(expected_regions)
+        for expected_region, actual_region in zip(expected_regions, regions):
+            assert expected_region == actual_region
+
+
 def test_export_json_includes_warning_report_summary() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})

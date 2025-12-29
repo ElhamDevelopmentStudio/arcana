@@ -778,6 +778,100 @@ def _build_tension_peak_markers(
     }
 
 
+def _build_tension_plateau_regions(
+    smoothed_tension_curve: list[dict[str, Any]],
+    flatness_tolerance: float = 0.05,
+    min_region_length: int = 3,
+) -> dict[str, Any]:
+    if min_region_length < 2:
+        min_region_length = 2
+
+    regions: list[dict[str, Any]] = []
+    points = []
+    for point in smoothed_tension_curve:
+        if (
+            _to_number(point.get("position")) is not None
+            and _to_number(point.get("smoothed_tension")) is not None
+        ):
+            points.append(point)
+
+    if len(points) < min_region_length:
+        return {
+            "regions": regions,
+            "plateau_region_count": 0,
+            "flatness_tolerance": flatness_tolerance,
+            "min_region_length": min_region_length,
+        }
+
+    # Find maximal contiguous runs where adjacent smoothed tension values stay within tolerance.
+    start = 0
+    while start < len(points):
+        end = start + 1
+        while (
+            end < len(points)
+            and abs(
+                (_to_number(points[end].get("smoothed_tension")) or 0.0)
+                - (_to_number(points[end - 1].get("smoothed_tension")) or 0.0)
+            )
+            <= flatness_tolerance
+        ):
+            end += 1
+
+        region_points = points[start:end]
+        region_length = len(region_points)
+        if region_length >= min_region_length:
+            tension_values = [
+                float(_to_number(region_point.get("smoothed_tension")) or 0.0)
+                for region_point in region_points
+            ]
+            tension_min = min(tension_values)
+            tension_max = max(tension_values)
+            average_tension = sum(tension_values) / region_length
+            start_point = region_points[0]
+            end_point = region_points[-1]
+            chapter_ids: list[int] = []
+            segment_indices: list[int] = []
+            segment_ids: list[str] = []
+            for region_point in region_points:
+                chapter_id = region_point.get("chapter_id")
+                segment_index = region_point.get("segment_index")
+                segment_id = region_point.get("segment_id")
+                if isinstance(chapter_id, int):
+                    if chapter_id not in chapter_ids:
+                        chapter_ids.append(chapter_id)
+                if isinstance(segment_index, int):
+                    segment_indices.append(segment_index)
+                if isinstance(segment_id, str):
+                    segment_ids.append(segment_id)
+
+            regions.append(
+                {
+                    "region_type": "tension_plateau",
+                    "start_position": start_point.get("position"),
+                    "end_position": end_point.get("position"),
+                    "length": region_length,
+                    "segment_count": region_length,
+                    "segment_ids": segment_ids,
+                    "segment_indices": segment_indices,
+                    "chapter_ids": chapter_ids,
+                    "average_tension": round(average_tension, 4),
+                    "tension_value_range": {
+                        "min": round(tension_min, 4),
+                        "max": round(tension_max, 4),
+                        "delta": round(tension_max - tension_min, 4),
+                    },
+                }
+            )
+        start = end
+
+    return {
+        "regions": regions,
+        "plateau_region_count": len(regions),
+        "flatness_tolerance": flatness_tolerance,
+        "min_region_length": min_region_length,
+    }
+
+
 def _csv_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -979,6 +1073,11 @@ def build_run_export(
                 smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
                 major_prominence_threshold=0.18,
                 minor_prominence_threshold=0.10,
+            ),
+            "tension_plateau_regions": _build_tension_plateau_regions(
+                smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
+                flatness_tolerance=0.05,
+                min_region_length=3,
             ),
             "rolling_window_emotional_curves": _build_rolling_emotional_curves(
                 segments=segments,
