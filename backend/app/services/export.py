@@ -702,6 +702,82 @@ def _build_smoothed_tension_curve(
     }
 
 
+def _build_tension_peak_markers(
+    smoothed_tension_curve: list[dict[str, Any]],
+    major_prominence_threshold: float = 0.18,
+    minor_prominence_threshold: float = 0.10,
+) -> dict[str, Any]:
+    major_peak_count = 0
+    minor_peak_count = 0
+    peaks: list[dict[str, Any]] = []
+    if len(smoothed_tension_curve) < 3:
+        return {
+            "peaks": peaks,
+            "peak_count": 0,
+            "major_peak_count": 0,
+            "minor_peak_count": 0,
+            "prominence_thresholds": {
+                "major": major_prominence_threshold,
+                "minor": minor_prominence_threshold,
+            },
+        }
+
+    for position in range(1, len(smoothed_tension_curve) - 1):
+        previous_point = smoothed_tension_curve[position - 1]
+        current_point = smoothed_tension_curve[position]
+        next_point = smoothed_tension_curve[position + 1]
+
+        previous_tension = _to_number(previous_point.get("smoothed_tension"))
+        current_tension = _to_number(current_point.get("smoothed_tension"))
+        next_tension = _to_number(next_point.get("smoothed_tension"))
+
+        if previous_tension is None or current_tension is None or next_tension is None:
+            continue
+
+        is_local_maximum = current_tension > previous_tension and current_tension > next_tension
+        if not is_local_maximum:
+            continue
+
+        prominence = current_tension - max(previous_tension, next_tension)
+        severity: str | None
+        if current_tension >= 0.55 and prominence >= major_prominence_threshold:
+            severity = "major"
+            major_peak_count += 1
+        elif current_tension >= 0.40 and prominence >= minor_prominence_threshold:
+            severity = "minor"
+            minor_peak_count += 1
+        else:
+            continue
+
+        peaks.append(
+            {
+                "position": current_point.get("position"),
+                "segment_id": current_point.get("segment_id"),
+                "chapter_id": current_point.get("chapter_id"),
+                "segment_index": current_point.get("segment_index"),
+                "peak_type": "tension_peak",
+                "severity": severity,
+                "prominence": round(prominence, 4),
+                "neighbors": {
+                    "previous_tension": round(previous_tension, 4),
+                    "next_tension": round(next_tension, 4),
+                },
+                "tension_value": round(current_tension, 4),
+            }
+        )
+
+    return {
+        "peaks": peaks,
+        "peak_count": len(peaks),
+        "major_peak_count": major_peak_count,
+        "minor_peak_count": minor_peak_count,
+        "prominence_thresholds": {
+            "major": major_prominence_threshold,
+            "minor": minor_prominence_threshold,
+        },
+    }
+
+
 def _csv_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -854,6 +930,10 @@ def build_run_export(
 
     segments = [_normalize_segment_for_export(row) for row in list(rows)]
     time_series = _build_time_series(segments)
+    smoothed_tension_curve = _build_smoothed_tension_curve(
+        segments=segments,
+        window_size=5,
+    )
     ordered_by = ["chapter_index", "segment_index"]
     llm_calls = _load_run_llm_calls(session, run)
     ingestion_log = dict(project.ingestion_log_json or {})
@@ -894,9 +974,11 @@ def build_run_export(
                 volatility_markers=time_series["volatility_markers"],
             ),
             "chapter_level_raw_tension": _build_chapter_level_raw_tension(segments),
-            "smoothed_tension_curve": _build_smoothed_tension_curve(
-                segments=segments,
-                window_size=5,
+            "smoothed_tension_curve": smoothed_tension_curve,
+            "tension_peak_markers": _build_tension_peak_markers(
+                smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
+                major_prominence_threshold=0.18,
+                minor_prominence_threshold=0.10,
             ),
             "rolling_window_emotional_curves": _build_rolling_emotional_curves(
                 segments=segments,
