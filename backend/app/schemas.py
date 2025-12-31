@@ -511,3 +511,25 @@ class ComparisonWorkspaceAlignedCurvesResponse(BaseModel):
     run_count: int
     aligned_points: int
     metrics: list[ComparisonAlignedCurveMetricDescriptor]
+
+
+class ComparisonWorkspaceComparativeRunDescriptor(BaseModel):
+    run_id: int
+    project_id: int
+    project_title: str
+    status: str
+    segment_count: int
+    run_config_mode: str
+    academic_reports: dict[str, Any]
+    comparative_run_metrics_snapshot: dict[str, Any]
+    academic_export_manifest: dict[str, Any]
+
+
+class ComparisonWorkspaceComparativeExportResponse(BaseModel):
+    workspace_id: int
+    workspace_name: str
+    generated_at: str
+    run_count: int
+    aligned_points: int
+    metrics: list[ComparisonAlignedCurveMetricDescriptor]
+    runs: list[ComparisonWorkspaceComparativeRunDescriptor]
