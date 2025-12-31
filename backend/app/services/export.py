@@ -1441,6 +1441,14 @@ def _csv_cell(value: Any) -> str:
     return str(value)
 
 
+def _serialize_csv_record(value: Any) -> str:
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    if isinstance(value, (datetime,)):
+        return value.isoformat()
+    return json.dumps(value, ensure_ascii=False) if isinstance(value, bool) else str(value)
+
+
 def _build_segment_csv_row(
     segment: Mapping[str, Any],
     project_id: int,
@@ -1501,6 +1509,177 @@ def _build_segment_csv_row(
         "sub_segment_boundary_count": _csv_cell(sub_segment_count),
         "sub_segment_boundaries": _csv_cell(segment.get("sub_segment_boundaries")),
     }
+
+
+def _build_academic_csv_rows(
+    project: Project,
+    run: Run,
+    academic_reports: Mapping[str, Any],
+    academic_manifest: Mapping[str, Any],
+) -> list[dict[str, str]]:
+    outputs = academic_manifest.get("outputs")
+    output_rows: list[dict[str, str]] = []
+
+    output_rows.append(
+        {
+            "record_type": "manifest",
+            "output_id": "AO-MANIFEST",
+            "output_name": "academic_export_manifest",
+            "output_status": "available",
+            "output_schema": academic_manifest.get("output_schema", "academic_json"),
+            "supported_formats": json.dumps(["json"], ensure_ascii=False),
+            "available_formats": json.dumps(["json"], ensure_ascii=False),
+            "data_key": "academic_export_manifest",
+            "record_index": "",
+            "record_count": "",
+            "record_payload": _serialize_csv_record(dict(academic_manifest)),
+            "generated_by": academic_manifest.get("generated_by", "build_run_export"),
+            "generated_at": academic_manifest.get("generated_at", ""),
+            "status_reason": "",
+            "project_id": str(project.id),
+            "run_id": str(run.id),
+            "run_status": str(run.status),
+            "output_order": "0",
+        }
+    )
+
+    if not isinstance(outputs, list):
+        return output_rows
+
+    for index, output in enumerate(outputs, start=1):
+        if not isinstance(output, dict):
+            continue
+
+        output_id = str(output.get("output_id", ""))
+        output_name = str(output.get("output_name", ""))
+        supported_formats = _serialize_csv_record(output.get("supported_formats", []))
+        available_formats = _serialize_csv_record(output.get("available_formats", []))
+        status = str(output.get("status", "unknown"))
+        data_keys = output.get("data_keys", [])
+        reason = output.get("evidence", {}).get("status_reason") if isinstance(output.get("evidence"), Mapping) else None
+        generated_by = output.get("evidence", {}).get("generated_by") if isinstance(output.get("evidence"), Mapping) else None
+
+        output_rows.append(
+            {
+                "record_type": "output",
+                "output_id": output_id,
+                "output_name": output_name,
+                "output_status": status,
+                "output_schema": academic_manifest.get("output_schema", "academic_json"),
+                "supported_formats": supported_formats,
+                "available_formats": available_formats,
+                "data_key": "",
+                "record_index": "",
+                "record_count": str(len(data_keys)) if isinstance(data_keys, list) else "",
+                "record_payload": "",
+                "generated_by": str(generated_by or ""),
+                "generated_at": academic_manifest.get("generated_at", ""),
+                "status_reason": str(reason or ""),
+                "project_id": str(project.id),
+                "run_id": str(run.id),
+                "run_status": str(run.status),
+                "output_order": str(index),
+            }
+        )
+
+        if status != "available":
+            continue
+
+        for data_key in data_keys if isinstance(data_keys, list) else []:
+            if not isinstance(data_key, str):
+                continue
+            value = academic_reports.get(data_key)
+
+            if isinstance(value, list):
+                for idx, record in enumerate(value):
+                    output_rows.append(
+                        {
+                            "record_type": "data_record",
+                            "output_id": output_id,
+                            "output_name": output_name,
+                            "output_status": status,
+                            "output_schema": academic_manifest.get("output_schema", "academic_json"),
+                            "supported_formats": supported_formats,
+                            "available_formats": available_formats,
+                            "data_key": data_key,
+                            "record_index": str(idx),
+                            "record_count": str(len(value)),
+                            "record_payload": _serialize_csv_record(record),
+                            "generated_by": str(generated_by or ""),
+                            "generated_at": academic_manifest.get("generated_at", ""),
+                            "status_reason": "",
+                            "project_id": str(project.id),
+                            "run_id": str(run.id),
+                            "run_status": str(run.status),
+                            "output_order": str(index),
+                        }
+                    )
+            else:
+                output_rows.append(
+                    {
+                        "record_type": "data_record",
+                        "output_id": output_id,
+                        "output_name": output_name,
+                        "output_status": status,
+                        "output_schema": academic_manifest.get("output_schema", "academic_json"),
+                        "supported_formats": supported_formats,
+                        "available_formats": available_formats,
+                        "data_key": data_key,
+                        "record_index": "0",
+                        "record_count": "1",
+                        "record_payload": _serialize_csv_record(value),
+                        "generated_by": str(generated_by or ""),
+                        "generated_at": academic_manifest.get("generated_at", ""),
+                        "status_reason": "",
+                        "project_id": str(project.id),
+                        "run_id": str(run.id),
+                        "run_status": str(run.status),
+                        "output_order": str(index),
+                    }
+                )
+
+    return output_rows
+
+
+def build_run_export_academic_csv(
+    project: Project,
+    run: Run,
+    academic_reports: Mapping[str, Any],
+    academic_manifest: Mapping[str, Any],
+) -> str:
+    rows = _build_academic_csv_rows(
+        project=project,
+        run=run,
+        academic_reports=academic_reports,
+        academic_manifest=academic_manifest,
+    )
+
+    fieldnames = [
+        "record_type",
+        "output_order",
+        "output_id",
+        "output_name",
+        "output_status",
+        "output_schema",
+        "supported_formats",
+        "available_formats",
+        "data_key",
+        "record_index",
+        "record_count",
+        "record_payload",
+        "status_reason",
+        "generated_by",
+        "generated_at",
+        "project_id",
+        "run_id",
+        "run_status",
+    ]
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    return output.getvalue()
 
 
 def build_run_export_csv(
