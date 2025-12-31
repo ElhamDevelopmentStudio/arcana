@@ -1363,18 +1363,63 @@ def test_export_json_includes_academic_json_schema_manifest() -> None:
             for output in outputs
             if isinstance(output, dict) and output.get("status") == "available"
         }
-        assert {"AO-001", "AO-002", "AO-003", "AO-004", "AO-006"} <= available_outputs
+        assert {"AO-001", "AO-002", "AO-003", "AO-004", "AO-005", "AO-006"} <= available_outputs
 
-        pending_output = outputs_by_id["AO-005"]
-        assert pending_output["status"] == "not_implemented"
-        assert pending_output["evidence"]["status_reason"] == "Pending implementation for ACAD-015+"
-        assert pending_output["available_formats"] == []
+        ao_005 = outputs_by_id["AO-005"]
+        assert ao_005["status"] == "available"
+        assert ao_005["available_formats"] == ["json", "csv"]
 
         ao_006 = outputs_by_id["AO-006"]
         assert ao_006["available_formats"] == ["json"]
         assert ao_006["data_keys"] == ["academic_export_manifest"]
         evidence = ao_006["evidence"]
         assert evidence["generated_by"] == "academic_export_schema_1_0_0"
+
+
+def test_export_json_includes_comparative_run_metrics_snapshot() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-015 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "The rain turned the hall into silver glass.\n"
+                            "Chapter 2\n"
+                            "Footsteps kept arriving, but no one entered."
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 120, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_payload = client.get(f"/api/projects/{project_id}/exports/{run_id}.json").json()
+        manifest = export_payload["manifest"]
+        academic_reports = manifest.get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        comparative_snapshot = academic_reports.get("comparative_run_metrics_snapshot")
+        assert isinstance(comparative_snapshot, dict)
+        assert comparative_snapshot["snapshot_type"] == "comparative_run_metrics_snapshot"
+        assert comparative_snapshot["project_reference"]["project_id"] == project_id
+        assert comparative_snapshot["run_reference"]["run_id"] == run_id
+        assert comparative_snapshot["run_reference"]["segment_count"] > 0
+        assert comparative_snapshot["reproducibility"]["input_signature"]["segment_signature"]
+        assert isinstance(comparative_snapshot["run_config_snapshot"], dict)
 
 
 def test_export_json_includes_warning_report_summary() -> None:
@@ -1526,13 +1571,13 @@ def test_export_csv_supports_academic_output_schema() -> None:
         for record in data_records:
             by_output.setdefault(record["output_id"], []).append(record)
 
-        assert by_output["AO-005"] == []
+        assert len(by_output["AO-005"]) > 0
         for output_id in ("AO-001", "AO-002", "AO-003", "AO-004", "AO-006"):
             assert len(by_output[output_id]) > 0
 
         ao_005_rows = [row for row in output_rows if row["output_id"] == "AO-005"]
         assert ao_005_rows
-        assert ao_005_rows[0]["output_status"] == "not_implemented"
+        assert ao_005_rows[0]["output_status"] == "available"
 
         ao_006_row = next(row for row in output_rows if row["output_id"] == "AO-006")
         assert ao_006_row["output_status"] == "available"

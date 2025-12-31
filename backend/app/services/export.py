@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import hashlib
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from math import inf
@@ -128,6 +129,80 @@ def _build_export_reports(project: Project, run: Run, segment_count: int, ordere
     }
 
 
+def _build_json_fingerprint(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _build_comparative_run_signature(segments: list[dict[str, Any]]) -> str:
+    signature_rows: list[dict[str, Any]] = []
+    for segment in segments:
+        signature_rows.append(
+            {
+                "chapter_index": segment.get("chapter_index"),
+                "segment_index": segment.get("segment_index"),
+                "speaker": segment.get("speaker"),
+                "normalized_text": segment.get("normalized_text") or "",
+            }
+        )
+    return _build_json_fingerprint(signature_rows)
+
+
+def _build_comparative_run_metrics_snapshot(
+    project: Project,
+    run: Run,
+    segments: list[dict[str, Any]],
+    ordered_by: list[str],
+) -> dict[str, Any]:
+    chapter_indices = sorted(
+        {
+            int(chapter_index)
+            for chapter_index in (segment.get("chapter_index") for segment in segments)
+            if isinstance(chapter_index, int)
+        }
+    )
+    segment_signature = _build_comparative_run_signature(segments)
+    run_snapshot = dict(run.config_json or {})
+
+    return {
+        "snapshot_type": "comparative_run_metrics_snapshot",
+        "schema_version": "1.0.0",
+        "generated_by": "build_run_export",
+        "project_reference": {
+            "project_id": project.id,
+            "project_title": project.title,
+            "configuration_snapshot_id": project.configuration_snapshot_id,
+            "selected_mode": project.selected_mode,
+            "selected_modes": list(project.selected_modes or []),
+        },
+        "run_reference": {
+            "run_id": run.id,
+            "status": run.status,
+            "ordered_by": ordered_by,
+            "segment_count": len(segments),
+            "chapter_count": len(chapter_indices),
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        },
+        "reproducibility": {
+            "run_config_fingerprint": _build_json_fingerprint(run_snapshot),
+            "project_config_fingerprint": _build_json_fingerprint(_build_project_config_snapshot(project)),
+            "input_signature": {
+                "segment_signature": segment_signature,
+                "chapter_indices": chapter_indices,
+            },
+        },
+        "run_config_snapshot": run_snapshot,
+        "project_config_snapshot": _build_project_config_snapshot(project),
+    }
+
+
 def _build_academic_export_output_inventory(
     academic_reports: dict[str, Any],
     generated_at: str,
@@ -213,8 +288,7 @@ def _build_academic_export_output_inventory(
             output_name="comparative_run_metrics_snapshot",
             supported_formats=["json", "csv"],
             data_keys=["comparative_run_metrics_snapshot"],
-            available=False,
-            reason="Pending implementation for ACAD-015+",
+            available=True,
         ),
         _build_entry(
             output_id="AO-006",
@@ -1816,6 +1890,12 @@ def build_run_export(
         graph_report=character_cooccurrence_graph,
     )
     ordered_by = ["chapter_index", "segment_index"]
+    comparative_run_metrics_snapshot = _build_comparative_run_metrics_snapshot(
+        project=project,
+        run=run,
+        segments=segments,
+        ordered_by=ordered_by,
+    )
     llm_calls = _load_run_llm_calls(session, run)
     ingestion_log = dict(project.ingestion_log_json or {})
     academic_reports = {
@@ -1847,6 +1927,7 @@ def build_run_export(
             segments=segments,
             window_size=5,
         ),
+        "comparative_run_metrics_snapshot": comparative_run_metrics_snapshot,
     }
     manifest = {
         "schema_version": "1.0.0",
