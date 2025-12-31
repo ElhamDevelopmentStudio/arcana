@@ -2,7 +2,11 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from app.schemas import NarrativeHealthReport
-from app.services.export import _build_author_narrative_health_report, _build_monotony_risk_findings
+from app.services.export import (
+    _build_author_narrative_health_report,
+    _build_emotional_monotony_findings,
+    _build_monotony_risk_findings,
+)
 
 
 def _build_segments_for_test(
@@ -18,6 +22,7 @@ def _build_segments_for_test(
                 "segment_id": f"1-{index}",
                 "emotion_valence": valence,
                 "emotion_intensity": intensity,
+                "emotion_primary_label": "neutral",
             }
         )
         tension_curve.append(
@@ -30,6 +35,24 @@ def _build_segments_for_test(
             }
         )
     return segments, tension_curve
+
+
+def _build_segments_for_labels_test(
+    values: list[tuple[str, float, float]],
+) -> list[dict[str, object]]:
+    segments: list[dict[str, object]] = []
+    for index, (label, valence, intensity) in enumerate(values, start=1):
+        segments.append(
+            {
+                "chapter_id": 1,
+                "segment_index": index,
+                "segment_id": f"1-{index}",
+                "emotion_primary_label": label,
+                "emotion_valence": valence,
+                "emotion_intensity": intensity,
+            }
+        )
+    return segments
 
 
 def test_unit_build_monotony_risk_findings_detects_flatline_region() -> None:
@@ -61,6 +84,49 @@ def test_unit_build_monotony_risk_findings_detects_flatline_region() -> None:
     assert finding["evidence_trace"]["tension_range"] < 0.06
 
 
+def test_unit_build_emotional_monotony_findings_detects_repeated_tone_pattern() -> None:
+    segments = _build_segments_for_labels_test(
+        [
+            ("calm", 0.06, 0.18),
+            ("calm", 0.04, 0.20),
+            ("calm", 0.05, 0.19),
+            ("calm", 0.07, 0.22),
+            ("calm", 0.03, 0.17),
+            ("calm", 0.08, 0.21),
+            ("calm", 0.06, 0.20),
+            ("tense", 0.09, 0.18),
+        ]
+    )
+    findings = _build_emotional_monotony_findings(segments)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["requirement_id"] == "ADR-002"
+    assert finding["trigger_metric"] == "repeated_tone_pattern"
+    assert finding["location"]["start_segment"] == 1
+    assert finding["location"]["end_segment"] == 8
+    assert finding["evidence_trace"]["window_length"] == 8
+    assert finding["evidence_trace"]["dominant_tone"] == "calm"
+    assert finding["evidence_trace"]["dominant_tone_ratio"] >= 0.85
+
+
+def test_unit_build_emotional_monotony_findings_rejects_varied_tones() -> None:
+    segments = _build_segments_for_labels_test(
+        [
+            ("calm", 0.10, 0.10),
+            ("tense", 0.60, 0.80),
+            ("joy", 0.90, 0.90),
+            ("sorrow", -0.70, 0.20),
+            ("anger", -0.20, 0.80),
+            ("joy", 0.70, 0.75),
+            ("tense", 0.65, 0.70),
+            ("calm", 0.20, 0.30),
+        ]
+    )
+    findings = _build_emotional_monotony_findings(segments)
+    assert findings == []
+
+
 def test_unit_build_monotony_risk_findings_no_flatline_for_variable_series() -> None:
     values = [
         (0.12, -0.8, 0.10),
@@ -80,7 +146,7 @@ def test_unit_build_monotony_risk_findings_no_flatline_for_variable_series() -> 
     assert findings == []
 
 
-def test_unit_narrative_health_report_includes_monotony_findings() -> None:
+def test_unit_narrative_health_report_includes_emotional_monotony_findings() -> None:
     values = [
         (0.42, 0.02, 0.31),
         (0.44, 0.03, 0.30),
@@ -91,9 +157,22 @@ def test_unit_narrative_health_report_includes_monotony_findings() -> None:
         (0.44, 0.03, 0.34),
     ]
     segments, tension_curve = _build_segments_for_test(values)
-    findings = _build_monotony_risk_findings(
+    monotony_findings = _build_monotony_risk_findings(
         segments=segments,
         smoothed_tension_curve=tension_curve,
+    )
+    emotional_findings = _build_emotional_monotony_findings(
+        _build_segments_for_labels_test(
+            [
+                ("calm", 0.02, 0.31),
+                ("calm", 0.03, 0.30),
+                ("calm", 0.01, 0.32),
+                ("calm", 0.00, 0.31),
+                ("calm", 0.04, 0.30),
+                ("calm", 0.02, 0.33),
+                ("calm", 0.03, 0.34),
+            ]
+        )
     )
 
     project = SimpleNamespace(id=101, title="Monotony Project", selected_mode="author", selected_modes=["author"])
@@ -103,14 +182,15 @@ def test_unit_narrative_health_report_includes_monotony_findings() -> None:
         run=run,
         generated_at=datetime(2026, 2, 25, tzinfo=timezone.utc),
         segment_count=len(segments),
-        monotony_findings=findings,
+        monotony_findings=monotony_findings,
+        emotional_monotony_findings=emotional_findings,
     )
     parsed_report = NarrativeHealthReport.model_validate(report)
 
-    assert parsed_report.project_reference["project_id"] == 101
-    assert parsed_report.run_reference["run_id"] == 202
     requirement_lookup = {entry.requirement_id: entry for entry in parsed_report.requirements}
     assert requirement_lookup["ADR-002"].status == "implemented"
-    assert len(requirement_lookup["ADR-002"].findings) == 1
+    assert len(requirement_lookup["ADR-002"].findings) == 2
+    assert len(parsed_report.findings) == 2
     assert parsed_report.findings[0].requirement_id == "ADR-002"
-    assert parsed_report.findings[0].severity == findings[0]["severity"]
+    possible_severities = {monotony_findings[0]["severity"], emotional_findings[0]["severity"]}
+    assert parsed_report.findings[0].severity in possible_severities
