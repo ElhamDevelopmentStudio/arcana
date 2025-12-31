@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from app.modes import DEFAULT_MODE, is_valid_mode
 
@@ -453,7 +453,11 @@ class NarrativeHealthActionableFinding(BaseModel):
     location: NarrativeHealthChapterRange | None = None
     trigger_metric: str = Field(min_length=1, max_length=255)
     severity: float = Field(ge=0.0, le=1.0)
-    evidence_trace: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("evidence", "evidence_trace"),
+        serialization_alias="evidence",
+    )
 
 
 class NarrativeHealthRequirementReport(BaseModel):

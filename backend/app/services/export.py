@@ -155,7 +155,7 @@ def _build_emotional_monotony_findings(
                 },
                 "trigger_metric": "repeated_tone_pattern",
                 "severity": severity,
-                "evidence_trace": {
+                "evidence": {
                     "window_start_position": start_index + 1,
                     "window_end_position": end_index + 1,
                     "window_length": len(valence_slice),
@@ -240,7 +240,7 @@ def _build_character_dominance_findings(
                 },
                 "trigger_metric": "character_dominance_outlier",
                 "severity": min(1.0, severity),
-                "evidence_trace": {
+                "evidence": {
                     "chapter_id": chapter_id,
                     "chapter_segment_count": chapter_segment_count,
                     "top_character": top_character.get("speaker"),
@@ -330,7 +330,7 @@ def _build_disappearing_character_findings(
                 },
                 "trigger_metric": "character_disappearance",
                 "severity": severity,
-                "evidence_trace": {
+                "evidence": {
                     "speaker": canonical_speaker_labels.get(speaker_key, speaker_key),
                     "speaker_key": speaker_key,
                     "first_seen_chapter": first_seen,
@@ -442,7 +442,7 @@ def _build_dialogue_density_anomaly_findings(
                 },
                 "trigger_metric": trigger_metric,
                 "severity": severity,
-                "evidence_trace": {
+                "evidence": {
                     "global_dialogue_density": round(global_dialogue_density, 4),
                     "anomaly_direction": "dialogue_heavy" if direction == 1 else "dialogue_sparse",
                     "mean_excess": round(average_excess, 4),
@@ -585,7 +585,7 @@ def _build_monotony_risk_findings(
                 },
                 "trigger_metric": "low_tension_and_emotion_variance_window",
                 "severity": severity,
-                "evidence_trace": {
+                "evidence": {
                     "window_start_position": start_index + 1,
                     "window_end_position": end_index + 1,
                     "window_length": len(tension_slice),
