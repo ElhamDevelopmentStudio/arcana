@@ -275,7 +275,7 @@ Definition of done for each task:
 - [x] [AUTH-002] Implement tension flatline detector.
 - [x] [AUTH-003] Implement emotional monotony detector.
 - [x] [AUTH-004] Implement over-dominant character warning detector.
-- [ ] [AUTH-005] Implement disappearing character warning detector.
+- [x] [AUTH-005] Implement disappearing character warning detector.
 - [ ] [AUTH-006] Implement dialogue density anomaly detector.
 - [ ] [AUTH-007] Define actionable flag schema (`location`, `trigger_metric`, `severity`, `evidence`).
 - [ ] [AUTH-008] Implement chapter-range locator for each flag.
