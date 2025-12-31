@@ -271,7 +271,7 @@ Definition of done for each task:
 - [x] [ACAD-020] Add tests using at least two corpora for comparison correctness.
 
 ## 4.11 Author Outputs (Ref: SRS.md §4.11)
-- [ ] [AUTH-001] Define narrative health report schema.
+- [x] [AUTH-001] Define narrative health report schema.
 - [ ] [AUTH-002] Implement tension flatline detector.
 - [ ] [AUTH-003] Implement emotional monotony detector.
 - [ ] [AUTH-004] Implement over-dominant character warning detector.

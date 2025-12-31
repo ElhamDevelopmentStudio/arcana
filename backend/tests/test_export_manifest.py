@@ -10,6 +10,7 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_export_manifest.db"
 
 from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
+from app.schemas import NarrativeHealthReport
 from app.main import app
 
 
@@ -163,6 +164,55 @@ def test_export_json_includes_manifest_metadata() -> None:
         assert reports["normalization_report"]["source"] == "txt"
         assert isinstance(reports["character_analytics_snapshot"], dict)
         assert isinstance(reports["mode_profile_snapshot"], dict)
+
+
+def test_export_json_includes_narrative_health_report_schema() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Narrative Health Report Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        b'Chapter 1\nHe opened the window and breathed in the cold air. "Keep moving," she whispered.\n\n'
+                        b"Chapter 2\nFootsteps echoed down the hall as dawn arrived too late."
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 2
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "author", "max_segment_chars": 80},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        manifest = export_resp.json()["manifest"]
+
+        narrative_health_report = manifest.get("narrative_health_report")
+        assert isinstance(narrative_health_report, dict)
+
+        parsed_report = NarrativeHealthReport.model_validate(narrative_health_report)
+        assert parsed_report.output_schema == "author_narrative_health_json"
+        assert parsed_report.generated_by == "build_run_export"
+        assert parsed_report.project_reference["project_id"] == project_id
+        assert parsed_report.run_reference["run_id"] == run_id
+
+        requirement_ids = [entry.requirement_id for entry in parsed_report.requirements]
+        assert requirement_ids == ["ADR-001", "ADR-002", "ADR-003", "ADR-004", "ADR-005", "ADR-006"]
+        assert all(entry.status == "not_implemented" for entry in parsed_report.requirements)
+        assert all(entry.finding_count == len(entry.findings) for entry in parsed_report.requirements)
+        assert parsed_report.findings == []
 
 
 def test_export_json_includes_chapter_level_valence_means() -> None:

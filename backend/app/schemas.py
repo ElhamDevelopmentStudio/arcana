@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -438,6 +438,41 @@ class RunDetailResponse(BaseModel):
     finished_at: datetime | None
     segment_count: int
     llm_calls: list[dict[str, Any]]
+
+
+class NarrativeHealthChapterRange(BaseModel):
+    start_chapter: int | None = Field(default=None, ge=1)
+    end_chapter: int | None = Field(default=None, ge=1)
+    start_segment: int | None = Field(default=None, ge=1)
+    end_segment: int | None = Field(default=None, ge=1)
+
+
+class NarrativeHealthActionableFinding(BaseModel):
+    requirement_id: str = Field(pattern=r"^ADR-\d{3}$", min_length=1, max_length=20)
+    requirement_name: str = Field(min_length=1, max_length=255)
+    location: NarrativeHealthChapterRange | None = None
+    trigger_metric: str = Field(min_length=1, max_length=255)
+    severity: float = Field(ge=0.0, le=1.0)
+    evidence_trace: dict[str, Any] = Field(default_factory=dict)
+
+
+class NarrativeHealthRequirementReport(BaseModel):
+    requirement_id: str = Field(pattern=r"^ADR-\d{3}$", min_length=1, max_length=20)
+    status: Literal["implemented", "partial", "not_implemented", "blocked"]
+    finding_count: int = Field(ge=0)
+    requirement_name: str = Field(min_length=1, max_length=255)
+    findings: list[NarrativeHealthActionableFinding] = Field(default_factory=list)
+
+
+class NarrativeHealthReport(BaseModel):
+    schema_version: str = Field(default="1.0.0", min_length=1)
+    output_schema: str = Field(default="author_narrative_health_json", min_length=1)
+    generated_at: str
+    generated_by: str = Field(default="build_run_export", min_length=1)
+    project_reference: dict[str, Any]
+    run_reference: dict[str, Any]
+    requirements: list[NarrativeHealthRequirementReport]
+    findings: list[NarrativeHealthActionableFinding] = Field(default_factory=list)
 
 
 class CharacterMentionsByChapterItem(BaseModel):
