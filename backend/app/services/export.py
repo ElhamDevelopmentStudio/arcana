@@ -47,6 +47,236 @@ def _compute_range(values: list[float]) -> float:
     return max(values) - min(values)
 
 
+def _build_chapter_type_classification(
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not segments:
+        return []
+
+    chapter_payloads: dict[int, dict[str, Any]] = {}
+    chapter_order: list[int] = []
+    for segment in segments:
+        chapter_id = segment.get("chapter_id")
+        if not isinstance(chapter_id, int):
+            continue
+        if chapter_id not in chapter_payloads:
+            chapter_order.append(chapter_id)
+            chapter_payloads[chapter_id] = {
+                "tension_values": [],
+                "intensity_values": [],
+                "valence_values": [],
+                "dialogue_segment_count": 0,
+                "segment_count": 0,
+            }
+
+        payload = chapter_payloads[chapter_id]
+        payload["segment_count"] += 1
+        payload["tension_values"].append(
+            _to_number(_to_dict(segment.get("tension_contribution")).get("value")) or 0.0
+        )
+        payload["intensity_values"].append(
+            _to_number(segment.get("emotion_intensity")) or 0.0
+        )
+        payload["valence_values"].append(_to_number(segment.get("emotion_valence")) or 0.0)
+        segment_type = segment.get("type")
+        if isinstance(segment_type, str) and segment_type.strip().lower() == "dialogue":
+            payload["dialogue_segment_count"] += 1
+
+    if not chapter_order:
+        return []
+
+    chapter_summaries: list[dict[str, Any]] = []
+    for chapter_id in chapter_order:
+        payload = chapter_payloads[chapter_id]
+        segment_count = int(payload["segment_count"])
+        if segment_count <= 0:
+            continue
+        tension_values = [float(value) for value in payload["tension_values"]]
+        intensity_values = [float(value) for value in payload["intensity_values"]]
+        valence_values = [float(value) for value in payload["valence_values"]]
+        dialogue_segments = int(payload["dialogue_segment_count"])
+
+        avg_tension = sum(tension_values) / segment_count
+        avg_intensity = sum(intensity_values) / segment_count
+        avg_valence = sum(valence_values) / segment_count
+        tension_range = max(tension_values) - min(tension_values) if tension_values else 0.0
+        chapter_summaries.append(
+            {
+                "chapter_id": chapter_id,
+                "segment_count": segment_count,
+                "avg_tension": avg_tension,
+                "avg_intensity": avg_intensity,
+                "avg_valence": avg_valence,
+                "tension_range": tension_range,
+                "dialogue_ratio": dialogue_segments / segment_count,
+            }
+        )
+
+    if not chapter_summaries:
+        return []
+
+    chapter_count = len(chapter_summaries)
+    avg_tensions = [summary["avg_tension"] for summary in chapter_summaries]
+    avg_intensities = [summary["avg_intensity"] for summary in chapter_summaries]
+
+    min_tension = min(avg_tensions)
+    max_tension = max(avg_tensions)
+    tension_span = max_tension - min_tension if max_tension > min_tension else 0.0
+    min_intensity = min(avg_intensities)
+    max_intensity = max(avg_intensities)
+    intensity_span = max_intensity - min_intensity if max_intensity > min_intensity else 0.0
+
+    def _to_zero_to_one(value: float, min_value: float, span: float) -> float:
+        if span <= 0.0:
+            return 0.5
+        normalized = (value - min_value) / span
+        if normalized < 0.0:
+            return 0.0
+        if normalized > 1.0:
+            return 1.0
+        return normalized
+
+    classifications: list[dict[str, Any]] = []
+    for index, summary in enumerate(chapter_summaries):
+        chapter_id = int(summary["chapter_id"])
+        normalized_tension = _to_zero_to_one(summary["avg_tension"], min_tension, tension_span)
+        normalized_intensity = _to_zero_to_one(summary["avg_intensity"], min_intensity, intensity_span)
+        position_ratio = (index + 1) / chapter_count if chapter_count > 0 else 0.0
+
+        prev_summary = chapter_summaries[index - 1] if index > 0 else None
+        next_summary = chapter_summaries[index + 1] if index + 1 < chapter_count else None
+        prev_delta = None
+        next_delta = None
+        if prev_summary is not None:
+            prev_delta = summary["avg_tension"] - prev_summary["avg_tension"]
+        if next_summary is not None:
+            next_delta = next_summary["avg_tension"] - summary["avg_tension"]
+
+        setup_score = 0.0
+        setup_reasons: list[str] = []
+        if index == 0:
+            setup_score += 0.55
+            setup_reasons.append("opening chapter in progression")
+        if position_ratio <= 0.30:
+            setup_score += 0.20
+            setup_reasons.append("early chapter position")
+        if normalized_tension <= 0.45:
+            setup_score += 0.20
+            setup_reasons.append("low tension baseline compared to chapter range")
+        if summary["dialogue_ratio"] <= 0.45:
+            setup_score += 0.10
+            setup_reasons.append("moderate dialogue density")
+        if prev_delta is not None and prev_delta <= 0.02:
+            setup_score += 0.05
+            setup_reasons.append("no strong tension ramp from previous chapter")
+
+        build_up_score = 0.0
+        build_up_reasons: list[str] = []
+        if prev_delta is not None and prev_delta > 0.0:
+            build_up_score += min(0.45, max(0.0, prev_delta) * 4.0)
+            build_up_reasons.append("tension rises from previous chapter")
+        if prev_delta is not None and prev_delta > 0.04:
+            build_up_score += 0.15
+            build_up_reasons.append("strong positive tension delta")
+        if 0.10 <= normalized_tension <= 0.70:
+            build_up_score += 0.20
+            build_up_reasons.append("mid-tension trajectory")
+        if next_delta is not None and next_delta > 0.0 and position_ratio < 0.85:
+            build_up_score += 0.10
+            build_up_reasons.append("upward next chapter tendency")
+
+        confrontation_score = 0.0
+        confrontation_reasons: list[str] = []
+        if normalized_tension >= 0.62:
+            confrontation_score += 0.55
+            confrontation_reasons.append("high relative tension level")
+        elif normalized_tension >= 0.45:
+            confrontation_score += 0.30
+            confrontation_reasons.append("above-average tension level")
+        if normalized_intensity >= 0.65:
+            confrontation_score += 0.20
+            confrontation_reasons.append("high emotional intensity")
+        if summary["tension_range"] >= 0.06:
+            confrontation_score += 0.10
+            confrontation_reasons.append("noticeable within-chapter tension spread")
+        if summary["dialogue_ratio"] >= 0.55:
+            confrontation_score += 0.10
+            confrontation_reasons.append("high dialogue concentration")
+
+        resolution_score = 0.0
+        resolution_reasons: list[str] = []
+        if index == chapter_count - 1:
+            resolution_score += 0.55
+            resolution_reasons.append("final chapter in sequence")
+        if position_ratio >= 0.75:
+            resolution_score += 0.20
+            resolution_reasons.append("late chapter position")
+        if prev_delta is not None and prev_delta < 0.0:
+            resolution_score += min(0.25, abs(prev_delta) * 3.0)
+            resolution_reasons.append("tension decreases from previous chapter")
+        if normalized_tension <= 0.50:
+            resolution_score += 0.20
+            resolution_reasons.append("lower relative tension")
+        if summary["tension_range"] <= 0.05:
+            resolution_score += 0.10
+            resolution_reasons.append("stable within-chapter arc")
+
+        transitional_score = 0.10
+        transitional_reasons: list[str] = ["non-dominant cue pattern"]
+        if index not in {0, chapter_count - 1} and normalized_tension > 0.35 and normalized_tension < 0.65:
+            transitional_score += 0.15
+            transitional_reasons.append("balanced midrange tension profile")
+        if summary["segment_count"] <= 3:
+            transitional_score += 0.10
+            transitional_reasons.append("short chapter window")
+
+        best_type = "transitional"
+        best_score = transitional_score
+        best_reasons = transitional_reasons
+
+        all_scores = [
+            ("setup", setup_score, setup_reasons),
+            ("build-up", build_up_score, build_up_reasons),
+            ("confrontation", confrontation_score, confrontation_reasons),
+            ("resolution", resolution_score, resolution_reasons),
+        ]
+        for chapter_type, score, reasons in all_scores:
+            if score > best_score:
+                best_type = chapter_type
+                best_score = score
+                best_reasons = reasons
+
+        if not best_reasons and best_type == "transitional":
+            best_reasons = ["default transitional classification"]
+
+        clipped_score = max(0.05, min(1.0, best_score))
+        classifications.append(
+            {
+                "chapter_id": chapter_id,
+                "chapter_type": best_type,
+                "confidence": round(clipped_score, 4),
+                "reasons": best_reasons,
+                "features": {
+                    "position_ratio": round(position_ratio, 4),
+                    "segment_count": segment_count,
+                    "avg_tension": round(float(summary["avg_tension"]), 4),
+                    "avg_intensity": round(float(summary["avg_intensity"]), 4),
+                    "avg_valence": round(float(summary["avg_valence"]), 4),
+                    "tension_range": round(float(summary["tension_range"]), 4),
+                    "dialogue_ratio": round(float(summary["dialogue_ratio"]), 4),
+                    "tension_delta_from_previous_chapter": None
+                    if prev_delta is None
+                    else round(float(prev_delta), 4),
+                    "tension_delta_to_next_chapter": None
+                    if next_delta is None
+                    else round(float(next_delta), 4),
+                },
+            }
+        )
+
+    return classifications
+
+
 def _compute_variance(values: list[float]) -> float:
     count = len(values)
     if count == 0:
@@ -732,6 +962,7 @@ def _build_author_narrative_health_report(
     character_dominance_findings: list[dict[str, Any]] | None = None,
     disappearing_character_findings: list[dict[str, Any]] | None = None,
     dialogue_density_findings: list[dict[str, Any]] | None = None,
+    chapter_type_classification: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     generated_at_iso = generated_at.isoformat()
     resolved_monotony_findings = monotony_findings or []
@@ -739,6 +970,7 @@ def _build_author_narrative_health_report(
     resolved_character_dominance_findings = character_dominance_findings or []
     resolved_disappearing_character_findings = disappearing_character_findings or []
     resolved_dialogue_density_findings = dialogue_density_findings or []
+    resolved_chapter_type_classification = chapter_type_classification or []
     combined_findings = (
         resolved_monotony_findings
         + resolved_emotional_monotony_findings
@@ -781,6 +1013,7 @@ def _build_author_narrative_health_report(
             "segment_count": segment_count,
             "ordered_by": ["chapter_index", "segment_index"],
         },
+        "chapter_type_classification": resolved_chapter_type_classification,
         "requirements": requirements,
         "findings": combined_findings,
     }
@@ -2608,6 +2841,7 @@ def build_run_export(
     )
     disappearing_character_findings = _build_disappearing_character_findings(segments=segments)
     dialogue_density_findings = _build_dialogue_density_anomaly_findings(segments=segments)
+    chapter_type_classification = _build_chapter_type_classification(segments=segments)
     character_cooccurrence_graph = _build_character_cooccurrence_graph(segments=segments)
     character_cooccurrence_centrality_table = _build_character_cooccurrence_centrality_table(
         graph_report=character_cooccurrence_graph,
@@ -2683,6 +2917,7 @@ def build_run_export(
             character_dominance_findings=character_dominance_findings,
             disappearing_character_findings=disappearing_character_findings,
             dialogue_density_findings=dialogue_density_findings,
+            chapter_type_classification=chapter_type_classification,
         ),
         "reports": _build_export_reports(
             project=project,

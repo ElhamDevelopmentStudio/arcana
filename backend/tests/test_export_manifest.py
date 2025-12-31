@@ -218,6 +218,18 @@ def test_export_json_includes_narrative_health_report_schema() -> None:
         assert status_by_requirement["ADR-004"] == "not_implemented"
         assert status_by_requirement["ADR-006"] == "implemented"
         assert all(entry.finding_count == len(entry.findings) for entry in parsed_report.requirements)
+        assert isinstance(narrative_health_report.get("chapter_type_classification"), list)
+        assert len(narrative_health_report["chapter_type_classification"]) >= 1
+        for chapter_type in narrative_health_report["chapter_type_classification"]:
+            assert chapter_type["chapter_id"] >= 1
+            assert chapter_type["confidence"] >= 0.0
+            assert chapter_type["chapter_type"] in {
+                "setup",
+                "build-up",
+                "confrontation",
+                "resolution",
+                "transitional",
+            }
 
 
 def test_export_json_includes_chapter_level_valence_means() -> None:
