@@ -1682,6 +1682,49 @@ def build_run_export_academic_csv(
     return output.getvalue()
 
 
+def build_run_export_graph_json(
+    project: Project,
+    run: Run,
+    academic_reports: Mapping[str, Any],
+    academic_manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    graph_report = _to_dict(academic_reports.get("character_cooccurrence_graph"))
+    centrality_report = _to_dict(academic_reports.get("character_cooccurrence_centrality_table"))
+    generated_at = academic_manifest.get("generated_at", datetime.now(timezone.utc).isoformat())
+    schema_version = "1.0.0"
+
+    graph_payload = {
+        "nodes": [node for node in _to_dict(graph_report).get("nodes", []) if isinstance(node, dict)],
+        "edges": [edge for edge in _to_dict(graph_report).get("edges", []) if isinstance(edge, dict)],
+        "metadata": _to_dict(graph_report).get("metadata", {}),
+    }
+    centrality_payload = {
+        "metrics_table": [
+            row for row in _to_dict(centrality_report).get("metrics_table", []) if isinstance(row, dict)
+        ],
+        "metadata": _to_dict(centrality_report).get("metadata", {}),
+    }
+
+    return {
+        "schema_version": schema_version,
+        "output_schema": "graph_json",
+        "output_format": "graph_json",
+        "output_id": "AO-004",
+        "output_name": "character_cooccurrence_graph",
+        "project_id": project.id,
+        "run_id": run.id,
+        "run_status": run.status,
+        "generated_at": generated_at,
+        "generated_by": "build_run_export_graph_json",
+        "graph": graph_payload,
+        "character_cooccurrence_centrality": centrality_payload,
+        "manifest_snapshot": {
+            "output_schema": academic_manifest.get("output_schema"),
+            "generated_by": academic_manifest.get("generated_by"),
+        },
+    }
+
+
 def build_run_export_csv(
     session: Session,
     project: Project,

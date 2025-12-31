@@ -52,6 +52,7 @@ from app.services.character_merge import normalize_candidate_key
 from app.services.character_merge import detect_alias_conflicts
 from app.services.character_merge import resolve_alias_to_canonical_name
 from app.services.export import build_run_export, build_run_export_csv
+from app.services.export import build_run_export_graph_json
 from app.services.export import build_run_export_academic_csv
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
@@ -2298,6 +2299,9 @@ def get_export_json(
     run_id: int,
     from_chapter_index: int | None = None,
     from_segment_index: int | None = None,
+    output_schema: str | None = None,
+    output_format: str | None = None,
+    output_id: str | None = None,
     session: Session = Depends(get_session),
 ) -> JSONResponse:
     project = _get_project_or_404(session, project_id)
@@ -2332,6 +2336,12 @@ def get_export_json(
             detail="from_chapter_index and from_segment_index must be provided together.",
         )
 
+    if output_schema is not None and output_schema != "academic":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported output_schema '{output_schema}'. Supported values: academic.",
+        )
+
     payload = build_run_export(
         session=session,
         project=project,
@@ -2339,6 +2349,37 @@ def get_export_json(
         from_chapter_index=from_chapter_index,
         from_segment_index=from_segment_index,
     )
+
+    if output_schema == "academic":
+        if output_format in (None, "json"):
+            return JSONResponse(content=payload)
+
+        if output_format == "graph_json":
+            selected_output_id = (output_id or "AO-004").upper()
+            if selected_output_id != "AO-004":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Unsupported output_id for graph_json. Supported values: AO-004.",
+                )
+
+            manifest = payload.get("manifest", {})
+            return JSONResponse(
+                content=build_run_export_graph_json(
+                    project=project,
+                    run=run,
+                    academic_reports=manifest.get("academic_reports", {}),
+                    academic_manifest=manifest.get("academic_export_manifest", {}),
+                )
+            )
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Unsupported output_format for academic schema. "
+                "Supported values: json, graph_json."
+            ),
+        )
+
     return JSONResponse(content=payload)
 
 
