@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from bisect import bisect_right
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +9,17 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_session, init_db
 from app.modes import DEFAULT_MODE, get_mode_catalog
-from app.models import Chapter, Character, LLMCall, Project, PronunciationDictionary, Run, Segment
+from app.models import (
+    Chapter,
+    Character,
+    ComparisonWorkspace,
+    ComparisonWorkspaceRun,
+    LLMCall,
+    Project,
+    PronunciationDictionary,
+    Run,
+    Segment,
+)
 from app.schemas import (
     CharacterImportResponse,
     CharacterMapItem,
@@ -31,6 +42,14 @@ from app.schemas import (
     CharacterCandidatesMergeRequest,
     CharacterGenderComparisonItem,
     CharacterGenderComparisonResponse,
+    ComparisonAlignedCurveMetricDescriptor,
+    ComparisonAlignedCurvePoint,
+    ComparisonAlignedCurveRunDescriptor,
+    ComparisonWorkspaceCreateRequest,
+    ComparisonWorkspaceAlignedCurvesResponse,
+    ComparisonWorkspaceResponse,
+    ComparisonWorkspaceRunDescriptor,
+    ComparisonWorkspaceRunLinkRequest,
     ModeCatalogResponse,
     ProjectCreate,
     ProjectModeSwitchRequest,
@@ -133,6 +152,198 @@ def _get_run_or_404(session: Session, project_id: int, run_id: int) -> Run:
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
     return run
+
+
+def _get_comparison_workspace_or_404(session: Session, workspace_id: int) -> ComparisonWorkspace:
+    workspace = session.query(ComparisonWorkspace).filter(ComparisonWorkspace.id == workspace_id).one_or_none()
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comparison workspace not found")
+    return workspace
+
+
+def _build_comparison_workspace_response(
+    session: Session,
+    workspace: ComparisonWorkspace,
+) -> ComparisonWorkspaceResponse:
+    links = (
+        session.query(ComparisonWorkspaceRun)
+        .filter(ComparisonWorkspaceRun.workspace_id == workspace.id)
+        .order_by(ComparisonWorkspaceRun.created_at.asc(), ComparisonWorkspaceRun.id.asc())
+        .all()
+    )
+
+    runs: list[ComparisonWorkspaceRunDescriptor] = []
+    for link in links:
+        run = session.query(Run).filter(Run.id == link.run_id).one_or_none()
+        if run is None:
+            continue
+
+        segment_count = session.query(Segment).filter(Segment.run_id == run.id).count()
+        config = dict(run.config_json or {})
+        runs.append(
+            ComparisonWorkspaceRunDescriptor(
+                run_id=run.id,
+                project_id=link.project_id,
+                project_title=link.project.title if link.project else "",
+                status=run.status,
+                segment_count=segment_count,
+                run_config_mode=str(config.get("mode", DEFAULT_MODE)),
+            )
+        )
+
+    return ComparisonWorkspaceResponse(
+        workspace_id=workspace.id,
+        name=workspace.name,
+        description=workspace.description,
+        created_at=workspace.created_at,
+        run_count=len(runs),
+        runs=runs,
+    )
+
+
+_ALIGNED_CURVE_DEFINITIONS = {
+    "chapter_valence_mean": {
+        "label": "Chapter valence mean",
+        "source_path": ["chapter_level_valence_means"],
+        "value_key": "valence_mean",
+        "position_key": "chapter_id",
+    },
+    "chapter_valence_variance": {
+        "label": "Chapter valence variance",
+        "source_path": ["chapter_level_valence_variance"],
+        "value_key": "valence_variance",
+        "position_key": "chapter_id",
+    },
+    "chapter_emotional_volatility": {
+        "label": "Chapter emotional volatility",
+        "source_path": ["chapter_level_emotional_volatility_index"],
+        "value_key": "emotional_volatility_index",
+        "position_key": "chapter_id",
+    },
+    "smoothed_tension_curve": {
+        "label": "Smoothed tension curve",
+        "source_path": ["smoothed_tension_curve", "tension_curve"],
+        "value_key": "smoothed_tension",
+        "position_key": "position",
+    },
+    "rolling_valence_curve": {
+        "label": "Rolling valence mean",
+        "source_path": ["rolling_window_emotional_curves", "valence_curve"],
+        "value_key": "rolling_mean_valence",
+        "position_key": "position",
+    },
+    "rolling_intensity_curve": {
+        "label": "Rolling intensity mean",
+        "source_path": ["rolling_window_emotional_curves", "intensity_curve"],
+        "value_key": "rolling_mean_intensity",
+        "position_key": "position",
+    },
+}
+
+
+def _coerce_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _extract_nested_value(payload: dict[str, object], path: list[str]) -> object:
+    current: object = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _extract_curve_points(
+    academic_reports: dict[str, object],
+    source_path: list[str],
+    value_key: str,
+    position_key: str,
+) -> list[tuple[float, float]]:
+    raw_points = _extract_nested_value(academic_reports, source_path)
+    if not isinstance(raw_points, list):
+        return []
+
+    values: list[tuple[float, float]] = []
+    for index, raw_point in enumerate(raw_points):
+        if not isinstance(raw_point, dict):
+            continue
+        value = _coerce_float(raw_point.get(value_key))
+        if value is None:
+            continue
+        position = raw_point.get(position_key)
+        normalized_position = _coerce_float(position)
+        if normalized_position is None:
+            normalized_position = float(index + 1)
+        values.append((normalized_position, value))
+    return sorted(values, key=lambda point: point[0])
+
+
+def _align_curve_points(points: list[tuple[float, float]], align_count: int) -> list[ComparisonAlignedCurvePoint]:
+    if align_count < 2:
+        align_count = 2
+    if not points:
+        return []
+
+    if len(points) == 1:
+        return [
+            ComparisonAlignedCurvePoint(
+                normalized_position=round(index / (align_count - 1), 6),
+                value=round(points[0][1], 6),
+                source_position=int(points[0][0]),
+            )
+            for index in range(align_count)
+        ]
+
+    min_position = points[0][0]
+    max_position = points[-1][0]
+    if min_position == max_position:
+        return [
+            ComparisonAlignedCurvePoint(
+                normalized_position=round(index / (align_count - 1), 6),
+                value=round(points[0][1], 6),
+                source_position=int(points[0][0]),
+            )
+            for index in range(align_count)
+        ]
+
+    positions = [point_position for point_position, _ in points]
+    values = [value for _, value in points]
+    aligned_points: list[ComparisonAlignedCurvePoint] = []
+    for index in range(align_count):
+        normalized_position = index / (align_count - 1)
+        target_position = min_position + ((max_position - min_position) * normalized_position)
+        right_index = bisect_right(positions, target_position)
+        left_index = max(0, right_index - 1)
+        right_index = min(right_index, len(points) - 1)
+        left_position = positions[left_index]
+        left_value = values[left_index]
+        if right_index == left_index:
+            value = left_value
+            source_position = left_position
+        else:
+            right_position = positions[right_index]
+            right_value = values[right_index]
+            if right_position == left_position:
+                ratio = 0.0
+            else:
+                ratio = (target_position - left_position) / (right_position - left_position)
+            value = left_value + ((right_value - left_value) * ratio)
+            source_position = target_position
+
+        aligned_points.append(
+            ComparisonAlignedCurvePoint(
+                normalized_position=round(normalized_position, 6),
+                value=round(float(value), 6),
+                source_position=int(round(source_position)),
+            )
+        )
+
+    return aligned_points
 
 
 def _merge_selected_modes(existing_modes: list[str] | None, mode: str) -> list[str]:
@@ -381,6 +592,184 @@ def compare_character_genders(
         comparison_count=len(comparison_payloads),
         contradiction_count=contradiction_count,
         comparisons=comparison_payloads,
+    )
+
+
+@app.post(
+    "/api/comparison-workspaces",
+    response_model=ComparisonWorkspaceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_comparison_workspace(
+    payload: ComparisonWorkspaceCreateRequest,
+    session: Session = Depends(get_session),
+) -> ComparisonWorkspaceResponse:
+    workspace = ComparisonWorkspace(
+        name=payload.name.strip(),
+        description=(payload.description.strip() if payload.description else None),
+    )
+    session.add(workspace)
+    session.commit()
+    session.refresh(workspace)
+    return _build_comparison_workspace_response(session=session, workspace=workspace)
+
+
+@app.get(
+    "/api/comparison-workspaces/{workspace_id}",
+    response_model=ComparisonWorkspaceResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_comparison_workspace(
+    workspace_id: int,
+    session: Session = Depends(get_session),
+) -> ComparisonWorkspaceResponse:
+    workspace = _get_comparison_workspace_or_404(session, workspace_id)
+    return _build_comparison_workspace_response(session=session, workspace=workspace)
+
+
+@app.post(
+    "/api/comparison-workspaces/{workspace_id}/runs",
+    response_model=ComparisonWorkspaceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_run_to_comparison_workspace(
+    workspace_id: int,
+    payload: ComparisonWorkspaceRunLinkRequest,
+    session: Session = Depends(get_session),
+) -> ComparisonWorkspaceResponse:
+    _get_comparison_workspace_or_404(session, workspace_id)
+    _get_project_or_404(session, payload.project_id)
+    run = session.query(Run).filter(Run.id == payload.run_id, Run.project_id == payload.project_id).one_or_none()
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found for the selected project.",
+        )
+
+    existing = (
+        session.query(ComparisonWorkspaceRun)
+        .filter(
+            ComparisonWorkspaceRun.workspace_id == workspace_id,
+            ComparisonWorkspaceRun.run_id == payload.run_id,
+        )
+        .one_or_none()
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Run already assigned to this comparison workspace.",
+        )
+
+    session.add(
+        ComparisonWorkspaceRun(
+            workspace_id=workspace_id,
+            project_id=payload.project_id,
+            run_id=run.id,
+        )
+    )
+    session.commit()
+    workspace = _get_comparison_workspace_or_404(session, workspace_id)
+    return _build_comparison_workspace_response(session=session, workspace=workspace)
+
+
+@app.get(
+    "/api/comparison-workspaces/{workspace_id}/aligned-curves",
+    response_model=ComparisonWorkspaceAlignedCurvesResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_aligned_comparison_curves(
+    workspace_id: int,
+    metrics: str | None = None,
+    aligned_points: int = 32,
+    session: Session = Depends(get_session),
+) -> ComparisonWorkspaceAlignedCurvesResponse:
+    if aligned_points < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="aligned_points must be at least 2",
+        )
+    if aligned_points > 400:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="aligned_points must be 400 or fewer",
+        )
+
+    workspace = _get_comparison_workspace_or_404(session, workspace_id)
+
+    requested = [value.strip() for value in (metrics or "").split(",") if value.strip()]
+    available_metric_ids = set(_ALIGNED_CURVE_DEFINITIONS.keys())
+    if requested:
+        unknown_metrics = [metric_id for metric_id in requested if metric_id not in available_metric_ids]
+        if unknown_metrics:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unsupported metric filter(s): {', '.join(sorted(unknown_metrics))}",
+            )
+        selected_metric_ids = requested
+    else:
+        selected_metric_ids = sorted(available_metric_ids)
+
+    workspace_runs = (
+        session.query(ComparisonWorkspaceRun, Project, Run)
+        .join(Project, ComparisonWorkspaceRun.project_id == Project.id)
+        .join(Run, ComparisonWorkspaceRun.run_id == Run.id)
+        .filter(ComparisonWorkspaceRun.workspace_id == workspace.id)
+        .order_by(ComparisonWorkspaceRun.created_at.asc(), ComparisonWorkspaceRun.id.asc())
+        .all()
+    )
+
+    metric_series_by_id = {
+        metric_id: []
+        for metric_id in selected_metric_ids
+    }
+
+    for _, project_row, run in workspace_runs:
+        if run is None or project_row is None:
+            continue
+        export_payload = build_run_export(session=session, project=project_row, run=run)
+        manifest = export_payload.get("manifest", {})
+        academic_reports = manifest.get("academic_reports", {})
+        if not isinstance(academic_reports, dict):
+            academic_reports = {}
+
+        for metric_id in selected_metric_ids:
+            definition = _ALIGNED_CURVE_DEFINITIONS[metric_id]
+            points = _extract_curve_points(
+                academic_reports=academic_reports,
+                source_path=definition["source_path"],
+                value_key=definition["value_key"],
+                position_key=definition["position_key"],
+            )
+            aligned_points_for_run = _align_curve_points(points=points, align_count=aligned_points)
+            metric_series_by_id[metric_id].append(
+                ComparisonAlignedCurveRunDescriptor(
+                    run_id=run.id,
+                    project_id=project_row.id,
+                    project_title=project_row.title,
+                    status=run.status,
+                    points=aligned_points_for_run,
+                )
+            )
+
+    metric_payloads: list[ComparisonAlignedCurveMetricDescriptor] = []
+    for metric_id in selected_metric_ids:
+        definition = _ALIGNED_CURVE_DEFINITIONS[metric_id]
+        metric_payloads.append(
+            ComparisonAlignedCurveMetricDescriptor(
+                metric_id=metric_id,
+                metric_label=definition["label"],
+                value_key=definition["value_key"],
+                source_path=definition["source_path"],
+                points_per_run=metric_series_by_id[metric_id],
+            )
+        )
+
+    return ComparisonWorkspaceAlignedCurvesResponse(
+        workspace_id=workspace.id,
+        workspace_name=workspace.name,
+        run_count=len(workspace_runs),
+        aligned_points=aligned_points,
+        metrics=metric_payloads,
     )
 
 

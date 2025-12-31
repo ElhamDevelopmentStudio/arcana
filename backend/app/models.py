@@ -41,6 +41,11 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    comparison_workspace_runs: Mapped[list["ComparisonWorkspaceRun"]] = relationship(
+        "ComparisonWorkspaceRun",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
 
 class Chapter(Base):
@@ -141,6 +146,51 @@ class Run(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     project: Mapped[Project] = relationship("Project", back_populates="runs")
+    comparison_workspace_runs: Mapped[list["ComparisonWorkspaceRun"]] = relationship(
+        "ComparisonWorkspaceRun",
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class ComparisonWorkspace(Base):
+    __tablename__ = "comparison_workspaces"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    runs: Mapped[list["ComparisonWorkspaceRun"]] = relationship(
+        "ComparisonWorkspaceRun",
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+    )
+
+
+class ComparisonWorkspaceRun(Base):
+    __tablename__ = "comparison_workspace_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "run_id",
+            name="uq_workspace_run",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("comparison_workspaces.id", ondelete="CASCADE"), nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    workspace: Mapped[ComparisonWorkspace] = relationship("ComparisonWorkspace", back_populates="runs")
+    project: Mapped[Project] = relationship("Project", back_populates="comparison_workspace_runs")
+    run: Mapped[Run] = relationship("Run", back_populates="comparison_workspace_runs")
 
 
 class PronunciationDictionary(Base):
