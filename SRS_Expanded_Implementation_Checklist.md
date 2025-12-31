@@ -279,7 +279,7 @@ Definition of done for each task:
 - [x] [AUTH-006] Implement dialogue density anomaly detector.
 - [x] [AUTH-007] Define actionable flag schema (`location`, `trigger_metric`, `severity`, `evidence`).
 - [x] [AUTH-008] Implement chapter-range locator for each flag.
-- [ ] [AUTH-009] Implement severity scoring for each flag.
+- [x] [AUTH-009] Implement severity scoring for each flag.
 - [ ] [AUTH-010] Attach evidence trace to each flag.
 - [ ] [AUTH-011] Implement chapter type classifier (`setup/build-up/confrontation/resolution/transitional`).
 - [ ] [AUTH-012] Output confidence for chapter type classification.
