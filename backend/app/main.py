@@ -238,6 +238,12 @@ _ALIGNED_CURVE_DEFINITIONS = {
         "value_key": "rolling_mean_intensity",
         "position_key": "position",
     },
+    "normalized_pacing_signature": {
+        "label": "Normalized pacing signature",
+        "source_path": ["normalized_pacing_signature"],
+        "value_key": "signature_value",
+        "position_key": "position",
+    },
 }
 
 
