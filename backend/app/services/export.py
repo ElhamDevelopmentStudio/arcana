@@ -22,6 +22,132 @@ AUTHOR_DIAGNOSTIC_REQUIREMENTS = [
     ("ADR-006", "diagnostics_manifest_and_provenance"),
 ]
 
+_MONOTONY_WINDOW_SIZE = 6
+_MONOTONY_TENSION_TOLERANCE = 0.06
+_MONOTONY_EMOTION_TOLERANCE = 0.25
+_MONOTONY_INTENSITY_TOLERANCE = 0.28
+
+
+def _compute_range(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    return max(values) - min(values)
+
+
+def _compute_variance(values: list[float]) -> float:
+    count = len(values)
+    if count == 0:
+        return 0.0
+    mean = sum(values) / count
+    return sum((value - mean) ** 2 for value in values) / count
+
+
+def _build_monotony_risk_findings(
+    segments: list[dict[str, Any]],
+    smoothed_tension_curve: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    limit = min(len(segments), len(smoothed_tension_curve))
+    if limit < _MONOTONY_WINDOW_SIZE:
+        return []
+
+    tension_values: list[float] = []
+    valence_values: list[float] = []
+    intensity_values: list[float] = []
+    for index in range(limit):
+        tension_values.append(_to_number(smoothed_tension_curve[index].get("smoothed_tension")) or 0.0)
+        valence_values.append(_to_number(segments[index].get("emotion_valence")) or 0.0)
+        intensity_values.append(_to_number(segments[index].get("emotion_intensity")) or 0.0)
+
+    def is_low_variance_window(start_index: int, end_index: int) -> bool:
+        tension_slice = tension_values[start_index : end_index + 1]
+        valence_slice = valence_values[start_index : end_index + 1]
+        intensity_slice = intensity_values[start_index : end_index + 1]
+        if (
+            len(tension_slice) != (end_index - start_index + 1)
+            or len(valence_slice) != (end_index - start_index + 1)
+            or len(intensity_slice) != (end_index - start_index + 1)
+        ):
+            return False
+        if (
+            _compute_range(tension_slice) > _MONOTONY_TENSION_TOLERANCE
+            or _compute_range(valence_slice) > _MONOTONY_EMOTION_TOLERANCE
+            or _compute_range(intensity_slice) > _MONOTONY_INTENSITY_TOLERANCE
+        ):
+            return False
+        return True
+
+    findings: list[dict[str, Any]] = []
+    start_index = 0
+    while start_index <= limit - _MONOTONY_WINDOW_SIZE:
+        end_index = start_index + _MONOTONY_WINDOW_SIZE - 1
+        if not is_low_variance_window(start_index, end_index):
+            start_index += 1
+            continue
+
+        while end_index + 1 < limit and is_low_variance_window(start_index, end_index + 1):
+            end_index += 1
+
+        tension_slice = tension_values[start_index : end_index + 1]
+        valence_slice = valence_values[start_index : end_index + 1]
+        intensity_slice = intensity_values[start_index : end_index + 1]
+        segment_slice = segments[start_index : end_index + 1]
+
+        flatness_scores = [
+            1.0 - (_compute_range(tension_slice) / _MONOTONY_TENSION_TOLERANCE),
+            1.0 - (_compute_range(valence_slice) / _MONOTONY_EMOTION_TOLERANCE),
+            1.0 - (_compute_range(intensity_slice) / _MONOTONY_INTENSITY_TOLERANCE),
+        ]
+        flatness_score = max(0.0, sum(score for score in flatness_scores if score > 0.0) / 3)
+        length_score = min(1.0, (len(tension_slice) - _MONOTONY_WINDOW_SIZE + 1) / 4)
+        severity = round((0.75 * flatness_score + 0.25 * length_score), 4)
+
+        first_segment = segment_slice[0]
+        last_segment = segment_slice[-1]
+        start_chapter = first_segment.get("chapter_id")
+        end_chapter = last_segment.get("chapter_id")
+        start_segment = first_segment.get("segment_index")
+        end_segment = last_segment.get("segment_index")
+        if not isinstance(start_chapter, int):
+            start_chapter = None
+        if not isinstance(end_chapter, int):
+            end_chapter = None
+        if not isinstance(start_segment, int):
+            start_segment = None
+        if not isinstance(end_segment, int):
+            end_segment = None
+
+        findings.append(
+            {
+                "requirement_id": "ADR-002",
+                "requirement_name": "monotony_risk_detector",
+                "location": {
+                    "start_chapter": start_chapter,
+                    "end_chapter": end_chapter,
+                    "start_segment": start_segment,
+                    "end_segment": end_segment,
+                },
+                "trigger_metric": "low_tension_and_emotion_variance_window",
+                "severity": severity,
+                "evidence_trace": {
+                    "window_start_position": start_index + 1,
+                    "window_end_position": end_index + 1,
+                    "window_length": len(tension_slice),
+                    "tension_range": round(_compute_range(tension_slice), 4),
+                    "tension_variance": round(_compute_variance(tension_slice), 6),
+                    "valence_range": round(_compute_range(valence_slice), 4),
+                    "valence_variance": round(_compute_variance(valence_slice), 6),
+                    "intensity_range": round(_compute_range(intensity_slice), 4),
+                    "intensity_variance": round(_compute_variance(intensity_slice), 6),
+                    "start_segment_id": first_segment.get("segment_id"),
+                    "end_segment_id": last_segment.get("segment_id"),
+                },
+            }
+        )
+
+        start_index = end_index + 1
+
+    return findings
+
 
 def _to_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -144,15 +270,20 @@ def _build_author_narrative_health_report(
     run: Run,
     generated_at: datetime,
     segment_count: int,
+    monotony_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     generated_at_iso = generated_at.isoformat()
+    resolved_monotony_findings = monotony_findings or []
+    finding_by_requirement: dict[str, list[dict[str, Any]]] = {
+        "ADR-002": resolved_monotony_findings,
+    }
     requirements = [
         {
             "requirement_id": requirement_id,
             "requirement_name": requirement_name,
-            "status": "not_implemented",
-            "finding_count": 0,
-            "findings": [],
+            "status": "implemented" if requirement_id == "ADR-002" else "not_implemented",
+            "finding_count": len(finding_by_requirement.get(requirement_id, [])),
+            "findings": list(finding_by_requirement.get(requirement_id, [])),
         }
         for requirement_id, requirement_name in AUTHOR_DIAGNOSTIC_REQUIREMENTS
     ]
@@ -175,7 +306,7 @@ def _build_author_narrative_health_report(
             "ordered_by": ["chapter_index", "segment_index"],
         },
         "requirements": requirements,
-        "findings": [],
+        "findings": resolved_monotony_findings,
     }
 
 
@@ -1987,6 +2118,10 @@ def build_run_export(
         segments=segments,
         window_size=5,
     )
+    monotony_findings = _build_monotony_risk_findings(
+        segments=segments,
+        smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
+    )
     character_cooccurrence_graph = _build_character_cooccurrence_graph(segments=segments)
     character_cooccurrence_centrality_table = _build_character_cooccurrence_centrality_table(
         graph_report=character_cooccurrence_graph,
@@ -2060,6 +2195,7 @@ def build_run_export(
             run=run,
             generated_at=generated_at,
             segment_count=len(segments),
+            monotony_findings=monotony_findings,
         ),
         "reports": _build_export_reports(
             project=project,
