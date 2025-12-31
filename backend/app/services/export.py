@@ -36,6 +36,9 @@ _CHARACTER_DOMINANCE_OUTLIER_MIN_SEGMENTS = 4
 _CHARACTER_DISAPPEARANCE_MIN_TOTAL_SEGMENTS = 6
 _CHARACTER_DISAPPEARANCE_MIN_APPEARED_CHAPTERS = 2
 _CHARACTER_DISAPPEARANCE_MIN_GAP_CHAPTERS = 1
+_DIALOGUE_DENSITY_ANOMALY_MIN_TOTAL_SEGMENTS = 6
+_DIALOGUE_DENSITY_ANOMALY_MIN_CHAPTER_RUN = 2
+_DIALOGUE_DENSITY_ANOMALY_DEVIATION_THRESHOLD = 0.28
 
 
 def _compute_range(values: list[float]) -> float:
@@ -347,6 +350,155 @@ def _build_disappearing_character_findings(
     return findings
 
 
+def _build_dialogue_density_anomaly_findings(
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    chapter_aggregates: dict[int, dict[str, int]] = {}
+    for segment in segments:
+        chapter_id = segment.get("chapter_id")
+        if not isinstance(chapter_id, int):
+            continue
+        if chapter_id not in chapter_aggregates:
+            chapter_aggregates[chapter_id] = {"total": 0, "dialogue": 0}
+
+        chapter_aggregates[chapter_id]["total"] += 1
+        segment_type = segment.get("type")
+        if isinstance(segment_type, str) and segment_type.strip().lower() == "dialogue":
+            chapter_aggregates[chapter_id]["dialogue"] += 1
+
+    if not chapter_aggregates:
+        return []
+
+    chapter_densities: list[dict[str, Any]] = []
+    for chapter_id in sorted(chapter_aggregates):
+        payload = chapter_aggregates[chapter_id]
+        total_segments = payload.get("total", 0)
+        if total_segments < _DIALOGUE_DENSITY_ANOMALY_MIN_TOTAL_SEGMENTS:
+            continue
+
+        dialogue_count = payload.get("dialogue", 0)
+        density = dialogue_count / total_segments
+        chapter_densities.append(
+            {
+                "chapter_id": chapter_id,
+                "total_segments": total_segments,
+                "dialogue_segments": dialogue_count,
+                "dialogue_density": density,
+            }
+        )
+
+    if len(chapter_densities) < 3:
+        return []
+
+    global_dialogue_density = sum(
+        chapter_density["dialogue_density"] for chapter_density in chapter_densities
+    ) / len(chapter_densities)
+
+    def _local_excess(index: int) -> float | None:
+        current = chapter_densities[index]
+        density = current["dialogue_density"]
+        return density - global_dialogue_density
+
+    findings: list[dict[str, Any]] = []
+    current_run: list[dict[str, Any]] = []
+    current_direction: int = 0
+
+    def _flush_current_run() -> None:
+        nonlocal current_run, current_direction, findings
+        if not current_run or len(current_run) < _DIALOGUE_DENSITY_ANOMALY_MIN_CHAPTER_RUN:
+            return
+
+        direction = current_direction
+        if direction == 0:
+            return
+
+        start_chapter = current_run[0]["chapter_id"]
+        end_chapter = current_run[-1]["chapter_id"]
+        average_excess = sum(item["excess"] for item in current_run) / len(current_run)
+        max_excess = max(abs(item["excess"]) for item in current_run)
+        avg_segments = sum(item["total_segments"] for item in current_run) / len(current_run)
+        severity = round(
+            min(
+                1.0,
+                0.65 * min(1.0, abs(average_excess) * 1.8)
+                + 0.25 * min(1.0, len(current_run) / 5.0)
+                + 0.10 * min(1.0, avg_segments / 12.0),
+            ),
+            4,
+        )
+        trigger_metric = (
+            "elevated_dialogue_density"
+            if direction == 1
+            else "reduced_dialogue_density"
+        )
+
+        findings.append(
+            {
+                "requirement_id": "ADR-006",
+                "requirement_name": "dialogue_density_anomaly_detector",
+                "location": {
+                    "start_chapter": start_chapter,
+                    "end_chapter": end_chapter,
+                },
+                "trigger_metric": trigger_metric,
+                "severity": severity,
+                "evidence_trace": {
+                    "global_dialogue_density": round(global_dialogue_density, 4),
+                    "anomaly_direction": "dialogue_heavy" if direction == 1 else "dialogue_sparse",
+                    "mean_excess": round(average_excess, 4),
+                    "max_excess": round(max_excess, 4),
+                    "chapter_window": len(current_run),
+                    "anomaly_threshold": _DIALOGUE_DENSITY_ANOMALY_DEVIATION_THRESHOLD,
+                    "chapter_profile": [
+                        {
+                            "chapter_id": item["chapter_id"],
+                            "dialogue_density": item["dialogue_density"],
+                            "total_segments": item["total_segments"],
+                            "dialogue_segments": item["dialogue_segments"],
+                            "excess": round(item["excess"], 4),
+                        }
+                        for item in current_run
+                    ],
+                },
+            }
+        )
+
+    for index in range(len(chapter_densities)):
+        chapter_density = chapter_densities[index]
+        excess = _local_excess(index)
+        if excess is None:
+            continue
+
+        if abs(excess) < _DIALOGUE_DENSITY_ANOMALY_DEVIATION_THRESHOLD:
+            _flush_current_run()
+            current_run = []
+            current_direction = 0
+            continue
+
+        direction = 1 if excess > 0 else -1
+        entry = {
+            **chapter_density,
+            "excess": excess,
+            "direction": direction,
+        }
+
+        if current_direction == 0:
+            current_run = [entry]
+            current_direction = direction
+            continue
+
+        if direction != current_direction:
+            _flush_current_run()
+            current_run = [entry]
+            current_direction = direction
+            continue
+
+        current_run.append(entry)
+
+    _flush_current_run()
+    return findings
+
+
 def _build_monotony_risk_findings(
     segments: list[dict[str, Any]],
     smoothed_tension_curve: list[dict[str, Any]],
@@ -579,24 +731,28 @@ def _build_author_narrative_health_report(
     emotional_monotony_findings: list[dict[str, Any]] | None = None,
     character_dominance_findings: list[dict[str, Any]] | None = None,
     disappearing_character_findings: list[dict[str, Any]] | None = None,
+    dialogue_density_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     generated_at_iso = generated_at.isoformat()
     resolved_monotony_findings = monotony_findings or []
     resolved_emotional_monotony_findings = emotional_monotony_findings or []
     resolved_character_dominance_findings = character_dominance_findings or []
     resolved_disappearing_character_findings = disappearing_character_findings or []
+    resolved_dialogue_density_findings = dialogue_density_findings or []
     combined_findings = (
         resolved_monotony_findings
         + resolved_emotional_monotony_findings
         + resolved_character_dominance_findings
         + resolved_disappearing_character_findings
+        + resolved_dialogue_density_findings
     )
     finding_by_requirement: dict[str, list[dict[str, Any]]] = {
         "ADR-002": resolved_monotony_findings + resolved_emotional_monotony_findings,
         "ADR-003": resolved_character_dominance_findings,
         "ADR-005": resolved_disappearing_character_findings,
+        "ADR-006": resolved_dialogue_density_findings,
     }
-    implemented_requirements = {"ADR-002", "ADR-003", "ADR-005"}
+    implemented_requirements = {"ADR-002", "ADR-003", "ADR-005", "ADR-006"}
     requirements = [
         {
             "requirement_id": requirement_id,
@@ -2451,6 +2607,7 @@ def build_run_export(
         chapter_level_character_dominance=chapter_level_character_dominance,
     )
     disappearing_character_findings = _build_disappearing_character_findings(segments=segments)
+    dialogue_density_findings = _build_dialogue_density_anomaly_findings(segments=segments)
     character_cooccurrence_graph = _build_character_cooccurrence_graph(segments=segments)
     character_cooccurrence_centrality_table = _build_character_cooccurrence_centrality_table(
         graph_report=character_cooccurrence_graph,
@@ -2525,6 +2682,7 @@ def build_run_export(
             emotional_monotony_findings=emotional_monotony_findings,
             character_dominance_findings=character_dominance_findings,
             disappearing_character_findings=disappearing_character_findings,
+            dialogue_density_findings=dialogue_density_findings,
         ),
         "reports": _build_export_reports(
             project=project,
