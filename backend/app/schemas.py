@@ -455,6 +455,19 @@ class RunResponse(BaseModel):
     segment_count: int
 
 
+class RunLLMCallLog(BaseModel):
+    id: int
+    provider: str
+    task_type: str
+    success: bool
+    request_count: int
+    token_usage_estimate: int | None
+    model_identifier: str | None
+    called_at: str | None
+    detail: str | None
+    created_at: datetime
+
+
 class RunDetailResponse(BaseModel):
     run_id: int
     project_id: int
@@ -463,7 +476,7 @@ class RunDetailResponse(BaseModel):
     started_at: datetime
     finished_at: datetime | None
     segment_count: int
-    llm_calls: list[dict[str, Any]]
+    llm_calls: list[RunLLMCallLog]
 
 
 class NarrativeHealthChapterRange(BaseModel):

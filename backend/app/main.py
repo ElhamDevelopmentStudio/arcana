@@ -139,6 +139,15 @@ def startup() -> None:
     init_db()
 
 
+def _serialize_datetime_to_utc_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc).isoformat()
+    return value.astimezone(timezone.utc).isoformat()
+
+
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
@@ -2797,6 +2806,8 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
             "success": call.success,
             "request_count": call.request_count,
             "token_usage_estimate": call.token_usage_estimate,
+            "model_identifier": call.model_identifier,
+            "called_at": _serialize_datetime_to_utc_iso(call.called_at),
             "detail": call.detail,
             "created_at": call.created_at.isoformat(),
         }

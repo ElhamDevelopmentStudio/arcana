@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
-from app.models import LLMCall, Project, ProviderQuota, ProviderToggle, Run
+from app.models import LLMCall, Project, ProviderApiKeyQuota, ProviderQuota, ProviderToggle, Run
 from app.services import llm_router, pipeline
 
 
@@ -41,6 +41,8 @@ def _new_session():
 def test_pipeline_llm_probe_persists_token_usage_estimate(monkeypatch: object) -> None:
     session = _new_session()
     try:
+        timestamp = datetime.now(timezone.utc)
+
         project = Project(title="Token Usage Probe Project")
         session.add(project)
         session.flush()
@@ -74,7 +76,7 @@ def test_pipeline_llm_probe_persists_token_usage_estimate(monkeypatch: object) -
                     success_flag=True,
                     error_code=None,
                     rate_limit_reset_at=None,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    timestamp=timestamp.isoformat(),
                 )
 
         monkeypatch.setattr(
@@ -95,6 +97,9 @@ def test_pipeline_llm_probe_persists_token_usage_estimate(monkeypatch: object) -
         quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one()
         call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
         assert call.token_usage_estimate == 512
+        assert call.model_identifier == "gpt-test"
+        assert call.called_at is not None
+        assert int(call.called_at.replace(tzinfo=timezone.utc).timestamp()) == int(timestamp.timestamp())
         assert call.success is True
         assert quota.last_successful_call_at is not None
     finally:
@@ -144,6 +149,16 @@ def test_pipeline_rate_limit_updates_provider_quota_status(monkeypatch: object) 
             pipeline,
             "get_provider_runtime_settings",
             lambda **kwargs: ("https://api.example.com", "gpt-test", "api-key"),
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_priority_order",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_api_keys",
+            lambda **kwargs: ["openrouter-key-a"] if kwargs["provider_name"] == "openrouter" else [],
         )
         monkeypatch.setattr(pipeline, "LLMRouter", _RateLimitedLLMRouter)
 
@@ -409,6 +424,16 @@ def test_pipeline_stops_additional_llm_calls_after_provider_error(monkeypatch: o
             "get_provider_runtime_settings",
             lambda **kwargs: ("https://api.example.com", "gpt-test", "api-key"),
         )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_priority_order",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_api_keys",
+            lambda **kwargs: ["openrouter-key-a"] if kwargs["provider_name"] == "openrouter" else [],
+        )
         monkeypatch.setattr(pipeline, "LLMRouter", _RateLimitedLLMRouter)
 
         pipeline._run_llm_probe(
@@ -446,6 +471,207 @@ def test_pipeline_stops_additional_llm_calls_after_provider_error(monkeypatch: o
         session.close()
 
 
+def test_pipeline_rotates_provider_keys_before_fallback(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Provider Key Rotation Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        calls: list[str | None] = []
+
+        class _RotatingLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                calls.append(api_key)
+                if api_key == "openrouter-key-a":
+                    return llm_router.LLMResponse(
+                        provider_used=provider_name,
+                        model_identifier=model_identifier,
+                        raw_output="",
+                        parsed_output={},
+                        confidence=None,
+                        token_usage_estimate=20,
+                        success_flag=False,
+                        error_code="rate_limit",
+                        rate_limit_reset_at=None,
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    )
+
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="ok",
+                    parsed_output={"raw": "ok"},
+                    confidence=None,
+                    token_usage_estimate=32,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        def _fake_provider_api_keys(*, settings: object, provider_name: str) -> list[str]:
+            if provider_name == "openrouter":
+                return ["openrouter-key-a", "openrouter-key-b"]
+            return []
+
+        monkeypatch.setattr(pipeline, "get_provider_api_keys", _fake_provider_api_keys)
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "fallback-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _RotatingLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="Probe should rotate keys on rate limit.",
+        )
+
+        call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
+        assert call.success is True
+        assert call.provider == "openrouter"
+        assert calls == ["openrouter-key-a", "openrouter-key-b"]
+
+        provider_quotas = (
+            session.query(ProviderQuota)
+            .filter(ProviderQuota.provider == "openrouter")
+            .order_by(ProviderQuota.id.asc())
+            .all()
+        )
+        assert len(provider_quotas) == 1
+        assert provider_quotas[0].calls_used == 2
+
+        key_quotas = (
+            session.query(ProviderApiKeyQuota)
+            .filter(ProviderApiKeyQuota.provider == "openrouter")
+            .order_by(ProviderApiKeyQuota.id.asc())
+            .all()
+        )
+        assert len(key_quotas) == 2
+        assert {row.provider_api_key for row in key_quotas} == {"openrouter-key-a", "openrouter-key-b"}
+    finally:
+        session.close()
+
+
+def test_pipeline_falls_back_to_next_provider_after_all_keys_exhausted(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Provider Fallback Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        calls: list[tuple[str, str | None]] = []
+
+        class _ProviderFallbackLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                calls.append((provider_name, api_key))
+                if provider_name == "openrouter":
+                    return llm_router.LLMResponse(
+                        provider_used=provider_name,
+                        model_identifier=model_identifier,
+                        raw_output="",
+                        parsed_output={},
+                        confidence=None,
+                        token_usage_estimate=None,
+                        success_flag=False,
+                        error_code="rate_limit",
+                        rate_limit_reset_at=None,
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    )
+
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="ok",
+                    parsed_output={"raw": "ok"},
+                    confidence=None,
+                    token_usage_estimate=16,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        def _fake_provider_api_keys(*, settings: object, provider_name: str) -> list[str]:
+            if provider_name == "openrouter":
+                return ["openrouter-key-a", "openrouter-key-b"]
+            if provider_name == "siliconflow":
+                return ["siliconflow-key"]
+            return []
+
+        monkeypatch.setattr(pipeline, "get_provider_api_keys", _fake_provider_api_keys)
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "fallback-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _ProviderFallbackLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="Probe should fallback to the next provider.",
+        )
+
+        call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
+        assert call.success is True
+        assert call.provider == "siliconflow"
+        assert calls == [
+            ("openrouter", "openrouter-key-a"),
+            ("openrouter", "openrouter-key-b"),
+            ("siliconflow", "siliconflow-key"),
+        ]
+
+        openrouter_quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one()
+        assert openrouter_quota.blocked is True
+        assert openrouter_quota.last_rate_limit_status == "temporarily_unavailable"
+        siliconflow_quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "siliconflow").one_or_none()
+        assert siliconflow_quota is not None
+        assert siliconflow_quota.blocked is False
+    finally:
+        session.close()
+
+
 def test_run_detail_and_export_expose_token_usage_estimate() -> None:
     session = _new_session()
     try:
@@ -470,6 +696,8 @@ def test_run_detail_and_export_expose_token_usage_estimate() -> None:
                 success=True,
                 request_count=3,
                 token_usage_estimate=777,
+                model_identifier="gpt-test",
+                called_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
                 detail="probe_detail",
             )
         )
@@ -488,5 +716,11 @@ def test_run_detail_and_export_expose_token_usage_estimate() -> None:
             manifest_calls = manifest["logs"]["llm_calls"]
             assert len(manifest_calls) == 1
             assert manifest_calls[0]["token_usage_estimate"] == 777
+            assert manifest_calls[0]["model_identifier"] == "gpt-test"
+            assert manifest_calls[0]["called_at"] == "2024-01-01T00:00:00+00:00"
+
+            detail_calls = detail_resp.json()["llm_calls"]
+            assert detail_calls[0]["model_identifier"] == "gpt-test"
+            assert detail_calls[0]["called_at"] == "2024-01-01T00:00:00+00:00"
     finally:
         session.close()
