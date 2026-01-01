@@ -54,3 +54,15 @@ def test_should_not_escalate_to_llm_with_empty_ambiguity_flags() -> None:
     payload = _build_confident_tag_payload()
     payload["ambiguity_flags"] = []
     assert _should_escalate_to_llm(payload) is False
+
+
+def test_should_escalate_to_llm_when_deep_semantic_refinement_enabled() -> None:
+    payload = _build_confident_tag_payload()
+    assert (
+        _should_escalate_to_llm(payload, deep_semantic_refinement=True) is True
+    )
+
+
+def test_should_not_escalate_to_llm_when_deep_semantic_refinement_disabled() -> None:
+    payload = _build_confident_tag_payload()
+    assert _should_escalate_to_llm(payload, deep_semantic_refinement=False) is False

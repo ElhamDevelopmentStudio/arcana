@@ -140,3 +140,38 @@ def test_integration_run_payload_inherits_project_llm_default_and_allows_overrid
         run_override_detail = client.get(f"/api/projects/{project_id}/runs/{overridden_run_id}")
     assert run_override_detail.status_code == 200
     assert run_override_detail.json()["config"]["llm_enabled"] is False
+
+
+def test_integration_deep_semantic_refinement_flag_survives_run_config() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Deep Semantic Refinement Flag Integration"})
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_refinement_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "deep_semantic_refinement": True,
+                "llm_enabled": False,
+                "allow_unfinalized_character_map": True,
+            },
+        )
+    assert run_refinement_resp.status_code == 200
+    run_id = run_refinement_resp.json()["run_id"]
+
+    with TestClient(app) as client:
+        run_refinement_detail = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+    assert run_refinement_detail.status_code == 200
+    assert run_refinement_detail.json()["config"]["deep_semantic_refinement"] is True
