@@ -2840,10 +2840,12 @@ def get_export_json(
             detail="from_chapter_index and from_segment_index must be provided together.",
         )
 
-    if output_schema is not None and output_schema != "academic":
+    if output_schema is not None and output_schema not in {"academic", "author"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported output_schema '{output_schema}'. Supported values: academic.",
+            detail=(
+                "Unsupported output_schema '{schema}'. Supported values: academic, author."
+            ).format(schema=output_schema),
         )
 
     payload = build_run_export(
@@ -2883,6 +2885,14 @@ def get_export_json(
                 "Supported values: json, graph_json."
             ),
         )
+
+    if output_schema == "author":
+        if output_format and output_format != "json":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported output_format for author schema. Supported values: json.",
+            )
+        return JSONResponse(content=payload["manifest"]["narrative_health_report"])
 
     return JSONResponse(content=payload)
 
