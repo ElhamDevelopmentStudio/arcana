@@ -7,6 +7,30 @@ import requests
 from app.services.llm_task_types import LLMTaskType, LLMTaskTypeError, normalize_task_type
 
 
+_SILICONFLOW_BASE_URL_DEFAULT = "https://api.siliconflow.cn/v1"
+
+
+@dataclass(frozen=True)
+class LLMProviderMetadata:
+    settings_base_url_key: str
+    settings_model_key: str
+    settings_key_key: str
+
+
+_LLM_PROVIDER_REGISTRY: dict[str, LLMProviderMetadata] = {
+    "openrouter": LLMProviderMetadata(
+        settings_base_url_key="openrouter_base_url",
+        settings_model_key="openrouter_model",
+        settings_key_key="openrouter_api_key",
+    ),
+    "siliconflow": LLMProviderMetadata(
+        settings_base_url_key="siliconflow_base_url",
+        settings_model_key="siliconflow_model",
+        settings_key_key="siliconflow_api_key",
+    ),
+}
+
+
 @dataclass
 class LLMRequest:
     request_id: str
@@ -32,7 +56,7 @@ class LLMResponse:
 
 class LLMRouter:
     def __init__(self, openrouter_base_url: str) -> None:
-        self.openrouter_base_url = openrouter_base_url.rstrip("/")
+        self.base_url = openrouter_base_url.rstrip("/")
 
     def call(
         self,
@@ -56,9 +80,9 @@ class LLMRouter:
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
-        provider = provider_name.lower()
+        provider = _normalize_provider_name(provider_name)
 
-        if provider != "openrouter":
+        if not is_supported_provider(provider):
             return LLMResponse(
                 provider_used=provider,
                 model_identifier=model_identifier,
@@ -85,7 +109,7 @@ class LLMRouter:
             )
 
         system_prompt, user_prompt = _build_task_prompts(task_type=task_type, input_text=request.input_text)
-        endpoint = f"{self.openrouter_base_url}/chat/completions"
+        endpoint = f"{self.base_url}/chat/completions"
         payload = {
             "model": model_identifier,
             "messages": [
@@ -140,6 +164,41 @@ class LLMRouter:
                 error_code="provider_error",
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
+
+
+def _normalize_provider_name(value: str) -> str:
+    return str(value).strip().lower()
+
+
+def is_supported_provider(provider_name: str) -> bool:
+    return _normalize_provider_name(provider_name) in _LLM_PROVIDER_REGISTRY
+
+
+def get_supported_providers() -> tuple[str, ...]:
+    return tuple(sorted(_LLM_PROVIDER_REGISTRY.keys()))
+
+
+def get_provider_runtime_settings(settings: Any, provider_name: str) -> tuple[str, str, str | None]:
+    normalized_provider = _normalize_provider_name(provider_name)
+    metadata = _LLM_PROVIDER_REGISTRY.get(normalized_provider)
+
+    if metadata is None:
+        return (
+            settings.openrouter_base_url,
+            settings.openrouter_model,
+            settings.openrouter_api_key,
+        )
+
+    base_url = str(getattr(settings, metadata.settings_base_url_key))
+    if normalized_provider == "siliconflow" and not base_url:
+        base_url = _SILICONFLOW_BASE_URL_DEFAULT
+
+    model_identifier = str(getattr(settings, metadata.settings_model_key))
+    api_key = getattr(settings, metadata.settings_key_key, None)
+    if api_key is None:
+        api_key = getattr(settings, "openrouter_api_key", None)
+
+    return (base_url, model_identifier, api_key)
 
 
 def _build_task_prompts(task_type: str, input_text: str) -> tuple[str, str]:
