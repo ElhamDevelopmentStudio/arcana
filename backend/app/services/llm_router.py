@@ -28,6 +28,11 @@ _LLM_PROVIDER_REGISTRY: dict[str, LLMProviderMetadata] = {
         settings_model_key="siliconflow_model",
         settings_key_key="siliconflow_api_key",
     ),
+    "groq": LLMProviderMetadata(
+        settings_base_url_key="groq_base_url",
+        settings_model_key="groq_model",
+        settings_key_key="groq_api_key",
+    ),
 }
 
 

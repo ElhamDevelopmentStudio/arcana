@@ -295,7 +295,7 @@ Definition of done for each task:
 - [X] [LLM-005] Add ambiguity-flag trigger for escalation.
 - [X] [LLM-006] Add user “deep semantic refinement” opt-in trigger.
 - [x] [LLM-007] Add provider registry entries for SiliconFlow.
-- [ ] [LLM-008] Add provider registry entries for Groq.
+- [x] [LLM-008] Add provider registry entries for Groq.
 - [ ] [LLM-009] Add provider registry entries for OpenRouter.
 - [ ] [LLM-010] Add per-provider request count tracking.
 - [ ] [LLM-011] Add estimated token usage tracking.
