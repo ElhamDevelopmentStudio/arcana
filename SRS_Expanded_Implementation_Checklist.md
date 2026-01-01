@@ -290,7 +290,7 @@ Definition of done for each task:
 ## 4.12 LLM Routing and Quota (Ref: SRS.md §4.12)
 - [X] [LLM-001] Add LLM usage feature flag per project.
 - [x] [LLM-002] Enumerate supported task types (`emotion_refinement`, `speaker_resolution`, etc.).
-- [ ] [LLM-003] Enforce rule-based first pass before LLM escalation.
+- [x] [LLM-003] Enforce rule-based first pass before LLM escalation.
 - [ ] [LLM-004] Add confidence-threshold trigger for escalation.
 - [ ] [LLM-005] Add ambiguity-flag trigger for escalation.
 - [ ] [LLM-006] Add user “deep semantic refinement” opt-in trigger.
