@@ -115,6 +115,23 @@ Failover order:
 
 Manual provider toggles are supported and tracked via provider availability rules already configured in the backend.
 
+### LLM cache invalidation policy
+
+LLM responses are cached in the `llm_cache` table and reused only when all cache-key dimensions match exactly:
+
+- hashed input text (`_build_llm_cache_key`)
+- task type (`emotion_refinement`, `speaker_resolution`, etc.)
+- configuration snapshot ID
+- model identifier
+
+Current invalidation policy:
+
+- No API-level or automatic TTL-based eviction is currently implemented.
+- There is no "manual clear-cache" endpoint in the public API yet.
+- Entries become naturally stale when any key dimension changes (new project snapshot, different task type, or different model).
+- Exact-match behavior is strict: near-miss inputs or punctuation-only differences must be treated as separate keys and are not reused.
+- Run detail responses expose per-task `llm_cache_metrics` counters (`hits` / `misses`) and per-call `is_cache_hit` flags.
+
 ### Frontend
 
 ```bash
