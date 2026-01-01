@@ -302,7 +302,7 @@ Definition of done for each task:
 - [x] [LLM-012] Add last known rate-limit status tracking.
 - [x] [LLM-013] Add last successful call timestamp tracking.
 - [x] [LLM-014] Add last reset timestamp tracking if available.
-- [ ] [LLM-015] Stop calls on provider rate-limit/quota error.
+- [x] [LLM-015] Stop calls on provider rate-limit/quota error.
 - [ ] [LLM-016] Mark provider temporarily unavailable after hard limit events.
 - [ ] [LLM-017] Resume provider usage after reset detection or manual enable.
 - [ ] [LLM-018] Add explicit guardrails: no bypass/circumvention behaviors.

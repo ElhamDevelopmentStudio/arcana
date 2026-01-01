@@ -221,6 +221,90 @@ def test_pipeline_rate_limit_reset_timestamp_is_saved_when_available(monkeypatch
         session.close()
 
 
+def test_pipeline_stops_additional_llm_calls_after_provider_error(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Provider Rate Limit Stops Subsequent Calls")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        call_count = {"value": 0}
+
+        class _RateLimitedLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                call_count["value"] += 1
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="rate_limit",
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "api-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _RateLimitedLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="The wind arrived before the storm.",
+        )
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="The storm arrived before the wind.",
+        )
+
+        assert call_count["value"] == 1
+
+        calls = (
+            session.query(LLMCall)
+            .filter(LLMCall.run_id == run.id)
+            .order_by(LLMCall.id.asc())
+            .all()
+        )
+        assert len(calls) == 2
+        assert calls[0].success is False
+        assert calls[0].detail == "rate_limit"
+        assert calls[1].detail == "quota_reached"
+
+        quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one()
+        assert quota.blocked is True
+    finally:
+        session.close()
+
+
 def test_run_detail_and_export_expose_token_usage_estimate() -> None:
     session = _new_session()
     try:
