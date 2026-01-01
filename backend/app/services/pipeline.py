@@ -586,6 +586,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 request_count=0,
                 token_usage_estimate=None,
                 detail="unsupported_provider",
+                is_cache_hit=False,
                 model_identifier=None,
                 called_at=datetime.now(timezone.utc),
             )
@@ -603,6 +604,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 request_count=0,
                 token_usage_estimate=None,
                 detail="provider_disabled",
+                is_cache_hit=False,
                 model_identifier=None,
                 called_at=datetime.now(timezone.utc),
             )
@@ -673,6 +675,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                     request_count=final_request_count,
                     token_usage_estimate=final_token_usage,
                     detail=(None if final_success else str(final_detail) if final_detail is not None else "cache_hit"),
+                    is_cache_hit=True,
                     model_identifier=final_model_identifier,
                     called_at=final_called_at,
                 )
@@ -811,6 +814,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             request_count=final_request_count,
             token_usage_estimate=final_token_usage,
             detail=(None if success else final_detail),
+            is_cache_hit=False,
             model_identifier=final_model_identifier,
             called_at=(
                 _coerce_call_timestamp(None)

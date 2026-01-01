@@ -204,6 +204,13 @@ export const runResponseSchema = z.object({
   segment_count: z.number().int().nonnegative(),
 });
 
+const llmCacheMetricsSchema = z.record(
+  z.object({
+    hits: z.number().int().nonnegative(),
+    misses: z.number().int().nonnegative(),
+  }),
+);
+
 export const runDetailSchema = z.object({
   run_id: z.number().int(),
   project_id: z.number().int(),
@@ -219,10 +226,12 @@ export const runDetailSchema = z.object({
       task_type: llmTaskTypeSchema,
       success: z.boolean(),
       request_count: z.number().int(),
+      is_cache_hit: z.boolean(),
       detail: z.string().nullable(),
       created_at: z.string(),
     }),
   ),
+  llm_cache_metrics: llmCacheMetricsSchema.default({}),
 });
 
 export type LLMTaskType = z.infer<typeof llmTaskTypeSchema>;

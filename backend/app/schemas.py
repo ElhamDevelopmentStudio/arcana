@@ -466,6 +466,12 @@ class RunLLMCallLog(BaseModel):
     called_at: str | None
     detail: str | None
     created_at: datetime
+    is_cache_hit: bool
+
+
+class LLMCacheMetrics(BaseModel):
+    hits: int = Field(ge=0)
+    misses: int = Field(ge=0)
 
 
 class RunDetailResponse(BaseModel):
@@ -476,6 +482,7 @@ class RunDetailResponse(BaseModel):
     started_at: datetime
     finished_at: datetime | None
     segment_count: int
+    llm_cache_metrics: dict[str, LLMCacheMetrics] = Field(default_factory=dict)
     llm_calls: list[RunLLMCallLog]
 
 

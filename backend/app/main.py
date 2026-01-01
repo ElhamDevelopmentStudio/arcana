@@ -2810,9 +2810,18 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
             "called_at": _serialize_datetime_to_utc_iso(call.called_at),
             "detail": call.detail,
             "created_at": call.created_at.isoformat(),
+            "is_cache_hit": call.is_cache_hit,
         }
         for call in llm_calls
     ]
+
+    cache_metrics: dict[str, dict[str, int]] = {}
+    for call in llm_calls:
+        metric = cache_metrics.setdefault(call.task_type, {"hits": 0, "misses": 0})
+        if call.is_cache_hit:
+            metric["hits"] += 1
+        else:
+            metric["misses"] += 1
 
     return RunDetailResponse(
         run_id=run.id,
@@ -2822,6 +2831,7 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
         started_at=run.started_at,
         finished_at=run.finished_at,
         segment_count=segment_count,
+        llm_cache_metrics=cache_metrics,
         llm_calls=call_payload,
     )
 
