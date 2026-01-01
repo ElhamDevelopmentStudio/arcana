@@ -5,7 +5,7 @@ from app.models import ProviderQuota
 
 
 _RATE_LIMIT_STATUS_QUOTA_REACHED = "quota_reached"
-_RATE_LIMIT_STATUS_PROVIDER_RATE_LIMITED = "provider_rate_limited"
+_RATE_LIMIT_STATUS_TEMPORARILY_UNAVAILABLE = "temporarily_unavailable"
 _RATE_LIMIT_STATUS_AVAILABLE = "available"
 
 
@@ -68,7 +68,7 @@ def mark_provider_rate_limited(session: Session, provider: str, day_key: str | N
 
     _refresh_rate_limit_status(
         quota=quota,
-        status=_RATE_LIMIT_STATUS_PROVIDER_RATE_LIMITED,
+        status=_RATE_LIMIT_STATUS_TEMPORARILY_UNAVAILABLE,
     )
     quota.blocked = True
     session.flush()
