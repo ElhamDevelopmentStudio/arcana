@@ -276,6 +276,20 @@ class LLMCall(Base):
     request_count: Mapped[int] = mapped_column(Integer, nullable=False)
     token_usage_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class LLMCache(Base):
+    __tablename__ = "llm_cache"
+    __table_args__ = (UniqueConstraint("input_text_hash", name="uq_llm_cache_input_text_hash"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    input_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -287,6 +301,27 @@ class ProviderQuota(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    day_key: Mapped[str] = mapped_column(String(20), nullable=False)
+    calls_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_calls_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
+    blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_rate_limit_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_rate_limit_status_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_rate_limit_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_successful_call_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ProviderApiKeyQuota(Base):
+    __tablename__ = "provider_api_key_quota"
+    __table_args__ = (UniqueConstraint("provider", "provider_api_key", "day_key", name="uq_provider_api_key_day"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    provider_api_key: Mapped[str] = mapped_column(String(255), nullable=False)
     day_key: Mapped[str] = mapped_column(String(20), nullable=False)
     calls_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_calls_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
