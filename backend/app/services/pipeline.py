@@ -35,6 +35,7 @@ from app.services.voice import (
 _LOW_GENDER_CONFIDENCE = 0.0
 _LOW_CONFIDENCE_GENDERS = frozenset({"neutral", "unknown"})
 _AMBIGUOUS_CHARACTER_REFERENCE = object()
+_LLM_CONFIDENCE_THRESHOLD_DEFAULT = 0.6
 
 
 class PipelineError(RuntimeError):
@@ -51,6 +52,18 @@ def _coerce_confidence(value: object) -> float:
     if confidence > 1.0:
         return 1.0
     return round(confidence, 4)
+
+
+def _coerce_confidence_threshold(value: object) -> float:
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        return _LLM_CONFIDENCE_THRESHOLD_DEFAULT
+    if threshold < 0.0:
+        return 0.0
+    if threshold > 1.0:
+        return 1.0
+    return round(threshold, 4)
 
 
 def _resolve_gender_confidence(
@@ -135,7 +148,11 @@ def _resolve_speaker_entry(
     return _character_lookup_entry_for_speaker(speaker=speaker, character_lookup=character_lookup)
 
 
-def _should_escalate_to_llm(tags: dict[str, object]) -> bool:
+def _should_escalate_to_llm(
+    tags: dict[str, object], *, confidence_threshold: float = _LLM_CONFIDENCE_THRESHOLD_DEFAULT
+) -> bool:
+    threshold = _coerce_confidence_threshold(confidence_threshold)
+
     check_states = {
         str(tags.get("type_state", "unknown")).lower(),
         str(tags.get("speaker_state", "unknown")).lower(),
@@ -150,7 +167,21 @@ def _should_escalate_to_llm(tags: dict[str, object]) -> bool:
         if isinstance(tags.get("dominance_contribution"), dict)
         else "unknown",
     }
-    return any(state in {"uncertain", "unknown"} for state in check_states)
+    if any(state in {"uncertain", "unknown"} for state in check_states):
+        return True
+
+    confidence_fields = [
+        ("type_confidence", tags.get("type_confidence")),
+        ("speaker_confidence", tags.get("speaker_confidence")),
+        ("emotion_confidence", tags.get("emotion_confidence")),
+        ("summary_confidence", tags.get("summary_tag", {}).get("confidence") if isinstance(tags.get("summary_tag"), dict) else None),
+        ("tension_confidence", tags.get("tension_contribution", {}).get("confidence") if isinstance(tags.get("tension_contribution"), dict) else None),
+        ("dominance_confidence", tags.get("dominance_contribution", {}).get("confidence") if isinstance(tags.get("dominance_contribution"), dict) else None),
+    ]
+    for _, value in confidence_fields:
+        if _coerce_confidence(value) < threshold:
+            return True
+    return False
 
 
 def execute_pipeline(session: Session, project: Project, run: Run, run_config: dict) -> dict:
@@ -377,7 +408,10 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "original_to_normalized_offset_map": segment_offset_map,
             }
             segment_payloads.append(segment_payload)
-            if llm_probe_text is None and _should_escalate_to_llm(segment_payload):
+            if llm_probe_text is None and _should_escalate_to_llm(
+                segment_payload,
+                confidence_threshold=run_config.get("llm_confidence_threshold", _LLM_CONFIDENCE_THRESHOLD_DEFAULT),
+            ):
                 llm_probe_text = original_text
 
             segment = Segment(

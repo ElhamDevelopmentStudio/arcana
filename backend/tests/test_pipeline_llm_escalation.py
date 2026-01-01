@@ -6,9 +6,12 @@ def _build_confident_tag_payload() -> dict[str, object]:
         "type_state": "certain",
         "speaker_state": "certain",
         "emotion_state": "certain",
-        "summary_tag": {"state": "certain"},
-        "tension_contribution": {"state": "certain"},
-        "dominance_contribution": {"state": "certain"},
+        "type_confidence": 0.99,
+        "speaker_confidence": 0.95,
+        "emotion_confidence": 0.92,
+        "summary_tag": {"state": "certain", "confidence": 0.94},
+        "tension_contribution": {"state": "certain", "confidence": 0.95},
+        "dominance_contribution": {"state": "certain", "confidence": 0.97},
     }
 
 
@@ -28,3 +31,14 @@ def test_should_escalate_to_llm_when_rule_state_is_missing() -> None:
         "type_state": "certain",
     }
     assert _should_escalate_to_llm(incomplete_payload) is True
+
+
+def test_should_escalate_to_llm_when_confidence_below_threshold() -> None:
+    weak_confidence_payload = _build_confident_tag_payload()
+    weak_confidence_payload["speaker_confidence"] = 0.42
+    assert _should_escalate_to_llm(weak_confidence_payload, confidence_threshold=0.6) is True
+
+
+def test_should_not_escalate_to_llm_when_confidence_meets_threshold() -> None:
+    payload = _build_confident_tag_payload()
+    assert _should_escalate_to_llm(payload, confidence_threshold=0.9) is False

@@ -35,6 +35,7 @@ class ModeDefaultProfile(TypedDict):
     llm_enabled: bool
     provider_name: str
     max_calls_per_day: int
+    llm_confidence_threshold: float
     profile_intent: str
 
 
@@ -44,6 +45,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
+        "llm_confidence_threshold": 0.6,
         "profile_intent": "tts-ready segmentation and stable narration defaults",
     },
     ProjectMode.ACADEMIC.value: {
@@ -51,6 +53,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
+        "llm_confidence_threshold": 0.6,
         "profile_intent": "longer analytical segments for metric-friendly aggregation",
     },
     ProjectMode.AUTHOR.value: {
@@ -58,6 +61,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
+        "llm_confidence_threshold": 0.6,
         "profile_intent": "balanced segmentation for narrative-health diagnostics",
     },
     ProjectMode.CUSTOM.value: {
@@ -65,6 +69,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
+        "llm_confidence_threshold": 0.6,
         "profile_intent": "user-tuned baseline with conservative defaults",
     },
 }
