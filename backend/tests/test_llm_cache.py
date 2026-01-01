@@ -27,7 +27,7 @@ def teardown_module() -> None:
         db_file.unlink()
 
 
-def test_llm_cache_table_enforces_input_text_hash_key() -> None:
+def test_llm_cache_table_includes_task_type_in_key() -> None:
     session_factory = get_session_factory()
     session = session_factory()
 
@@ -35,20 +35,37 @@ def test_llm_cache_table_enforces_input_text_hash_key() -> None:
         session.query(LLMCache).delete()
         session.commit()
 
-        first_entry = LLMCache(input_text_hash="a" * 64, response_payload={"value": "cached-response"})
+        first_entry = LLMCache(
+            input_text_hash="a" * 64,
+            task_type="emotion_refinement",
+            response_payload={"value": "cached-response"},
+        )
         session.add(first_entry)
         session.commit()
 
         assert first_entry.id is not None
         assert first_entry.created_at is not None
 
-        duplicate_entry = LLMCache(input_text_hash="a" * 64, response_payload={"value": "different"})
+        duplicate_entry = LLMCache(
+            input_text_hash="a" * 64,
+            task_type="emotion_refinement",
+            response_payload={"value": "different"},
+        )
         session.add(duplicate_entry)
         with pytest.raises(IntegrityError):
             session.commit()
         session.rollback()
-
         assert session.query(LLMCache).count() == 1
+
+        different_task_type_entry = LLMCache(
+            input_text_hash="a" * 64,
+            task_type="speaker_resolution",
+            response_payload={"value": "speaker-cache"},
+        )
+        session.add(different_task_type_entry)
+        session.commit()
+
+        assert session.query(LLMCache).count() == 2
     finally:
         session.rollback()
         session.close()
