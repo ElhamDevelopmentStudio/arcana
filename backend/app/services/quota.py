@@ -72,6 +72,29 @@ def mark_provider_rate_limited(session: Session, provider: str, day_key: str | N
     session.flush()
 
 
+def mark_provider_reset_at(
+    session: Session,
+    provider: str,
+    reset_at: datetime | None,
+    day_key: str | None = None,
+) -> None:
+    if reset_at is None:
+        return
+    if day_key is None:
+        day_key = date.today().isoformat()
+
+    quota = (
+        session.query(ProviderQuota)
+        .filter(ProviderQuota.provider == provider, ProviderQuota.day_key == day_key)
+        .one_or_none()
+    )
+    if quota is None:
+        return
+
+    quota.last_rate_limit_reset_at = reset_at
+    session.flush()
+
+
 def mark_provider_available(session: Session, provider: str, day_key: str | None = None) -> None:
     if day_key is None:
         day_key = date.today().isoformat()

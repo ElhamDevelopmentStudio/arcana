@@ -295,6 +295,7 @@ class ProviderQuota(Base):
     last_rate_limit_status_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    last_rate_limit_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_successful_call_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

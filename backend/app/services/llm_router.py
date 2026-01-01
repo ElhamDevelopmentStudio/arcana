@@ -56,6 +56,7 @@ class LLMResponse:
     token_usage_estimate: int | None
     success_flag: bool
     error_code: str | None
+    rate_limit_reset_at: datetime | None
     timestamp: str
 
 
@@ -82,6 +83,7 @@ class LLMRouter:
                 token_usage_estimate=None,
                 success_flag=False,
                 error_code="unsupported_task_type",
+                rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
@@ -97,6 +99,7 @@ class LLMRouter:
                 token_usage_estimate=None,
                 success_flag=False,
                 error_code="unsupported_provider",
+                rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
@@ -110,6 +113,7 @@ class LLMRouter:
                 token_usage_estimate=None,
                 success_flag=False,
                 error_code="missing_api_key",
+                rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
@@ -139,6 +143,7 @@ class LLMRouter:
         try:
             response = requests.post(endpoint, json=payload, headers=headers, timeout=20)
             if getattr(response, "status_code", 200) == 429:
+                rate_limit_reset_at = _extract_rate_limit_reset_timestamp(response=response)
                 return LLMResponse(
                     provider_used=provider,
                     model_identifier=model_identifier,
@@ -148,6 +153,7 @@ class LLMRouter:
                     token_usage_estimate=None,
                     success_flag=False,
                     error_code="rate_limit",
+                    rate_limit_reset_at=rate_limit_reset_at,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
@@ -168,6 +174,7 @@ class LLMRouter:
                 token_usage_estimate=token_usage,
                 success_flag=True,
                 error_code=None,
+                rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
         except requests.RequestException as exc:
@@ -176,6 +183,7 @@ class LLMRouter:
             if response is not None:
                 status_code = getattr(response, "status_code", None)
             if status_code == 429:
+                rate_limit_reset_at = _extract_rate_limit_reset_timestamp(response=response)
                 return LLMResponse(
                     provider_used=provider,
                     model_identifier=model_identifier,
@@ -185,6 +193,7 @@ class LLMRouter:
                     token_usage_estimate=None,
                     success_flag=False,
                     error_code="rate_limit",
+                    rate_limit_reset_at=rate_limit_reset_at,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
@@ -197,12 +206,73 @@ class LLMRouter:
                 token_usage_estimate=None,
                 success_flag=False,
                 error_code="provider_error",
+                rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
 
 def _normalize_provider_name(value: str) -> str:
     return str(value).strip().lower()
+
+
+def _extract_rate_limit_reset_timestamp(response: Any) -> datetime | None:
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+
+    reset_candidates = (
+        headers.get("x-ratelimit-reset"),
+        headers.get("x-ratelimit-reset-requests"),
+        headers.get("x-rate-limit-reset"),
+        headers.get("retry-after"),
+        headers.get("x-rate-limit-reset-requests"),
+    )
+
+    for candidate in reset_candidates:
+        parsed = _coerce_rate_limit_reset_timestamp(candidate)
+        if parsed is not None:
+            return parsed
+
+    return None
+
+
+def _coerce_rate_limit_reset_timestamp(value: object) -> datetime | None:
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+
+        if text.isdigit():
+            return datetime.fromtimestamp(float(text), tz=timezone.utc)
+
+        try:
+            value_as_float = float(text)
+        except ValueError:
+            value_as_float = None
+        if value_as_float is not None:
+            return datetime.fromtimestamp(value_as_float, tz=timezone.utc)
+
+        for date_format in ("%a, %d %b %Y %H:%M:%S %Z", "%a, %d %b %Y %H:%M:%S GMT"):
+            try:
+                return datetime.strptime(text, date_format).replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
+
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    return None
 
 
 def is_supported_provider(provider_name: str) -> bool:
