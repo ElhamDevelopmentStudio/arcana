@@ -83,6 +83,38 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
+### LLM provider keys and failover behavior
+
+Set provider credentials in `backend/.env` (copied from `.env.example`) before running LLM-dependent features.
+
+- OpenRouter:
+  - `OPENROUTER_API_KEY`
+  - `OPENROUTER_API_KEYS`
+- SiliconFlow:
+  - `SILICONFLOW_API_KEY`
+  - `SILICONFLOW_API_KEYS`
+- Groq:
+  - `GROQ_API_KEY`
+  - `GROQ_API_KEYS`
+
+Multi-key formats:
+- Comma-separated: `OPENROUTER_API_KEYS=key_a,key_b,key_c`
+- JSON-style array: `OPENROUTER_API_KEYS=["key_a","key_b","key_c"]`
+
+Parsing behavior:
+- If `*_API_KEYS` is present and non-empty, it is used as the ordered key list.
+- If no multi-key value is provided, the single-key variable `*_API_KEY` is used as a fallback.
+- Keys are tried in listed order.
+
+Failover order:
+- The requested provider is tried first.
+- Within that provider, all available keys are consumed in order.
+- If all keys are rate-limited/quota-exhausted for that provider, the system marks provider as temporarily unavailable and tries the next provider in `LLM_PROVIDER_PRIORITY_ORDER` (default: `openrouter,siliconflow,groq`).
+- The provider that returned success is recorded for that probe run.
+- If the requested provider is manually disabled, the run returns `provider_disabled` for that request without fallback.
+
+Manual provider toggles are supported and tracked via provider availability rules already configured in the backend.
+
 ### Frontend
 
 ```bash

@@ -309,7 +309,7 @@ Definition of done for each task:
 - [x] [LLM-019] Add multiple API key support per provider.
 - [x] [LLM-020] Add provider priority ordering config.
 - [x] [LLM-021] Add manual provider enable/disable toggles.
-- [ ] [LLM-022] Implement failover to next provider when one is unavailable.
+- [X] [LLM-022] Implement failover to next provider when one is unavailable.
 - [ ] [LLM-023] Add deterministic mode logs: provider/model/timestamp/token usage.
 - [ ] [LLM-024] Add tests for quota exhaustion and recovery behavior.
 
