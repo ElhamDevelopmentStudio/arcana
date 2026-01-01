@@ -1,5 +1,4 @@
 from datetime import date
-
 from sqlalchemy.orm import Session
 
 from app.models import ProviderQuota
@@ -36,3 +35,16 @@ def consume_quota(session: Session, provider: str, max_calls_per_day: int) -> tu
     quota.blocked = quota.calls_used >= quota.max_calls_per_day
     session.flush()
     return True, quota.calls_used
+
+
+def get_provider_request_count(session: Session, provider: str, day_key: str | None = None) -> int:
+    if day_key is None:
+        day_key = date.today().isoformat()
+
+    row = (
+        session.query(ProviderQuota.calls_used)
+        .filter(ProviderQuota.provider == provider, ProviderQuota.day_key == day_key)
+        .one_or_none()
+    )
+
+    return 0 if row is None else int(row[0])
