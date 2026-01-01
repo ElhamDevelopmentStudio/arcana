@@ -21,6 +21,7 @@ from app.services.llm_router import (
     get_provider_runtime_settings,
     is_supported_provider,
 )
+from app.services.provider_toggle import is_provider_enabled
 from app.services.character_merge import normalize_candidate_key
 from app.services.character_analytics import (
     build_character_occurrence_analytics,
@@ -524,6 +525,21 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 request_count=0,
                 token_usage_estimate=None,
                 detail="unsupported_provider",
+            )
+        )
+        session.flush()
+        return
+
+    if not is_provider_enabled(session=session, provider=provider):
+        session.add(
+            LLMCall(
+                run_id=run.id,
+                provider=provider,
+                task_type=LLMTaskType.SENTIMENT_PROBE.value,
+                success=False,
+                request_count=0,
+                token_usage_estimate=None,
+                detail="provider_disabled",
             )
         )
         session.flush()

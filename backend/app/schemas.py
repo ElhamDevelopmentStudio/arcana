@@ -31,6 +31,19 @@ class ProjectLLMSettingsResponse(BaseModel):
     llm_enabled: bool
 
 
+class LLMProviderStatus(BaseModel):
+    provider: str = Field(min_length=1)
+    enabled: bool
+
+
+class LLMProviderStatusUpdateRequest(BaseModel):
+    enabled: bool
+
+
+class LLMProvidersResponse(BaseModel):
+    providers: list[LLMProviderStatus]
+
+
 ALLOWED_GENDER_VALUES = frozenset({"male", "female", "neutral", "unknown", "custom"})
 INTERNAL_THOUGHT_VOICE_POLICIES = frozenset({"character", "narrator", "thought_voice"})
 
