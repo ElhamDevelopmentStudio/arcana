@@ -39,6 +39,7 @@ def test_llm_cache_table_includes_task_type_in_key() -> None:
             input_text_hash="a" * 64,
             task_type="emotion_refinement",
             configuration_snapshot_id="snapshot-1",
+            model_identifier="gpt-4-mini",
             response_payload={"value": "cached-response"},
         )
         session.add(first_entry)
@@ -51,6 +52,7 @@ def test_llm_cache_table_includes_task_type_in_key() -> None:
             input_text_hash="a" * 64,
             task_type="emotion_refinement",
             configuration_snapshot_id="snapshot-1",
+            model_identifier="gpt-4-mini",
             response_payload={"value": "different"},
         )
         session.add(duplicate_entry)
@@ -63,6 +65,7 @@ def test_llm_cache_table_includes_task_type_in_key() -> None:
             input_text_hash="a" * 64,
             task_type="speaker_resolution",
             configuration_snapshot_id="snapshot-1",
+            model_identifier="gpt-4-mini",
             response_payload={"value": "speaker-cache"},
         )
         session.add(different_task_type_entry)
@@ -74,12 +77,36 @@ def test_llm_cache_table_includes_task_type_in_key() -> None:
             input_text_hash="a" * 64,
             task_type="speaker_resolution",
             configuration_snapshot_id="snapshot-2",
+            model_identifier="gpt-4-mini",
             response_payload={"value": "speaker-cache-snapshot-2"},
         )
         session.add(different_snapshot_entry)
         session.commit()
 
-        assert session.query(LLMCache).count() == 3
+        different_model_entry = LLMCache(
+            input_text_hash="a" * 64,
+            task_type="speaker_resolution",
+            configuration_snapshot_id="snapshot-2",
+            model_identifier="gpt-4o",
+            response_payload={"value": "speaker-cache-gpt4o"},
+        )
+        session.add(different_model_entry)
+        session.commit()
+
+        assert session.query(LLMCache).count() == 4
+
+        with pytest.raises(IntegrityError):
+            session.add(
+                LLMCache(
+                    input_text_hash="a" * 64,
+                    task_type="speaker_resolution",
+                    configuration_snapshot_id="snapshot-2",
+                    model_identifier="gpt-4o",
+                    response_payload={"value": "speaker-cache-gpt4o-dup"},
+                )
+            )
+            session.commit()
+        session.rollback()
     finally:
         session.rollback()
         session.close()
