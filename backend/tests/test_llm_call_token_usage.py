@@ -7,8 +7,9 @@ from fastapi.testclient import TestClient
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
-from app.models import LLMCall, Project, ProviderApiKeyQuota, ProviderQuota, ProviderToggle, Run
+from app.models import LLMCall, LLMCache, Project, ProviderApiKeyQuota, ProviderQuota, ProviderToggle, Run
 from app.services import llm_router, pipeline, quota as quota_service
+from app.services.llm_task_types import LLMTaskType
 
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_llm_call_token_usage.db"
@@ -854,5 +855,106 @@ def test_pipeline_stops_after_provider_quota_reached_and_recovers_next_day(monke
         assert len(call_records) == 3
         assert call_records[2].success is True
         assert call_records[2].detail is None
+    finally:
+        session.close()
+
+
+def test_pipeline_probe_uses_cache_on_exact_input_and_skips_provider_call(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="LLM Cache Hit Project", configuration_snapshot_id="snapshot-cache-001")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        calls: list[str | None] = []
+
+        class _ProbeLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                calls.append(api_key)
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="cache-eligible",
+                    parsed_output={"sentiment": "positive", "confidence": 0.96},
+                    confidence=None,
+                    token_usage_estimate=256,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-4-mini", "openrouter-key-a"),
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_priority_order",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_api_keys",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _ProbeLLMRouter)
+
+        run_config = {
+            "provider_name": "openrouter",
+            "max_calls_per_day": 10,
+            "llm_enabled": True,
+        }
+        input_text = "The same input text should be cached."
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config=run_config,
+            input_text=input_text,
+        )
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config=run_config,
+            input_text=input_text,
+        )
+
+        assert calls == ["openrouter-key-a"]
+
+        llm_calls = session.query(LLMCall).filter(LLMCall.run_id == run.id).order_by(LLMCall.id.asc()).all()
+        assert len(llm_calls) == 2
+        assert llm_calls[0].success is True
+        assert llm_calls[0].token_usage_estimate == 256
+        assert llm_calls[1].success is True
+        assert llm_calls[1].token_usage_estimate == 256
+        assert llm_calls[1].detail is None
+
+        cache_rows = session.query(LLMCache).all()
+        assert len(cache_rows) == 1
+        assert cache_rows[0].input_text_hash == pipeline._build_llm_cache_key(input_text)
+        assert cache_rows[0].task_type == LLMTaskType.SENTIMENT_PROBE.value
+        assert cache_rows[0].configuration_snapshot_id == project.configuration_snapshot_id
+        assert cache_rows[0].model_identifier == "gpt-4-mini"
     finally:
         session.close()

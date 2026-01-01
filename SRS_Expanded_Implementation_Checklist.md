@@ -318,7 +318,7 @@ Definition of done for each task:
 - [X] [CACHE-002] Include task type in cache key.
 - [X] [CACHE-003] Include configuration snapshot ID in cache key.
 - [X] [CACHE-004] Include model identifier in cache key.
-- [ ] [CACHE-005] Return cached result without provider call on exact key hit.
+- [X] [CACHE-005] Return cached result without provider call on exact key hit.
 - [ ] [CACHE-006] Track cache hit/miss metrics per task type.
 - [ ] [CACHE-007] Add cache invalidation policy docs.
 - [ ] [CACHE-008] Add tests for exact hit and near-miss behavior.
