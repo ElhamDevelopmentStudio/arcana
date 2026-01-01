@@ -335,16 +335,24 @@ def _coerce_api_key_list(value: object) -> list[str]:
     return [str(value).strip()] if str(value).strip() else []
 
 
-def _resolve_api_key(settings: Any, metadata: LLMProviderMetadata) -> str | None:
+def _resolve_api_key_list(settings: Any, metadata: LLMProviderMetadata) -> list[str]:
     if metadata.settings_key_list_key is not None:
         candidate_keys = _coerce_api_key_list(getattr(settings, metadata.settings_key_list_key, None))
         if candidate_keys:
-            return candidate_keys[0]
+            return candidate_keys
 
     api_key = getattr(settings, metadata.settings_key_key, None)
     if api_key is not None and str(api_key).strip():
-        return str(api_key).strip()
-    return None
+        return [str(api_key).strip()]
+    return []
+
+
+def get_provider_api_keys(settings: Any, provider_name: str) -> list[str]:
+    metadata = _LLM_PROVIDER_REGISTRY.get(_normalize_provider_name(provider_name))
+    if metadata is None:
+        return []
+
+    return _resolve_api_key_list(settings=settings, metadata=metadata)
 
 
 def get_provider_runtime_settings(settings: Any, provider_name: str) -> tuple[str, str, str | None]:
@@ -363,7 +371,8 @@ def get_provider_runtime_settings(settings: Any, provider_name: str) -> tuple[st
         base_url = _SILICONFLOW_BASE_URL_DEFAULT
 
     model_identifier = str(getattr(settings, metadata.settings_model_key))
-    api_key = _resolve_api_key(settings=settings, metadata=metadata)
+    provider_api_keys = get_provider_api_keys(settings=settings, provider_name=normalized_provider)
+    api_key = provider_api_keys[0] if provider_api_keys else None
     if api_key is None:
         fallback = getattr(settings, "openrouter_api_key", None)
         api_key = str(fallback) if isinstance(fallback, str) else None
