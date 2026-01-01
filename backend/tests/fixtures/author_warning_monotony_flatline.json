@@ -1,0 +1,90 @@
+[
+  {
+    "chapter_id": 1,
+    "segment_index": 1,
+    "segment_id": "flatline-1-1",
+    "emotion_valence": 0.50,
+    "emotion_intensity": 0.60,
+    "emotion_primary_label": "neutral",
+    "tension_contribution": {
+      "value": 0.40
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 2,
+    "segment_id": "flatline-1-2",
+    "emotion_valence": 0.49,
+    "emotion_intensity": 0.61,
+    "emotion_primary_label": "neutral",
+    "tension_contribution": {
+      "value": 0.41
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 3,
+    "segment_id": "flatline-1-3",
+    "emotion_valence": 0.51,
+    "emotion_intensity": 0.62,
+    "emotion_primary_label": "neutral",
+    "tension_contribution": {
+      "value": 0.42
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 4,
+    "segment_id": "flatline-1-4",
+    "emotion_valence": 0.49,
+    "emotion_intensity": 0.59,
+    "emotion_primary_label": "neutral",
+    "tension_contribution": {
+      "value": 0.43
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 5,
+    "segment_id": "flatline-1-5",
+    "emotion_valence": 0.50,
+    "emotion_intensity": 0.59,
+    "emotion_primary_label": "neutral",
+    "tension_contribution": {
+      "value": 0.42
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 6,
+    "segment_id": "flatline-1-6",
+    "emotion_valence": 0.48,
+    "emotion_intensity": 0.58,
+    "emotion_primary_label": "neutral",
+    "tension_contribution": {
+      "value": 0.41
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 7,
+    "segment_id": "flatline-1-7",
+    "emotion_valence": 0.49,
+    "emotion_intensity": 0.60,
+    "emotion_primary_label": "neutral",
+    "tension_contribution": {
+      "value": 0.40
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 8,
+    "segment_id": "flatline-1-8",
+    "emotion_valence": 0.50,
+    "emotion_intensity": 0.59,
+    "emotion_primary_label": "neutral",
+    "tension_contribution": {
+      "value": 0.42
+    }
+  }
+]

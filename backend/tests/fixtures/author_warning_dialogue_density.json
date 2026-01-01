@@ -1,0 +1,110 @@
+[
+  {
+    "chapter_id": 1,
+    "segment_index": 1,
+    "segment_id": "dialogue-1-1",
+    "type": "narration"
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 2,
+    "segment_id": "dialogue-1-2",
+    "type": "narration"
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 3,
+    "segment_id": "dialogue-1-3",
+    "type": "narration"
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 4,
+    "segment_id": "dialogue-1-4",
+    "type": "narration"
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 5,
+    "segment_id": "dialogue-1-5",
+    "type": "narration"
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 6,
+    "segment_id": "dialogue-1-6",
+    "type": "narration"
+  },
+  {
+    "chapter_id": 2,
+    "segment_index": 1,
+    "segment_id": "dialogue-2-1",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 2,
+    "segment_index": 2,
+    "segment_id": "dialogue-2-2",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 2,
+    "segment_index": 3,
+    "segment_id": "dialogue-2-3",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 2,
+    "segment_index": 4,
+    "segment_id": "dialogue-2-4",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 2,
+    "segment_index": 5,
+    "segment_id": "dialogue-2-5",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 2,
+    "segment_index": 6,
+    "segment_id": "dialogue-2-6",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 3,
+    "segment_index": 1,
+    "segment_id": "dialogue-3-1",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 3,
+    "segment_index": 2,
+    "segment_id": "dialogue-3-2",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 3,
+    "segment_index": 3,
+    "segment_id": "dialogue-3-3",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 3,
+    "segment_index": 4,
+    "segment_id": "dialogue-3-4",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 3,
+    "segment_index": 5,
+    "segment_id": "dialogue-3-5",
+    "type": "dialogue"
+  },
+  {
+    "chapter_id": 3,
+    "segment_index": 6,
+    "segment_id": "dialogue-3-6",
+    "type": "dialogue"
+  }
+]

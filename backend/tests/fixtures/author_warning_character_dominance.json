@@ -1,0 +1,52 @@
+[
+  {
+    "chapter_id": 1,
+    "segment_index": 1,
+    "segment_id": "dominance-1-1",
+    "speaker": "Iris",
+    "speaker_id": 1,
+    "dominance_contribution": {
+      "value": 1.0
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 2,
+    "segment_id": "dominance-1-2",
+    "speaker": "Iris",
+    "speaker_id": 1,
+    "dominance_contribution": {
+      "value": 1.1
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 3,
+    "segment_id": "dominance-1-3",
+    "speaker": "Iris",
+    "speaker_id": 1,
+    "dominance_contribution": {
+      "value": 1.2
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 4,
+    "segment_id": "dominance-1-4",
+    "speaker": "Iris",
+    "speaker_id": 1,
+    "dominance_contribution": {
+      "value": 1.3
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 5,
+    "segment_id": "dominance-1-5",
+    "speaker": "Lior",
+    "speaker_id": 2,
+    "dominance_contribution": {
+      "value": 0.2
+    }
+  }
+]
