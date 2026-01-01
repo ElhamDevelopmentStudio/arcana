@@ -21,9 +21,19 @@ export const projectSchema = z.object({
   title: z.string(),
   selected_mode: z.string(),
   selected_modes: z.array(z.string()),
+  llm_enabled: z.boolean(),
   configuration_snapshot_id: z.string().nullable(),
   ingestion_timestamp: z.string().nullable(),
   created_at: z.string(),
+});
+
+export const projectLLMSettingsRequestSchema = z.object({
+  llm_enabled: z.boolean(),
+});
+
+export const projectLLMSettingsResponseSchema = z.object({
+  project_id: z.number().int(),
+  llm_enabled: z.boolean(),
 });
 
 export const projectModeSwitchResponseSchema = z.object({
@@ -216,6 +226,8 @@ export const exportSchema = z.object({
 
 export type ModeCatalogDto = z.infer<typeof modeCatalogSchema>;
 export type ProjectDto = z.infer<typeof projectSchema>;
+export type ProjectLLMSettingsRequestDto = z.infer<typeof projectLLMSettingsRequestSchema>;
+export type ProjectLLMSettingsResponseDto = z.infer<typeof projectLLMSettingsResponseSchema>;
 export type ProjectModeSwitchResponseDto = z.infer<typeof projectModeSwitchResponseSchema>;
 export type IngestResponseDto = z.infer<typeof ingestResponseSchema>;
 export type CharacterImportDto = z.infer<typeof characterImportSchema>;

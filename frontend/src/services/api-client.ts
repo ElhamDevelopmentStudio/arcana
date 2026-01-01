@@ -14,12 +14,16 @@ import {
   ingestResponseSchema,
   modeCatalogSchema,
   projectSchema,
+  projectLLMSettingsRequestSchema,
+  projectLLMSettingsResponseSchema,
   projectModeSwitchResponseSchema,
   runDetailSchema,
   runRequestSchema,
   runResponseSchema,
   voiceConfigResponseSchema,
   type RunRequestDto,
+  type ProjectLLMSettingsRequestDto,
+  type ProjectLLMSettingsResponseDto,
   type VoiceConfigDto,
   type CharacterMapDto,
   type CharacterMapUpdateDto,
@@ -73,6 +77,28 @@ export class NipeApiClient {
     try {
       const response = await this.client.post('/api/projects', { title });
       return projectSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getProjectLLMSettings(projectId: number): Promise<ProjectLLMSettingsResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/llm`);
+      return projectLLMSettingsResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async updateProjectLLMSettings(
+    projectId: number,
+    payload: ProjectLLMSettingsRequestDto,
+  ): Promise<ProjectLLMSettingsResponseDto> {
+    const parsedPayload = projectLLMSettingsRequestSchema.parse(payload);
+    try {
+      const response = await this.client.put(`/api/projects/${projectId}/llm`, parsedPayload);
+      return projectLLMSettingsResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

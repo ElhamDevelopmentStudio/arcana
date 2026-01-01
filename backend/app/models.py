@@ -15,6 +15,7 @@ class Project(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     selected_mode: Mapped[str] = mapped_column(String(50), nullable=False, default=DEFAULT_MODE)
     selected_modes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    llm_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     configuration_snapshot_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     voice_config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     default_narrator_voice: Mapped[str] = mapped_column(String(255), default="narrator_default", nullable=False)
