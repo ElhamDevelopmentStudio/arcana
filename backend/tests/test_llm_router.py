@@ -9,6 +9,23 @@ def test_is_supported_provider_includes_siliconflow() -> None:
     assert llm_router.is_supported_provider("groq") is True
 
 
+def test_get_provider_runtime_settings_uses_openrouter_settings() -> None:
+    settings = SimpleNamespace(
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_model="openai/gpt-4o-mini",
+        openrouter_api_key="openrouter-key",
+    )
+
+    base_url, model_identifier, api_key = llm_router.get_provider_runtime_settings(
+        settings=settings,
+        provider_name=" openrouter ",
+    )
+
+    assert base_url == "https://openrouter.ai/api/v1"
+    assert model_identifier == "openai/gpt-4o-mini"
+    assert api_key == "openrouter-key"
+
+
 def test_get_provider_runtime_settings_uses_siliconflow_settings() -> None:
     settings = SimpleNamespace(
         openrouter_base_url="https://openrouter.ai/api/v1",

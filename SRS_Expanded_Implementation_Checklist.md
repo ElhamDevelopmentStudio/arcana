@@ -296,7 +296,7 @@ Definition of done for each task:
 - [X] [LLM-006] Add user “deep semantic refinement” opt-in trigger.
 - [x] [LLM-007] Add provider registry entries for SiliconFlow.
 - [x] [LLM-008] Add provider registry entries for Groq.
-- [ ] [LLM-009] Add provider registry entries for OpenRouter.
+- [x] [LLM-009] Add provider registry entries for OpenRouter.
 - [ ] [LLM-010] Add per-provider request count tracking.
 - [ ] [LLM-011] Add estimated token usage tracking.
 - [ ] [LLM-012] Add last known rate-limit status tracking.
