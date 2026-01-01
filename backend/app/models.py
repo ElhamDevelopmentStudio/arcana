@@ -289,6 +289,7 @@ class LLMCache(Base):
         UniqueConstraint(
             "input_text_hash",
             "task_type",
+            "configuration_snapshot_id",
             name="uq_llm_cache_input_text_hash_task_type",
         ),
     )
@@ -296,6 +297,7 @@ class LLMCache(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     input_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     task_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    configuration_snapshot_id: Mapped[str] = mapped_column(String(120), nullable=False)
     response_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
