@@ -291,3 +291,7 @@ class ProviderQuota(Base):
     calls_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_calls_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
     blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_rate_limit_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_rate_limit_status_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

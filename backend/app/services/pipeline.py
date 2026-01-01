@@ -22,7 +22,7 @@ from app.services.character_analytics import (
 )
 from app.services.llm_task_types import LLMTaskType
 from app.services.phonetics import replace_pronunciations
-from app.services.quota import consume_quota
+from app.services.quota import consume_quota, mark_provider_available, mark_provider_rate_limited
 from app.services.segmentation import segment_text_with_parent_paragraph
 from app.services.tagging import tag_segment
 from app.services.normalization import build_segment_level_offset_map
@@ -544,6 +544,11 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
     )
 
     detail = response.raw_output if response.success_flag else response.error_code
+
+    if response.success_flag:
+        mark_provider_available(session=session, provider=provider)
+    elif response.error_code == "rate_limit":
+        mark_provider_rate_limited(session=session, provider=provider)
 
     session.add(
         LLMCall(

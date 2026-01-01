@@ -138,6 +138,19 @@ class LLMRouter:
 
         try:
             response = requests.post(endpoint, json=payload, headers=headers, timeout=20)
+            if getattr(response, "status_code", 200) == 429:
+                return LLMResponse(
+                    provider_used=provider,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="rate_limit",
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
             response.raise_for_status()
             body = response.json()
             choices = body.get("choices", [])
@@ -157,7 +170,24 @@ class LLMRouter:
                 error_code=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            status_code = None
+            response = getattr(exc, "response", None)
+            if response is not None:
+                status_code = getattr(response, "status_code", None)
+            if status_code == 429:
+                return LLMResponse(
+                    provider_used=provider,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="rate_limit",
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
             return LLMResponse(
                 provider_used=provider,
                 model_identifier=model_identifier,

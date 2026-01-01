@@ -1,7 +1,20 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import ProviderQuota
+
+
+_RATE_LIMIT_STATUS_QUOTA_REACHED = "quota_reached"
+_RATE_LIMIT_STATUS_PROVIDER_RATE_LIMITED = "provider_rate_limited"
+_RATE_LIMIT_STATUS_AVAILABLE = "available"
+
+
+def _refresh_rate_limit_status(quota: ProviderQuota, status: str | None) -> None:
+    quota.last_rate_limit_status = status
+    if status is None:
+        quota.last_rate_limit_status_at = None
+    else:
+        quota.last_rate_limit_status_at = datetime.now(timezone.utc)
 
 
 def consume_quota(session: Session, provider: str, max_calls_per_day: int) -> tuple[bool, int]:
@@ -28,13 +41,54 @@ def consume_quota(session: Session, provider: str, max_calls_per_day: int) -> tu
 
     if quota.blocked or quota.calls_used >= quota.max_calls_per_day:
         quota.blocked = True
+        _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_QUOTA_REACHED)
         session.flush()
         return False, quota.calls_used
 
     quota.calls_used += 1
     quota.blocked = quota.calls_used >= quota.max_calls_per_day
+    if not quota.blocked:
+        _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_AVAILABLE)
     session.flush()
     return True, quota.calls_used
+
+
+def mark_provider_rate_limited(session: Session, provider: str, day_key: str | None = None) -> None:
+    if day_key is None:
+        day_key = date.today().isoformat()
+
+    quota = (
+        session.query(ProviderQuota)
+        .filter(ProviderQuota.provider == provider, ProviderQuota.day_key == day_key)
+        .one_or_none()
+    )
+    if quota is None:
+        return
+
+    _refresh_rate_limit_status(
+        quota=quota,
+        status=_RATE_LIMIT_STATUS_PROVIDER_RATE_LIMITED,
+    )
+    session.flush()
+
+
+def mark_provider_available(session: Session, provider: str, day_key: str | None = None) -> None:
+    if day_key is None:
+        day_key = date.today().isoformat()
+
+    quota = (
+        session.query(ProviderQuota)
+        .filter(ProviderQuota.provider == provider, ProviderQuota.day_key == day_key)
+        .one_or_none()
+    )
+    if quota is None:
+        return
+
+    _refresh_rate_limit_status(
+        quota=quota,
+        status=_RATE_LIMIT_STATUS_AVAILABLE,
+    )
+    session.flush()
 
 
 def get_provider_request_count(session: Session, provider: str, day_key: str | None = None) -> int:

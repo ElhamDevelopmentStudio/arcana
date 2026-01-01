@@ -76,5 +76,7 @@ def test_consume_quota_blocks_after_provider_limit() -> None:
 
         quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one()
         assert quota.blocked is True
+        assert quota.last_rate_limit_status == "quota_reached"
+        assert quota.last_rate_limit_status_at is not None
     finally:
         session.close()
