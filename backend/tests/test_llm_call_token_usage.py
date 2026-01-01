@@ -85,9 +85,11 @@ def test_pipeline_llm_probe_persists_token_usage_estimate(monkeypatch: object) -
             input_text="The wind turned calm and the rain stopped.",
         )
 
+        quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one()
         call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
         assert call.token_usage_estimate == 512
         assert call.success is True
+        assert quota.last_successful_call_at is not None
     finally:
         session.close()
 
@@ -141,14 +143,15 @@ def test_pipeline_rate_limit_updates_provider_quota_status(monkeypatch: object) 
             session=session,
             project=project,
             run=run,
-            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+        run_config={"provider_name": "siliconflow", "max_calls_per_day": 10},
             input_text="The storm arrived before the dawn.",
         )
 
         session.flush()
-        quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one()
+        quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "siliconflow").one()
         assert quota.last_rate_limit_status == "provider_rate_limited"
         assert quota.last_rate_limit_status_at is not None
+        assert quota.last_successful_call_at is None
     finally:
         session.close()
 
