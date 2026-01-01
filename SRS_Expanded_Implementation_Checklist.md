@@ -305,7 +305,7 @@ Definition of done for each task:
 - [x] [LLM-015] Stop calls on provider rate-limit/quota error.
 - [x] [LLM-016] Mark provider temporarily unavailable after hard limit events.
 - [x] [LLM-017] Resume provider usage after reset detection or manual enable.
-- [ ] [LLM-018] Add explicit guardrails: no bypass/circumvention behaviors.
+- [x] [LLM-018] Add explicit guardrails: no bypass/circumvention behaviors.
 - [ ] [LLM-019] Add multiple API key support per provider.
 - [ ] [LLM-020] Add provider priority ordering config.
 - [ ] [LLM-021] Add manual provider enable/disable toggles.

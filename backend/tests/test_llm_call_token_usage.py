@@ -222,6 +222,140 @@ def test_pipeline_rate_limit_reset_timestamp_is_saved_when_available(monkeypatch
         session.close()
 
 
+def test_pipeline_rejects_unknown_provider_without_invoking_router(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Unknown Provider Guardrail Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        call_count = {"value": 0}
+
+        class _UnexpectedLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                call_count["value"] += 1
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        monkeypatch.setattr(
+            pipeline,
+            "LLMRouter",
+            _UnexpectedLLMRouter,
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "api-key"),
+        )
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "  not-a-real-provider  ", "max_calls_per_day": 10},
+            input_text="This provider should never be called.",
+        )
+
+        assert call_count["value"] == 0
+
+        calls = session.query(LLMCall).filter(LLMCall.run_id == run.id).all()
+        assert len(calls) == 1
+        assert calls[0].detail == "unsupported_provider"
+        assert calls[0].request_count == 0
+        assert calls[0].provider == "not-a-real-provider"
+        assert session.query(ProviderQuota).filter(ProviderQuota.provider == "not-a-real-provider").one_or_none() is None
+    finally:
+        session.close()
+
+
+def test_pipeline_normalizes_provider_name_before_quota_tracking(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Provider Normalization Guardrail Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        class _FakeLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="ok",
+                    parsed_output={"raw": "ok"},
+                    confidence=None,
+                    token_usage_estimate=128,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "api-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _FakeLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": " OpenRouter ", "max_calls_per_day": 10},
+            input_text="Normalization should prevent provider bypass.",
+        )
+
+        quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one_or_none()
+        assert quota is not None
+        assert quota.provider == "openrouter"
+    finally:
+        session.close()
+
+
 def test_pipeline_stops_additional_llm_calls_after_provider_error(monkeypatch: object) -> None:
     session = _new_session()
     try:
