@@ -324,6 +324,47 @@ def _build_speaker_evidence(match: re.Match[str] | None, speaker: str) -> dict[s
     }
 
 
+def _build_ambiguity_flags(
+    *,
+    structure: str,
+    speaker: str,
+    speaker_confidence: float,
+    dialogue_blocks: list[dict[str, str]],
+    narration_blocks: list[dict[str, str]],
+    emotion_shift: dict[str, object],
+    narration_internal_thought_shift: dict[str, object],
+    internal_external_speech_shift: dict[str, object],
+) -> list[str]:
+    flags: list[str] = []
+
+    if speaker == "unknown":
+        flags.append("ambiguous_speaker_attribution")
+    elif speaker_confidence < 0.9:
+        flags.append("low_speaker_confidence")
+
+    if structure == STRUCTURAL_TYPE_MIXED:
+        flags.append("mixed_structure")
+
+    if len(dialogue_blocks) > 1 and narration_blocks:
+        flags.append("mixed_dialogue_and_narration")
+
+    shift_candidates: list[tuple[str, dict[str, object]]] = [
+        ("ambiguity_emotion_shift", emotion_shift),
+        ("ambiguity_narration_internal_thought_shift", narration_internal_thought_shift),
+        ("ambiguity_internal_external_speech_shift", internal_external_speech_shift),
+    ]
+    for flag_name, payload in shift_candidates:
+        evidence = payload.get("evidence")
+        if not isinstance(evidence, dict):
+            continue
+        if int(evidence.get("transition_count", 0)) > 1:
+            flags.append(flag_name)
+        elif int(evidence.get("candidate_count", 0)) > 1:
+            flags.append(flag_name)
+
+    return sorted(set(flags))
+
+
 def _build_emotion_evidence(
     positive_hits: list[dict[str, object]],
     negative_hits: list[dict[str, object]],
@@ -1468,6 +1509,16 @@ def tag_segment(text: str) -> dict[str, object]:
             ),
         },
     }
+    ambiguity_flags = _build_ambiguity_flags(
+        structure=structure,
+        speaker=speaker,
+        speaker_confidence=speaker_confidence,
+        dialogue_blocks=dialogue_blocks,
+        narration_blocks=narration_blocks,
+        emotion_shift=emotion_shift,
+        narration_internal_thought_shift=narration_internal_thought_shift,
+        internal_external_speech_shift=internal_external_speech_shift,
+    )
 
     return {
         "type": structure,
@@ -1513,4 +1564,5 @@ def tag_segment(text: str) -> dict[str, object]:
             "confidence": dominance_confidence,
             "state": dominance_state,
         },
+        "ambiguity_flags": ambiguity_flags,
     }

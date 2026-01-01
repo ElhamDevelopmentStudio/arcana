@@ -42,3 +42,15 @@ def test_should_escalate_to_llm_when_confidence_below_threshold() -> None:
 def test_should_not_escalate_to_llm_when_confidence_meets_threshold() -> None:
     payload = _build_confident_tag_payload()
     assert _should_escalate_to_llm(payload, confidence_threshold=0.9) is False
+
+
+def test_should_escalate_to_llm_when_ambiguity_flag_is_raised() -> None:
+    ambiguous_payload = _build_confident_tag_payload()
+    ambiguous_payload["ambiguity_flags"] = ["ambiguous_speaker_attribution"]
+    assert _should_escalate_to_llm(ambiguous_payload) is True
+
+
+def test_should_not_escalate_to_llm_with_empty_ambiguity_flags() -> None:
+    payload = _build_confident_tag_payload()
+    payload["ambiguity_flags"] = []
+    assert _should_escalate_to_llm(payload) is False

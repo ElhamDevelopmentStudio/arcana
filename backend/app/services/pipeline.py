@@ -152,6 +152,17 @@ def _should_escalate_to_llm(
     tags: dict[str, object], *, confidence_threshold: float = _LLM_CONFIDENCE_THRESHOLD_DEFAULT
 ) -> bool:
     threshold = _coerce_confidence_threshold(confidence_threshold)
+    ambiguity_flags = tags.get("ambiguity_flags")
+    if isinstance(ambiguity_flags, str):
+        if ambiguity_flags.strip():
+            return True
+    elif isinstance(ambiguity_flags, (list, tuple, set)):
+        for flag in ambiguity_flags:
+            if str(flag).strip():
+                return True
+    elif isinstance(ambiguity_flags, dict):
+        if any(bool(value) for value in ambiguity_flags.values()):
+            return True
 
     check_states = {
         str(tags.get("type_state", "unknown")).lower(),
@@ -369,6 +380,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "speaker_state": tags.get("speaker_state", "uncertain"),
                 "emotion_state": tags.get("emotion_state", "uncertain"),
                 "summary_tag": tags.get("summary_tag", {}),
+                "ambiguity_flags": tags.get("ambiguity_flags", []),
                 "emotion_evidence": tags.get("emotion_evidence", {}),
                 "tag_states": {
                     "type": tags.get("type_state", "uncertain"),

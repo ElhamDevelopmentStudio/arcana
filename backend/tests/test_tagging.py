@@ -83,6 +83,15 @@ def test_tag_segment_marks_unknown_state_for_unattributed_narrative_speaker() ->
     assert tags["speaker_state"] == "unknown"
 
 
+def test_tag_segment_flags_ambiguous_speaker_without_attribution() -> None:
+    tags = tag_segment('"Hold on."')
+    assert tags["speaker"] == "unknown"
+    assert tags["speaker_state"] in {"uncertain", "unknown"}
+    assert "ambiguity_flags" in tags
+    assert "ambiguous_speaker_attribution" in tags["ambiguity_flags"]
+    assert "low_speaker_confidence" not in tags["ambiguity_flags"]
+
+
 def test_tag_segment_includes_tension_contribution_tag() -> None:
     tags = tag_segment("He bolted to the door as she shouted, \"Help!\" then the alarm rang.")
     tension = tags["tension_contribution"]
