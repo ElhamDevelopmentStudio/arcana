@@ -336,7 +336,7 @@ Definition of done for each task:
 - [x] [PAL-002] Implement provider selector using availability+quota+priority.
 - [x] [PAL-003] Implement dispatch and response parser abstraction.
 - [x] [PAL-004] Implement failure classification (`rate_limit`, `quota`, `timeout`, `service_unavailable`, `other`).
-- [ ] [PAL-005] Implement retry policy by error class.
+- [x] [PAL-005] Implement retry policy by error class.
 - [ ] [PAL-006] Implement failover handoff to next provider.
 - [ ] [PAL-007] Add usage metrics logging hooks in router.
 - [ ] [PAL-008] Define standardized request object fields exactly per SRS.

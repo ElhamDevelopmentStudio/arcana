@@ -448,6 +448,197 @@ def test_llm_router_call_hits_provider_base_url_and_model(monkeypatch: object) -
     assert observed["headers"]["Authorization"] == "Bearer siliconflow-key"
 
 
+def test_llm_router_call_retries_on_timeout_errors(monkeypatch: object) -> None:
+    observed = {"attempts": 0}
+
+    class DummyTimeoutResponse:
+        status_code = 200
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [{"message": {"content": "{\"sentiment\":\"neutral\",\"confidence\":0.9}"}}],
+                "usage": {"total_tokens": 7},
+            }
+
+    def fake_post(_url: str, *args: object, **kwargs: object) -> object:
+        observed["attempts"] += 1
+        if observed["attempts"] == 1:
+            raise llm_router.requests.Timeout()
+        return DummyTimeoutResponse()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    router = llm_router.LLMRouter("https://api.siliconflow.cn/v1")
+    response = router.call(
+        request=llm_router.LLMRequest(
+            request_id="router-timeout-retry",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="The wind turned calm.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-timeout-retry",
+        ),
+        provider_name="SILICONFLOW",
+        model_identifier="deepseek-ai/DeepSeek-V3",
+        api_key="siliconflow-key",
+    )
+
+    assert response.success_flag is True
+    assert response.raw_output == '{"sentiment":"neutral","confidence":0.9}'
+    assert observed["attempts"] == 2
+
+
+def test_llm_router_call_retries_on_service_unavailable(monkeypatch: object) -> None:
+    observed = {"attempts": 0}
+
+    class DummyServiceUnavailableResponse:
+        status_code = 503
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {}
+
+    class DummySuccessResponse:
+        status_code = 200
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [{"message": {"content": "{\"sentiment\":\"positive\",\"confidence\":0.9}"}}],
+                "usage": {"total_tokens": 8},
+            }
+
+    def fake_post(_url: str, *args: object, **kwargs: object) -> object:
+        observed["attempts"] += 1
+        if observed["attempts"] == 1:
+            return DummyServiceUnavailableResponse()
+        return DummySuccessResponse()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    router = llm_router.LLMRouter("https://api.groq.com/openai/v1")
+    response = router.call(
+        request=llm_router.LLMRequest(
+            request_id="router-service-unavailable-retry",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="A scene changes.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-service-unavailable-retry",
+        ),
+        provider_name="GROQ",
+        model_identifier="llama-3.3-70b-versatile",
+        api_key="groq-key",
+    )
+
+    assert response.success_flag is True
+    assert response.raw_output == '{"sentiment":"positive","confidence":0.9}'
+    assert observed["attempts"] == 2
+
+
+def test_llm_router_call_does_not_retry_on_rate_limit(monkeypatch: object) -> None:
+    observed = {"attempts": 0}
+
+    class DummyRateLimitResponse:
+        status_code = 429
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {"retry-after": "60"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {}
+
+    def fake_post(_url: str, *args: object, **kwargs: object) -> object:
+        observed["attempts"] += 1
+        return DummyRateLimitResponse()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    router = llm_router.LLMRouter("https://api.openrouter.ai/v1")
+    response = router.call(
+        request=llm_router.LLMRequest(
+            request_id="router-rate-limit-no-retry",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="The storm was loud.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-rate-limit-no-retry",
+        ),
+        provider_name="OPENROUTER",
+        model_identifier="openai/gpt-4o-mini",
+        api_key="openrouter-key",
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "rate_limit"
+    assert observed["attempts"] == 1
+
+
+def test_llm_router_call_does_not_retry_on_quota(monkeypatch: object) -> None:
+    observed = {"attempts": 0}
+
+    class DummyQuotaResponse:
+        status_code = 402
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {"x-provider": "groq"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"error": {"message": "quota limit reached"}}
+
+    def fake_post(_url: str, *args: object, **kwargs: object) -> object:
+        observed["attempts"] += 1
+        return DummyQuotaResponse()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    router = llm_router.LLMRouter("https://api.groq.com/openai/v1")
+    response = router.call(
+        request=llm_router.LLMRequest(
+            request_id="router-quota-no-retry",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="The tower fell.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-quota-no-retry",
+        ),
+        provider_name="GROQ",
+        model_identifier="llama-3.3-70b-versatile",
+        api_key="groq-key",
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "quota"
+    assert observed["attempts"] == 1
+
+
 def test_llm_router_extracts_rate_limit_reset_timestamp_from_headers(monkeypatch: object) -> None:
     response = llm_router.LLMRouter("https://api.example.com")
 

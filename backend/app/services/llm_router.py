@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Mapping
 from typing import Any
 
 import requests
@@ -12,6 +13,11 @@ from app.services import quota
 
 
 _SILICONFLOW_BASE_URL_DEFAULT = "https://api.siliconflow.cn/v1"
+_DEFAULT_ERROR_RETRY_ATTEMPTS: dict[str, int] = {
+    "timeout": 2,
+    "service_unavailable": 2,
+    "other": 1,
+}
 
 
 @dataclass(frozen=True)
@@ -267,10 +273,14 @@ class LLMRouter:
         *,
         dispatcher: LLMDispatcher | None = None,
         response_parser: LLMResponseParser | None = None,
+        error_class_retry_attempts: Mapping[str, int] | None = None,
     ) -> None:
         self.base_url = openrouter_base_url.rstrip("/")
         self.dispatcher = dispatcher or DefaultLLMDispatcher()
         self.response_parser = response_parser or DefaultLLMResponseParser()
+        self.error_class_retry_attempts = dict(_DEFAULT_ERROR_RETRY_ATTEMPTS)
+        if error_class_retry_attempts is not None:
+            self.error_class_retry_attempts.update(error_class_retry_attempts)
 
     def call(
         self,
@@ -349,14 +359,25 @@ class LLMRouter:
         }
 
         dispatch_request = LLMDispatchRequest(endpoint=endpoint, payload=payload, headers=headers)
-        dispatch_response = self.dispatcher.dispatch(request=dispatch_request)
+        attempt = 0
+        while True:
+            attempt += 1
+            dispatch_response = self.dispatcher.dispatch(request=dispatch_request)
+            response = self.response_parser.parse(
+                request=request,
+                provider_name=provider,
+                model_identifier=model_identifier,
+                dispatch_response=dispatch_response,
+            )
 
-        return self.response_parser.parse(
-            request=request,
-            provider_name=provider,
-            model_identifier=model_identifier,
-            dispatch_response=dispatch_response,
-        )
+            if response.success_flag:
+                return response
+
+            max_attempts = self.error_class_retry_attempts.get(response.error_code or "", 1)
+            if response.error_code is None or attempt >= max_attempts:
+                return response
+
+            continue
 
 
 def _coerce_json_response(response: object) -> dict[str, Any] | None:
