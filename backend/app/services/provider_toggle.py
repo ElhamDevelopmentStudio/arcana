@@ -15,6 +15,14 @@ def is_provider_enabled(session: Session, provider: str) -> bool:
     if not provider_name or not is_supported_provider(provider_name):
         return False
 
+    for pending_toggle in session.new:
+        if isinstance(pending_toggle, ProviderToggle) and _normalize_provider_name(pending_toggle.provider) == provider_name:
+            return bool(pending_toggle.enabled)
+
+    for dirty_toggle in session.dirty:
+        if isinstance(dirty_toggle, ProviderToggle) and _normalize_provider_name(dirty_toggle.provider) == provider_name:
+            return bool(dirty_toggle.enabled)
+
     row = session.query(ProviderToggle).filter(ProviderToggle.provider == provider_name).one_or_none()
     if row is None:
         return True

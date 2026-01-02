@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -10,6 +12,145 @@ from app.services import quota
 
 
 _SILICONFLOW_BASE_URL_DEFAULT = "https://api.siliconflow.cn/v1"
+
+
+@dataclass(frozen=True)
+class LLMDispatchRequest:
+    endpoint: str
+    payload: dict[str, Any]
+    headers: dict[str, str]
+
+
+@dataclass(frozen=True)
+class LLMDispatchResponse:
+    status_code: int | None
+    body: dict[str, Any] | None
+    headers: dict[str, str]
+    transport_error: str | None = None
+
+
+class LLMDispatcher:
+    def dispatch(self, request: LLMDispatchRequest) -> LLMDispatchResponse:
+        try:
+            response = requests.post(
+                request.endpoint,
+                json=request.payload,
+                headers=request.headers,
+                timeout=20,
+            )
+            return LLMDispatchResponse(
+                status_code=getattr(response, "status_code", None),
+                body=_coerce_json_response(response=response),
+                headers={
+                    str(header_key): str(header_value)
+                    for header_key, header_value in getattr(response, "headers", {}).items()
+                },
+            )
+        except requests.RequestException as exc:
+            response = getattr(exc, "response", None)
+            if response is None:
+                return LLMDispatchResponse(
+                    status_code=None,
+                    body=None,
+                    headers={},
+                    transport_error="provider_error",
+                )
+
+            return LLMDispatchResponse(
+                status_code=getattr(response, "status_code", None),
+                body=_coerce_json_response(response=response),
+                headers={
+                    str(header_key): str(header_value)
+                    for header_key, header_value in getattr(response, "headers", {}).items()
+                },
+                transport_error="provider_error",
+            )
+
+
+class LLMResponseParser:
+    def parse(
+        self,
+        request: LLMRequest,
+        provider_name: str,
+        model_identifier: str,
+        dispatch_response: LLMDispatchResponse,
+    ) -> LLMResponse:
+        provider = _normalize_provider_name(provider_name)
+        status_code = dispatch_response.status_code
+        headers = dispatch_response.headers
+        body = dispatch_response.body or {}
+
+        if status_code == 429:
+            rate_limit_reset_at = _extract_rate_limit_reset_timestamp(response=headers)
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="rate_limit",
+                rate_limit_reset_at=rate_limit_reset_at,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if status_code is None:
+            if dispatch_response.transport_error is not None:
+                return LLMResponse(
+                    provider_used=provider,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="provider_error",
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        if status_code is not None and status_code >= 400:
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="provider_error",
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        choices = body.get("choices", [])
+        raw_output = ""
+        if choices:
+            message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+            raw_output = message.get("content", "") if isinstance(message, dict) else ""
+
+        token_usage = body.get("usage", {}).get("total_tokens") if isinstance(body.get("usage", {}), dict) else None
+        return LLMResponse(
+            provider_used=provider,
+            model_identifier=model_identifier,
+            raw_output=raw_output,
+            parsed_output={"raw": raw_output},
+            confidence=None,
+            token_usage_estimate=token_usage,
+            success_flag=True,
+            error_code=None,
+            rate_limit_reset_at=None,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+
+
+class DefaultLLMDispatcher(LLMDispatcher):
+    pass
+
+
+class DefaultLLMResponseParser(LLMResponseParser):
+    pass
 
 
 @dataclass(frozen=True)
@@ -67,8 +208,16 @@ class LLMResponse:
 
 
 class LLMRouter:
-    def __init__(self, openrouter_base_url: str) -> None:
+    def __init__(
+        self,
+        openrouter_base_url: str,
+        *,
+        dispatcher: LLMDispatcher | None = None,
+        response_parser: LLMResponseParser | None = None,
+    ) -> None:
         self.base_url = openrouter_base_url.rstrip("/")
+        self.dispatcher = dispatcher or DefaultLLMDispatcher()
+        self.response_parser = response_parser or DefaultLLMResponseParser()
 
     def call(
         self,
@@ -146,75 +295,32 @@ class LLMRouter:
             "Content-Type": "application/json",
         }
 
-        try:
-            response = requests.post(endpoint, json=payload, headers=headers, timeout=20)
-            if getattr(response, "status_code", 200) == 429:
-                rate_limit_reset_at = _extract_rate_limit_reset_timestamp(response=response)
-                return LLMResponse(
-                    provider_used=provider,
-                    model_identifier=model_identifier,
-                    raw_output="",
-                    parsed_output={},
-                    confidence=None,
-                    token_usage_estimate=None,
-                    success_flag=False,
-                    error_code="rate_limit",
-                    rate_limit_reset_at=rate_limit_reset_at,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                )
+        dispatch_request = LLMDispatchRequest(endpoint=endpoint, payload=payload, headers=headers)
+        dispatch_response = self.dispatcher.dispatch(request=dispatch_request)
 
-            response.raise_for_status()
-            body = response.json()
-            choices = body.get("choices", [])
-            raw_output = ""
-            if choices:
-                raw_output = choices[0].get("message", {}).get("content", "")
+        return self.response_parser.parse(
+            request=request,
+            provider_name=provider,
+            model_identifier=model_identifier,
+            dispatch_response=dispatch_response,
+        )
 
-            token_usage = body.get("usage", {}).get("total_tokens")
-            return LLMResponse(
-                provider_used=provider,
-                model_identifier=model_identifier,
-                raw_output=raw_output,
-                parsed_output={"raw": raw_output},
-                confidence=None,
-                token_usage_estimate=token_usage,
-                success_flag=True,
-                error_code=None,
-                rate_limit_reset_at=None,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            )
-        except requests.RequestException as exc:
-            status_code = None
-            response = getattr(exc, "response", None)
-            if response is not None:
-                status_code = getattr(response, "status_code", None)
-            if status_code == 429:
-                rate_limit_reset_at = _extract_rate_limit_reset_timestamp(response=response)
-                return LLMResponse(
-                    provider_used=provider,
-                    model_identifier=model_identifier,
-                    raw_output="",
-                    parsed_output={},
-                    confidence=None,
-                    token_usage_estimate=None,
-                    success_flag=False,
-                    error_code="rate_limit",
-                    rate_limit_reset_at=rate_limit_reset_at,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                )
 
-            return LLMResponse(
-                provider_used=provider,
-                model_identifier=model_identifier,
-                raw_output="",
-                parsed_output={},
-                confidence=None,
-                token_usage_estimate=None,
-                success_flag=False,
-                error_code="provider_error",
-                rate_limit_reset_at=None,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            )
+def _coerce_json_response(response: object) -> dict[str, Any] | None:
+    if response is None:
+        return None
+
+    body = getattr(response, "json", None)
+    if not callable(body):
+        return None
+
+    try:
+        payload = body()
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
 
 
 def _normalize_provider_name(value: str) -> str:
@@ -222,7 +328,10 @@ def _normalize_provider_name(value: str) -> str:
 
 
 def _extract_rate_limit_reset_timestamp(response: Any) -> datetime | None:
-    headers = getattr(response, "headers", None)
+    if isinstance(response, dict):
+        headers = response
+    else:
+        headers = getattr(response, "headers", None)
     if not headers:
         return None
 
