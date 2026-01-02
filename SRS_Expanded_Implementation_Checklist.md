@@ -324,7 +324,7 @@ Definition of done for each task:
 - [X] [CACHE-008] Add tests for exact hit and near-miss behavior.
 
 ## 4.12.7 Deterministic Mode (Ref: SRS.md §4.12.7)
-- [ ] [DET-001] Add deterministic mode flag to run config.
+- [x] [DET-001] Add deterministic mode flag to run config.
 - [ ] [DET-002] Force deterministic processing order across all stages.
 - [ ] [DET-003] Pin model identifier/version in deterministic runs.
 - [ ] [DET-004] Persist deterministic seed and randomization config.

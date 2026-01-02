@@ -175,3 +175,57 @@ def test_integration_deep_semantic_refinement_flag_survives_run_config() -> None
         run_refinement_detail = client.get(f"/api/projects/{project_id}/runs/{run_id}")
     assert run_refinement_detail.status_code == 200
     assert run_refinement_detail.json()["config"]["deep_semantic_refinement"] is True
+
+
+def test_integration_deterministic_mode_flag_survives_run_config() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Deterministic Flag Integration"})
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_deterministic_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "allow_unfinalized_character_map": True,
+                "deterministic_mode": True,
+            },
+        )
+    assert run_deterministic_resp.status_code == 200
+    deterministic_run_id = run_deterministic_resp.json()["run_id"]
+
+    with TestClient(app) as client:
+        run_deterministic_detail = client.get(f"/api/projects/{project_id}/runs/{deterministic_run_id}")
+    assert run_deterministic_detail.status_code == 200
+    assert run_deterministic_detail.json()["config"]["deterministic_mode"] is True
+
+    with TestClient(app) as client:
+        run_override_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "allow_unfinalized_character_map": True,
+                "deterministic_mode": False,
+            },
+        )
+    assert run_override_resp.status_code == 200
+    override_run_id = run_override_resp.json()["run_id"]
+
+    with TestClient(app) as client:
+        run_override_detail = client.get(f"/api/projects/{project_id}/runs/{override_run_id}")
+    assert run_override_detail.status_code == 200
+    assert run_override_detail.json()["config"]["deterministic_mode"] is False

@@ -3,6 +3,32 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
+  useCharacterMapQuery: () => ({
+    data: {
+      project_id: 101,
+      characters: [],
+      character_map_finalized: true,
+    },
+  }),
+  useModeCatalogQuery: () => ({
+    data: {
+      modes: ['audiobook', 'academic', 'author', 'custom'],
+      default_mode: 'audiobook',
+      persisted_in: ['projects.selected_mode', 'runs.config_json.mode'],
+      mode_profiles: {
+        audiobook: {
+          max_segment_chars: 120,
+          llm_enabled: false,
+          provider_name: 'openrouter',
+          max_calls_per_day: 25,
+          llm_confidence_threshold: 0.6,
+          deep_semantic_refinement: false,
+          deterministic_mode: false,
+          profile_intent: 'tts-ready segmentation and stable narration defaults',
+        },
+      },
+    },
+  }),
   useSaveVoicesMutation: () => ({
     isMutating: false,
     trigger: vi.fn(),

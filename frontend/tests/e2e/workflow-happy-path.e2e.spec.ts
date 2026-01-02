@@ -20,6 +20,7 @@ test.beforeEach(async ({ page }) => {
         title: 'Shadow Slave PoC',
         selected_mode: 'audiobook',
         selected_modes: ['audiobook'],
+        llm_enabled: false,
         configuration_snapshot_id: 'project-101-config-initial',
         ingestion_timestamp: null,
         created_at: '2026-02-25T00:00:00Z',
@@ -66,13 +67,16 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify({
         modes: ['audiobook', 'academic', 'author', 'custom'],
         default_mode: 'audiobook',
-        persisted_in: ['projects.selected_mode'],
+        persisted_in: ['projects.selected_mode', 'runs.config_json.mode'],
         mode_profiles: {
           audiobook: {
             max_segment_chars: 120,
             llm_enabled: false,
             provider_name: 'openrouter',
             max_calls_per_day: 25,
+            llm_confidence_threshold: 0.6,
+            deep_semantic_refinement: false,
+            deterministic_mode: false,
             profile_intent: 'tts-ready segmentation and stable narration defaults',
           },
           academic: {
@@ -80,6 +84,9 @@ test.beforeEach(async ({ page }) => {
             llm_enabled: false,
             provider_name: 'openrouter',
             max_calls_per_day: 25,
+            llm_confidence_threshold: 0.6,
+            deep_semantic_refinement: false,
+            deterministic_mode: false,
             profile_intent: 'longer analytical segments for metric-friendly aggregation',
           },
           author: {
@@ -87,6 +94,9 @@ test.beforeEach(async ({ page }) => {
             llm_enabled: false,
             provider_name: 'openrouter',
             max_calls_per_day: 25,
+            llm_confidence_threshold: 0.6,
+            deep_semantic_refinement: false,
+            deterministic_mode: false,
             profile_intent: 'balanced segmentation for narrative-health diagnostics',
           },
           custom: {
@@ -94,6 +104,9 @@ test.beforeEach(async ({ page }) => {
             llm_enabled: false,
             provider_name: 'openrouter',
             max_calls_per_day: 25,
+            llm_confidence_threshold: 0.6,
+            deep_semantic_refinement: false,
+            deterministic_mode: false,
             profile_intent: 'user-tuned baseline with conservative defaults',
           },
         },
