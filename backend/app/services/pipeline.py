@@ -129,6 +129,31 @@ def _coerce_call_timestamp(value: str | None) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _append_deterministic_replay_warning(run: Run, requested_provider: str, actual_provider: str, reason: str) -> None:
+    config_snapshot = dict(run.config_json or {})
+    warnings = config_snapshot.get("deterministic_warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+
+    warnings.append(
+        {
+            "type": "deterministic_replay_warning",
+            "level": "warning",
+            "source": "llm_provider_fallback",
+            "message": (
+                f"Deterministic mode requested provider '{requested_provider}', but run used '{actual_provider}' "
+                "after provider-level retries. Exact replay across runs may diverge."
+            ),
+            "requested_provider": requested_provider,
+            "actual_provider": actual_provider,
+            "reason": reason,
+        }
+    )
+
+    config_snapshot["deterministic_warnings"] = warnings
+    run.config_json = config_snapshot
+
+
 def _build_probe_provider_order(requested_provider: str, settings: object) -> tuple[str, ...]:
     requested_provider_normalized = _normalize_provider_name_for_llm(requested_provider)
     ordered: list[str] = [requested_provider_normalized]
@@ -593,6 +618,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
 
 def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dict, input_text: str) -> None:
     provider = _normalize_provider_name_for_llm(run_config.get("provider_name", "openrouter"))
+    requested_provider = provider
     pinned_model_identifier = str(run_config.get("deterministic_model_identifier") or "").strip()
     pinned_model = pinned_model_identifier if run_config.get("deterministic_mode") else None
 
@@ -846,3 +872,13 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         )
     )
     session.flush()
+
+    if bool(run_config.get("deterministic_mode")) and final_provider != requested_provider:
+        fallback_reason = final_detail or "provider_fallback"
+        _append_deterministic_replay_warning(
+            run=run,
+            requested_provider=requested_provider,
+            actual_provider=final_provider,
+            reason=fallback_reason,
+        )
+        session.flush()
