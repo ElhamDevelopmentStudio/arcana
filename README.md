@@ -132,6 +132,14 @@ Current invalidation policy:
 - Exact-match behavior is strict: near-miss inputs or punctuation-only differences must be treated as separate keys and are not reused.
 - Run detail responses expose per-task `llm_cache_metrics` counters (`hits` / `misses`) and per-call `is_cache_hit` flags.
 
+Deterministic run model pinning:
+
+- `POST /api/projects/{project_id}/runs` accepts `deterministic_model_identifier` when `deterministic_mode` is enabled.
+- If deterministic mode is enabled and no value is provided, the backend resolves and stores the current provider model in
+  `config.deterministic_model_identifier` for that run.
+- If a value is provided, it is pinned in that run config and used for primary provider requests during that run.
+- The pinned model value is included in `run.config` and in LLM call logs (`model_identifier`).
+
 ### Frontend
 
 ```bash

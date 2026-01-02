@@ -103,6 +103,7 @@ from app.services.ingestion import (
     to_internal_utf8,
 )
 from app.services.mode_profiles import PROFILE_CONFIG_KEYS, build_run_config_snapshot
+from app.services.llm_router import get_provider_runtime_settings
 from app.services.mode_switch import mark_runs_stale_for_gender_edit, mark_runs_stale_for_mode_switch
 from app.services.character_analytics import build_character_occurrence_analytics
 from app.services.gender_comparison import compare_manual_and_inferred_gender_fields
@@ -2725,6 +2726,17 @@ def create_run(
         mode=payload.mode,
         overrides=explicit_overrides,
     )
+    if bool(run_config.get("deterministic_mode")):
+        pinned_model = str(run_config.get("deterministic_model_identifier") or "").strip()
+        if not pinned_model:
+            _, pinned_model, _ = get_provider_runtime_settings(
+                settings=get_settings(),
+                provider_name=str(run_config.get("provider_name", "openrouter")),
+            )
+        run_config["deterministic_model_identifier"] = pinned_model
+    else:
+        run_config.pop("deterministic_model_identifier", None)
+
     run_config["ingestion_warnings"] = list((project.ingestion_log_json or {}).get("warnings", []))
     run_config["normalization_report"] = (
         project.ingestion_log_json or {}

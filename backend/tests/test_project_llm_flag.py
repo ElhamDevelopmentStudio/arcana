@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_project_llm_flag.db"
 
+from app.config import get_settings
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
@@ -229,3 +230,81 @@ def test_integration_deterministic_mode_flag_survives_run_config() -> None:
         run_override_detail = client.get(f"/api/projects/{project_id}/runs/{override_run_id}")
     assert run_override_detail.status_code == 200
     assert run_override_detail.json()["config"]["deterministic_mode"] is False
+
+
+def test_integration_deterministic_run_pins_runtime_model_identifier() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Deterministic Model Pin Integration"})
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "allow_unfinalized_character_map": True,
+                "deterministic_mode": True,
+                "llm_enabled": False,
+            },
+        )
+    assert run_resp.status_code == 200
+    run_id = run_resp.json()["run_id"]
+
+    with TestClient(app) as client:
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+    assert detail_resp.status_code == 200
+
+    config = detail_resp.json()["config"]
+    assert "deterministic_model_identifier" in config
+    assert config["deterministic_model_identifier"] == get_settings().openrouter_model
+
+
+def test_integration_deterministic_model_override_is_preserved() -> None:
+    explicit_model = "custom-deterministic-model-test"
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Deterministic Model Override Integration"})
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "allow_unfinalized_character_map": True,
+                "deterministic_mode": True,
+                "deterministic_model_identifier": explicit_model,
+                "llm_enabled": False,
+            },
+        )
+    assert run_resp.status_code == 200
+    run_id = run_resp.json()["run_id"]
+
+    with TestClient(app) as client:
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+    assert detail_resp.status_code == 200
+
+    config = detail_resp.json()["config"]
+    assert config["deterministic_model_identifier"] == explicit_model
