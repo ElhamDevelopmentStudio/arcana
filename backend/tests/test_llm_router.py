@@ -448,6 +448,173 @@ def test_llm_router_call_hits_provider_base_url_and_model(monkeypatch: object) -
     assert observed["headers"]["Authorization"] == "Bearer siliconflow-key"
 
 
+def test_llm_router_call_with_failover_uses_next_provider_after_rate_limit(monkeypatch: object) -> None:
+    observed: dict[str, int] = {"openrouter": 0, "groq": 0}
+
+    class DummyRateLimitResponse:
+        status_code = 429
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {"retry-after": "45"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {}
+
+    class DummySuccessResponse:
+        status_code = 200
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [{"message": {"content": "{\"sentiment\":\"positive\",\"confidence\":0.9}"}}],
+                "usage": {"total_tokens": 11},
+            }
+
+    def fake_post(url: str, *args: object, **kwargs: object) -> object:
+        if "openrouter" in url:
+            observed["openrouter"] += 1
+            return DummyRateLimitResponse()
+        observed["groq"] += 1
+        return DummySuccessResponse()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    router = llm_router.LLMRouter("https://api.should-not-be-used.example")
+    response = router.call_with_failover(
+        request=llm_router.LLMRequest(
+            request_id="router-failover-rate-limit",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="The room dimmed.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-failover-rate-limit",
+        ),
+        provider_configs=(
+            llm_router.LLMProviderConfig(
+                provider_name="openrouter",
+                base_url="https://api.openrouter.ai/v1",
+                model_identifier="openai/gpt-4o-mini",
+                api_key="openrouter-key",
+            ),
+            llm_router.LLMProviderConfig(
+                provider_name="groq",
+                base_url="https://api.groq.com/openai/v1",
+                model_identifier="llama-3.3-70b-versatile",
+                api_key="groq-key",
+            ),
+        ),
+    )
+
+    assert response.success_flag is True
+    assert response.provider_used == "groq"
+    assert response.raw_output == '{"sentiment":"positive","confidence":0.9}'
+    assert observed["openrouter"] == 1
+    assert observed["groq"] == 1
+
+
+def test_llm_router_call_with_failover_retries_in_failed_provider_then_handoffs(monkeypatch: object) -> None:
+    observed: dict[str, int] = {"openrouter": 0, "groq": 0}
+
+    class DummyServiceUnavailableResponse:
+        status_code = 503
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {}
+
+    class DummySuccessResponse:
+        status_code = 200
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [{"message": {"content": "{\"sentiment\":\"neutral\",\"confidence\":0.76}"}}],
+                "usage": {"total_tokens": 13},
+            }
+
+    def fake_post(url: str, *args: object, **kwargs: object) -> object:
+        if "openrouter" in url:
+            observed["openrouter"] += 1
+            return DummyServiceUnavailableResponse()
+        observed["groq"] += 1
+        return DummySuccessResponse()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    router = llm_router.LLMRouter("https://api.should-not-be-used.example")
+    response = router.call_with_failover(
+        request=llm_router.LLMRequest(
+            request_id="router-failover-retry-then-failover",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="A candle flickers.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-failover-retry-then-failover",
+        ),
+        provider_configs=(
+            llm_router.LLMProviderConfig(
+                provider_name="openrouter",
+                base_url="https://api.openrouter.ai/v1",
+                model_identifier="openai/gpt-4o-mini",
+                api_key="openrouter-key",
+            ),
+            llm_router.LLMProviderConfig(
+                provider_name="groq",
+                base_url="https://api.groq.com/openai/v1",
+                model_identifier="llama-3.3-70b-versatile",
+                api_key="groq-key",
+            ),
+        ),
+    )
+
+    assert response.success_flag is True
+    assert response.provider_used == "groq"
+    assert response.raw_output == '{"sentiment":"neutral","confidence":0.76}'
+    assert observed["openrouter"] == 2
+    assert observed["groq"] == 1
+
+
+def test_llm_router_call_with_failover_no_fallback_without_candidates() -> None:
+    router = llm_router.LLMRouter("https://api.example.com")
+    response = router.call_with_failover(
+        request=llm_router.LLMRequest(
+            request_id="router-failover-empty-candidates",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="The tide moved.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-failover-empty-candidates",
+        ),
+        provider_configs=(),
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "unsupported_provider"
+    assert response.provider_used == ""
+
+
 def test_llm_router_call_retries_on_timeout_errors(monkeypatch: object) -> None:
     observed = {"attempts": 0}
 
