@@ -339,7 +339,7 @@ Definition of done for each task:
 - [x] [PAL-005] Implement retry policy by error class.
 - [x] [PAL-006] Implement failover handoff to next provider.
 - [x] [PAL-007] Add usage metrics logging hooks in router.
-- [ ] [PAL-008] Define standardized request object fields exactly per SRS.
+- [x] [PAL-008] Define standardized request object fields exactly per SRS.
 - [ ] [PAL-009] Enforce request validation for required fields.
 - [ ] [PAL-010] Define standardized response object fields exactly per SRS.
 - [ ] [PAL-011] Enforce response validation and error mapping.

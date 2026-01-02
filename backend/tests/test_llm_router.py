@@ -446,6 +446,46 @@ def test_llm_router_call_hits_provider_base_url_and_model(monkeypatch: object) -
     assert response.provider_used == "siliconflow"
     assert observed["url"] == "https://api.siliconflow.cn/v1/chat/completions"
     assert observed["headers"]["Authorization"] == "Bearer siliconflow-key"
+    assert observed["payload"]["max_tokens"] == 60
+
+
+def test_llm_router_call_honors_request_max_tokens(monkeypatch: object) -> None:
+    observed = {}
+
+    class DummyResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [{"message": {"content": "{\"sentiment\":\"positive\",\"confidence\":0.93}"}}],
+                "usage": {"total_tokens": 19},
+            }
+
+    def fake_post(_url: str, *args: object, **kwargs: object) -> DummyResponse:
+        observed["payload"] = kwargs.get("json")
+        return DummyResponse()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    router = llm_router.LLMRouter("https://api.siliconflow.cn/v1")
+    response = router.call(
+        request=llm_router.LLMRequest(
+            request_id="router-max-tokens-test",
+            project_id=2,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="The path split into two.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-max-tokens-test",
+            max_tokens=72,
+        ),
+        provider_name="SILICONFLOW",
+        model_identifier="deepseek-ai/DeepSeek-V3",
+        api_key="siliconflow-key",
+    )
+
+    assert response.success_flag is True
+    assert observed["payload"]["max_tokens"] == 72
 
 
 def test_llm_router_call_with_failover_uses_next_provider_after_rate_limit(monkeypatch: object) -> None:
