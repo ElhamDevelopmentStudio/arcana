@@ -2726,16 +2726,6 @@ def create_run(
         mode=payload.mode,
         overrides=explicit_overrides,
     )
-    if bool(run_config.get("deterministic_mode")):
-        pinned_model = str(run_config.get("deterministic_model_identifier") or "").strip()
-        if not pinned_model:
-            _, pinned_model, _ = get_provider_runtime_settings(
-                settings=get_settings(),
-                provider_name=str(run_config.get("provider_name", "openrouter")),
-            )
-        run_config["deterministic_model_identifier"] = pinned_model
-    else:
-        run_config.pop("deterministic_model_identifier", None)
 
     run_config["ingestion_warnings"] = list((project.ingestion_log_json or {}).get("warnings", []))
     run_config["normalization_report"] = (
@@ -2747,6 +2737,33 @@ def create_run(
         if key not in PROFILE_CONFIG_KEYS and key != "allow_unfinalized_character_map"
     }
     run_config.update(run_config_extra_fields)
+    if bool(run_config.get("deterministic_mode")):
+        pinned_model = str(run_config.get("deterministic_model_identifier") or "").strip()
+        if not pinned_model:
+            _, pinned_model, _ = get_provider_runtime_settings(
+                settings=get_settings(),
+                provider_name=str(run_config.get("provider_name", "openrouter")),
+            )
+        run_config["deterministic_model_identifier"] = pinned_model
+
+        deterministic_seed = run_config.get("deterministic_seed")
+        if deterministic_seed is None:
+            deterministic_seed = 0
+        deterministic_seed_int = int(deterministic_seed)
+        run_config["deterministic_seed"] = deterministic_seed_int
+
+        resolved_randomization_config = run_config.get("randomization_config")
+        if not isinstance(resolved_randomization_config, dict):
+            resolved_randomization_config = {}
+        resolved_randomization_config = dict(resolved_randomization_config)
+        resolved_randomization_config.setdefault("seed", deterministic_seed_int)
+        resolved_randomization_config.setdefault("strategy", "stable")
+        resolved_randomization_config.setdefault("shuffle_enabled", False)
+        run_config["randomization_config"] = resolved_randomization_config
+    else:
+        run_config.pop("deterministic_model_identifier", None)
+        run_config.pop("deterministic_seed", None)
+        run_config.pop("randomization_config", None)
 
     project.selected_mode = str(run_config["mode"])
     project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)

@@ -232,6 +232,138 @@ def test_integration_deterministic_mode_flag_survives_run_config() -> None:
     assert run_override_detail.json()["config"]["deterministic_mode"] is False
 
 
+def test_integration_deterministic_seed_and_randomization_config_are_persisted_with_defaults() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post(
+            "/api/projects",
+            json={"title": "Deterministic Defaults Persistence"},
+        )
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "allow_unfinalized_character_map": True,
+                "deterministic_mode": True,
+                "llm_enabled": False,
+            },
+        )
+    assert run_resp.status_code == 200
+
+    with TestClient(app) as client:
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_resp.json()['run_id']}")
+    assert detail_resp.status_code == 200
+
+    config = detail_resp.json()["config"]
+    assert config["deterministic_seed"] == 0
+    assert config["randomization_config"] == {
+        "seed": 0,
+        "strategy": "stable",
+        "shuffle_enabled": False,
+    }
+
+
+def test_integration_deterministic_seed_and_randomization_config_override() -> None:
+    explicit_seed = 20260101
+    with TestClient(app) as client:
+        project_resp = client.post(
+            "/api/projects",
+            json={"title": "Deterministic Seed Override"},
+        )
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "allow_unfinalized_character_map": True,
+                "deterministic_mode": True,
+                "deterministic_seed": explicit_seed,
+                "randomization_config": {
+                    "strategy": "custom-stable",
+                    "shuffle_enabled": True,
+                },
+                "llm_enabled": False,
+            },
+        )
+    assert run_resp.status_code == 200
+
+    with TestClient(app) as client:
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_resp.json()['run_id']}")
+    assert detail_resp.status_code == 200
+
+    config = detail_resp.json()["config"]
+    assert config["deterministic_seed"] == explicit_seed
+    assert config["randomization_config"]["seed"] == explicit_seed
+    assert config["randomization_config"]["strategy"] == "custom-stable"
+    assert config["randomization_config"]["shuffle_enabled"] is True
+
+
+def test_integration_non_deterministic_run_does_not_persist_seed_config() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post(
+            "/api/projects",
+            json={"title": "Deterministic Config Off"},
+        )
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "allow_unfinalized_character_map": True,
+                "llm_enabled": False,
+                "deterministic_seed": 999,
+                "randomization_config": {"strategy": "ignored"},
+            },
+        )
+    assert run_resp.status_code == 200
+
+    with TestClient(app) as client:
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_resp.json()['run_id']}")
+    assert detail_resp.status_code == 200
+    config = detail_resp.json()["config"]
+    assert "deterministic_seed" not in config
+    assert "randomization_config" not in config
+
+
 def test_integration_deterministic_run_pins_runtime_model_identifier() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Deterministic Model Pin Integration"})

@@ -417,6 +417,8 @@ class RunCreateRequest(BaseModel):
     max_calls_per_day: int = Field(default=25, ge=1, le=10000)
     llm_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     deterministic_model_identifier: str | None = None
+    deterministic_seed: int | None = Field(default=None, ge=0)
+    randomization_config: dict[str, object] | None = None
     allow_unfinalized_character_map: bool = False
     internal_thought_voice_policy: str = "character"
     internal_thought_voice: str | None = None
@@ -462,6 +464,24 @@ class RunCreateRequest(BaseModel):
         if len(trimmed) > 255:
             raise ValueError("deterministic_model_identifier must be 255 characters or fewer")
         return trimmed
+
+    @field_validator("deterministic_seed")
+    @classmethod
+    def deterministic_seed_must_be_non_negative(cls, value: int | None) -> int | None:
+        if value is None:
+            return None
+        if value < 0:
+            raise ValueError("deterministic_seed must be 0 or greater")
+        return value
+
+    @field_validator("randomization_config")
+    @classmethod
+    def randomization_config_must_be_mapping(cls, value: dict[str, object] | None) -> dict[str, object] | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError("randomization_config must be an object mapping")
+        return value
 
 
 class RunResponse(BaseModel):
