@@ -17,6 +17,77 @@ def _ensure_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
+def _provider_is_temporarily_blocked_until_reset(quota: ProviderQuota | ProviderApiKeyQuota, now: datetime) -> bool:
+    if quota.last_rate_limit_status != _RATE_LIMIT_STATUS_TEMPORARILY_UNAVAILABLE:
+        return False
+
+    reset_at = _ensure_utc(quota.last_rate_limit_reset_at)
+    if reset_at is None:
+        return True
+
+    return now < reset_at
+
+
+def is_provider_available_for_request(session: Session, provider: str, max_calls_per_day: int) -> bool:
+    day_key = date.today().isoformat()
+    now = datetime.now(timezone.utc)
+
+    normalized_provider = str(provider).strip().lower()
+    if not normalized_provider:
+        return False
+
+    row = (
+        session.query(ProviderQuota)
+        .filter(ProviderQuota.provider == normalized_provider, ProviderQuota.day_key == day_key)
+        .one_or_none()
+    )
+
+    if row is None:
+        return True
+
+    if row.blocked:
+        if _provider_is_temporarily_blocked_until_reset(row, now):
+            return row.calls_used < max_calls_per_day
+        return False
+
+    return row.calls_used < max_calls_per_day
+
+
+def is_api_key_available_for_request(
+    session: Session,
+    provider: str,
+    provider_api_key: str,
+    max_calls_per_day: int,
+) -> bool:
+    day_key = date.today().isoformat()
+    now = datetime.now(timezone.utc)
+
+    normalized_provider = str(provider).strip().lower()
+    normalized_key = str(provider_api_key).strip()
+    if not normalized_provider or not normalized_key:
+        return False
+
+    row = (
+        session.query(ProviderApiKeyQuota)
+        .filter(
+            ProviderApiKeyQuota.provider == normalized_provider,
+            ProviderApiKeyQuota.provider_api_key == normalized_key,
+            ProviderApiKeyQuota.day_key == day_key,
+        )
+        .one_or_none()
+    )
+
+    if row is None:
+        return True
+
+    if row.blocked:
+        if _provider_is_temporarily_blocked_until_reset(row, now):
+            return row.calls_used < max_calls_per_day
+        return False
+
+    return row.calls_used < max_calls_per_day
+
+
 def _refresh_rate_limit_status(quota: ProviderQuota, status: str | None) -> None:
     quota.last_rate_limit_status = status
     if status is None:

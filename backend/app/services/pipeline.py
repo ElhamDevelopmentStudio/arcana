@@ -21,7 +21,6 @@ from app.services.llm_router import (
     LLMRequest,
     LLMRouter,
     get_provider_api_keys,
-    get_provider_priority_order,
     get_provider_runtime_settings,
     is_supported_provider,
 )
@@ -154,14 +153,21 @@ def _append_deterministic_replay_warning(run: Run, requested_provider: str, actu
     run.config_json = config_snapshot
 
 
-def _build_probe_provider_order(requested_provider: str, settings: object) -> tuple[str, ...]:
-    requested_provider_normalized = _normalize_provider_name_for_llm(requested_provider)
-    ordered: list[str] = [requested_provider_normalized]
-    for provider in get_provider_priority_order(settings=settings):
-        normalized = _normalize_provider_name_for_llm(provider)
-        if normalized and normalized not in ordered:
-            ordered.append(normalized)
-    return tuple(ordered)
+def _build_probe_provider_order(
+    session: Session,
+    requested_provider: str,
+    settings: object,
+    max_calls_per_day: int,
+) -> tuple[str, ...]:
+    provider_order = llm_router.select_probe_provider_candidates(
+        session=session,
+        settings=settings,
+        requested_provider=requested_provider,
+        max_calls_per_day=max_calls_per_day,
+    )
+    if requested_provider not in provider_order:
+        return (requested_provider, *provider_order)
+    return provider_order
 
 
 def _normalize_provider_name_for_llm(value: object) -> str:
@@ -660,7 +666,12 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
 
     max_calls_per_day = int(run_config.get("max_calls_per_day", 25))
     settings = get_settings()
-    provider_candidates = _build_probe_provider_order(requested_provider=provider, settings=settings)
+    provider_candidates = _build_probe_provider_order(
+        session=session,
+        requested_provider=provider,
+        settings=settings,
+        max_calls_per_day=max_calls_per_day,
+    )
     configuration_snapshot_id = str(project.configuration_snapshot_id or f"run-{run.id}")
 
     request = LLMRequest(
@@ -684,12 +695,18 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         if not is_supported_provider(active_provider):
             continue
 
-        if not is_provider_enabled(session=session, provider=active_provider):
-            if active_provider == provider:
-                final_detail = "provider_disabled"
-                final_provider = active_provider
-                break
-            continue
+        provider_requestable, provider_request_reason = llm_router.is_provider_requestable(
+            session=session,
+            settings=settings,
+            provider_name=active_provider,
+            max_calls_per_day=max_calls_per_day,
+        )
+        if not provider_requestable:
+            final_provider = active_provider
+            final_detail = provider_request_reason
+            if active_provider != provider_candidates[-1]:
+                continue
+            break
 
         runtime_base_url, runtime_model_identifier, runtime_api_key = get_provider_runtime_settings(
             settings=settings,
