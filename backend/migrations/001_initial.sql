@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS runs (
     id SERIAL PRIMARY KEY,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     status VARCHAR(50) NOT NULL,
+    deterministic_seed INTEGER,
+    deterministic_model_identifier VARCHAR(255),
+    deterministic_randomization_config JSONB,
     config_json JSON NOT NULL DEFAULT '{}'::json,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     finished_at TIMESTAMPTZ

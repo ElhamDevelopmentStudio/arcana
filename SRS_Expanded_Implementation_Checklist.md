@@ -378,7 +378,7 @@ Definition of done for each task:
 - [ ] [DR-008] Persist time-series metric outputs for all modes.
 - [ ] [DR-009] Persist configuration snapshot per run.
 - [ ] [DR-010] Persist model/version metadata per run.
-- [ ] [DR-011] Persist deterministic seed settings per run.
+- [x] [DR-011] Persist deterministic seed settings per run.
 - [ ] [DR-012] Persist run ID + timestamp + changelog entries.
 - [ ] [DR-013] Ensure every tag/metric can resolve back to chapter and segment.
 - [ ] [DR-014] Ensure evidence traces include original text offsets.
