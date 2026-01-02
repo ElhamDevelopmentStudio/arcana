@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Mapping
+from typing import Callable, Mapping
 from typing import Any
 
 import requests
@@ -19,6 +19,22 @@ _DEFAULT_ERROR_RETRY_ATTEMPTS: dict[str, int] = {
     "other": 1,
 }
 _DEFAULT_FAILOVER_ERROR_CODES = {"rate_limit", "quota", "timeout", "service_unavailable", "other"}
+_UNSUPPORTED_PROVIDER_ERROR_CODE = "unsupported_provider"
+
+
+@dataclass(frozen=True)
+class LLMRouterUsageMetric:
+    request_id: str
+    project_id: int
+    task_type: str
+    provider: str
+    model_identifier: str
+    attempt_index: int
+    success: bool
+    error_code: str | None
+    provider_base_url: str
+    elapsed_ms: float
+    token_usage_estimate: int | None = None
 
 
 @dataclass(frozen=True)
@@ -283,11 +299,13 @@ class LLMRouter:
         dispatcher: LLMDispatcher | None = None,
         response_parser: LLMResponseParser | None = None,
         error_class_retry_attempts: Mapping[str, int] | None = None,
+        usage_metric_hooks: tuple[Callable[[LLMRouterUsageMetric], None], ...] | None = None,
     ) -> None:
         self.base_url = openrouter_base_url.rstrip("/")
         self.dispatcher = dispatcher or DefaultLLMDispatcher()
         self.response_parser = response_parser or DefaultLLMResponseParser()
         self.error_class_retry_attempts = dict(_DEFAULT_ERROR_RETRY_ATTEMPTS)
+        self.usage_metric_hooks = usage_metric_hooks or ()
         if error_class_retry_attempts is not None:
             self.error_class_retry_attempts.update(error_class_retry_attempts)
 
@@ -337,7 +355,7 @@ class LLMRouter:
                 confidence=None,
                 token_usage_estimate=None,
                 success_flag=False,
-                error_code="unsupported_provider",
+                error_code=_UNSUPPORTED_PROVIDER_ERROR_CODE,
                 rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
@@ -397,7 +415,7 @@ class LLMRouter:
                 confidence=None,
                 token_usage_estimate=None,
                 success_flag=False,
-                error_code="unsupported_provider",
+                error_code=_UNSUPPORTED_PROVIDER_ERROR_CODE,
                 rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
@@ -443,6 +461,7 @@ class LLMRouter:
         attempt = 0
         while True:
             attempt += 1
+            started_at = datetime.now(timezone.utc)
             dispatch_response = self.dispatcher.dispatch(request=dispatch_request)
             response = self.response_parser.parse(
                 request=request,
@@ -450,15 +469,70 @@ class LLMRouter:
                 model_identifier=model_identifier,
                 dispatch_response=dispatch_response,
             )
+            elapsed_ms = (datetime.now(timezone.utc) - started_at).total_seconds() * 1000
 
             if response.success_flag:
+                self._emit_usage_metric(
+                    request=request,
+                    provider=provider,
+                    model_identifier=model_identifier,
+                    base_url=base_url,
+                    attempt_index=attempt,
+                    success=True,
+                    error_code=None,
+                    elapsed_ms=elapsed_ms,
+                    token_usage_estimate=response.token_usage_estimate,
+                )
                 return response
 
             max_attempts = self.error_class_retry_attempts.get(response.error_code or "", 1)
+            self._emit_usage_metric(
+                request=request,
+                provider=provider,
+                model_identifier=model_identifier,
+                base_url=base_url,
+                attempt_index=attempt,
+                success=False,
+                error_code=response.error_code,
+                elapsed_ms=elapsed_ms,
+                token_usage_estimate=response.token_usage_estimate,
+            )
             if response.error_code is None or attempt >= max_attempts:
                 return response
 
             continue
+
+    def _emit_usage_metric(
+        self,
+        *,
+        request: LLMRequest,
+        provider: str,
+        model_identifier: str,
+        base_url: str,
+        attempt_index: int,
+        success: bool,
+        error_code: str | None,
+        elapsed_ms: float,
+        token_usage_estimate: int | None,
+    ) -> None:
+        if not self.usage_metric_hooks:
+            return
+
+        metric = LLMRouterUsageMetric(
+            request_id=request.request_id,
+            project_id=request.project_id,
+            task_type=request.task_type,
+            provider=provider,
+            model_identifier=model_identifier,
+            attempt_index=attempt_index,
+            success=success,
+            error_code=error_code,
+            provider_base_url=base_url.rstrip("/"),
+            elapsed_ms=elapsed_ms,
+            token_usage_estimate=token_usage_estimate,
+        )
+        for hook in self.usage_metric_hooks:
+            hook(metric)
 
 
 def _coerce_json_response(response: object) -> dict[str, Any] | None:
