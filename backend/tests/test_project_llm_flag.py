@@ -440,3 +440,78 @@ def test_integration_deterministic_model_override_is_preserved() -> None:
 
     config = detail_resp.json()["config"]
     assert config["deterministic_model_identifier"] == explicit_model
+
+
+def test_integration_deterministic_repeat_runs_are_equivalent() -> None:
+    explicit_seed = 20260102
+    run_payload = {
+        "mode": "author",
+        "max_segment_chars": 120,
+        "provider_name": "openrouter",
+        "max_calls_per_day": 5,
+        "allow_unfinalized_character_map": True,
+        "deterministic_mode": True,
+        "deterministic_seed": explicit_seed,
+        "randomization_config": {"strategy": "stable", "shuffle_enabled": False},
+        "llm_enabled": False,
+    }
+
+    with TestClient(app) as client:
+        project_resp = client.post(
+            "/api/projects",
+            json={"title": "Deterministic Repeat Equivalence"},
+        )
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        first_run_resp = client.post(f"/api/projects/{project_id}/runs", json=run_payload)
+    assert first_run_resp.status_code == 200
+    first_run_id = first_run_resp.json()["run_id"]
+
+    with TestClient(app) as client:
+        second_run_resp = client.post(f"/api/projects/{project_id}/runs", json=run_payload)
+    assert second_run_resp.status_code == 200
+    second_run_id = second_run_resp.json()["run_id"]
+
+    with TestClient(app) as client:
+        first_detail = client.get(f"/api/projects/{project_id}/runs/{first_run_id}")
+    assert first_detail.status_code == 200
+    first_config = first_detail.json()["config"]
+
+    with TestClient(app) as client:
+        second_detail = client.get(f"/api/projects/{project_id}/runs/{second_run_id}")
+    assert second_detail.status_code == 200
+    second_config = second_detail.json()["config"]
+
+    assert first_config["deterministic_mode"] is True
+    assert second_config["deterministic_mode"] is True
+    assert first_config["deterministic_seed"] == explicit_seed
+    assert second_config["deterministic_seed"] == explicit_seed
+    assert first_config["randomization_config"] == {
+        "seed": explicit_seed,
+        "strategy": "stable",
+        "shuffle_enabled": False,
+    }
+    assert second_config["randomization_config"] == {
+        "seed": explicit_seed,
+        "strategy": "stable",
+        "shuffle_enabled": False,
+    }
+
+    with TestClient(app) as client:
+        first_export = client.get(f"/api/projects/{project_id}/exports/{first_run_id}.json")
+    assert first_export.status_code == 200
+
+    with TestClient(app) as client:
+        second_export = client.get(f"/api/projects/{project_id}/exports/{second_run_id}.json")
+    assert second_export.status_code == 200
+
+    assert first_export.json()["segments"] == second_export.json()["segments"]
