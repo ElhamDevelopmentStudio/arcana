@@ -39,12 +39,19 @@ class LLMDispatcher:
                 timeout=20,
             )
             return LLMDispatchResponse(
-                status_code=getattr(response, "status_code", None),
+                status_code=getattr(response, "status_code", 200),
                 body=_coerce_json_response(response=response),
                 headers={
                     str(header_key): str(header_value)
                     for header_key, header_value in getattr(response, "headers", {}).items()
                 },
+            )
+        except requests.Timeout:
+            return LLMDispatchResponse(
+                status_code=None,
+                body=None,
+                headers={},
+                transport_error="timeout",
             )
         except requests.RequestException as exc:
             response = getattr(exc, "response", None)
@@ -53,11 +60,11 @@ class LLMDispatcher:
                     status_code=None,
                     body=None,
                     headers={},
-                    transport_error="provider_error",
+                    transport_error="other",
                 )
 
             return LLMDispatchResponse(
-                status_code=getattr(response, "status_code", None),
+                status_code=getattr(response, "status_code", 200),
                 body=_coerce_json_response(response=response),
                 headers={
                     str(header_key): str(header_value)
@@ -79,6 +86,7 @@ class LLMResponseParser:
         status_code = dispatch_response.status_code
         headers = dispatch_response.headers
         body = dispatch_response.body or {}
+        transport_error = dispatch_response.transport_error
 
         if status_code == 429:
             rate_limit_reset_at = _extract_rate_limit_reset_timestamp(response=headers)
@@ -95,22 +103,12 @@ class LLMResponseParser:
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
-        if status_code is None:
-            if dispatch_response.transport_error is not None:
-                return LLMResponse(
-                    provider_used=provider,
-                    model_identifier=model_identifier,
-                    raw_output="",
-                    parsed_output={},
-                    confidence=None,
-                    token_usage_estimate=None,
-                    success_flag=False,
-                    error_code="provider_error",
-                    rate_limit_reset_at=None,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                )
-
         if status_code is not None and status_code >= 400:
+            error_code, rate_limit_reset_at = _classify_provider_error(
+                status_code=status_code,
+                headers=headers,
+                body=body,
+            )
             return LLMResponse(
                 provider_used=provider,
                 model_identifier=model_identifier,
@@ -119,7 +117,62 @@ class LLMResponseParser:
                 confidence=None,
                 token_usage_estimate=None,
                 success_flag=False,
-                error_code="provider_error",
+                error_code=error_code,
+                rate_limit_reset_at=rate_limit_reset_at,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if status_code is None:
+            if transport_error == "timeout":
+                return LLMResponse(
+                    provider_used=provider,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="timeout",
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+            if transport_error is not None:
+                return LLMResponse(
+                    provider_used=provider,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="other",
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="other",
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if status_code is not None and status_code < 200:
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="other",
                 rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
@@ -321,6 +374,65 @@ def _coerce_json_response(response: object) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+def _classify_provider_error(
+    status_code: int,
+    headers: dict[str, str],
+    body: dict[str, Any],
+) -> tuple[str, datetime | None]:
+    if status_code == 408:
+        return "timeout", None
+
+    if status_code in (500, 502, 503, 504):
+        return "service_unavailable", None
+
+    if status_code in (401, 402, 403):
+        if _contains_indicator(body=body, headers=headers, indicators=("quota", "limit", "billing", "credit")):
+            return "quota", None
+        return "other", None
+
+    if status_code >= 500:
+        return "service_unavailable", None
+
+    return "other", None
+
+
+def _contains_indicator(body: dict[str, Any], headers: dict[str, str], indicators: tuple[str, ...]) -> bool:
+    for text in _collect_error_messages(body=body, headers=headers):
+        normalized = text.strip().lower()
+        if not normalized:
+            continue
+        if any(indicator in normalized for indicator in indicators):
+            return True
+    return False
+
+
+def _collect_error_messages(body: dict[str, Any], headers: dict[str, str]) -> tuple[str, ...]:
+    texts: list[str] = []
+    for value in headers.values():
+        if isinstance(value, str):
+            texts.append(value)
+
+    if isinstance(body, dict):
+        root_message = body.get("message")
+        if isinstance(root_message, str):
+            texts.append(root_message)
+
+        error_block = body.get("error")
+        if isinstance(error_block, str):
+            texts.append(error_block)
+        elif isinstance(error_block, dict):
+            for key in ("message", "code", "type", "error", "name"):
+                message_part = error_block.get(key)
+                if isinstance(message_part, str):
+                    texts.append(message_part)
+
+        for text_candidate in (body.get("detail"), body.get("title")):
+            if isinstance(text_candidate, str):
+                texts.append(text_candidate)
+
+    return tuple(texts)
 
 
 def _normalize_provider_name(value: str) -> str:
