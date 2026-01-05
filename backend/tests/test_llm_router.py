@@ -488,6 +488,136 @@ def test_llm_router_call_honors_request_max_tokens(monkeypatch: object) -> None:
     assert observed["payload"]["max_tokens"] == 72
 
 
+def test_llm_router_call_rejects_invalid_request_fields() -> None:
+    router = llm_router.LLMRouter("https://api.siliconflow.cn/v1")
+    response = router.call(
+        request=llm_router.LLMRequest(
+            request_id="",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="Text",
+            expected_schema={"sentiment": "string"},
+            configuration_snapshot_id="missing-id",
+        ),
+        provider_name="SILICONFLOW",
+        model_identifier="deepseek-ai/DeepSeek-V3",
+        api_key="siliconflow-key",
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "invalid_request"
+
+
+def test_llm_router_call_rejects_invalid_request_max_tokens() -> None:
+    router = llm_router.LLMRouter("https://api.siliconflow.cn/v1")
+    response = router.call(
+        request=llm_router.LLMRequest(
+            request_id="invalid-max-tokens",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="Text",
+            expected_schema={"sentiment": "string"},
+            configuration_snapshot_id="invalid-max-tokens",
+            max_tokens=0,
+        ),
+        provider_name="SILICONFLOW",
+        model_identifier="deepseek-ai/DeepSeek-V3",
+        api_key="siliconflow-key",
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "invalid_request"
+
+
+def test_llm_router_call_with_failover_rejects_invalid_provider_config() -> None:
+    router = llm_router.LLMRouter("https://api.should-not-be-used.example")
+    response = router.call_with_failover(
+        request=llm_router.LLMRequest(
+            request_id="failover-invalid-config",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="Test",
+            expected_schema={"sentiment": "string"},
+            configuration_snapshot_id="invalid-provider-config",
+        ),
+        provider_configs=(
+            llm_router.LLMProviderConfig(
+                provider_name="",
+                base_url="https://api.openrouter.ai/v1",
+                model_identifier="openai/gpt-4o-mini",
+                api_key="openrouter-key",
+            ),
+        ),
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "invalid_request"
+    assert response.model_identifier == "openai/gpt-4o-mini"
+
+
+def test_llm_standard_response_fields_match_srs_contract() -> None:
+    assert llm_router.LLM_STANDARD_RESPONSE_FIELDS == (
+        "provider_used",
+        "model_identifier",
+        "raw_output",
+        "parsed_output",
+        "confidence",
+        "token_usage_estimate",
+        "success_flag",
+        "error_code",
+        "timestamp",
+    )
+
+
+def test_router_success_response_exports_standardized_payload() -> None:
+    response = llm_router.LLMResponse(
+        provider_used="openrouter",
+        model_identifier="openai/gpt-4o-mini",
+        raw_output='{ "sentiment": "neutral", "confidence": 0.9 }',
+        parsed_output={"sentiment": "neutral", "confidence": 0.9},
+        confidence=0.9,
+        token_usage_estimate=12,
+        success_flag=True,
+        error_code=None,
+        rate_limit_reset_at=None,
+        timestamp="2026-02-26T00:00:00+00:00",
+    )
+
+    payload = response.to_standardized_payload()
+
+    assert set(payload.keys()) == set(llm_router.LLM_STANDARD_RESPONSE_FIELDS)
+    assert payload["provider_used"] == "openrouter"
+    assert payload["success_flag"] is True
+
+
+def test_parser_error_response_exports_standardized_payload() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-contract-error",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="storm front",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-contract-error",
+        ),
+        provider_name="groq",
+        model_identifier="llama",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=429,
+            headers={"retry-after": "120"},
+            body={},
+        ),
+    )
+
+    payload = response.to_standardized_payload()
+
+    assert set(payload.keys()) == set(llm_router.LLM_STANDARD_RESPONSE_FIELDS)
+    assert payload["provider_used"] == "groq"
+    assert payload["success_flag"] is False
+    assert payload["error_code"] == "rate_limit"
+
+
 def test_llm_router_call_with_failover_uses_next_provider_after_rate_limit(monkeypatch: object) -> None:
     observed: dict[str, int] = {"openrouter": 0, "groq": 0}
 

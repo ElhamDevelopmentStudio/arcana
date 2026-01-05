@@ -340,8 +340,8 @@ Definition of done for each task:
 - [x] [PAL-006] Implement failover handoff to next provider.
 - [x] [PAL-007] Add usage metrics logging hooks in router.
 - [x] [PAL-008] Define standardized request object fields exactly per SRS.
-- [ ] [PAL-009] Enforce request validation for required fields.
-- [ ] [PAL-010] Define standardized response object fields exactly per SRS.
+- [x] [PAL-009] Enforce request validation for required fields.
+- [x] [PAL-010] Define standardized response object fields exactly per SRS.
 - [ ] [PAL-011] Enforce response validation and error mapping.
 - [ ] [PAL-012] Ensure core modules never import provider SDKs directly.
 - [ ] [PAL-013] Add architecture test to detect forbidden direct provider imports.
