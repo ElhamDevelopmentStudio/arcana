@@ -389,8 +389,8 @@ Definition of done for each task:
 - [x] [NFR1-001] Define performance benchmark corpus set (including large scale profile).
 - [x] [NFR1-002] Implement chunked processing framework for long corpora.
 - [x] [NFR1-003] Add parallel-safe chunk scheduler with stable ordering.
-- [ ] [NFR1-004] Add incremental-only recomputation mode for appended chapters.
-- [ ] [NFR1-005] Add performance telemetry (step durations, memory usage).
+- [x] [NFR1-004] Add incremental-only recomputation mode for appended chapters.
+- [x] [NFR1-005] Add performance telemetry (step durations, memory usage).
 
 ### NFR-2 Reliability
 - [ ] [NFR2-001] Add ordering integrity guard in every pipeline stage.
