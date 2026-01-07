@@ -23,6 +23,9 @@ from app.models import (
     Project,
     ProjectRawCorpusBlob,
     PronunciationDictionary,
+    PronunciationDictionarySnapshot,
+    TimeSeriesSnapshot,
+    VoiceMapSnapshot,
     Run,
     Segment,
 )
@@ -730,6 +733,209 @@ def _persist_character_map_snapshot(
         snapshot_json=_build_character_map_snapshot_payload(
             project_id=project_id,
             session=session,
+        ),
+    )
+
+
+def _build_pronunciation_dictionary_snapshot_payload(
+    project_id: int,
+    session: Session,
+) -> dict[str, object]:
+    entries = (
+        session.query(PronunciationDictionary)
+        .filter(PronunciationDictionary.project_id == project_id)
+        .order_by(
+            PronunciationDictionary.scope.asc(),
+            PronunciationDictionary.character_name.asc(),
+            PronunciationDictionary.term.asc(),
+        )
+        .all()
+    )
+
+    by_scope: dict[str, list[dict[str, object]]] = {
+        scope: [] for scope in ["global", "character", "place", "artifact", "invented"]
+    }
+    for entry in entries:
+        payload: dict[str, object] = {
+            "term": entry.term.strip(),
+            "verbalized_form": entry.verbalized_form.strip(),
+            "source": entry.source,
+            "confidence": entry.confidence,
+        }
+        if entry.scope == "character":
+            payload["character_name"] = entry.character_name.strip()
+        by_scope[entry.scope].append(payload)
+
+    return {
+        "schema_version": "1.0.0",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "entry_count": len(entries),
+        "by_scope": by_scope,
+    }
+
+
+def _next_pronunciation_dictionary_snapshot_version(session: Session, project_id: int) -> int:
+    latest_version = (
+        session.query(PronunciationDictionarySnapshot.version)
+        .filter(PronunciationDictionarySnapshot.project_id == project_id)
+        .order_by(PronunciationDictionarySnapshot.version.desc())
+        .first()
+    )
+    if latest_version is None:
+        return 1
+    return int(latest_version[0]) + 1
+
+
+def _persist_pronunciation_dictionary_snapshot(
+    session: Session,
+    project_id: int,
+    source: str,
+    run_id: int | None = None,
+) -> PronunciationDictionarySnapshot:
+    session.flush()
+    return PronunciationDictionarySnapshot(
+        project_id=project_id,
+        run_id=run_id,
+        version=_next_pronunciation_dictionary_snapshot_version(
+            session=session,
+            project_id=project_id,
+        ),
+        source=source.strip() or "dictionary_edit",
+        snapshot_json=_build_pronunciation_dictionary_snapshot_payload(
+            project_id=project_id,
+            session=session,
+        ),
+    )
+
+
+def _build_voice_map_snapshot_payload(project_id: int, session: Session) -> dict[str, object]:
+    character_rows = (
+        session.query(Character)
+        .filter(Character.project_id == project_id)
+        .order_by(Character.name.asc())
+        .all()
+    )
+
+    mappings: list[dict[str, object]] = []
+    explicit_map_count = 0
+    for row in character_rows:
+        mapped_voice_id = (
+            row.voice_map.voice_id.strip()
+            if getattr(row, "voice_map", None) is not None and row.voice_map.voice_id
+            else None
+        )
+        legacy_voice_id = row.voice_id.strip() if row.voice_id else None
+        resolved_voice_id = legacy_voice_id
+        voice_source = "default"
+        if mapped_voice_id:
+            resolved_voice_id = mapped_voice_id
+            voice_source = "character_voice_map"
+            explicit_map_count += 1
+        elif legacy_voice_id:
+            voice_source = "character_voice_id"
+
+        mappings.append(
+            {
+                "character_id": row.id,
+                "name": row.name.strip(),
+                "verbalized_form": row.verbalized_form.strip(),
+                "gender": row.gender.strip().lower(),
+                "voice_id": resolved_voice_id,
+                "voice_source": voice_source,
+            }
+        )
+
+    return {
+        "schema_version": "1.0.0",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "character_count": len(character_rows),
+        "explicit_character_voice_map_count": explicit_map_count,
+        "mappings": mappings,
+    }
+
+
+def _next_voice_map_snapshot_version(session: Session, project_id: int) -> int:
+    latest_version = (
+        session.query(VoiceMapSnapshot.version)
+        .filter(VoiceMapSnapshot.project_id == project_id)
+        .order_by(VoiceMapSnapshot.version.desc())
+        .first()
+    )
+    if latest_version is None:
+        return 1
+    return int(latest_version[0]) + 1
+
+
+def _persist_voice_map_snapshot(
+    session: Session,
+    project_id: int,
+    source: str,
+    run_id: int | None = None,
+) -> VoiceMapSnapshot:
+    session.flush()
+    return VoiceMapSnapshot(
+        project_id=project_id,
+        run_id=run_id,
+        version=_next_voice_map_snapshot_version(
+            session=session,
+            project_id=project_id,
+        ),
+        source=source.strip() or "voice_map_edit",
+        snapshot_json=_build_voice_map_snapshot_payload(
+            project_id=project_id,
+            session=session,
+        ),
+    )
+
+
+def _build_time_series_snapshot_payload(
+    project_id: int,
+    run_id: int,
+    run_config: dict,
+    time_series: object,
+) -> dict[str, object]:
+    serializable_time_series = time_series if isinstance(time_series, dict) else {}
+    return {
+        "schema_version": "1.0.0",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "project_id": project_id,
+        "run_id": run_id,
+        "mode": str(run_config.get("mode", DEFAULT_MODE)),
+        "segment_count": len(serializable_time_series.get("emotion_valence", [])),
+        "time_series": serializable_time_series,
+    }
+
+
+def _next_time_series_snapshot_version(session: Session, project_id: int) -> int:
+    latest_version = (
+        session.query(TimeSeriesSnapshot.version)
+        .filter(TimeSeriesSnapshot.project_id == project_id)
+        .order_by(TimeSeriesSnapshot.version.desc())
+        .first()
+    )
+    if latest_version is None:
+        return 1
+    return int(latest_version[0]) + 1
+
+
+def _persist_time_series_snapshot(
+    session: Session,
+    project_id: int,
+    source: str,
+    run: Run,
+    time_series: object,
+) -> TimeSeriesSnapshot:
+    session.flush()
+    return TimeSeriesSnapshot(
+        project_id=project_id,
+        run_id=run.id,
+        version=_next_time_series_snapshot_version(session=session, project_id=project_id),
+        source=source.strip() or "run_capture",
+        snapshot_json=_build_time_series_snapshot_payload(
+            project_id=project_id,
+            run_id=run.id,
+            run_config=dict(run.config_json or {}),
+            time_series=time_series,
         ),
     )
 
@@ -1954,6 +2160,13 @@ def import_characters(
             source="import",
         )
     )
+    session.add(
+        _persist_voice_map_snapshot(
+            session=session,
+            project_id=project_id,
+            source="import",
+        )
+    )
 
     session.commit()
 
@@ -2234,6 +2447,13 @@ def upsert_characters(
             source="upsert",
         )
     )
+    session.add(
+        _persist_voice_map_snapshot(
+            session=session,
+            project_id=project_id,
+            source="upsert",
+        )
+    )
     session.commit()
 
     return CharacterMapResponse(
@@ -2315,6 +2535,13 @@ def set_artifact_pronunciation_dictionary(
                 confidence=row.confidence,
             )
         )
+    session.add(
+        _persist_pronunciation_dictionary_snapshot(
+            session=session,
+            project_id=project_id,
+            source="artifact",
+        )
+    )
 
     session.commit()
     saved_entries = (
@@ -2391,6 +2618,13 @@ def set_invented_pronunciation_dictionary(
                 confidence=row.confidence,
             )
         )
+    session.add(
+        _persist_pronunciation_dictionary_snapshot(
+            session=session,
+            project_id=project_id,
+            source="invented",
+        )
+    )
 
     session.commit()
     saved_entries = (
@@ -2467,6 +2701,13 @@ def set_global_pronunciation_dictionary(
                 confidence=row.confidence,
             )
         )
+    session.add(
+        _persist_pronunciation_dictionary_snapshot(
+            session=session,
+            project_id=project_id,
+            source="global",
+        )
+    )
 
     session.commit()
     saved_entries = (
@@ -2540,6 +2781,14 @@ def set_place_pronunciation_dictionary(
                 confidence=row.confidence,
             )
         )
+    session.add(
+        _persist_pronunciation_dictionary_snapshot(
+            session=session,
+            project_id=project_id,
+            source="place",
+        )
+    )
+
     session.commit()
     saved_entries = (
         session.query(PronunciationDictionary)
@@ -2624,6 +2873,14 @@ def set_character_pronunciation_dictionary(
                 confidence=row.confidence,
             )
         )
+    session.add(
+        _persist_pronunciation_dictionary_snapshot(
+            session=session,
+            project_id=project_id,
+            source="character",
+        )
+    )
+
     session.commit()
 
     saved_entries = (
@@ -3026,10 +3283,28 @@ def create_run(
         source="run_capture",
     )
     session.add(character_map_snapshot)
+    pronunciation_dictionary_snapshot = _persist_pronunciation_dictionary_snapshot(
+        session=session,
+        project_id=project.id,
+        run_id=run.id,
+        source="run_capture",
+    )
+    session.add(pronunciation_dictionary_snapshot)
+    voice_map_snapshot = _persist_voice_map_snapshot(
+        session=session,
+        project_id=project.id,
+        run_id=run.id,
+        source="run_capture",
+    )
+    session.add(voice_map_snapshot)
     session.flush()
     run_config_with_snapshot = dict(run.config_json or {})
     run_config_with_snapshot["character_map_snapshot_id"] = character_map_snapshot.id
     run_config_with_snapshot["character_map_snapshot_version"] = character_map_snapshot.version
+    run_config_with_snapshot["pronunciation_dictionary_snapshot_id"] = pronunciation_dictionary_snapshot.id
+    run_config_with_snapshot["pronunciation_dictionary_snapshot_version"] = pronunciation_dictionary_snapshot.version
+    run_config_with_snapshot["voice_map_snapshot_id"] = voice_map_snapshot.id
+    run_config_with_snapshot["voice_map_snapshot_version"] = voice_map_snapshot.version
     run.config_json = run_config_with_snapshot
     session.add(run)
     session.commit()
@@ -3043,6 +3318,20 @@ def create_run(
             run=run,
             run_config=run_config,
         )
+        time_series_snapshot = _persist_time_series_snapshot(
+            session=session,
+            project_id=project.id,
+            source="run_capture",
+            run=run,
+            time_series=result["export"]["time_series"] if isinstance(result, Mapping) else {},
+        )
+        session.add(time_series_snapshot)
+        session.flush()
+        run_config_with_snapshot = dict(run.config_json or {})
+        run_config_with_snapshot["time_series_snapshot_id"] = time_series_snapshot.id
+        run_config_with_snapshot["time_series_snapshot_version"] = time_series_snapshot.version
+        run.config_json = run_config_with_snapshot
+        session.add(run)
         session.commit()
     except PipelineError as exc:
         session.rollback()

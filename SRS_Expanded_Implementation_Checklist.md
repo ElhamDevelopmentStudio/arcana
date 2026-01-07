@@ -375,7 +375,7 @@ Definition of done for each task:
 - [x] [DR-005] Persist versioned pronunciation dictionary snapshots.
 - [x] [DR-006] Persist versioned voice map snapshots.
 - [x] [DR-007] Persist tagging outputs and sub-segment outputs.
-- [ ] [DR-008] Persist time-series metric outputs for all modes.
+- [x] [DR-008] Persist time-series metric outputs for all modes.
 - [ ] [DR-009] Persist configuration snapshot per run.
 - [ ] [DR-010] Persist model/version metadata per run.
 - [x] [DR-011] Persist deterministic seed settings per run.
