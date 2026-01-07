@@ -301,6 +301,7 @@ describe('project dashboards page', () => {
     expect(screen.getByText('Audiobook Prep Readiness')).toBeInTheDocument();
     expect(screen.getByTestId('dashboards-audiobook-unresolved-speakers')).toHaveTextContent('Unresolved speaker assignments: 3');
     expect(screen.getByTestId('dashboards-audiobook-unresolved-voice-maps')).toHaveTextContent('Unresolved voice mappings: 1');
+    expect(screen.getByTestId('dashboards-audiobook-low-confidence-regions')).toHaveTextContent('Low-confidence region count: 0');
   });
 
   it('renders character prominence and trend widgets from analytics endpoint data', () => {
