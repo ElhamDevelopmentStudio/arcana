@@ -368,7 +368,7 @@ Definition of done for each task:
 - [x] [VR-016] Add dashboard snapshot export capability.
 
 ## 6. Data Persistence Requirements (Ref: SRS.md §6)
-- [ ] [DR-001] Persist raw corpus blobs with project linkage.
+- [X] [DR-001] Persist raw corpus blobs with project linkage.
 - [ ] [DR-002] Persist normalized corpus blobs with run linkage.
 - [ ] [DR-003] Persist chapterized representation with stable IDs.
 - [ ] [DR-004] Persist versioned character map snapshots.
