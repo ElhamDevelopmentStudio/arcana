@@ -297,6 +297,21 @@ export const tensionGraphResponseSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
+export const characterMentionsByChapterItemSchema = z.object({
+  chapter_index: z.number().int().positive(),
+  mention_counts: z.record(z.number().int().nonnegative()),
+});
+
+export const characterAnalyticsResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  run_id: z.number().int().positive(),
+  character_mentions_by_chapter: z.array(characterMentionsByChapterItemSchema),
+  character_first_appearance_chapter_index: z.record(z.number().int().positive().nullable()),
+  character_last_appearance_chapter_index: z.record(z.number().int().positive().nullable()),
+  character_mentions_per_1000_words: z.record(z.number().nonnegative()),
+  character_dialogue_line_counts: z.record(z.number().int().nonnegative()),
+});
+
 export const polarityGraphPointSchema = z.object({
   position: z.number().int().positive(),
   rolling_mean_valence: z.number().min(-1).max(1),
@@ -363,3 +378,5 @@ export type TensionGraphResponseDto = z.infer<typeof tensionGraphResponseSchema>
 export type PolarityGraphPointDto = z.infer<typeof polarityGraphPointSchema>;
 export type PolarityGraphVolatilityMarkerDto = z.infer<typeof polarityGraphVolatilityMarkerSchema>;
 export type PolarityGraphResponseDto = z.infer<typeof polarityGraphResponseSchema>;
+export type CharacterMentionsByChapterItemDto = z.infer<typeof characterMentionsByChapterItemSchema>;
+export type CharacterAnalyticsResponseDto = z.infer<typeof characterAnalyticsResponseSchema>;

@@ -77,6 +77,51 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isLoading: false,
     error: null,
   }),
+  useCharacterAnalyticsQuery: () => ({
+    data: {
+      project_id: 202,
+      run_id: 88,
+      character_mentions_by_chapter: [
+        {
+          chapter_index: 1,
+          mention_counts: {
+            Aya: 4,
+            Ben: 2,
+            "Captain Pike": 1,
+          },
+        },
+        {
+          chapter_index: 2,
+          mention_counts: {
+            Aya: 1,
+            Ben: 4,
+          },
+        },
+      ],
+      character_first_appearance_chapter_index: {
+        Aya: 1,
+        Ben: 1,
+        'Captain Pike': 1,
+      },
+      character_last_appearance_chapter_index: {
+        Aya: 2,
+        Ben: 2,
+        'Captain Pike': 1,
+      },
+      character_mentions_per_1000_words: {
+        Aya: 12.3,
+        Ben: 9.7,
+        'Captain Pike': 4.2,
+      },
+      character_dialogue_line_counts: {
+        Aya: 8,
+        Ben: 4,
+        'Captain Pike': 0,
+      },
+    },
+    isLoading: false,
+    error: null,
+  }),
 }));
 
 function renderDashboardPage() {
@@ -122,5 +167,20 @@ describe('project dashboards page', () => {
     expect(screen.getByRole('switch', { name: /tension smoothing toggle/i })).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByText('Data source: raw segment tension')).toBeInTheDocument();
     expect(screen.getByTestId('dashboards-tension-202-001')).toHaveTextContent('T 10%');
+  });
+
+  it('renders character prominence and trend widgets from analytics endpoint data', () => {
+    renderDashboardPage();
+
+    expect(screen.getByText('Character Prominence')).toBeInTheDocument();
+    const ayaProminenceRow = screen.getByTestId('dashboards-character-prominence-Aya');
+    expect(ayaProminenceRow).toBeInTheDocument();
+    expect(screen.getByText('Prominence: 12.30')).toBeInTheDocument();
+    expect(ayaProminenceRow).toHaveTextContent(/Total mentions:\s*5/);
+    expect(ayaProminenceRow).toHaveTextContent(/Dialogue lines:\s*8/);
+
+    expect(screen.getByText('Character Mention Trends')).toBeInTheDocument();
+    expect(screen.getByText('Per-chapter mention trajectory for top characters.')).toBeInTheDocument();
+    expect(screen.getByText('Aya: first appears in chapter 1, last appears in chapter 2.')).toBeInTheDocument();
   });
 });
