@@ -365,7 +365,7 @@ Definition of done for each task:
 - [x] [VR-013] Show unresolved voice mapping count in audiobook dashboard.
 - [x] [VR-014] Show low-confidence region count in audiobook dashboard.
 - [x] [VR-015] Show export readiness indicator with blocking reasons.
-- [ ] [VR-016] Add dashboard snapshot export capability.
+- [x] [VR-016] Add dashboard snapshot export capability.
 
 ## 6. Data Persistence Requirements (Ref: SRS.md §6)
 - [ ] [DR-001] Persist raw corpus blobs with project linkage.
