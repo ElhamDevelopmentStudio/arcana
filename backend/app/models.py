@@ -48,6 +48,11 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    character_map_snapshots: Mapped[list["CharacterMapSnapshot"]] = relationship(
+        "CharacterMapSnapshot",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
     comparison_workspace_runs: Mapped[list["ComparisonWorkspaceRun"]] = relationship(
         "ComparisonWorkspaceRun",
         back_populates="project",
@@ -172,6 +177,11 @@ class Run(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     project: Mapped[Project] = relationship("Project", back_populates="runs")
+    character_map_snapshot: Mapped["CharacterMapSnapshot | None"] = relationship(
+        "CharacterMapSnapshot",
+        back_populates="run",
+        uselist=False,
+    )
     comparison_workspace_runs: Mapped[list["ComparisonWorkspaceRun"]] = relationship(
         "ComparisonWorkspaceRun",
         back_populates="run",
@@ -202,6 +212,37 @@ class RunNormalizedCorpusBlob(Base):
     )
 
     run: Mapped[Run] = relationship("Run", back_populates="normalized_corpus_blobs")
+
+
+class CharacterMapSnapshot(Base):
+    __tablename__ = "character_map_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "version",
+            name="uq_project_character_map_snapshot_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="character_map_snapshots")
+    run: Mapped["Run | None"] = relationship("Run", back_populates="character_map_snapshot")
 
 
 class ComparisonWorkspace(Base):

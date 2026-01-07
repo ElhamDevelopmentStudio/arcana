@@ -16,6 +16,7 @@ from app.models import (
     Chapter,
     Character,
     CharacterVoiceMap,
+    CharacterMapSnapshot,
     ComparisonWorkspace,
     ComparisonWorkspaceRun,
     LLMCall,
@@ -684,6 +685,55 @@ def _build_character_map_item_payload_from_row(row: Character) -> CharacterMapIt
     )
 
 
+def _build_character_map_snapshot_payload(project_id: int, session: Session) -> dict[str, object]:
+    character_rows = (
+        session.query(Character)
+        .filter(Character.project_id == project_id)
+        .order_by(Character.name.asc())
+        .all()
+    )
+    return {
+        "schema_version": "1.0.0",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "character_count": len(character_rows),
+        "characters": [
+            _build_character_map_item_payload_from_row(row).model_dump()
+            for row in character_rows
+        ],
+    }
+
+
+def _next_character_map_snapshot_version(session: Session, project_id: int) -> int:
+    latest_version = (
+        session.query(CharacterMapSnapshot.version)
+        .filter(CharacterMapSnapshot.project_id == project_id)
+        .order_by(CharacterMapSnapshot.version.desc())
+        .first()
+    )
+    if latest_version is None:
+        return 1
+    return int(latest_version[0]) + 1
+
+
+def _persist_character_map_snapshot(
+    session: Session,
+    project_id: int,
+    source: str,
+    run_id: int | None = None,
+) -> CharacterMapSnapshot:
+    session.flush()
+    return CharacterMapSnapshot(
+        project_id=project_id,
+        run_id=run_id,
+        version=_next_character_map_snapshot_version(session=session, project_id=project_id),
+        source=source.strip() or "project_edit",
+        snapshot_json=_build_character_map_snapshot_payload(
+            project_id=project_id,
+            session=session,
+        ),
+    )
+
+
 def _build_pronunciation_dictionary_payload(entry: PronunciationDictionary) -> PronunciationDictionaryItem:
     return PronunciationDictionaryItem(
         term=entry.term.strip(),
@@ -791,6 +841,13 @@ def persist_inferred_gender_fields(
         row.inferred_source_trace = match["evidence"]
 
     session.add_all(character_rows)
+    session.add(
+        _persist_character_map_snapshot(
+            session=session,
+            project_id=project_id,
+            source="inferred_gender",
+        )
+    )
     session.commit()
 
     return CharacterMapResponse(
@@ -1890,6 +1947,13 @@ def import_characters(
     project_runs = session.query(Run).filter(Run.project_id == project.id).all()
     mark_runs_stale_for_gender_edit(project_runs)
     recompute_voice_previews_for_runs(session, project=project, runs=project_runs)
+    session.add(
+        _persist_character_map_snapshot(
+            session=session,
+            project_id=project_id,
+            source="import",
+        )
+    )
 
     session.commit()
 
@@ -2163,6 +2227,13 @@ def upsert_characters(
     mark_runs_stale_for_gender_edit(project_runs)
     recompute_voice_previews_for_runs(session, project=project, runs=project_runs)
     session.add(project)
+    session.add(
+        _persist_character_map_snapshot(
+            session=session,
+            project_id=project_id,
+            source="upsert",
+        )
+    )
     session.commit()
 
     return CharacterMapResponse(
@@ -2948,6 +3019,22 @@ def create_run(
     session.add(run)
     session.commit()
     session.refresh(run)
+    character_map_snapshot = _persist_character_map_snapshot(
+        session=session,
+        project_id=project.id,
+        run_id=run.id,
+        source="run_capture",
+    )
+    session.add(character_map_snapshot)
+    session.flush()
+    run_config_with_snapshot = dict(run.config_json or {})
+    run_config_with_snapshot["character_map_snapshot_id"] = character_map_snapshot.id
+    run_config_with_snapshot["character_map_snapshot_version"] = character_map_snapshot.version
+    run.config_json = run_config_with_snapshot
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    run_config = dict(run.config_json)
 
     try:
         result = execute_pipeline(

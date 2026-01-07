@@ -371,7 +371,7 @@ Definition of done for each task:
 - [X] [DR-001] Persist raw corpus blobs with project linkage.
 - [X] [DR-002] Persist normalized corpus blobs with run linkage.
 - [x] [DR-003] Persist chapterized representation with stable IDs.
-- [ ] [DR-004] Persist versioned character map snapshots.
+- [x] [DR-004] Persist versioned character map snapshots.
 - [ ] [DR-005] Persist versioned pronunciation dictionary snapshots.
 - [ ] [DR-006] Persist versioned voice map snapshots.
 - [ ] [DR-007] Persist tagging outputs and sub-segment outputs.
