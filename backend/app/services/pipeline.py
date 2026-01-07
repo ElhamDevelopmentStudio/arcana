@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.services import llm_router
 from app.config import get_settings
 from app.models import (
     Chapter,
@@ -74,6 +75,22 @@ class _RunScopedLLMSettings:
         return getattr(self._base_settings, key)
 
 
+def _resolve_configuration_snapshot_id(project: Project, run: Run, run_config: dict[str, Any]) -> str:
+    run_config_snapshot_id = run_config.get("configuration_snapshot_id")
+    if isinstance(run_config_snapshot_id, str):
+        normalized_snapshot_id = run_config_snapshot_id.strip()
+        if normalized_snapshot_id:
+            return normalized_snapshot_id
+
+    project_snapshot_id = project.configuration_snapshot_id
+    if isinstance(project_snapshot_id, str):
+        normalized_project_snapshot_id = project_snapshot_id.strip()
+        if normalized_project_snapshot_id:
+            return normalized_project_snapshot_id
+
+    return f"run-{run.id}"
+
+
 def _coerce_provider_config_string(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -93,6 +110,105 @@ def _coerce_provider_config_api_keys(value: object) -> list[str]:
 
     normalized = [entry.strip() for entry in raw_entries]
     return [entry for entry in normalized if entry]
+
+
+def _extract_model_version(model_identifier: object) -> str | None:
+    normalized = str(model_identifier).strip() if isinstance(model_identifier, str) else ""
+    if not normalized:
+        return None
+
+    if ":" in normalized:
+        candidate = normalized.rsplit(":", 1)[-1].strip()
+        if candidate:
+            return candidate
+
+    if "@" in normalized:
+        candidate = normalized.rsplit("@", 1)[-1].strip()
+        if candidate:
+            return candidate
+
+    return None
+
+
+def _map_local_char_to_original(
+    local_offset: int,
+    segment_offset_map: list[dict[str, int]],
+) -> int:
+    if not segment_offset_map or local_offset < 0:
+        return -1
+
+    candidates: list[dict[str, int]] = []
+    for entry in segment_offset_map:
+        try:
+            original_start = int(entry["original_start"])
+            original_end = int(entry["original_end"])
+            normalized_start = int(entry["normalized_start"])
+            normalized_end = int(entry["normalized_end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        if original_start == -1 or original_end == -1:
+            continue
+        if normalized_start <= local_offset <= normalized_end:
+            candidates.append(entry)
+
+    if not candidates:
+        return -1
+
+    selected = max(
+        candidates,
+        key=lambda candidate: (
+            int(candidate["normalized_start"]),
+            int(candidate["normalized_end"]) - int(candidate["normalized_start"]),
+        ),
+    )
+
+    try:
+        normalized_start = int(selected["normalized_start"])
+        normalized_end = int(selected["normalized_end"])
+        original_start = int(selected["original_start"])
+        original_end = int(selected["original_end"])
+    except (KeyError, TypeError, ValueError):
+        return -1
+
+    normalized_length = max(normalized_end - normalized_start, 1)
+    original_length = max(original_end - original_start, 1)
+    mapped = original_start + int((local_offset - normalized_start) * original_length / normalized_length)
+    return max(-1, min(mapped, original_end))
+
+
+def _normalize_evidence_offsets(
+    payload: object,
+    segment_offset_map: list[dict[str, int]],
+) -> object:
+    if isinstance(payload, list):
+        return [_normalize_evidence_offsets(item, segment_offset_map) for item in payload]
+
+    if not isinstance(payload, dict):
+        return payload
+
+    normalized_payload: dict[str, object] = {}
+    for key, value in payload.items():
+        normalized_payload[key] = _normalize_evidence_offsets(value, segment_offset_map)
+
+    if "start_char" in normalized_payload and "end_char" in normalized_payload:
+        start_char = normalized_payload.get("start_char")
+        end_char = normalized_payload.get("end_char")
+        if isinstance(start_char, int) and isinstance(end_char, int):
+            normalized_payload["original_start_char"] = _map_local_char_to_original(start_char, segment_offset_map)
+            normalized_payload["original_end_char"] = _map_local_char_to_original(end_char, segment_offset_map)
+
+    return normalized_payload
+
+
+def _persist_run_llm_model_metadata(run: Run, *, provider: str, model_identifier: str | None) -> None:
+    normalized_provider = provider.strip().lower() if isinstance(provider, str) else ""
+    normalized_provider = normalized_provider or None
+    normalized_model = str(model_identifier).strip() if isinstance(model_identifier, str) and str(model_identifier).strip() else None
+
+    run.llm_provider_name = normalized_provider
+    run.llm_model_identifier = normalized_model
+    run.llm_model_version = _extract_model_version(normalized_model)
 
 
 def _build_run_scoped_llm_settings(settings: object, run_config: dict[str, Any]) -> object:
@@ -602,17 +718,17 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                     ),
                 },
                 "type": tags["type"],
-                "type_evidence": tags.get("type_evidence", {}),
+                "type_evidence": _normalize_evidence_offsets(tags.get("type_evidence", {}), segment_offset_map),
                 "speaker": speaker,
-                "speaker_evidence": tags.get("speaker_evidence", {}),
+                "speaker_evidence": _normalize_evidence_offsets(tags.get("speaker_evidence", {}), segment_offset_map),
                 "speaker_id": speaker_id,
                 "gender": gender,
                 "type_confidence": tags["type_confidence"],
                 "speaker_state": tags.get("speaker_state", "uncertain"),
                 "emotion_state": tags.get("emotion_state", "uncertain"),
-                "summary_tag": tags.get("summary_tag", {}),
+                "summary_tag": _normalize_evidence_offsets(tags.get("summary_tag", {}), segment_offset_map),
                 "ambiguity_flags": tags.get("ambiguity_flags", []),
-                "emotion_evidence": tags.get("emotion_evidence", {}),
+                "emotion_evidence": _normalize_evidence_offsets(tags.get("emotion_evidence", {}), segment_offset_map),
                 "tag_states": {
                     "type": tags.get("type_state", "uncertain"),
                     "speaker": tags.get("speaker_state", "uncertain"),
@@ -627,13 +743,41 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "emotion_intensity": tags["emotion_intensity"],
                 "emotion_primary_label": tags["emotion_primary_label"],
                 "emotion_secondary_label": tags["emotion_secondary_label"],
-                "emotion_shift": tags["emotion_shift"],
-                "narration_internal_thought_shift": tags["narration_internal_thought_shift"],
-                "internal_external_speech_shift": tags["internal_external_speech_shift"],
-                "tone_reversal": tags["tone_reversal"],
-                "sub_segment_boundaries": tags["sub_segment_boundaries"],
-                "tension_contribution": tags["tension_contribution"],
-                "dominance_contribution": tags["dominance_contribution"],
+                "emotion_shift": _normalize_evidence_offsets(tags["emotion_shift"], segment_offset_map),
+                "narration_internal_thought_shift": _normalize_evidence_offsets(
+                    tags["narration_internal_thought_shift"],
+                    segment_offset_map,
+                ),
+                "internal_external_speech_shift": _normalize_evidence_offsets(
+                    tags["internal_external_speech_shift"],
+                    segment_offset_map,
+                ),
+                "tone_reversal": _normalize_evidence_offsets(tags["tone_reversal"], segment_offset_map),
+                "sub_segment_boundaries": [
+                    _normalize_evidence_offsets(boundary, segment_offset_map)
+                    for boundary in tags.get("sub_segment_boundaries", [])
+                ],
+                "tension_contribution": {
+                    "value": tags["tension_contribution"]["value"],
+                    "level": tags["tension_contribution"]["level"],
+                    "confidence": tags["tension_contribution"]["confidence"],
+                    "state": tags["tension_contribution"]["state"],
+                    "evidence": _normalize_evidence_offsets(
+                        tags["tension_contribution"].get("evidence", {}),
+                        segment_offset_map,
+                    ),
+                },
+                "dominance_contribution": {
+                    "value": tags["dominance_contribution"]["value"],
+                    "level": tags["dominance_contribution"]["level"],
+                    "dominant_agent": tags["dominance_contribution"]["dominant_agent"],
+                    "evidence": _normalize_evidence_offsets(
+                        tags["dominance_contribution"].get("evidence", {}),
+                        segment_offset_map,
+                    ),
+                    "confidence": tags["dominance_contribution"]["confidence"],
+                    "state": tags["dominance_contribution"]["state"],
+                },
                 "confidence": {
                     "speaker": tags["speaker_confidence"],
                     "emotion": tags["emotion_confidence"],
@@ -731,6 +875,11 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
     pinned_model = pinned_model_identifier if run_config.get("deterministic_mode") else None
 
     if not is_supported_provider(provider):
+        _persist_run_llm_model_metadata(
+            run=run,
+            provider=provider,
+            model_identifier=None,
+        )
         session.add(
             LLMCall(
                 run_id=run.id,
@@ -749,6 +898,11 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         return
 
     if not is_provider_enabled(session=session, provider=provider):
+        _persist_run_llm_model_metadata(
+            run=run,
+            provider=provider,
+            model_identifier=None,
+        )
         session.add(
             LLMCall(
                 run_id=run.id,
@@ -778,7 +932,11 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         settings=run_scoped_settings,
         max_calls_per_day=max_calls_per_day,
     )
-    configuration_snapshot_id = str(project.configuration_snapshot_id or f"run-{run.id}")
+    configuration_snapshot_id = _resolve_configuration_snapshot_id(
+        project=project,
+        run=run,
+        run_config=run_config,
+    )
 
     request = LLMRequest(
         request_id=str(uuid4()),
@@ -837,6 +995,11 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             final_called_at = _coerce_call_timestamp(cached_payload.get("called_at"))
             success = final_success
             final_request_count = 0
+            _persist_run_llm_model_metadata(
+                run=run,
+                provider=final_provider,
+                model_identifier=final_model_identifier,
+            )
             session.add(
                 LLMCall(
                     run_id=run.id,
@@ -993,6 +1156,11 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 else final_called_at
             ),
         )
+    )
+    _persist_run_llm_model_metadata(
+        run=run,
+        provider=final_provider,
+        model_identifier=final_model_identifier,
     )
     session.flush()
 

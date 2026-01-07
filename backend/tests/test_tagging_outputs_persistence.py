@@ -52,6 +52,25 @@ def _create_run_with_tags(*, project_title: str, source_payload: str) -> tuple[i
         return project_id, int(run_resp.json()["run_id"])
 
 
+def _assert_nested_evidence_has_original_offsets(payload: object) -> None:
+    if isinstance(payload, dict):
+        if "start_char" in payload and "end_char" in payload:
+            assert isinstance(payload.get("start_char"), int)
+            assert isinstance(payload.get("end_char"), int)
+            assert isinstance(payload.get("original_start_char"), int)
+            assert isinstance(payload.get("original_end_char"), int)
+        for value in payload.values():
+            _assert_nested_evidence_has_original_offsets(value)
+        return
+
+    if isinstance(payload, list):
+        for item in payload:
+            _assert_nested_evidence_has_original_offsets(item)
+        return
+
+    return
+
+
 def test_tagging_outputs_are_persisted_with_reference_fields() -> None:
     project_id, run_id = _create_run_with_tags(
         project_title="Tagging Outputs Persist Project",
@@ -100,6 +119,19 @@ def test_tagging_outputs_are_persisted_with_reference_fields() -> None:
             assert segment_pointer.get("original_end_char", -1) >= segment_pointer.get("original_start_char", -1)
             assert segment_pointer.get("normalized_start_char", 0) >= 0
             assert segment_pointer.get("normalized_end_char", 0) >= segment_pointer["normalized_start_char"]
+
+            _assert_nested_evidence_has_original_offsets(segment_payload.get("type_evidence", {}))
+            _assert_nested_evidence_has_original_offsets(segment_payload.get("speaker_evidence", {}))
+            _assert_nested_evidence_has_original_offsets(segment_payload.get("emotion_evidence", {}))
+            _assert_nested_evidence_has_original_offsets(segment_payload.get("emotion_shift", {}))
+            _assert_nested_evidence_has_original_offsets(segment_payload.get("narration_internal_thought_shift", {}))
+            _assert_nested_evidence_has_original_offsets(segment_payload.get("internal_external_speech_shift", {}))
+            _assert_nested_evidence_has_original_offsets(segment_payload.get("tone_reversal", {}))
+            _assert_nested_evidence_has_original_offsets(segment_payload.get("summary_tag", {}))
+            tension_contribution = segment_payload.get("tension_contribution", {})
+            _assert_nested_evidence_has_original_offsets(tension_contribution.get("evidence", {}))
+            dominance_contribution = segment_payload.get("dominance_contribution", {})
+            _assert_nested_evidence_has_original_offsets(dominance_contribution.get("evidence", {}))
 
         tag_rows = (
             session.query(SubSegmentTag)
