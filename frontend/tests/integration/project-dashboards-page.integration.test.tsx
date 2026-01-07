@@ -42,8 +42,36 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
         { position: 1, smoothed_tension: 0.25, segment_id: '202-001' },
         { position: 2, smoothed_tension: 0.35, segment_id: '202-002' },
       ],
-      peak_markers: [],
-      plateau_regions: [],
+      peak_markers: [
+        {
+          position: 2,
+          segment_id: '202-002',
+          peak_type: 'minor',
+          severity: 'major',
+          prominence: 0.22,
+          previous_tension: 0.18,
+          next_tension: 0.33,
+          tension_value: 0.35,
+        },
+      ],
+      plateau_regions: [
+        {
+          region_type: 'local_flatline',
+          start_position: 1,
+          end_position: 2,
+          length: 2,
+          segment_count: 2,
+          segment_ids: ['202-001', '202-002'],
+          segment_indices: [1, 2],
+          chapter_ids: [1, 1],
+          average_tension: 0.3,
+          tension_value_range: {
+            min: 0.24,
+            max: 0.36,
+            delta: 0.12,
+          },
+        },
+      ],
       metadata: {},
     },
     isLoading: false,
@@ -61,7 +89,7 @@ function renderDashboardPage() {
     ],
     { initialEntries: ['/projects/202/dashboards'] },
   );
-  render(<RouterProvider router={router} />);
+  return render(<RouterProvider router={router} />);
 }
 
 describe('project dashboards page', () => {
@@ -78,11 +106,16 @@ describe('project dashboards page', () => {
 
   it('renders smoothed and raw tension series with a mode toggle', async () => {
     const user = userEvent.setup();
-    renderDashboardPage();
+    const { container } = renderDashboardPage();
 
     expect(screen.getByText('Data source: run tension graph endpoint')).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: /tension smoothing toggle/i })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByTestId('dashboards-tension-202-001')).toHaveTextContent('T 25%');
+    expect(screen.getByText('Peak markers')).toBeInTheDocument();
+    expect(screen.getByText('Plateau overlays')).toBeInTheDocument();
+    expect(screen.getByText('202-002: minor (major) at 35%')).toBeInTheDocument();
+    expect(screen.getByText('local_flatline: S 1 to S 2 (30%)')).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="tension-peak-marker-202-002"]')).toBeInTheDocument();
 
     await user.click(screen.getByRole('switch', { name: /tension smoothing toggle/i }));
 
