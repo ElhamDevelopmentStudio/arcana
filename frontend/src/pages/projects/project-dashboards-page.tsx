@@ -3,9 +3,19 @@ import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { useCharacterAnalyticsQuery, useExportPayloadQuery, useTensionGraphQuery } from '@/features/workflow/api/workflow-hooks';
+import {
+  useCharacterAnalyticsQuery,
+  useCharacterCooccurrenceGraphQuery,
+  useExportPayloadQuery,
+  useTensionGraphQuery,
+} from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
-import type { CharacterAnalyticsResponseDto, TensionGraphPeakMarkerDto, TensionGraphPlateauRegionDto } from '@/app/schemas/api';
+import type {
+  CharacterAnalyticsResponseDto,
+  CharacterCooccurrenceGraphResponseDto,
+  TensionGraphPeakMarkerDto,
+  TensionGraphPlateauRegionDto,
+} from '@/app/schemas/api';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, Legend, ReferenceArea, Tooltip, XAxis, YAxis } from 'recharts';
@@ -51,6 +61,10 @@ type CharacterProminenceRow = {
   lastAppearanceChapter: number | null;
   dialogueLineCount: number;
 };
+
+function toGraphTestId(value: string): string {
+  return value.replace(/\s+/g, '-').toLowerCase();
+}
 
 function toStringValue(value: unknown): string | null {
   if (value == null) {
@@ -276,6 +290,7 @@ export function ProjectDashboardsPage() {
   const exportPayloadQuery = useExportPayloadQuery(projectId, runId);
   const tensionGraphQuery = useTensionGraphQuery(projectId, runId);
   const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
+  const cooccurrenceGraphQuery = useCharacterCooccurrenceGraphQuery(projectId, runId);
   const [showSmoothed, setShowSmoothed] = useState(true);
 
   const rawSeries = useMemo(() => {
@@ -378,6 +393,23 @@ export function ProjectDashboardsPage() {
     () => buildCharacterTrendSeries(characterAnalyticsQuery.data ?? null, trendCharacters),
     [characterAnalyticsQuery.data, trendCharacters],
   );
+  const cooccurrenceGraphPayload = useMemo<CharacterCooccurrenceGraphResponseDto | null>(() => {
+    return cooccurrenceGraphQuery.data ?? null;
+  }, [cooccurrenceGraphQuery.data]);
+
+  const topCentralityRows = useMemo(
+    () => [...(cooccurrenceGraphPayload?.character_cooccurrence_centrality.metrics_table ?? [])].slice(0, 5),
+    [cooccurrenceGraphPayload],
+  );
+  const topWeightedEdges = useMemo(() => {
+    const edges = cooccurrenceGraphPayload?.graph?.edges ?? [];
+    return [...edges].sort((left, right) => {
+      if (right.weight !== left.weight) {
+        return right.weight - left.weight;
+      }
+      return right.co_occurrence_count - left.co_occurrence_count;
+    }).slice(0, 5);
+  }, [cooccurrenceGraphPayload]);
 
   const dataSourceLabel = showSmoothed
     ? tensionGraphQuery.data
@@ -563,6 +595,75 @@ export function ProjectDashboardsPage() {
                 {character.lastAppearanceChapter ?? '—'}.
               </p>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Character Co-occurrence Graph</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-1 text-sm text-muted-foreground md:grid-cols-2">
+            <p data-testid="dashboards-cooccurrence-node-count">
+              Nodes: <span className="font-medium text-foreground">{cooccurrenceGraphPayload?.graph?.metadata.node_count ?? 0}</span>
+            </p>
+            <p data-testid="dashboards-cooccurrence-edge-count">
+              Edges: <span className="font-medium text-foreground">{cooccurrenceGraphPayload?.graph?.metadata.edge_count ?? 0}</span>
+            </p>
+            <p>
+              Scope: <span className="font-medium text-foreground">
+                {cooccurrenceGraphPayload?.graph?.metadata.scope ?? 'unavailable'}
+              </span>
+            </p>
+            <p>
+              Direction: <span className="font-medium text-foreground">
+                {cooccurrenceGraphPayload ? (cooccurrenceGraphPayload.graph.metadata.undirected ? 'Undirected' : 'Directed') : 'Unavailable'}
+              </span>
+            </p>
+          </div>
+          <div className="space-y-2 text-sm">
+            <p className="font-medium text-foreground">Top centrality rows</p>
+                {topCentralityRows.length > 0 ? (
+              <div className="space-y-1">
+                {topCentralityRows.map((row) => (
+                  <div
+                    key={row.character_key}
+                    className="grid gap-1 rounded border border-panel-border/50 bg-panel/40 px-3 py-2 sm:grid-cols-[1fr_auto_auto_auto] sm:grid"
+                    data-testid={`dashboards-cooccurrence-centrality-${toGraphTestId(row.character_key ?? row.character_label)}`}
+                  >
+                    <p className="font-medium text-foreground">#{row.rank} {row.character_label}</p>
+                    <p>Degree: {row.degree}</p>
+                    <p>Weighted: {row.weighted_degree.toFixed(2)}</p>
+                    <p>Centrality: {row.degree_centrality.toFixed(2)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No centrality values available for this run.</p>
+            )}
+          </div>
+          <div className="space-y-2 text-sm">
+            <p className="font-medium text-foreground">Strongest transitions</p>
+            {topWeightedEdges.length > 0 ? (
+              <div className="space-y-1">
+                {topWeightedEdges.map((edge) => (
+                  <div
+                    key={`${edge.source}-${edge.target}-${edge.weight}`}
+                    className="grid gap-1 rounded border border-panel-border/50 bg-panel/40 px-3 py-2 sm:grid-cols-[1fr_auto_auto] sm:grid"
+                    data-testid={`dashboards-cooccurrence-edge-${toGraphTestId(edge.source)}-${toGraphTestId(edge.target)}`}
+                  >
+                    <p className="font-medium text-foreground">
+                      {edge.source} ↔ {edge.target}
+                    </p>
+                    <p>Count: {edge.co_occurrence_count}</p>
+                    <p>Weight: {edge.weight}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No transition pairs available for this run.</p>
+            )}
           </div>
         </CardContent>
       </Card>
