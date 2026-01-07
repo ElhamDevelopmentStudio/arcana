@@ -441,6 +441,14 @@ export function ProjectDashboardsPage() {
                   : `${audiobookPrepDashboardQuery.data?.unresolved_speaker_count ?? 0}`}
             </span>
           </p>
+          {audiobookPrepDashboardQuery.data ? (
+            <p data-testid="dashboards-audiobook-unresolved-voice-maps">
+              Unresolved voice mappings:{' '}
+              <span className="font-medium text-foreground">
+                {audiobookPrepDashboardQuery.data.unresolved_voice_mapping_count}
+              </span>
+            </p>
+          ) : null}
           {audiobookPrepDashboardQuery.error ? (
             <p className="text-destructive">{audiobookPrepDashboardQuery.error.message}</p>
           ) : null}
