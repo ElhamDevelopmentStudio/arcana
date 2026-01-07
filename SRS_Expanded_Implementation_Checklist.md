@@ -347,10 +347,10 @@ Definition of done for each task:
 - [x] [PAL-013] Add architecture test to detect forbidden direct provider imports.
 - [x] [PAL-014] Add extension interface for self-hosted local models.
 - [x] [PAL-015] Add extension interface for user-supplied provider keys.
-- [ ] [PAL-016] Add per-project provider configuration support.
+- [x] [PAL-016] Add per-project provider configuration support.
 
 ## 5. Visualization Requirements (Ref: SRS.md §5)
-- [ ] [VR-001] Define chart data contracts for tension graph.
+- [x] [VR-001] Define chart data contracts for tension graph.
 - [ ] [VR-002] Implement tension graph API payload endpoint.
 - [ ] [VR-003] Add smoothing toggle for tension graph display.
 - [ ] [VR-004] Add peak markers and plateau overlays to tension graph.
