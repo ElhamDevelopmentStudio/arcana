@@ -224,6 +224,30 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isLoading: false,
     error: null,
   }),
+  useAudiobookPrepDashboardQuery: () => ({
+    data: {
+      schema_version: '1.0.0',
+      output_schema: 'audiobook_prep_dashboard_json',
+      output_format: 'json',
+      output_id: 'AB-001',
+      output_name: 'audiobook_prep_dashboard',
+      project_id: 202,
+      run_id: 88,
+      run_status: 'completed',
+      generated_at: '2025-01-01T00:00:00Z',
+      generated_by: 'build_audiobook_prep_dashboard',
+      unresolved_speaker_count: 3,
+      unresolved_voice_mapping_count: 1,
+      low_confidence_region_count: 0,
+      export_readiness: {
+        is_ready: false,
+        blocking_reasons: ['Some speaker assignments are still unresolved.'],
+        warning_reasons: ['Some regions were tagged as low confidence and should be reviewed.'],
+      },
+    },
+    isLoading: false,
+    error: null,
+  }),
 }));
 
 function renderDashboardPage() {
@@ -269,6 +293,13 @@ describe('project dashboards page', () => {
     expect(screen.getByRole('switch', { name: /tension smoothing toggle/i })).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByText('Data source: raw segment tension')).toBeInTheDocument();
     expect(screen.getByTestId('dashboards-tension-202-001')).toHaveTextContent('T 10%');
+  });
+
+  it('renders unresolved speaker count on audiobook prep summary', () => {
+    renderDashboardPage();
+
+    expect(screen.getByText('Audiobook Prep Readiness')).toBeInTheDocument();
+    expect(screen.getByTestId('dashboards-audiobook-unresolved-speakers')).toHaveTextContent('Unresolved speaker assignments: 3');
   });
 
   it('renders character prominence and trend widgets from analytics endpoint data', () => {

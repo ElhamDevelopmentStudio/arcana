@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
   useCharacterAnalyticsQuery,
+  useAudiobookPrepDashboardQuery,
   useCharacterCooccurrenceGraphQuery,
   useExportPayloadQuery,
   useTensionGraphQuery,
@@ -291,6 +292,7 @@ export function ProjectDashboardsPage() {
   const tensionGraphQuery = useTensionGraphQuery(projectId, runId);
   const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
   const cooccurrenceGraphQuery = useCharacterCooccurrenceGraphQuery(projectId, runId);
+  const audiobookPrepDashboardQuery = useAudiobookPrepDashboardQuery(projectId, runId);
   const [showSmoothed, setShowSmoothed] = useState(true);
 
   const rawSeries = useMemo(() => {
@@ -424,6 +426,27 @@ export function ProjectDashboardsPage() {
       description="Explore visual analytics: tension, emotional polarity, dominance, and character trends."
       action={<p className="text-sm text-muted-foreground">{dataSourceLabel}</p>}
     >
+      <Card>
+        <CardHeader>
+          <CardTitle>Audiobook Prep Readiness</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p data-testid="dashboards-audiobook-unresolved-speakers">
+            Unresolved speaker assignments:{' '}
+            <span className="font-medium text-foreground">
+              {audiobookPrepDashboardQuery.isLoading
+                ? 'Loading…'
+                : audiobookPrepDashboardQuery.error
+                  ? 'Unavailable'
+                  : `${audiobookPrepDashboardQuery.data?.unresolved_speaker_count ?? 0}`}
+            </span>
+          </p>
+          {audiobookPrepDashboardQuery.error ? (
+            <p className="text-destructive">{audiobookPrepDashboardQuery.error.message}</p>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Narrative Trend</CardTitle>
