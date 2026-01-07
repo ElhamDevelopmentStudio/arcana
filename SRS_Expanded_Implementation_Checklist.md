@@ -386,7 +386,7 @@ Definition of done for each task:
 ## 7. Non-Functional Requirements (Ref: SRS.md §7)
 
 ### NFR-1 Performance
-- [ ] [NFR1-001] Define performance benchmark corpus set (including large scale profile).
+- [x] [NFR1-001] Define performance benchmark corpus set (including large scale profile).
 - [ ] [NFR1-002] Implement chunked processing framework for long corpora.
 - [ ] [NFR1-003] Add parallel-safe chunk scheduler with stable ordering.
 - [ ] [NFR1-004] Add incremental-only recomputation mode for appended chapters.

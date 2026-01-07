@@ -7,6 +7,7 @@ import sys
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.performance_benchmarks import get_default_large_scale_benchmark  # noqa: E402
 if str(ROOT / "backend") not in sys.path:
     sys.path.insert(0, str(ROOT / "backend"))
 
@@ -28,7 +29,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--novel-path",
         type=Path,
-        default=ROOT / "novels_extra_chapter_0_to_22.txt",
+        default=ROOT / get_default_large_scale_benchmark().corpus_path,
         help="Path to a TXT novel fixture used for large-corpus traceability.",
     )
     parser.add_argument(
