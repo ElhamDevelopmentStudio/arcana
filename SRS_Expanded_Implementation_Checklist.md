@@ -351,8 +351,8 @@ Definition of done for each task:
 
 ## 5. Visualization Requirements (Ref: SRS.md §5)
 - [x] [VR-001] Define chart data contracts for tension graph.
-- [ ] [VR-002] Implement tension graph API payload endpoint.
-- [ ] [VR-003] Add smoothing toggle for tension graph display.
+- [x] [VR-002] Implement tension graph API payload endpoint.
+- [x] [VR-003] Add smoothing toggle for tension graph display.
 - [ ] [VR-004] Add peak markers and plateau overlays to tension graph.
 - [ ] [VR-005] Define chart data contracts for emotional polarity graph.
 - [ ] [VR-006] Implement polarity graph API payload endpoint.

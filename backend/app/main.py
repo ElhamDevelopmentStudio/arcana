@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
+from app.chart_contracts import build_tension_graph_contract
 from app.config import get_settings
 from app.database import get_session, init_db
 from app.modes import DEFAULT_MODE, get_mode_catalog
@@ -64,6 +65,7 @@ from app.schemas import (
     LLMProvidersResponse,
     RunCreateRequest,
     CharacterOccurrenceAnalyticsResponse,
+    TensionGraphContractResponse,
     RunDetailResponse,
     RunResponse,
     VoiceConfigRequest,
@@ -2955,6 +2957,40 @@ def get_character_occurrence_analytics(
         run_id=run.id,
         **analytics,
     )
+
+
+@app.get(
+    "/api/projects/{project_id}/runs/{run_id}/tension-graph",
+    response_model=TensionGraphContractResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_run_tension_graph(
+    project_id: int,
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> TensionGraphContractResponse:
+    project = _get_project_or_404(session, project_id)
+    run = _get_run_or_404(session, project_id, run_id)
+    export_payload = build_run_export(
+        session=session,
+        project=project,
+        run=run,
+    )
+    manifest = export_payload.get("manifest")
+    if not isinstance(manifest, dict):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Run export manifest is missing.",
+        )
+
+    academic_reports = manifest.get("academic_reports")
+    if not isinstance(academic_reports, dict):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Run academic_reports block is missing.",
+        )
+
+    return build_tension_graph_contract(academic_reports)
 
 
 @app.get("/api/projects/{project_id}/exports/{run_id}.json", status_code=status.HTTP_200_OK)

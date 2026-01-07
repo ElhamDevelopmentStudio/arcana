@@ -13,6 +13,7 @@ export const workspaceKeys = {
   modeCatalog: ['mode-catalog'] as const,
   runDetail: (projectId: number, runId: number) => ['run-detail', projectId, runId] as const,
   exportPayload: (projectId: number, runId: number) => ['export-payload', projectId, runId] as const,
+  tensionGraph: (projectId: number, runId: number) => ['tension-graph', projectId, runId] as const,
   characterMap: (projectId: number) => ['character-map', projectId] as const,
 };
 
@@ -31,6 +32,13 @@ export function useExportPayloadQuery(projectId: number | null, runId: number | 
   return useSWR(
     projectId !== null && runId !== null ? workspaceKeys.exportPayload(projectId, runId) : null,
     async ([, currentProjectId, currentRunId]) => nipeApiClient.getExport(currentProjectId, currentRunId),
+  );
+}
+
+export function useTensionGraphQuery(projectId: number | null, runId: number | null) {
+  return useSWR(
+    projectId !== null && runId !== null ? workspaceKeys.tensionGraph(projectId, runId) : null,
+    async ([, currentProjectId, currentRunId]) => nipeApiClient.getTensionGraph(currentProjectId, currentRunId),
   );
 }
 
