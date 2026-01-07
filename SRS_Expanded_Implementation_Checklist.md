@@ -393,7 +393,7 @@ Definition of done for each task:
 - [x] [NFR1-005] Add performance telemetry (step durations, memory usage).
 
 ### NFR-2 Reliability
-- [ ] [NFR2-001] Add ordering integrity guard in every pipeline stage.
+- [x] [NFR2-001] Add ordering integrity guard in every pipeline stage.
 - [ ] [NFR2-002] Add chapter-content loss detector after normalization/segmentation.
 - [ ] [NFR2-003] Add run-state recovery for interrupted jobs.
 - [ ] [NFR2-004] Add idempotent rerun behavior checks.

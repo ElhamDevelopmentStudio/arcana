@@ -67,6 +67,34 @@ _AMBIGUOUS_CHARACTER_REFERENCE = object()
 _LLM_CONFIDENCE_THRESHOLD_DEFAULT = 0.6
 _PIPELINE_DEFAULT_CHUNK_MAX_CHARS = 120_000
 _PIPELINE_CHUNK_MAX_CHARS_KEY = "pipeline_chunk_max_chars"
+_PIPELINE_STAGE_ORDER = (
+    "load_and_validate_source_data",
+    "persist_normalized_corpus_blob",
+    "load_project_artifacts",
+    "clear_previous_run_artifacts",
+    "resolve_incremental_recompute_scope",
+    "build_chunking_plan",
+    "copy_incremental_segments",
+    "build_chunk_payloads",
+    "merge_segment_payloads",
+    "run_llm_probe",
+    "derive_character_analytics",
+    "finalize_run_and_build_export",
+)
+_PIPELINE_STAGE_PREDECESSORS: dict[str, tuple[str, ...]] = {
+    "load_and_validate_source_data": (),
+    "persist_normalized_corpus_blob": ("load_and_validate_source_data",),
+    "load_project_artifacts": ("persist_normalized_corpus_blob",),
+    "clear_previous_run_artifacts": ("load_project_artifacts",),
+    "resolve_incremental_recompute_scope": ("clear_previous_run_artifacts",),
+    "build_chunking_plan": ("resolve_incremental_recompute_scope",),
+    "copy_incremental_segments": ("build_chunking_plan",),
+    "merge_segment_payloads": ("build_chunk_payloads",),
+    "build_chunk_payloads": ("build_chunking_plan", "copy_incremental_segments"),
+    "run_llm_probe": ("merge_segment_payloads",),
+    "derive_character_analytics": ("run_llm_probe",),
+    "finalize_run_and_build_export": ("derive_character_analytics",),
+}
 _INCREMENTAL_RECOMPUTE_CONFIG_KEYS: tuple[str, ...] = (
     "mode",
     "max_segment_chars",
@@ -1109,9 +1137,14 @@ def _should_escalate_to_llm(
 
 def execute_pipeline(session: Session, project: Project, run: Run, run_config: dict) -> dict:
     step_records: list[dict[str, object]] = []
+    completed_stages: list[str] = []
     pipeline_started_at = time.perf_counter()
 
-    with _record_pipeline_step(step_records, "load_and_validate_source_data"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="load_and_validate_source_data",
+        completed_stages=completed_stages,
+    ):
         chapters = (
             session.query(Chapter)
             .filter(Chapter.project_id == project.id)
@@ -1122,14 +1155,22 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         if not chapters:
             raise PipelineError("No chapters available. Upload and ingest a TXT file first.")
 
-    with _record_pipeline_step(step_records, "persist_normalized_corpus_blob"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="persist_normalized_corpus_blob",
+        completed_stages=completed_stages,
+    ):
         _persist_normalized_corpus_blob(
             session=session,
             run_id=run.id,
             normalized_corpus="\n\n".join(chapter.normalized_text for chapter in chapters),
         )
 
-    with _record_pipeline_step(step_records, "load_project_artifacts"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="load_project_artifacts",
+        completed_stages=completed_stages,
+    ):
         characters = (
             session.query(Character)
             .filter(Character.project_id == project.id)
@@ -1225,12 +1266,20 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     if run_config.get("internal_thought_voice"):
         voice_config["thought_voice"] = str(run_config["internal_thought_voice"]).strip()
 
-    with _record_pipeline_step(step_records, "clear_previous_run_artifacts"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="clear_previous_run_artifacts",
+        completed_stages=completed_stages,
+    ):
         session.query(Segment).filter(Segment.run_id == run.id).delete()
         session.query(LLMCall).filter(LLMCall.run_id == run.id).delete()
         session.query(SubSegmentTag).filter(SubSegmentTag.run_id == run.id).delete()
 
-    with _record_pipeline_step(step_records, "resolve_incremental_recompute_scope"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="resolve_incremental_recompute_scope",
+        completed_stages=completed_stages,
+    ):
         incremental_scope = _resolve_incremental_recompute_scope(
             session=session,
             project_id=project.id,
@@ -1247,7 +1296,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 },
             }
 
-    with _record_pipeline_step(step_records, "build_chunking_plan"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="build_chunking_plan",
+        completed_stages=completed_stages,
+    ):
         max_chars = int(run_config.get("max_segment_chars", 255))
         llm_confidence_threshold = _coerce_confidence_threshold(
             run_config.get("llm_confidence_threshold", _LLM_CONFIDENCE_THRESHOLD_DEFAULT)
@@ -1270,7 +1323,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     total_segments = 0
     segment_payloads: list[dict[str, object]] = []
     if incremental_scope > 0:
-        with _record_pipeline_step(step_records, "copy_incremental_segments"):
+        with _record_pipeline_stage(
+            step_records=step_records,
+            stage_name="copy_incremental_segments",
+            completed_stages=completed_stages,
+        ):
             prior_run = _get_latest_completed_run_before(
                 session=session,
                 project_id=project.id,
@@ -1288,7 +1345,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 total_segments = len(segment_payloads)
 
     chunk_payloads: list[dict[str, object]] = []
-    with _record_pipeline_step(step_records, "build_chunk_payloads"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="build_chunk_payloads",
+        completed_stages=completed_stages,
+    ):
         if chunk_jobs:
             with ThreadPoolExecutor(max_workers=min(8, len(chunk_jobs))) as executor:
                 futures = {
@@ -1315,7 +1376,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 for chunk_index in sorted(ordered_payloads):
                     chunk_payloads.append(ordered_payloads[chunk_index])
 
-    with _record_pipeline_step(step_records, "merge_segment_payloads"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="merge_segment_payloads",
+        completed_stages=completed_stages,
+    ):
         new_segment_payloads: list[dict[str, object]] = []
         new_sub_segment_payloads: list[list[dict[str, object]]] = []
         for chunk_payload in chunk_payloads:
@@ -1369,7 +1434,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             total_segments += 1
 
     llm_enabled = bool(run_config.get("llm_enabled", False))
-    with _record_pipeline_step(step_records, "run_llm_probe"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="run_llm_probe",
+        completed_stages=completed_stages,
+    ):
         if llm_enabled and llm_probe_text:
             _run_llm_probe(
                 session=session,
@@ -1379,7 +1448,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 input_text=llm_probe_text,
             )
 
-    with _record_pipeline_step(step_records, "derive_character_analytics"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="derive_character_analytics",
+        completed_stages=completed_stages,
+    ):
         character_occurrence_analytics = build_character_occurrence_analytics(
             chapters=chapters,
             characters=characters,
@@ -1390,7 +1463,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             **character_occurrence_analytics,
         }
 
-    with _record_pipeline_step(step_records, "finalize_run_and_build_export"):
+    with _record_pipeline_stage(
+        step_records=step_records,
+        stage_name="finalize_run_and_build_export",
+        completed_stages=completed_stages,
+    ):
         run.status = "completed"
         run.finished_at = datetime.now(timezone.utc)
         session.flush()
@@ -1707,8 +1784,9 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 if final_called_at is None
                 else final_called_at
             ),
+            )
         )
-    )
+
     _persist_run_llm_model_metadata(
         run=run,
         provider=final_provider,
@@ -1725,3 +1803,48 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             reason=fallback_reason,
         )
         session.flush()
+
+
+def _assert_pipeline_stage_order(
+    completed_stages: list[str],
+    stage_name: str,
+) -> None:
+    allowed_previous_stages = _PIPELINE_STAGE_PREDECESSORS.get(stage_name)
+    if allowed_previous_stages is None:
+        raise PipelineError(f"Unknown pipeline stage '{stage_name}'.")
+
+    if stage_name in completed_stages:
+        raise PipelineError(f"Pipeline stage '{stage_name}' was already completed.")
+
+    if not allowed_previous_stages:
+        if completed_stages:
+            raise PipelineError(f"Pipeline stage '{stage_name}' must be the first stage.")
+        return
+
+    if not completed_stages:
+        raise PipelineError(
+            f"Pipeline stage '{stage_name}' cannot run before {' or '.join(allowed_previous_stages)}."
+        )
+
+    last_stage = completed_stages[-1]
+    if last_stage not in allowed_previous_stages:
+        raise PipelineError(
+            "Pipeline ordering guard violated. "
+            f"Expected one of {', '.join(allowed_previous_stages)} before '{stage_name}', "
+            f"but last completed stage was '{last_stage}'."
+        )
+
+
+@contextmanager
+def _record_pipeline_stage(
+    step_records: list[dict[str, object]],
+    stage_name: str,
+    completed_stages: list[str],
+) -> Iterator[None]:
+    _assert_pipeline_stage_order(
+        completed_stages=completed_stages,
+        stage_name=stage_name,
+    )
+    with _record_pipeline_step(step_records=step_records, step_name=stage_name):
+        yield
+    completed_stages.append(stage_name)
