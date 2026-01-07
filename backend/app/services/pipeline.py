@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from hashlib import sha256
 from uuid import uuid4
 from typing import Any
@@ -58,10 +60,21 @@ _LOW_GENDER_CONFIDENCE = 0.0
 _LOW_CONFIDENCE_GENDERS = frozenset({"neutral", "unknown"})
 _AMBIGUOUS_CHARACTER_REFERENCE = object()
 _LLM_CONFIDENCE_THRESHOLD_DEFAULT = 0.6
+_PIPELINE_DEFAULT_CHUNK_MAX_CHARS = 120_000
+_PIPELINE_CHUNK_MAX_CHARS_KEY = "pipeline_chunk_max_chars"
 
 
 class PipelineError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class _PipelineChunkWorkItem:
+    chapter_id: int
+    chapter_index: int
+    chapter_internal_id: str
+    normalized_text: str
+    original_to_normalized_offset_map: list[dict[str, int]]
 
 
 class _RunScopedLLMSettings:
@@ -110,6 +123,301 @@ def _coerce_provider_config_api_keys(value: object) -> list[str]:
 
     normalized = [entry.strip() for entry in raw_entries]
     return [entry for entry in normalized if entry]
+
+
+def _coerce_positive_int(value: object, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _resolve_pipeline_chunk_max_chars(run_config: dict[str, Any], *, default: int = _PIPELINE_DEFAULT_CHUNK_MAX_CHARS) -> int:
+    return _coerce_positive_int(
+        run_config.get(_PIPELINE_CHUNK_MAX_CHARS_KEY),
+        default=default,
+    )
+
+
+def _build_chapter_chunks(
+    chapters: list[Chapter],
+    max_chunk_chars: int,
+) -> list[list[Chapter]]:
+    if max_chunk_chars <= 0:
+        max_chunk_chars = _PIPELINE_DEFAULT_CHUNK_MAX_CHARS
+
+    ordered_chapters = sorted(chapters, key=lambda chapter: chapter.chapter_index)
+    chunks: list[list[Chapter]] = []
+    current_chunk: list[Chapter] = []
+    current_chunk_chars = 0
+
+    for chapter in ordered_chapters:
+        chapter_chars = len(str(chapter.normalized_text or ""))
+        if current_chunk and current_chunk_chars + chapter_chars > max_chunk_chars:
+            chunks.append(current_chunk)
+            current_chunk = []
+            current_chunk_chars = 0
+
+        current_chunk.append(chapter)
+        current_chunk_chars += chapter_chars
+
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return chunks or [ordered_chapters]
+
+
+def _coerce_chunk_offset_map(value: object) -> list[dict[str, int]]:
+    if not isinstance(value, list):
+        return []
+
+    coalesced: list[dict[str, int]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        coalesced.append(dict(item))
+    return coalesced
+
+
+def _build_chunk_work_items(chapters: list[Chapter]) -> list[_PipelineChunkWorkItem]:
+    return [
+        _PipelineChunkWorkItem(
+            chapter_id=int(getattr(chapter, "id", getattr(chapter, "chapter_id", chapter.chapter_index))),
+            chapter_index=int(chapter.chapter_index),
+            chapter_internal_id=str(chapter.chapter_internal_id or ""),
+            normalized_text=str(chapter.normalized_text or ""),
+            original_to_normalized_offset_map=_coerce_chunk_offset_map(chapter.original_to_normalized_offset_map),
+        )
+        for chapter in chapters
+    ]
+
+
+def _build_chunk_jobs(chapter_work_items: list[_PipelineChunkWorkItem], max_chunk_chars: int) -> list[list[_PipelineChunkWorkItem]]:
+    if not chapter_work_items:
+        return []
+    return _build_chapter_chunks(chapters=chapter_work_items, max_chunk_chars=max_chunk_chars)
+
+
+def _build_chunk_segment_payloads(
+    *,
+    chunk_index: int,
+    chunk_count: int,
+    chapter_batch: list[_PipelineChunkWorkItem],
+    max_chars: int,
+    name_to_verbalized: dict[str, str],
+    character_lookup: dict[str, dict[str, object] | object],
+    character_pronunciations: dict[str, dict[str, str]],
+    voice_config: dict[str, object],
+    llm_confidence_threshold: float,
+    deep_semantic_refinement: bool,
+) -> dict[str, object]:
+    segment_payloads: list[dict[str, object]] = []
+    sub_segment_payloads: list[list[dict[str, object]]] = []
+    llm_probe_text: str | None = None
+
+    for chapter in chapter_batch:
+        pieces = segment_text_with_parent_paragraph(chapter.normalized_text, max_chars=max_chars)
+        chapter_search_cursor = 0
+
+        for segment_index, piece in enumerate(pieces, start=1):
+            original_text = str(piece.get("text", ""))
+            parent_paragraph_index = int(piece.get("paragraph_index", 1))
+            parent_sentence_start_index = int(piece.get("sentence_start_index", parent_paragraph_index))
+            parent_sentence_end_index = int(piece.get("sentence_end_index", parent_sentence_start_index))
+            if parent_sentence_end_index < parent_sentence_start_index:
+                parent_sentence_end_index = parent_sentence_start_index
+
+            tags = tag_segment(original_text)
+            speaker = str(tags["speaker"])
+            speaker_entry = _resolve_speaker_entry(speaker=speaker, character_lookup=character_lookup)
+            normalized_speaker = speaker.strip().lower()
+            pronunciation_map = {**name_to_verbalized}
+            if normalized_speaker and normalized_speaker != "unknown":
+                pronunciation_map.update(character_pronunciations.get(normalized_speaker, {}))
+            phonetic_text = replace_pronunciations(original_text, pronunciation_map)
+
+            segment_start = chapter.normalized_text.find(original_text, chapter_search_cursor)
+            if segment_start < 0:
+                segment_start = max(chapter_search_cursor, 0)
+                segment_offset_map: list[dict[str, int]] = []
+            else:
+                segment_offset_map = build_segment_level_offset_map(
+                    chapter.original_to_normalized_offset_map,
+                    segment_start,
+                    original_text,
+                )
+
+            segment_offset_candidates = [
+                (entry["original_start"], entry["original_end"])
+                for entry in segment_offset_map
+                if entry.get("original_start") != -1 and entry.get("original_end") != -1
+            ]
+            if segment_offset_candidates:
+                original_span_start = min(start for start, _ in segment_offset_candidates)
+                original_span_end = max(end for _, end in segment_offset_candidates)
+            else:
+                original_span_start = -1
+                original_span_end = -1
+            chapter_search_cursor = segment_start + len(original_text)
+
+            speaker = str(tags["speaker"])
+            resolved_voice_id, resolved_gender = resolve_voice(
+                segment_type=str(tags["type"]),
+                speaker=speaker,
+                character_lookup=character_lookup,
+                voice_config=voice_config,
+            )
+
+            canonical_entry = speaker_entry
+            gender = resolved_gender
+            if canonical_entry is not None:
+                gender = str(canonical_entry.get("gender", resolved_gender))
+
+            speaker_id: int | None = None
+            if canonical_entry is not None and canonical_entry.get("id") is not None:
+                speaker_id = int(canonical_entry["id"])
+
+            segment_payload = {
+                "chapter_id": chapter.chapter_index,
+                "chapter_internal_id": chapter.chapter_internal_id,
+                "segment_id": f"{chapter.chapter_index}-{segment_index:03d}",
+                "segment_index": segment_index,
+                "original_text": original_text,
+                "normalized_text": original_text,
+                "phonetic_text": phonetic_text,
+                "parent_paragraph_reference": {
+                    "paragraph_index": parent_paragraph_index,
+                    "paragraph_id": f"{chapter.chapter_index:03d}-p{parent_paragraph_index:03d}",
+                },
+                "parent_sentence_reference": {
+                    "sentence_start_index": parent_sentence_start_index,
+                    "sentence_end_index": parent_sentence_end_index,
+                    "sentence_id": (
+                        f"{chapter.chapter_index:03d}-p{parent_paragraph_index:03d}"
+                        f"-s{parent_sentence_start_index:03d}"
+                    ),
+                },
+                "type": tags["type"],
+                "type_evidence": _normalize_evidence_offsets(tags.get("type_evidence", {}), segment_offset_map),
+                "speaker": speaker,
+                "speaker_evidence": _normalize_evidence_offsets(tags.get("speaker_evidence", {}), segment_offset_map),
+                "speaker_id": speaker_id,
+                "gender": gender,
+                "type_confidence": tags["type_confidence"],
+                "speaker_state": tags.get("speaker_state", "uncertain"),
+                "emotion_state": tags.get("emotion_state", "uncertain"),
+                "summary_tag": _normalize_evidence_offsets(tags.get("summary_tag", {}), segment_offset_map),
+                "ambiguity_flags": tags.get("ambiguity_flags", []),
+                "emotion_evidence": _normalize_evidence_offsets(tags.get("emotion_evidence", {}), segment_offset_map),
+                "tag_states": {
+                    "type": tags.get("type_state", "uncertain"),
+                    "speaker": tags.get("speaker_state", "uncertain"),
+                    "emotion": tags.get("emotion_state", "uncertain"),
+                    "tension": tags.get("tension_contribution", {}).get("state", "uncertain"),
+                    "dominance": tags.get("dominance_contribution", {}).get("state", "uncertain"),
+                    "summary": tags.get("summary_tag", {}).get("state", "uncertain"),
+                },
+                "voice_id": resolved_voice_id,
+                "resolved_voice_id": resolved_voice_id,
+                "emotion_valence": tags["emotion_valence"],
+                "emotion_intensity": tags["emotion_intensity"],
+                "emotion_primary_label": tags["emotion_primary_label"],
+                "emotion_secondary_label": tags["emotion_secondary_label"],
+                "emotion_shift": _normalize_evidence_offsets(tags["emotion_shift"], segment_offset_map),
+                "narration_internal_thought_shift": _normalize_evidence_offsets(
+                    tags["narration_internal_thought_shift"],
+                    segment_offset_map,
+                ),
+                "internal_external_speech_shift": _normalize_evidence_offsets(
+                    tags["internal_external_speech_shift"],
+                    segment_offset_map,
+                ),
+                "tone_reversal": _normalize_evidence_offsets(tags["tone_reversal"], segment_offset_map),
+                "sub_segment_boundaries": [
+                    _normalize_evidence_offsets(boundary, segment_offset_map)
+                    for boundary in tags.get("sub_segment_boundaries", [])
+                ],
+                "tension_contribution": {
+                    "value": tags["tension_contribution"]["value"],
+                    "level": tags["tension_contribution"]["level"],
+                    "confidence": tags["tension_contribution"]["confidence"],
+                    "state": tags["tension_contribution"]["state"],
+                    "evidence": _normalize_evidence_offsets(
+                        tags["tension_contribution"].get("evidence", {}),
+                        segment_offset_map,
+                    ),
+                },
+                "dominance_contribution": {
+                    "value": tags["dominance_contribution"]["value"],
+                    "level": tags["dominance_contribution"]["level"],
+                    "dominant_agent": tags["dominance_contribution"]["dominant_agent"],
+                    "evidence": _normalize_evidence_offsets(
+                        tags["dominance_contribution"].get("evidence", {}),
+                        segment_offset_map,
+                    ),
+                    "confidence": tags["dominance_contribution"]["confidence"],
+                    "state": tags["dominance_contribution"]["state"],
+                },
+                "confidence": {
+                    "speaker": tags["speaker_confidence"],
+                    "emotion": tags["emotion_confidence"],
+                    "gender": _resolve_gender_confidence(speaker=speaker, character_lookup=character_lookup),
+                    "type": tags["type_confidence"],
+                    "tension": tags["tension_contribution"]["confidence"],
+                    "dominance": tags["dominance_contribution"]["confidence"],
+                },
+                "original_span_pointer": {
+                    "original_start_char": original_span_start,
+                    "original_end_char": original_span_end,
+                    "normalized_start_char": segment_start,
+                    "normalized_end_char": segment_start + len(original_text),
+                },
+                "original_to_normalized_offset_map": segment_offset_map,
+                "chunk_index": chunk_index,
+                "chunk_count": chunk_count,
+            }
+
+            segment_payloads.append(segment_payload)
+            if llm_probe_text is None and _should_escalate_to_llm(
+                segment_payload,
+                confidence_threshold=llm_confidence_threshold,
+                deep_semantic_refinement=deep_semantic_refinement,
+            ):
+                llm_probe_text = original_text
+
+            boundary_payloads: list[dict[str, object]] = []
+            for boundary_index, boundary in enumerate(tags.get("sub_segment_boundaries", []), start=1):
+                if not isinstance(boundary, dict):
+                    continue
+                evidence = boundary.get("evidence", {})
+                shift_type = boundary.get("shift_type")
+                boundary_payloads.append(
+                    {
+                        "boundary_index": boundary_index,
+                        "segment_id": segment_payload["segment_id"],
+                        "shift_type": str(shift_type),
+                        "boundary_start_char": int(boundary.get("boundary_start_char", 0)),
+                        "boundary_end_char": int(boundary.get("boundary_end_char", 0)),
+                        "from_label": (None if boundary.get("from_label") is None else str(boundary.get("from_label"))),
+                        "to_label": (None if boundary.get("to_label") is None else str(boundary.get("to_label"))),
+                        "from_text": (None if boundary.get("from_text") is None else str(boundary.get("from_text"))),
+                        "to_text": (None if boundary.get("to_text") is None else str(boundary.get("to_text"))),
+                        "confidence": float(boundary.get("confidence", 0.0)),
+                        "tags": {"shift_type": shift_type, "payload": dict(boundary)},
+                        "evidence": evidence,
+                    }
+                )
+
+            sub_segment_payloads.append(boundary_payloads)
+
+    return {
+        "chunk_index": chunk_index,
+        "chunk_count": chunk_count,
+        "segment_payloads": segment_payloads,
+        "sub_segment_payloads": sub_segment_payloads,
+        "llm_probe_text": llm_probe_text,
+    }
 
 
 def _extract_model_version(model_identifier: object) -> str | None:
@@ -382,6 +690,20 @@ def _build_probe_provider_order(
     return provider_order
 
 
+def get_provider_priority_order(
+    session: Session,
+    requested_provider: str,
+    settings: object,
+    max_calls_per_day: int,
+) -> tuple[str, ...]:
+    return _build_probe_provider_order(
+        session=session,
+        requested_provider=requested_provider,
+        settings=settings,
+        max_calls_per_day=max_calls_per_day,
+    )
+
+
 def _normalize_provider_name_for_llm(value: object) -> str:
     return str(value).strip().lower()
 
@@ -635,207 +957,101 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     session.query(SubSegmentTag).filter(SubSegmentTag.run_id == run.id).delete()
 
     max_chars = int(run_config.get("max_segment_chars", 255))
+    llm_confidence_threshold = _coerce_confidence_threshold(run_config.get("llm_confidence_threshold", _LLM_CONFIDENCE_THRESHOLD_DEFAULT))
+    deep_semantic_refinement = bool(run_config.get("deep_semantic_refinement", False))
+    max_chunk_chars = _resolve_pipeline_chunk_max_chars(run_config)
+    chapter_work_items = _build_chunk_work_items(chapters=chapters)
+    chunk_jobs = _build_chunk_jobs(chapter_work_items=chapter_work_items, max_chunk_chars=max_chunk_chars)
+    chunk_count = len(chunk_jobs)
+    run.config_json = {
+        **(run.config_json or {}),
+        "pipeline_chunking": {
+            "enabled": chunk_count > 1,
+            "chunk_max_chars": max_chunk_chars,
+            "chunk_count": chunk_count,
+        },
+    }
     llm_probe_text: str | None = None
     total_segments = 0
     segment_payloads: list[dict[str, object]] = []
+    sub_segment_payloads: list[list[dict[str, object]]] = []
 
-    for chapter in chapters:
-        pieces = segment_text_with_parent_paragraph(chapter.normalized_text, max_chars=max_chars)
-        chapter_search_cursor = 0
-        for segment_index, piece in enumerate(pieces, start=1):
-            original_text = str(piece.get("text", ""))
-            parent_paragraph_index = int(piece.get("paragraph_index", 1))
-            parent_sentence_start_index = int(piece.get("sentence_start_index", 1))
-            parent_sentence_end_index = int(piece.get("sentence_end_index", parent_sentence_start_index))
-            if parent_sentence_end_index < parent_sentence_start_index:
-                parent_sentence_end_index = parent_sentence_start_index
-            tags = tag_segment(original_text)
-            speaker = str(tags["speaker"])
-            speaker_entry = _resolve_speaker_entry(speaker=speaker, character_lookup=character_lookup)
-            normalized_speaker = speaker.strip().lower()
-            pronunciation_map = {**name_to_verbalized}
-            if normalized_speaker and normalized_speaker != "unknown":
-                pronunciation_map.update(character_pronunciations.get(normalized_speaker, {}))
-            phonetic_text = replace_pronunciations(original_text, pronunciation_map)
-            segment_start = chapter.normalized_text.find(original_text, chapter_search_cursor)
-            if segment_start < 0:
-                segment_start = max(chapter_search_cursor, 0)
-                segment_offset_map: list[dict[str, int]] = []
-            else:
-                segment_offset_map = build_segment_level_offset_map(
-                    chapter.original_to_normalized_offset_map,
-                    segment_start,
-                    original_text,
-                )
-            segment_offset_candidates = [
-                (entry["original_start"], entry["original_end"])
-                for entry in segment_offset_map
-                if entry.get("original_start") != -1 and entry.get("original_end") != -1
-            ]
-            if segment_offset_candidates:
-                original_span_start = min(start for start, _ in segment_offset_candidates)
-                original_span_end = max(end for _, end in segment_offset_candidates)
-            else:
-                original_span_start = -1
-                original_span_end = -1
-            chapter_search_cursor = segment_start + len(original_text)
-
-            speaker = str(tags["speaker"])
-            resolved_voice_id, resolved_gender = resolve_voice(
-                segment_type=str(tags["type"]),
-                speaker=speaker,
-                character_lookup=character_lookup,
-                voice_config=voice_config,
-            )
-
-            canonical_entry = speaker_entry
-            gender = resolved_gender
-            if canonical_entry is not None:
-                gender = str(canonical_entry.get("gender", resolved_gender))
-
-            speaker_id: int | None = None
-            if canonical_entry is not None:
-                speaker_id = int(canonical_entry["id"]) if canonical_entry.get("id") is not None else None
-
-            segment_payload = {
-                "chapter_id": chapter.chapter_index,
-                "chapter_internal_id": chapter.chapter_internal_id,
-                "segment_id": f"{chapter.chapter_index}-{segment_index:03d}",
-                "segment_index": segment_index,
-                "original_text": original_text,
-                "normalized_text": original_text,
-                "phonetic_text": phonetic_text,
-                "parent_paragraph_reference": {
-                    "paragraph_index": parent_paragraph_index,
-                    "paragraph_id": f"{chapter.chapter_index:03d}-p{parent_paragraph_index:03d}",
-                },
-                "parent_sentence_reference": {
-                    "sentence_start_index": parent_sentence_start_index,
-                    "sentence_end_index": parent_sentence_end_index,
-                    "sentence_id": (
-                        f"{chapter.chapter_index:03d}-p{parent_paragraph_index:03d}"
-                        f"-s{parent_sentence_start_index:03d}"
-                    ),
-                },
-                "type": tags["type"],
-                "type_evidence": _normalize_evidence_offsets(tags.get("type_evidence", {}), segment_offset_map),
-                "speaker": speaker,
-                "speaker_evidence": _normalize_evidence_offsets(tags.get("speaker_evidence", {}), segment_offset_map),
-                "speaker_id": speaker_id,
-                "gender": gender,
-                "type_confidence": tags["type_confidence"],
-                "speaker_state": tags.get("speaker_state", "uncertain"),
-                "emotion_state": tags.get("emotion_state", "uncertain"),
-                "summary_tag": _normalize_evidence_offsets(tags.get("summary_tag", {}), segment_offset_map),
-                "ambiguity_flags": tags.get("ambiguity_flags", []),
-                "emotion_evidence": _normalize_evidence_offsets(tags.get("emotion_evidence", {}), segment_offset_map),
-                "tag_states": {
-                    "type": tags.get("type_state", "uncertain"),
-                    "speaker": tags.get("speaker_state", "uncertain"),
-                    "emotion": tags.get("emotion_state", "uncertain"),
-                    "tension": tags.get("tension_contribution", {}).get("state", "uncertain"),
-                    "dominance": tags.get("dominance_contribution", {}).get("state", "uncertain"),
-                    "summary": tags.get("summary_tag", {}).get("state", "uncertain"),
-                },
-                "voice_id": resolved_voice_id,
-                "resolved_voice_id": resolved_voice_id,
-                "emotion_valence": tags["emotion_valence"],
-                "emotion_intensity": tags["emotion_intensity"],
-                "emotion_primary_label": tags["emotion_primary_label"],
-                "emotion_secondary_label": tags["emotion_secondary_label"],
-                "emotion_shift": _normalize_evidence_offsets(tags["emotion_shift"], segment_offset_map),
-                "narration_internal_thought_shift": _normalize_evidence_offsets(
-                    tags["narration_internal_thought_shift"],
-                    segment_offset_map,
-                ),
-                "internal_external_speech_shift": _normalize_evidence_offsets(
-                    tags["internal_external_speech_shift"],
-                    segment_offset_map,
-                ),
-                "tone_reversal": _normalize_evidence_offsets(tags["tone_reversal"], segment_offset_map),
-                "sub_segment_boundaries": [
-                    _normalize_evidence_offsets(boundary, segment_offset_map)
-                    for boundary in tags.get("sub_segment_boundaries", [])
-                ],
-                "tension_contribution": {
-                    "value": tags["tension_contribution"]["value"],
-                    "level": tags["tension_contribution"]["level"],
-                    "confidence": tags["tension_contribution"]["confidence"],
-                    "state": tags["tension_contribution"]["state"],
-                    "evidence": _normalize_evidence_offsets(
-                        tags["tension_contribution"].get("evidence", {}),
-                        segment_offset_map,
-                    ),
-                },
-                "dominance_contribution": {
-                    "value": tags["dominance_contribution"]["value"],
-                    "level": tags["dominance_contribution"]["level"],
-                    "dominant_agent": tags["dominance_contribution"]["dominant_agent"],
-                    "evidence": _normalize_evidence_offsets(
-                        tags["dominance_contribution"].get("evidence", {}),
-                        segment_offset_map,
-                    ),
-                    "confidence": tags["dominance_contribution"]["confidence"],
-                    "state": tags["dominance_contribution"]["state"],
-                },
-                "confidence": {
-                    "speaker": tags["speaker_confidence"],
-                    "emotion": tags["emotion_confidence"],
-                    "gender": _resolve_gender_confidence(speaker=speaker, character_lookup=character_lookup),
-                    "type": tags["type_confidence"],
-                    "tension": tags["tension_contribution"]["confidence"],
-                    "dominance": tags["dominance_contribution"]["confidence"],
-                },
-                "original_span_pointer": {
-                    "original_start_char": original_span_start,
-                    "original_end_char": original_span_end,
-                    "normalized_start_char": segment_start,
-                    "normalized_end_char": segment_start + len(original_text),
-                },
-                "original_to_normalized_offset_map": segment_offset_map,
+    chunk_payloads: list[dict[str, object]] = []
+    if chunk_jobs:
+        with ThreadPoolExecutor(max_workers=min(8, len(chunk_jobs))) as executor:
+            futures = {
+                executor.submit(
+                    _build_chunk_segment_payloads,
+                    chunk_index=chunk_index,
+                    chunk_count=chunk_count,
+                    chapter_batch=chapter_batch,
+                    max_chars=max_chars,
+                    name_to_verbalized=name_to_verbalized,
+                    character_lookup=character_lookup,
+                    character_pronunciations=character_pronunciations,
+                    voice_config=voice_config,
+                    llm_confidence_threshold=llm_confidence_threshold,
+                    deep_semantic_refinement=deep_semantic_refinement,
+                ): chunk_index
+                for chunk_index, chapter_batch in enumerate(chunk_jobs, start=1)
             }
-            segment_payloads.append(segment_payload)
-            if llm_probe_text is None and _should_escalate_to_llm(
-                segment_payload,
-                confidence_threshold=run_config.get("llm_confidence_threshold", _LLM_CONFIDENCE_THRESHOLD_DEFAULT),
-                deep_semantic_refinement=run_config.get("deep_semantic_refinement", False),
-            ):
-                llm_probe_text = original_text
+            ordered_payloads: dict[int, dict[str, object]] = {}
+            for future in as_completed(futures):
+                chunk_payload = future.result()
+                ordered_payloads[int(chunk_payload.get("chunk_index", 0))] = chunk_payload
 
-            segment = Segment(
-                run_id=run.id,
-                chapter_id=chapter.id,
-                segment_index=segment_index,
-                segment_json=segment_payload,
-            )
-            session.add(segment)
-            session.flush()
+            for chunk_index in sorted(ordered_payloads):
+                chunk_payloads.append(ordered_payloads[chunk_index])
 
-            for boundary_index, boundary in enumerate(tags["sub_segment_boundaries"], start=1):
-                if not isinstance(boundary, dict):
-                    continue
-                segment_payload_id = str(segment_payload["segment_id"])
-                session.add(
-                    SubSegmentTag(
-                        run_id=run.id,
-                        chapter_id=chapter.id,
-                        segment_id=segment.id,
-                        sub_segment_id=f"{segment_payload_id}-{boundary_index:02d}",
-                        sub_segment_index=boundary_index,
-                        shift_type=str(boundary.get("shift_type")),
-                        boundary_start_char=int(boundary.get("boundary_start_char", 0)),
-                        boundary_end_char=int(boundary.get("boundary_end_char", 0)),
-                        from_label=(None if boundary.get("from_label") is None else str(boundary.get("from_label"))),
-                        to_label=(None if boundary.get("to_label") is None else str(boundary.get("to_label"))),
-                        from_text=(None if boundary.get("from_text") is None else str(boundary.get("from_text"))),
-                        to_text=(None if boundary.get("to_text") is None else str(boundary.get("to_text"))),
-                        confidence=float(boundary.get("confidence", 0.0)),
-                        tags={"shift_type": boundary.get("shift_type"), "payload": dict(boundary)},
-                        evidence=boundary.get("evidence", {}),
-                    )
+    for chunk_payload in chunk_payloads:
+        segment_payloads.extend(chunk_payload.get("segment_payloads", []))
+        sub_segment_payloads.extend(chunk_payload.get("sub_segment_payloads", []))
+        if llm_probe_text is None:
+            candidate_probe_text = chunk_payload.get("llm_probe_text")
+            if isinstance(candidate_probe_text, str) and candidate_probe_text:
+                llm_probe_text = candidate_probe_text
+
+    chapter_id_by_index = {
+        int(item.chapter_index): item.chapter_id
+        for item in chapter_work_items
+    }
+
+    for segment_payload, boundary_payloads in zip(segment_payloads, sub_segment_payloads):
+        chapter_index = int(segment_payload.get("chapter_id", 0))
+        segment = Segment(
+            run_id=run.id,
+            chapter_id=chapter_id_by_index[chapter_index],
+            segment_index=int(segment_payload["segment_index"]),
+            segment_json=segment_payload,
+        )
+        session.add(segment)
+        session.flush()
+
+        segment_payload_id = str(segment_payload["segment_id"])
+        for boundary_payload in boundary_payloads:
+            if not isinstance(boundary_payload, dict):
+                continue
+            session.add(
+                SubSegmentTag(
+                    run_id=run.id,
+                    chapter_id=chapter_id_by_index[chapter_index],
+                    segment_id=segment.id,
+                    sub_segment_id=f"{segment_payload_id}-{int(boundary_payload.get('boundary_index', 0)):02d}",
+                    sub_segment_index=int(boundary_payload.get("boundary_index", 0)),
+                    shift_type=str(boundary_payload.get("shift_type")),
+                    boundary_start_char=int(boundary_payload.get("boundary_start_char", 0)),
+                    boundary_end_char=int(boundary_payload.get("boundary_end_char", 0)),
+                    from_label=(None if boundary_payload.get("from_label") is None else str(boundary_payload.get("from_label"))),
+                    to_label=(None if boundary_payload.get("to_label") is None else str(boundary_payload.get("to_label"))),
+                    from_text=(None if boundary_payload.get("from_text") is None else str(boundary_payload.get("from_text"))),
+                    to_text=(None if boundary_payload.get("to_text") is None else str(boundary_payload.get("to_text"))),
+                    confidence=float(boundary_payload.get("confidence", 0.0)),
+                    tags=boundary_payload.get("tags", {}),
+                    evidence=boundary_payload.get("evidence", {}),
                 )
+            )
 
-            total_segments += 1
+        total_segments += 1
 
     llm_enabled = bool(run_config.get("llm_enabled", False))
     if llm_enabled and llm_probe_text:
@@ -926,12 +1142,14 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         settings=settings,
         run_config=run_config,
     )
-    provider_candidates = _build_probe_provider_order(
+    provider_candidates = get_provider_priority_order(
         session=session,
         requested_provider=provider,
         settings=run_scoped_settings,
         max_calls_per_day=max_calls_per_day,
     )
+    if provider not in provider_candidates:
+        provider_candidates = (provider, *provider_candidates)
     configuration_snapshot_id = _resolve_configuration_snapshot_id(
         project=project,
         run=run,

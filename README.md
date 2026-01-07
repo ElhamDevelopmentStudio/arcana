@@ -191,6 +191,7 @@ Pipeline chunking for long corpora:
   - `chunk_max_chars`
   - `chunk_count`
 - Segment payloads include stable `chunk_index` and `chunk_count`.
+- Segments are prepared per-chunk in parallel and then flushed in deterministic chapter/segment order to maintain stable ordering.
 - Chunks group full chapters only; intra-chapter segmentation remains in segmenter stage.
 
 Run model metadata persistence:
