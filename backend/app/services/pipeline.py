@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from hashlib import sha256
 from uuid import uuid4
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -59,6 +60,41 @@ _LLM_CONFIDENCE_THRESHOLD_DEFAULT = 0.6
 
 class PipelineError(RuntimeError):
     pass
+
+
+class _RunScopedLLMSettings:
+    def __init__(self, base_settings: object, provider_api_key_overrides: dict[str, object]) -> None:
+        self._base_settings = base_settings
+        self._provider_api_key_overrides = provider_api_key_overrides
+
+    def __getattr__(self, key: str) -> object:
+        if key in self._provider_api_key_overrides:
+            return self._provider_api_key_overrides[key]
+        return getattr(self._base_settings, key)
+
+
+def _build_run_scoped_llm_settings(settings: object, run_config: dict[str, Any]) -> object:
+    if not isinstance(run_config, dict):
+        return settings
+
+    raw_provider_api_keys = run_config.get("provider_api_keys")
+    if not isinstance(raw_provider_api_keys, dict):
+        return settings
+
+    provider_api_key_overrides: dict[str, object] = {}
+    for provider_name, provider_api_keys in raw_provider_api_keys.items():
+        normalized_provider = str(provider_name).strip().lower()
+        if not normalized_provider:
+            continue
+        provider_api_key_overrides[f"{normalized_provider}_api_keys"] = provider_api_keys
+
+    if not provider_api_key_overrides:
+        return settings
+
+    return _RunScopedLLMSettings(
+        base_settings=settings,
+        provider_api_key_overrides=provider_api_key_overrides,
+    )
 
 
 def _coerce_confidence(value: object) -> float:
@@ -666,10 +702,14 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
 
     max_calls_per_day = int(run_config.get("max_calls_per_day", 25))
     settings = get_settings()
+    run_scoped_settings = _build_run_scoped_llm_settings(
+        settings=settings,
+        run_config=run_config,
+    )
     provider_candidates = _build_probe_provider_order(
         session=session,
         requested_provider=provider,
-        settings=settings,
+        settings=run_scoped_settings,
         max_calls_per_day=max_calls_per_day,
     )
     configuration_snapshot_id = str(project.configuration_snapshot_id or f"run-{run.id}")
@@ -697,7 +737,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
 
         provider_requestable, provider_request_reason = llm_router.is_provider_requestable(
             session=session,
-            settings=settings,
+            settings=run_scoped_settings,
             provider_name=active_provider,
             max_calls_per_day=max_calls_per_day,
         )
@@ -709,7 +749,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             break
 
         runtime_base_url, runtime_model_identifier, runtime_api_key = get_provider_runtime_settings(
-            settings=settings,
+            settings=run_scoped_settings,
             provider_name=active_provider,
         )
         if pinned_model and active_provider == provider:
@@ -749,7 +789,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             return
 
         runtime_api_keys = get_provider_api_keys(
-            settings=settings,
+            settings=run_scoped_settings,
             provider_name=active_provider,
         )
         if not runtime_api_keys and runtime_api_key:

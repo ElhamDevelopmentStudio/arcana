@@ -419,6 +419,7 @@ class RunCreateRequest(BaseModel):
     deterministic_model_identifier: str | None = None
     deterministic_seed: int | None = Field(default=None, ge=0)
     randomization_config: dict[str, object] | None = None
+    provider_api_keys: dict[str, list[str]] | None = None
     allow_unfinalized_character_map: bool = False
     internal_thought_voice_policy: str = "character"
     internal_thought_voice: str | None = None
@@ -482,6 +483,41 @@ class RunCreateRequest(BaseModel):
         if not isinstance(value, dict):
             raise ValueError("randomization_config must be an object mapping")
         return value
+
+    @field_validator("provider_api_keys", mode="before")
+    @classmethod
+    def normalize_provider_api_keys(cls, value: dict[str, object] | None) -> dict[str, list[str]] | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError("provider_api_keys must be an object map")
+
+        normalized: dict[str, list[str]] = {}
+        for provider, api_keys in value.items():
+            provider_name = str(provider).strip().lower()
+            if not provider_name:
+                continue
+
+            if api_keys is None:
+                continue
+            if isinstance(api_keys, str):
+                keys = [entry.strip() for entry in api_keys.split(",")]
+            elif isinstance(api_keys, (list, tuple, set)):
+                keys = []
+                for entry in api_keys:
+                    if entry is None:
+                        continue
+                    keys.append(str(entry).strip())
+            else:
+                keys = [str(api_keys).strip()]
+
+            cleaned = [key for key in keys if key]
+            if not cleaned:
+                continue
+
+            normalized[provider_name] = cleaned
+
+        return normalized if normalized else None
 
 
 class RunResponse(BaseModel):
