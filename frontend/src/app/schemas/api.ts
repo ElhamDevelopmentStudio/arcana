@@ -294,7 +294,43 @@ export const tensionGraphResponseSchema = z.object({
   points: z.array(tensionGraphPointSchema),
   peak_markers: z.array(tensionGraphPeakMarkerSchema),
   plateau_regions: z.array(tensionGraphPlateauRegionSchema),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
+export const polarityGraphPointSchema = z.object({
+  position: z.number().int().positive(),
+  rolling_mean_valence: z.number().min(-1).max(1),
+  rolling_mean_intensity: z.number().min(0).max(1),
+  chapter_id: z.number().int().nonnegative().nullable().optional().default(null),
+  segment_index: z.number().int().positive().nullable().optional().default(null),
+  segment_id: z.string().nullable().optional().default(null),
+});
+
+export const polarityGraphVolatilityMarkerSchema = z.object({
+  position: z.number().int().positive().nullable().optional().default(null),
+  from_segment_id: z.string().nullable().optional().default(null),
+  segment_id: z.string().nullable().optional().default(null),
+  chapter_id: z.number().int().nonnegative().nullable().optional().default(null),
+  segment_index: z.number().int().positive().nullable().optional().default(null),
+  volatility_index: z.number().min(0),
+  level: z.string(),
+  valence_delta: z.number(),
+  intensity_delta: z.number(),
+  tension_delta: z.number(),
+  dominance_delta: z.number(),
+  triggers: z.array(z.string()).default([]),
+  from_tension: z.number().nullable().optional().default(null),
+  to_tension: z.number().nullable().optional().default(null),
+});
+
+export const polarityGraphResponseSchema = z.object({
+  metric_id: z.string(),
+  metric_label: z.string().min(1),
+  source_path: z.array(z.string()),
+  value_key: z.string(),
+  points: z.array(polarityGraphPointSchema),
+  volatility_markers: z.array(polarityGraphVolatilityMarkerSchema),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type ModeCatalogDto = z.infer<typeof modeCatalogSchema>;
@@ -324,3 +360,6 @@ export type TensionGraphPointDto = z.infer<typeof tensionGraphPointSchema>;
 export type TensionGraphPeakMarkerDto = z.infer<typeof tensionGraphPeakMarkerSchema>;
 export type TensionGraphPlateauRegionDto = z.infer<typeof tensionGraphPlateauRegionSchema>;
 export type TensionGraphResponseDto = z.infer<typeof tensionGraphResponseSchema>;
+export type PolarityGraphPointDto = z.infer<typeof polarityGraphPointSchema>;
+export type PolarityGraphVolatilityMarkerDto = z.infer<typeof polarityGraphVolatilityMarkerSchema>;
+export type PolarityGraphResponseDto = z.infer<typeof polarityGraphResponseSchema>;
