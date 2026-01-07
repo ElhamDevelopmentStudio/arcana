@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from bisect import bisect_right
 from collections.abc import Mapping
 import hashlib
+import json
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,14 +21,18 @@ from app.models import (
     ComparisonWorkspace,
     ComparisonWorkspaceRun,
     LLMCall,
+    SubSegmentTag,
+    RunChangelogEntry,
     Project,
     ProjectRawCorpusBlob,
     PronunciationDictionary,
     PronunciationDictionarySnapshot,
+    RunConfigurationSnapshot,
     TimeSeriesSnapshot,
     VoiceMapSnapshot,
     Run,
     Segment,
+    RunNormalizedCorpusBlob,
 )
 from app.schemas import (
     CharacterImportResponse,
@@ -143,6 +148,8 @@ from app.services.phonetics import replace_pronunciations_with_counts
 
 LOW_CONFIDENCE_STATE_VALUES = {"uncertain", "unknown"}
 LOW_CONFIDENCE_REGION_THRESHOLD = 0.8
+_RUN_RECOVERY_STALE_WINDOW_SECONDS = 600
+_PIPELINE_RECOVERY_CONFIG_KEY = "pipeline_recovery"
 
 app = FastAPI(title="NIPE PoC API", version="0.1.0")
 
@@ -167,6 +174,24 @@ def _serialize_datetime_to_utc_iso(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc).isoformat()
     return value.astimezone(timezone.utc).isoformat()
+
+
+def _append_run_changelog_entry(
+    *,
+    session: Session,
+    run: Run,
+    event_type: str,
+    event_message: str | None = None,
+    event_metadata: dict[str, object] | None = None,
+) -> None:
+    session.add(
+        RunChangelogEntry(
+            run_id=run.id,
+            event_type=event_type.strip() or "unknown_event",
+            event_message=event_message,
+            event_metadata=dict(event_metadata or {}),
+        )
+    )
 
 
 def _coerce_float(value: object | None, *, fallback: float | None = None) -> float | None:
@@ -221,6 +246,183 @@ def _is_low_confidence_region(segment: dict[str, object]) -> bool:
             return True
 
     return False
+
+
+def _hash_text(value: str | None) -> str:
+    if value is None:
+        return ""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _build_idempotent_state_signature_payload(
+    *,
+    session: Session,
+    project: Project,
+    run_config: dict[str, object],
+) -> dict[str, object]:
+    chapter_rows = (
+        session.query(Chapter)
+        .filter(Chapter.project_id == project.id)
+        .order_by(Chapter.chapter_index.asc(), Chapter.id.asc())
+        .all()
+    )
+    chapters = [
+        {
+            "chapter_index": row.chapter_index,
+            "chapter_internal_id": row.chapter_internal_id,
+            "chapter_title": row.chapter_title,
+            "raw_text_hash": _hash_text(row.raw_text),
+            "normalized_text_hash": _hash_text(row.normalized_text),
+            "raw_text_len": len(row.raw_text),
+            "normalized_text_len": len(row.normalized_text),
+        }
+        for row in chapter_rows
+    ]
+
+    character_rows = (
+        session.query(Character)
+        .filter(Character.project_id == project.id)
+        .order_by(Character.name.asc(), Character.id.asc())
+        .all()
+    )
+    characters = [
+        {
+            "name": row.name,
+            "verbalized_form": row.verbalized_form,
+            "gender": row.gender,
+            "aliases": sorted({alias.strip() for alias in (row.aliases or []) if str(alias).strip()}),
+            "source": row.source,
+            "voice_id": row.voice_id or None,
+            "inferred_gender": row.inferred_gender,
+            "inferred_confidence": row.inferred_confidence,
+        }
+        for row in character_rows
+    ]
+
+    voice_map_rows = (
+        session.query(CharacterVoiceMap)
+        .filter(CharacterVoiceMap.project_id == project.id)
+        .order_by(CharacterVoiceMap.character_id.asc(), CharacterVoiceMap.id.asc())
+        .all()
+    )
+    character_voice_map = [
+        {
+            "character_id": row.character_id,
+            "voice_id": row.voice_id,
+        }
+        for row in voice_map_rows
+    ]
+
+    pronunciation_rows = (
+        session.query(PronunciationDictionary)
+        .filter(PronunciationDictionary.project_id == project.id)
+        .order_by(
+            PronunciationDictionary.scope.asc(),
+            PronunciationDictionary.character_name.asc(),
+            PronunciationDictionary.term.asc(),
+            PronunciationDictionary.id.asc(),
+        )
+        .all()
+    )
+    pronunciation_dictionary = [
+        {
+            "scope": row.scope,
+            "character_name": row.character_name,
+            "term": row.term,
+            "verbalized_form": row.verbalized_form,
+            "source": row.source,
+            "confidence": row.confidence,
+        }
+        for row in pronunciation_rows
+    ]
+
+    run_config_signature = dict(run_config)
+    run_config_signature.pop("idempotency_key", None)
+    run_config_signature.pop("idempotency_signature", None)
+    run_config_signature.pop("configuration_snapshot_id", None)
+    run_config_signature.pop("configuration_snapshot_version", None)
+    run_config_signature.pop("character_map_snapshot_id", None)
+    run_config_signature.pop("character_map_snapshot_version", None)
+    run_config_signature.pop("pronunciation_dictionary_snapshot_id", None)
+    run_config_signature.pop("pronunciation_dictionary_snapshot_version", None)
+    run_config_signature.pop("voice_map_snapshot_id", None)
+    run_config_signature.pop("voice_map_snapshot_version", None)
+    run_config_signature.pop("time_series_snapshot_id", None)
+    run_config_signature.pop("time_series_snapshot_version", None)
+    run_config_signature.pop("pipeline_recovery", None)
+
+    return {
+        "run_config": run_config_signature,
+        "project": {
+            "selected_mode": project.selected_mode,
+            "selected_modes": sorted(project.selected_modes or []),
+            "llm_enabled": project.llm_enabled,
+            "llm_provider_config_json": dict(project.llm_provider_config_json or {}),
+            "voice_config_json": dict(project.voice_config_json or {}),
+            "character_map_finalized": project.character_map_finalized,
+            "ingestion_timestamp": _serialize_datetime_to_utc_iso(project.ingestion_timestamp),
+            "ingestion_log_hash": _hash_text(_canonical_json(project.ingestion_log_json or {})),
+        },
+        "chapters": chapters,
+        "characters": characters,
+        "character_voice_map": character_voice_map,
+        "pronunciation_dictionary": pronunciation_dictionary,
+    }
+
+
+def _build_idempotent_rerun_signature(
+    *,
+    session: Session,
+    project: Project,
+    run_config: dict[str, object],
+) -> str:
+    payload = _build_idempotent_state_signature_payload(
+        session=session,
+        project=project,
+        run_config=run_config,
+    )
+    return _hash_text(_canonical_json(payload))
+
+
+def _find_matching_idempotent_run(
+    *,
+    session: Session,
+    project_id: int,
+    idempotency_key: str,
+    idempotency_signature: str,
+) -> Run | None:
+    candidate_runs = (
+        session.query(Run)
+        .filter(Run.project_id == project_id)
+        .order_by(Run.id.desc())
+        .all()
+    )
+    for run in candidate_runs:
+        run_config = run.config_json
+        if not isinstance(run_config, dict):
+            continue
+        if run_config.get("idempotency_key") != idempotency_key:
+            continue
+        if run_config.get("idempotency_signature") != idempotency_signature:
+            continue
+        if run.status == "failed":
+            continue
+        return run
+    return None
+
+
+def _build_run_response_from_existing(session: Session, run: Run) -> RunResponse:
+    segment_count = session.query(Segment).filter(Segment.run_id == run.id).count()
+    return RunResponse(
+        run_id=run.id,
+        project_id=run.project_id,
+        status=run.status,
+        segment_count=segment_count,
+    )
 
 
 @app.get("/health")
@@ -583,6 +785,10 @@ def _build_initial_configuration_snapshot_id(project_id: int) -> str:
     return f"project-{project_id}-config-initial"
 
 
+def _build_run_configuration_snapshot_id(run_id: int, version: int) -> str:
+    return f"run-{run_id}-config-{version}"
+
+
 def _project_title_needs_fallback(title: str) -> bool:
     normalized = title.strip().lower()
     return normalized in {"", "untitled", "untitled project", "new project"}
@@ -734,6 +940,60 @@ def _persist_character_map_snapshot(
             project_id=project_id,
             session=session,
         ),
+    )
+
+
+def _build_run_configuration_snapshot_payload(
+    project_id: int,
+    run_id: int,
+    run_config: Mapping[str, object],
+    version: int,
+) -> dict[str, object]:
+    return {
+        "schema_version": "1.0.0",
+        "project_id": int(project_id),
+        "run_id": int(run_id),
+        "version": int(version),
+        "configuration_snapshot_id": _build_run_configuration_snapshot_id(run_id=run_id, version=version),
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "mode": str(run_config.get("mode", DEFAULT_MODE)),
+        "configuration": dict(run_config),
+    }
+
+
+def _next_run_configuration_snapshot_version(session: Session, project_id: int) -> int:
+    latest_version = (
+        session.query(RunConfigurationSnapshot.version)
+        .filter(RunConfigurationSnapshot.project_id == project_id)
+        .order_by(RunConfigurationSnapshot.version.desc())
+        .first()
+    )
+    if latest_version is None:
+        return 1
+    return int(latest_version[0]) + 1
+
+
+def _persist_run_configuration_snapshot(
+    session: Session,
+    project_id: int,
+    run_id: int,
+    source: str,
+    run_config: Mapping[str, object],
+) -> RunConfigurationSnapshot:
+    session.flush()
+    version = _next_run_configuration_snapshot_version(session=session, project_id=project_id)
+    snapshot_payload = _build_run_configuration_snapshot_payload(
+        project_id=project_id,
+        run_id=run_id,
+        run_config=run_config,
+        version=version,
+    )
+    return RunConfigurationSnapshot(
+        project_id=project_id,
+        run_id=run_id,
+        version=version,
+        source=source.strip() or "run_capture",
+        snapshot_json=snapshot_payload,
     )
 
 
@@ -999,6 +1259,180 @@ def _coalesce_internal_thought_policy(
             explicit_overrides["internal_thought_voice"] = project_thought_voice
 
 
+def _coerce_utc_datetime(value: object | None) -> datetime | None:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _coerce_recovery_state(value: object | None) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return dict(value)
+
+
+def _read_pipeline_recovery_state(run: Run) -> dict[str, object]:
+    config = run.config_json or {}
+    if not isinstance(config, dict):
+        return {}
+    return _coerce_recovery_state(config.get(_PIPELINE_RECOVERY_CONFIG_KEY))
+
+
+def _set_pipeline_recovery_state(
+    run: Run,
+    *,
+    session: Session,
+    status: str,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    raw_config = run.config_json
+    run_config = raw_config.copy() if isinstance(raw_config, dict) else {}
+    current_recovery_state = _coerce_recovery_state(run_config.get(_PIPELINE_RECOVERY_CONFIG_KEY))
+    current_recovery_state.update(metadata or {})
+    current_recovery_state.update(
+        {
+            "status": status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    run_config[_PIPELINE_RECOVERY_CONFIG_KEY] = current_recovery_state
+    run.config_json = run_config
+    session.add(run)
+
+
+def _clear_run_pipeline_artifacts(session: Session, run: Run) -> None:
+    session.query(LLMCall).filter(LLMCall.run_id == run.id).delete()
+    session.query(SubSegmentTag).filter(SubSegmentTag.run_id == run.id).delete()
+    session.query(Segment).filter(Segment.run_id == run.id).delete()
+    session.query(RunNormalizedCorpusBlob).filter(RunNormalizedCorpusBlob.run_id == run.id).delete()
+
+
+def _is_run_recoverable(run: Run, now: datetime | None = None) -> bool:
+    if run.status == "interrupted":
+        return True
+    if run.status != "running":
+        return False
+    reference_time = _coerce_utc_datetime(run.started_at)
+    recovery_state = _read_pipeline_recovery_state(run)
+    recovery_started = _coerce_utc_datetime(recovery_state.get("updated_at"))
+    if recovery_started is not None:
+        reference_time = recovery_started
+
+    if reference_time is None:
+        return True
+
+    now = now or datetime.now(timezone.utc)
+    return (now - reference_time).total_seconds() >= _RUN_RECOVERY_STALE_WINDOW_SECONDS
+
+
+def _prepare_run_recovery_config(run_config: dict[str, object], *, attempt: int) -> dict[str, object]:
+    recovery_state = _coerce_recovery_state(run_config.get(_PIPELINE_RECOVERY_CONFIG_KEY))
+    recovery_state["attempt"] = attempt
+    recovery_state["status"] = "running"
+    recovery_state["updated_at"] = datetime.now(timezone.utc).isoformat()
+    recovery_state["reason"] = "manual_recovery"
+    return {**run_config, _PIPELINE_RECOVERY_CONFIG_KEY: recovery_state}
+
+
+def _execute_pipeline_and_finalize_run(
+    session: Session,
+    project: Project,
+    run: Run,
+) -> int:
+    run_config = dict(run.config_json or {})
+    try:
+        result = execute_pipeline(
+            session=session,
+            project=project,
+            run=run,
+            run_config=run_config,
+        )
+        if run.status != "completed":
+            run.status = "completed"
+        if run.finished_at is None:
+            run.finished_at = datetime.now(timezone.utc)
+
+        time_series_snapshot = _persist_time_series_snapshot(
+            session=session,
+            project_id=project.id,
+            source="run_capture",
+            run=run,
+            time_series=result["export"]["time_series"] if isinstance(result, Mapping) else {},
+        )
+        session.add(time_series_snapshot)
+        session.flush()
+        _append_run_changelog_entry(
+            session=session,
+            run=run,
+            event_type="time_series_snapshot_created",
+            event_message="Time series snapshot created",
+            event_metadata={
+                "snapshot_id": time_series_snapshot.id,
+                "snapshot_version": time_series_snapshot.version,
+                "source": time_series_snapshot.source,
+            },
+        )
+        run_config_with_snapshot = dict(run.config_json or {})
+        run_config_with_snapshot["time_series_snapshot_id"] = time_series_snapshot.id
+        run_config_with_snapshot["time_series_snapshot_version"] = time_series_snapshot.version
+        run.config_json = run_config_with_snapshot
+        _set_pipeline_recovery_state(run, session=session, status="completed")
+        session.add(run)
+        _append_run_changelog_entry(
+            session=session,
+            run=run,
+            event_type="pipeline_completed",
+            event_message="Pipeline completed",
+            event_metadata={"segment_count": int(result["segment_count"])},
+        )
+        session.commit()
+        return int(result["segment_count"])
+    except PipelineError as exc:
+        session.rollback()
+        run = _get_run_or_404(session, project.id, run.id)
+        run.status = "failed"
+        run.finished_at = datetime.now(timezone.utc)
+        error_metadata = {"reason": str(exc)}
+        if isinstance(exc, Exception) and getattr(exc, "metadata", None):
+            error_metadata["metadata"] = dict(exc.metadata)
+        _set_pipeline_recovery_state(run, session=session, status="failed", metadata=error_metadata)
+        _append_run_changelog_entry(
+            session=session,
+            run=run,
+            event_type="pipeline_failed",
+            event_message="Pipeline error",
+            event_metadata=error_metadata,
+        )
+        session.add(run)
+        session.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        run = _get_run_or_404(session, project.id, run.id)
+        run.status = "failed"
+        run.finished_at = datetime.now(timezone.utc)
+        _set_pipeline_recovery_state(run, session=session, status="failed", metadata={"reason": "unhandled_exception"})
+        _append_run_changelog_entry(
+            session=session,
+            run=run,
+            event_type="pipeline_failed",
+            event_message="Pipeline execution failed",
+            event_metadata={"reason": "unhandled_exception"},
+        )
+        session.add(run)
+        session.commit()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Pipeline failed") from exc
 @app.post(
     "/api/projects/{project_id}/characters/infer",
     response_model=CharacterMapResponse,
@@ -3254,6 +3688,24 @@ def create_run(
         run_config.pop("deterministic_seed", None)
         run_config.pop("randomization_config", None)
 
+    idempotency_key = payload.idempotency_key
+    if idempotency_key is not None:
+        idempotency_signature = _build_idempotent_rerun_signature(
+            session=session,
+            project=project,
+            run_config=run_config,
+        )
+        matching_run = _find_matching_idempotent_run(
+            session=session,
+            project_id=project.id,
+            idempotency_key=idempotency_key,
+            idempotency_signature=idempotency_signature,
+        )
+        if matching_run is not None:
+            return _build_run_response_from_existing(session=session, run=matching_run)
+        run_config["idempotency_key"] = idempotency_key
+        run_config["idempotency_signature"] = idempotency_signature
+
     project.selected_mode = str(run_config["mode"])
     project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)
     run = Run(
@@ -3276,6 +3728,44 @@ def create_run(
     session.add(run)
     session.commit()
     session.refresh(run)
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
+        event_type="run_created",
+        event_message="Run record created",
+        event_metadata={
+            "mode": run_config["mode"],
+            "llm_enabled": bool(run_config.get("llm_enabled")),
+            "provider_name": str(run_config.get("provider_name")),
+        },
+    )
+    run_config_with_snapshot = dict(run.config_json or {})
+    run_configuration_snapshot = _persist_run_configuration_snapshot(
+        session=session,
+        project_id=project.id,
+        run_id=run.id,
+        source="run_capture",
+        run_config=run_config_with_snapshot,
+    )
+    session.add(run_configuration_snapshot)
+    session.flush()
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
+        event_type="run_configuration_snapshot_created",
+        event_message="Run configuration snapshot created",
+        event_metadata={
+            "snapshot_id": run_configuration_snapshot.id,
+            "snapshot_version": run_configuration_snapshot.version,
+            "source": run_configuration_snapshot.source,
+        },
+    )
+    run_config_with_snapshot["configuration_snapshot_id"] = (
+        _build_run_configuration_snapshot_id(run.id, run_configuration_snapshot.version)
+    )
+    run_config_with_snapshot["configuration_snapshot_version"] = run_configuration_snapshot.version
+    run.config_json = run_config_with_snapshot
+    session.add(run)
     character_map_snapshot = _persist_character_map_snapshot(
         session=session,
         project_id=project.id,
@@ -3298,6 +3788,39 @@ def create_run(
     )
     session.add(voice_map_snapshot)
     session.flush()
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
+        event_type="character_map_snapshot_created",
+        event_message="Character map snapshot created",
+        event_metadata={
+            "snapshot_id": character_map_snapshot.id,
+            "snapshot_version": character_map_snapshot.version,
+            "source": character_map_snapshot.source,
+        },
+    )
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
+        event_type="pronunciation_dictionary_snapshot_created",
+        event_message="Pronunciation dictionary snapshot created",
+        event_metadata={
+            "snapshot_id": pronunciation_dictionary_snapshot.id,
+            "snapshot_version": pronunciation_dictionary_snapshot.version,
+            "source": pronunciation_dictionary_snapshot.source,
+        },
+    )
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
+        event_type="voice_map_snapshot_created",
+        event_message="Voice map snapshot created",
+        event_metadata={
+            "snapshot_id": voice_map_snapshot.id,
+            "snapshot_version": voice_map_snapshot.version,
+            "source": voice_map_snapshot.source,
+        },
+    )
     run_config_with_snapshot = dict(run.config_json or {})
     run_config_with_snapshot["character_map_snapshot_id"] = character_map_snapshot.id
     run_config_with_snapshot["character_map_snapshot_version"] = character_map_snapshot.version
@@ -3307,54 +3830,96 @@ def create_run(
     run_config_with_snapshot["voice_map_snapshot_version"] = voice_map_snapshot.version
     run.config_json = run_config_with_snapshot
     session.add(run)
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
+        event_type="pipeline_execution_started",
+        event_message="Pipeline execution started",
+        event_metadata={"mode": run_config["mode"]},
+    )
+    recovery_state = _coerce_recovery_state(run.config_json).get(_PIPELINE_RECOVERY_CONFIG_KEY)
+    if not isinstance(recovery_state, dict) or not recovery_state:
+        run_config["pipeline_recovery"] = {
+            "status": "running",
+            "attempt": 0,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "reason": "initial_execution",
+        }
+        run.config_json = run_config
     session.commit()
     session.refresh(run)
-    run_config = dict(run.config_json)
-
-    try:
-        result = execute_pipeline(
-            session=session,
-            project=project,
-            run=run,
-            run_config=run_config,
-        )
-        time_series_snapshot = _persist_time_series_snapshot(
-            session=session,
-            project_id=project.id,
-            source="run_capture",
-            run=run,
-            time_series=result["export"]["time_series"] if isinstance(result, Mapping) else {},
-        )
-        session.add(time_series_snapshot)
-        session.flush()
-        run_config_with_snapshot = dict(run.config_json or {})
-        run_config_with_snapshot["time_series_snapshot_id"] = time_series_snapshot.id
-        run_config_with_snapshot["time_series_snapshot_version"] = time_series_snapshot.version
-        run.config_json = run_config_with_snapshot
-        session.add(run)
-        session.commit()
-    except PipelineError as exc:
-        session.rollback()
-        run = _get_run_or_404(session, project.id, run.id)
-        run.status = "failed"
-        run.finished_at = datetime.now(timezone.utc)
-        session.add(run)
-        session.commit()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        session.rollback()
-        run = _get_run_or_404(session, project.id, run.id)
-        run.status = "failed"
-        run.finished_at = datetime.now(timezone.utc)
-        session.add(run)
-        session.commit()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Pipeline failed") from exc
+    segment_count = _execute_pipeline_and_finalize_run(session=session, project=project, run=run)
 
     return RunResponse(
         run_id=run.id,
         project_id=project.id,
         status=run.status,
-        segment_count=result["segment_count"],
+        segment_count=segment_count,
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/runs/{run_id}/recover",
+    response_model=RunResponse,
+    status_code=status.HTTP_200_OK,
+)
+def recover_run(
+    project_id: int,
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> RunResponse:
+    project = _get_project_or_404(session, project_id)
+    run = _get_run_or_404(session, project_id, run_id)
+
+    if run.status == "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Completed run cannot be recovered.",
+        )
+
+    if not _is_run_recoverable(run):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Run is not yet eligible for recovery.",
+        )
+
+    previous_status = run.status
+    recovery_state = _coerce_recovery_state(run.config_json).get(_PIPELINE_RECOVERY_CONFIG_KEY)
+    previous_attempt = recovery_state.get("attempt") if isinstance(recovery_state, dict) else None
+    try:
+        next_attempt = int(previous_attempt) + 1
+    except (TypeError, ValueError):
+        next_attempt = 1
+
+    run.config_json = _prepare_run_recovery_config(
+        run_config=dict(run.config_json or {}),
+        attempt=next_attempt,
+    )
+    run.status = "running"
+    run.started_at = datetime.now(timezone.utc)
+    run.finished_at = None
+    session.add(run)
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
+        event_type="pipeline_recovery_requested",
+        event_message="Pipeline recovery requested",
+        event_metadata={
+            "attempt": next_attempt,
+            "previous_status": previous_status,
+        },
+    )
+    _clear_run_pipeline_artifacts(session=session, run=run)
+    session.commit()
+    session.refresh(run)
+
+    segment_count = _execute_pipeline_and_finalize_run(session=session, project=project, run=run)
+
+    return RunResponse(
+        run_id=run.id,
+        project_id=project.id,
+        status=run.status,
+        segment_count=segment_count,
     )
 
 
@@ -3372,6 +3937,12 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
         session.query(LLMCall)
         .filter(LLMCall.run_id == run.id)
         .order_by(LLMCall.created_at.asc())
+        .all()
+    )
+    changelog_entries = (
+        session.query(RunChangelogEntry)
+        .filter(RunChangelogEntry.run_id == run.id)
+        .order_by(RunChangelogEntry.created_at.asc(), RunChangelogEntry.id.asc())
         .all()
     )
 
@@ -3404,12 +3975,25 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
         run_id=run.id,
         project_id=project_id,
         status=run.status,
+        llm_provider_name=run.llm_provider_name,
+        llm_model_identifier=run.llm_model_identifier,
+        llm_model_version=run.llm_model_version,
         config=run.config_json,
         started_at=run.started_at,
         finished_at=run.finished_at,
         segment_count=segment_count,
         llm_cache_metrics=cache_metrics,
         llm_calls=call_payload,
+        changelog_entries=[
+            {
+                "id": entry.id,
+                "event_type": entry.event_type,
+                "event_message": entry.event_message,
+                "event_metadata": entry.event_metadata,
+                "created_at": entry.created_at,
+            }
+            for entry in changelog_entries
+        ],
     )
 
 

@@ -394,9 +394,9 @@ Definition of done for each task:
 
 ### NFR-2 Reliability
 - [x] [NFR2-001] Add ordering integrity guard in every pipeline stage.
-- [ ] [NFR2-002] Add chapter-content loss detector after normalization/segmentation.
-- [ ] [NFR2-003] Add run-state recovery for interrupted jobs.
-- [ ] [NFR2-004] Add idempotent rerun behavior checks.
+- [x] [NFR2-002] Add chapter-content loss detector after normalization/segmentation.
+- [x] [NFR2-003] Add run-state recovery for interrupted jobs.
+- [x] [NFR2-004] Add idempotent rerun behavior checks.
 - [ ] [NFR2-005] Add automated corruption checks on persisted artifacts.
 
 ### NFR-3 Usability
