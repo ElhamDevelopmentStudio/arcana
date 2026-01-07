@@ -81,6 +81,41 @@ def _expected_time_series_keys() -> set[str]:
     }
 
 
+def _segment_lookup_by_id(payload_points: list[dict]) -> dict[str, dict[str, object]]:
+    mapping: dict[str, dict[str, object]] = {}
+    for point in payload_points:
+        segment_id = point.get("segment_id")
+        if not isinstance(segment_id, str):
+            continue
+        mapping[segment_id] = {
+            "chapter_id": point.get("chapter_id"),
+            "segment_index": point.get("segment_index"),
+        }
+    return mapping
+
+
+def _assert_time_series_metric_can_resolve(
+    metric_point: dict,
+    segment_lookup: dict[str, dict[str, object]],
+) -> None:
+    segment_id = metric_point.get("segment_id")
+    assert isinstance(segment_id, str)
+    assert segment_id in segment_lookup
+    segment_ref = segment_lookup[segment_id]
+    assert metric_point["chapter_id"] == segment_ref["chapter_id"]
+    assert metric_point["segment_index"] == segment_ref["segment_index"]
+
+    from_segment_id = metric_point.get("from_segment_id")
+    if from_segment_id is None:
+        return
+
+    assert isinstance(from_segment_id, str)
+    assert from_segment_id in segment_lookup
+    from_segment_ref = segment_lookup[from_segment_id]
+    assert metric_point["from_chapter_id"] == from_segment_ref["chapter_id"]
+    assert metric_point["from_segment_index"] == from_segment_ref["segment_index"]
+
+
 def test_run_capture_persists_time_series_snapshot_for_all_modes() -> None:
     with TestClient(app) as client:
         project_id = _ingest_project_text(
@@ -132,5 +167,15 @@ def test_run_capture_persists_time_series_snapshot_for_all_modes() -> None:
             assert payload["scene_states"]
             assert snapshot.snapshot_json["segment_count"] == len(payload["emotion_valence"])
             assert run.config_json["mode"] == mode
+
+            segment_lookup = _segment_lookup_by_id(payload["emotion_valence"])
+            assert segment_lookup
+
+            for metric_point in payload["emotion_delta"]:
+                _assert_time_series_metric_can_resolve(metric_point, segment_lookup)
+            for metric_point in payload["volatility_markers"]:
+                _assert_time_series_metric_can_resolve(metric_point, segment_lookup)
+            for metric_point in payload["avoid_abrupt_change_hints"]:
+                _assert_time_series_metric_can_resolve(metric_point, segment_lookup)
     finally:
         session.close()
