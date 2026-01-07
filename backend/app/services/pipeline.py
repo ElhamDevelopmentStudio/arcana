@@ -14,6 +14,7 @@ from app.models import (
     Project,
     PronunciationDictionary,
     Run,
+    RunNormalizedCorpusBlob,
     Segment,
     SubSegmentTag,
 )
@@ -165,6 +166,19 @@ def _coerce_confidence_threshold(value: object) -> float:
     if threshold > 1.0:
         return 1.0
     return round(threshold, 4)
+
+
+def _persist_normalized_corpus_blob(session: Session, *, run_id: int, normalized_corpus: str) -> None:
+    normalized_payload = normalized_corpus.encode("utf-8")
+    session.add(
+        RunNormalizedCorpusBlob(
+            run_id=run_id,
+            source="pipeline",
+            source_filename=None,
+            corpus_sha256=sha256(normalized_payload).hexdigest(),
+            normalized_corpus_blob=normalized_payload,
+        )
+    )
 
 
 def _build_llm_cache_key(input_text: str) -> str:
@@ -398,6 +412,12 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
 
     if not chapters:
         raise PipelineError("No chapters available. Upload and ingest a TXT file first.")
+
+    _persist_normalized_corpus_blob(
+        session=session,
+        run_id=run.id,
+        normalized_corpus="\n\n".join(chapter.normalized_text for chapter in chapters),
+    )
 
     characters = (
         session.query(Character)
