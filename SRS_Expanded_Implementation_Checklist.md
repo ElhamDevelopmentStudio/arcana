@@ -404,7 +404,7 @@ Definition of done for each task:
 - [x] [NFR3-002] Add gender override UX with contradiction visibility.
 - [x] [NFR3-003] Add character merge UX with undo support.
 - [ ] [NFR3-004] Add voice mapping UX with default fallback preview.
-- [ ] [NFR3-005] Add docs page “How to review low-confidence outputs”.
+- [x] [NFR3-005] Add docs page “How to review low-confidence outputs”.
 
 ### NFR-4 Transparency
 - [ ] [NFR4-001] Add UI disclaimer that outputs are probabilistic, not perfect.

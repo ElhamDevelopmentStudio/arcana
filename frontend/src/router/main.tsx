@@ -36,6 +36,11 @@ const ProjectLowConfidenceReviewPage = lazy(() =>
     default: module.ProjectLowConfidenceReviewPage,
   })),
 );
+const ProjectLowConfidenceReviewGuidePage = lazy(() =>
+  import('@/pages/projects/project-low-confidence-review-guide-page').then((module) => ({
+    default: module.ProjectLowConfidenceReviewGuidePage,
+  })),
+);
 
 const ROUTE_SUSPENSE_FALLBACK = (
   <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">Loading step...</div>
@@ -84,6 +89,10 @@ export const mainRouter: RouteObject[] = [
       {
         path: 'projects/:project_id/review/low-confidence',
         element: <SuspendedRoute><ProjectLowConfidenceReviewPage /></SuspendedRoute>,
+      },
+      {
+        path: 'projects/:project_id/guide/low-confidence-review',
+        element: <SuspendedRoute><ProjectLowConfidenceReviewGuidePage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id/export',

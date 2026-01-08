@@ -19,6 +19,7 @@ export function projectRoute(
     | 'review/speakers'
     | 'review/emotions'
     | 'review/low-confidence'
+    | 'guide/low-confidence-review'
     | 'export'
     | 'dashboards',
 ) {
