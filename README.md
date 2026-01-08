@@ -173,6 +173,43 @@ Request schema:
 
 This establishes the data model for `NFR5-001` and enables `NFR5-002` (project isolation checks) to be layered without changing project semantics later.
 
+Project-scoped access checks can be enforced per request using optional headers:
+
+- `X-Principal-Type` (`user|service|system`)
+- `X-Principal-Id` (opaque string principal key)
+
+When both headers are present, routes under `/api/projects/{project_id}/...` enforce:
+
+- minimum `viewer` role for read-style requests (GET/HEAD/OPTIONS)
+- minimum `editor` role for write-style requests (POST/PUT/PATCH/DELETE)
+
+If a principal is not granted for the required role on the project, the response is `403 Forbidden`.
+If either header is missing or invalid, the response is `400 Bad Request`.
+
+### SaaS data-at-rest encryption for uploaded text (`NFR5-003`)
+
+Uploaded text is encrypted at rest when SaaS mode is enabled.
+
+Environment variables:
+
+- `SAAS_MODE=true|false` (default: `false`)
+- `DATA_ENCRYPTION_KEY=<secret>`
+
+When `SAAS_MODE=true`, the backend stores these persisted text fields encrypted:
+
+- `chapters.raw_text`
+- `chapters.original_text_snapshot`
+- `chapters.normalized_text`
+- `chapters.normalized_text_snapshot`
+- `project_raw_corpus_blobs.raw_corpus_blob`
+
+Behavior:
+
+- writes automatically encrypt at bind time;
+- reads decrypt automatically when surfaced through SQLAlchemy models;
+- integrity checks and run-time processing still operate on the decrypted application value.
+- if `DATA_ENCRYPTION_KEY` is missing while `SAAS_MODE` is enabled, writes will fail with a runtime error.
+
 LLM responses are cached in the `llm_cache` table and reused only when all cache-key dimensions match exactly:
 
 - hashed input text (`_build_llm_cache_key`)
