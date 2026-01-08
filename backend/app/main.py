@@ -4,14 +4,14 @@ from collections.abc import Mapping
 import hashlib
 import json
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app.chart_contracts import build_polarity_graph_contract, build_tension_graph_contract
 from app.config import get_settings
-from app.database import get_session, init_db
+from app.database import get_session, get_session_factory, init_db
 from app.modes import DEFAULT_MODE, get_mode_catalog
 from app.models import (
     Chapter,
@@ -74,6 +74,8 @@ from app.schemas import (
     ProjectAccessGrantRequest,
     ProjectAccessGrantResponse,
     ProjectAccessListResponse,
+    ALLOWED_PROJECT_ACCESS_PRINCIPAL_TYPES,
+    ALLOWED_PROJECT_ACCESS_ROLES,
     ProjectResponse,
     ProjectLLMSettingsRequest,
     ProjectLLMSettingsResponse,
@@ -154,6 +156,27 @@ LOW_CONFIDENCE_STATE_VALUES = {"uncertain", "unknown"}
 LOW_CONFIDENCE_REGION_THRESHOLD = 0.8
 _RUN_RECOVERY_STALE_WINDOW_SECONDS = 600
 _PIPELINE_RECOVERY_CONFIG_KEY = "pipeline_recovery"
+_PROJECT_ACCESS_ROLE_HIERARCHY = {"viewer": 1, "editor": 2, "owner": 3}
+_PROJECT_ACCESS_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_PROJECT_ACCESS_HEADER_TYPE = "x-principal-type"
+_PROJECT_ACCESS_HEADER_ID = "x-principal-id"
+
+_PROJECT_ACCESS_SCOPE_READ = "read"
+_PROJECT_ACCESS_SCOPE_RUN_EXEC = "run_execute"
+_PROJECT_ACCESS_SCOPE_WRITE = "project_write"
+
+_PROJECT_SERVICE_ROLE_SCOPE_MATRIX: dict[str, dict[str, set[str]]] = {
+    "service": {
+        "viewer": {_PROJECT_ACCESS_SCOPE_READ},
+        "editor": {_PROJECT_ACCESS_SCOPE_READ, _PROJECT_ACCESS_SCOPE_RUN_EXEC},
+        "owner": {_PROJECT_ACCESS_SCOPE_READ, _PROJECT_ACCESS_SCOPE_RUN_EXEC},
+    },
+    "system": {
+        "viewer": {_PROJECT_ACCESS_SCOPE_READ},
+        "editor": {_PROJECT_ACCESS_SCOPE_READ},
+        "owner": {_PROJECT_ACCESS_SCOPE_READ},
+    },
+}
 
 app = FastAPI(title="NIPE PoC API", version="0.1.0")
 
@@ -169,6 +192,165 @@ app.add_middleware(
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+
+
+def _extract_project_id_from_path(path: str) -> int | None:
+    parts = [segment for segment in path.split("/") if segment]
+    if len(parts) >= 3 and parts[0] == "api" and parts[1] == "projects" and parts[2].isdigit():
+        return int(parts[2])
+    return None
+
+
+def _resolve_project_access_headers(request: Request) -> tuple[str | None, str | None] | None:
+    principal_type_header = request.headers.get(_PROJECT_ACCESS_HEADER_TYPE)
+    principal_id_header = request.headers.get(_PROJECT_ACCESS_HEADER_ID)
+
+    if principal_type_header is None and principal_id_header is None:
+        return None
+
+    if principal_type_header is None or principal_id_header is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both X-Principal-Type and X-Principal-Id headers are required.",
+        )
+
+    principal_type = str(principal_type_header).strip().lower()
+    principal_id = str(principal_id_header).strip()
+    if not principal_type or principal_type not in ALLOWED_PROJECT_ACCESS_PRINCIPAL_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported principal_type header value.",
+        )
+    if not principal_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Principal-Id header must not be blank.",
+        )
+
+    return principal_type, principal_id
+
+
+def _required_project_role_for_scope(access_scope: str) -> str:
+    return "viewer" if access_scope == _PROJECT_ACCESS_SCOPE_READ else "editor"
+
+
+def _normalize_project_route_suffix(path: str) -> str:
+    segments = [segment for segment in path.strip("/").split("/") if segment]
+    if len(segments) < 3 or segments[0] != "api" or segments[1] != "projects":
+        return ""
+    # segments[2] is project_id
+    return "/".join(segments[3:]).lower()
+
+
+def _required_project_access_scope(method: str, path: str) -> str:
+    method_upper = method.upper()
+    if method_upper in {"GET", "HEAD", "OPTIONS"}:
+        return _PROJECT_ACCESS_SCOPE_READ
+
+    if method_upper not in _PROJECT_ACCESS_WRITE_METHODS:
+        return _PROJECT_ACCESS_SCOPE_READ
+
+    suffix = _normalize_project_route_suffix(path)
+    parts = [part for part in suffix.split("/") if part]
+
+    if method_upper == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "recover":
+        return _PROJECT_ACCESS_SCOPE_RUN_EXEC
+
+    if method_upper == "POST" and parts == ["runs"]:
+        return _PROJECT_ACCESS_SCOPE_RUN_EXEC
+
+    return _PROJECT_ACCESS_SCOPE_WRITE
+
+
+def _has_required_project_access(
+    *,
+    session: Session,
+    project_id: int,
+    principal_type: str,
+    principal_id: str,
+    required_role: str,
+    access_scope: str,
+) -> None:
+    project = session.query(Project).filter(Project.id == project_id).one_or_none()
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    grant = (
+        session.query(ProjectAccess)
+        .filter(
+            ProjectAccess.project_id == project_id,
+            ProjectAccess.principal_type == principal_type,
+            ProjectAccess.principal_id == principal_id,
+            ProjectAccess.role.in_(ALLOWED_PROJECT_ACCESS_ROLES),
+        )
+        .one_or_none()
+    )
+    if grant is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project access denied.")
+
+    if principal_type != "user":
+        allowed_scopes_by_role = _PROJECT_SERVICE_ROLE_SCOPE_MATRIX.get(principal_type)
+        if allowed_scopes_by_role is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Project role is insufficient for this operation.",
+            )
+
+        allowed_scopes = allowed_scopes_by_role.get(grant.role)
+        if allowed_scopes is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Project role is insufficient for this operation.",
+            )
+
+        if access_scope not in allowed_scopes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Project role is insufficient for this operation.",
+            )
+        return
+
+    if _PROJECT_ACCESS_ROLE_HIERARCHY.get(grant.role, 0) < _PROJECT_ACCESS_ROLE_HIERARCHY.get(required_role, 0):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Project role is insufficient for this operation.",
+        )
+
+
+@app.middleware("http")
+async def enforce_project_data_isolation(request: Request, call_next):
+    project_id = _extract_project_id_from_path(request.url.path)
+    if project_id is None:
+        return await call_next(request)
+
+    try:
+        project_principal = _resolve_project_access_headers(request)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    if project_principal is None:
+        return await call_next(request)
+
+    principal_type, principal_id = project_principal
+    required_scope = _required_project_access_scope(request.method, request.url.path)
+    required_role = _required_project_role_for_scope(required_scope)
+
+    session = get_session_factory()()
+    try:
+        try:
+            _has_required_project_access(
+                session=session,
+                project_id=project_id,
+                principal_type=principal_type,
+                principal_id=principal_id,
+                required_role=required_role,
+                access_scope=required_scope,
+            )
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    finally:
+        session.close()
+
+    return await call_next(request)
 
 
 def _serialize_datetime_to_utc_iso(value: datetime | None) -> str | None:

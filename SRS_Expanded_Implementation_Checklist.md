@@ -415,7 +415,7 @@ Definition of done for each task:
 - [x] [NFR5-001] Implement project-level access control model.
 - [x] [NFR5-002] Add project data isolation checks in data access layer.
 - [x] [NFR5-003] Encrypt sensitive uploaded text at rest in SaaS mode.
-- [ ] [NFR5-004] Add least-privilege service role matrix for storage and DB.
+- [x] [NFR5-004] Add least-privilege service role matrix for storage and DB.
 
 ### NFR-6 Compliance and Copyright Guardrails
 - [ ] [NFR6-001] Keep user-upload flow as default ingestion path.
