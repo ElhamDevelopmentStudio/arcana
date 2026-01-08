@@ -17,6 +17,7 @@ from app.models import (
     Chapter,
     Character,
     CharacterVoiceMap,
+    ProjectAccess,
     CharacterMapSnapshot,
     ComparisonWorkspace,
     ComparisonWorkspaceRun,
@@ -70,6 +71,9 @@ from app.schemas import (
     ProjectCreate,
     ProjectModeSwitchRequest,
     ProjectModeSwitchResponse,
+    ProjectAccessGrantRequest,
+    ProjectAccessGrantResponse,
+    ProjectAccessListResponse,
     ProjectResponse,
     ProjectLLMSettingsRequest,
     ProjectLLMSettingsResponse,
@@ -256,6 +260,12 @@ def _hash_text(value: str | None) -> str:
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _build_snapshot_json_checksum(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return _hash_text(None)
+    return _hash_text(_canonical_json(payload))
 
 
 def _build_idempotent_state_signature_payload(
@@ -931,15 +941,17 @@ def _persist_character_map_snapshot(
     run_id: int | None = None,
 ) -> CharacterMapSnapshot:
     session.flush()
+    snapshot_payload = _build_character_map_snapshot_payload(
+        project_id=project_id,
+        session=session,
+    )
     return CharacterMapSnapshot(
         project_id=project_id,
         run_id=run_id,
         version=_next_character_map_snapshot_version(session=session, project_id=project_id),
         source=source.strip() or "project_edit",
-        snapshot_json=_build_character_map_snapshot_payload(
-            project_id=project_id,
-            session=session,
-        ),
+        snapshot_json=snapshot_payload,
+        snapshot_json_sha256=_build_snapshot_json_checksum(snapshot_payload),
     )
 
 
@@ -994,6 +1006,7 @@ def _persist_run_configuration_snapshot(
         version=version,
         source=source.strip() or "run_capture",
         snapshot_json=snapshot_payload,
+        snapshot_json_sha256=_build_snapshot_json_checksum(snapshot_payload),
     )
 
 
@@ -1053,6 +1066,10 @@ def _persist_pronunciation_dictionary_snapshot(
     run_id: int | None = None,
 ) -> PronunciationDictionarySnapshot:
     session.flush()
+    snapshot_payload = _build_pronunciation_dictionary_snapshot_payload(
+        project_id=project_id,
+        session=session,
+    )
     return PronunciationDictionarySnapshot(
         project_id=project_id,
         run_id=run_id,
@@ -1061,10 +1078,8 @@ def _persist_pronunciation_dictionary_snapshot(
             project_id=project_id,
         ),
         source=source.strip() or "dictionary_edit",
-        snapshot_json=_build_pronunciation_dictionary_snapshot_payload(
-            project_id=project_id,
-            session=session,
-        ),
+        snapshot_json=snapshot_payload,
+        snapshot_json_sha256=_build_snapshot_json_checksum(snapshot_payload),
     )
 
 
@@ -1133,6 +1148,10 @@ def _persist_voice_map_snapshot(
     run_id: int | None = None,
 ) -> VoiceMapSnapshot:
     session.flush()
+    snapshot_payload = _build_voice_map_snapshot_payload(
+        project_id=project_id,
+        session=session,
+    )
     return VoiceMapSnapshot(
         project_id=project_id,
         run_id=run_id,
@@ -1141,10 +1160,8 @@ def _persist_voice_map_snapshot(
             project_id=project_id,
         ),
         source=source.strip() or "voice_map_edit",
-        snapshot_json=_build_voice_map_snapshot_payload(
-            project_id=project_id,
-            session=session,
-        ),
+        snapshot_json=snapshot_payload,
+        snapshot_json_sha256=_build_snapshot_json_checksum(snapshot_payload),
     )
 
 
@@ -1186,17 +1203,19 @@ def _persist_time_series_snapshot(
     time_series: object,
 ) -> TimeSeriesSnapshot:
     session.flush()
+    snapshot_payload = _build_time_series_snapshot_payload(
+        project_id=project_id,
+        run_id=run.id,
+        run_config=dict(run.config_json or {}),
+        time_series=time_series,
+    )
     return TimeSeriesSnapshot(
         project_id=project_id,
         run_id=run.id,
         version=_next_time_series_snapshot_version(session=session, project_id=project_id),
         source=source.strip() or "run_capture",
-        snapshot_json=_build_time_series_snapshot_payload(
-            project_id=project_id,
-            run_id=run.id,
-            run_config=dict(run.config_json or {}),
-            time_series=time_series,
-        ),
+        snapshot_json=snapshot_payload,
+        snapshot_json_sha256=_build_snapshot_json_checksum(snapshot_payload),
     )
 
 
@@ -1413,7 +1432,34 @@ def _build_run_artifact_integrity_report(
         run_configuration_snapshot_version = _coerce_non_negative_int(
             run_config.get("configuration_snapshot_version")
         )
-        if run_configuration_snapshot_version is not None:
+        run_configuration_payload = expected_run_configuration_snapshot.snapshot_json
+        run_configuration_payload_hash = _build_snapshot_json_checksum(run_configuration_payload)
+        run_configuration_stored_hash = str(
+            getattr(expected_run_configuration_snapshot, "snapshot_json_sha256", "")
+        )
+        if not isinstance(run_configuration_payload, dict):
+            _record_check(
+                "run_configuration_snapshot",
+                False,
+                {
+                    "reason": "configuration_snapshot_payload_corrupted",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": run_configuration_payload_hash,
+                    "stored_payload_hash": run_configuration_stored_hash,
+                },
+            )
+        elif run_configuration_payload_hash != run_configuration_stored_hash:
+            _record_check(
+                "run_configuration_snapshot",
+                False,
+                {
+                    "reason": "configuration_snapshot_payload_hash_mismatch",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": run_configuration_payload_hash,
+                    "stored_payload_hash": run_configuration_stored_hash,
+                },
+            )
+        elif run_configuration_snapshot_version is not None:
             expected_snapshot_id = _build_run_configuration_snapshot_id(
                 run_id=run.id,
                 version=run_configuration_snapshot_version,
@@ -1429,6 +1475,7 @@ def _build_run_artifact_integrity_report(
                     False,
                     {
                         "reason": "configuration_snapshot_id_mismatch",
+                        "payload_hash_mismatch": False,
                         "expected_snapshot_id": expected_snapshot_id,
                         "observed_snapshot_id": observed_snapshot_id,
                     },
@@ -1439,25 +1486,31 @@ def _build_run_artifact_integrity_report(
                     False,
                     {
                         "reason": "configuration_snapshot_version_mismatch",
+                        "payload_hash_mismatch": False,
                         "expected_version": run_configuration_snapshot_version,
                         "observed_version": expected_run_configuration_snapshot.version,
                     },
                 )
-            elif not isinstance(expected_run_configuration_snapshot.snapshot_json, dict):
+            else:
                 _record_check(
                     "run_configuration_snapshot",
-                    False,
+                    True,
                     {
-                        "reason": "configuration_snapshot_payload_corrupted",
+                        "payload_hash_mismatch": False,
+                        "expected_payload_hash": run_configuration_payload_hash,
+                        "stored_payload_hash": run_configuration_stored_hash,
                     },
                 )
-            else:
-                _record_check("run_configuration_snapshot", True, {})
         else:
             _record_check(
                 "run_configuration_snapshot",
                 False,
-                {"reason": "configuration_snapshot_version_missing"},
+                {
+                    "reason": "configuration_snapshot_version_missing",
+                    "payload_hash_mismatch": False,
+                    "expected_payload_hash": run_configuration_payload_hash,
+                    "stored_payload_hash": run_configuration_stored_hash,
+                },
             )
 
     character_map_snapshot = run.character_map_snapshot
@@ -1470,35 +1523,75 @@ def _build_run_artifact_integrity_report(
         expected_character_map_snapshot_version = _coerce_non_negative_int(
             run_config.get("character_map_snapshot_version")
         )
-        snapshot_integrity_ok = (
-            character_map_snapshot.run_id == run.id
-            and (expected_character_map_snapshot_id is None or character_map_snapshot.id == expected_character_map_snapshot_id)
-            and (
-                expected_character_map_snapshot_version is None
-                or character_map_snapshot.version == expected_character_map_snapshot_version
-            )
-            and isinstance(character_map_snapshot.snapshot_json, dict)
+        character_map_payload = character_map_snapshot.snapshot_json
+        character_map_payload_hash = _build_snapshot_json_checksum(character_map_payload)
+        character_map_stored_hash = str(
+            getattr(character_map_snapshot, "snapshot_json_sha256", "")
         )
-        if snapshot_integrity_ok:
-            _record_check(
-                "character_map_snapshot",
-                True,
-                {
-                    "snapshot_id": character_map_snapshot.id,
-                    "snapshot_version": character_map_snapshot.version,
-                },
-            )
-        else:
+        if not isinstance(character_map_payload, dict):
             _record_check(
                 "character_map_snapshot",
                 False,
                 {
                     "snapshot_id": character_map_snapshot.id,
                     "snapshot_version": character_map_snapshot.version,
-                    "expected_snapshot_id": expected_character_map_snapshot_id,
-                    "expected_snapshot_version": expected_character_map_snapshot_version,
+                    "reason": "character_map_snapshot_payload_corrupted",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": character_map_payload_hash,
+                    "stored_payload_hash": character_map_stored_hash,
                 },
             )
+        elif character_map_payload_hash != character_map_stored_hash:
+            _record_check(
+                "character_map_snapshot",
+                False,
+                {
+                    "snapshot_id": character_map_snapshot.id,
+                    "snapshot_version": character_map_snapshot.version,
+                    "reason": "character_map_snapshot_payload_hash_mismatch",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": character_map_payload_hash,
+                    "stored_payload_hash": character_map_stored_hash,
+                },
+            )
+        else:
+            character_map_snapshot_integrity_ok = (
+                character_map_snapshot.run_id == run.id
+                and (
+                    expected_character_map_snapshot_id is None
+                    or character_map_snapshot.id == expected_character_map_snapshot_id
+                )
+                and (
+                    expected_character_map_snapshot_version is None
+                    or character_map_snapshot.version == expected_character_map_snapshot_version
+                )
+            )
+            if character_map_snapshot_integrity_ok:
+                _record_check(
+                    "character_map_snapshot",
+                    True,
+                    {
+                        "snapshot_id": character_map_snapshot.id,
+                        "snapshot_version": character_map_snapshot.version,
+                        "payload_hash_mismatch": False,
+                        "expected_payload_hash": character_map_payload_hash,
+                        "stored_payload_hash": character_map_stored_hash,
+                    },
+                )
+            else:
+                _record_check(
+                    "character_map_snapshot",
+                    False,
+                    {
+                        "snapshot_id": character_map_snapshot.id,
+                        "snapshot_version": character_map_snapshot.version,
+                        "expected_snapshot_id": expected_character_map_snapshot_id,
+                        "expected_snapshot_version": expected_character_map_snapshot_version,
+                        "payload_hash_mismatch": False,
+                        "expected_payload_hash": character_map_payload_hash,
+                        "stored_payload_hash": character_map_stored_hash,
+                    },
+                )
 
     pronunciation_dictionary_snapshot = run.pronunciation_dictionary_snapshot
     if pronunciation_dictionary_snapshot is None:
@@ -1514,38 +1607,75 @@ def _build_run_artifact_integrity_report(
         expected_pronunciation_dictionary_snapshot_version = _coerce_non_negative_int(
             run_config.get("pronunciation_dictionary_snapshot_version")
         )
-        snapshot_integrity_ok = (
-            pronunciation_dictionary_snapshot.run_id == run.id
-            and (
-                expected_pronunciation_dictionary_snapshot_id is None
-                or pronunciation_dictionary_snapshot.id == expected_pronunciation_dictionary_snapshot_id
-            )
-            and (
-                expected_pronunciation_dictionary_snapshot_version is None
-                or pronunciation_dictionary_snapshot.version == expected_pronunciation_dictionary_snapshot_version
-            )
-            and isinstance(pronunciation_dictionary_snapshot.snapshot_json, dict)
+        pronunciation_dictionary_payload = pronunciation_dictionary_snapshot.snapshot_json
+        pronunciation_dictionary_payload_hash = _build_snapshot_json_checksum(pronunciation_dictionary_payload)
+        pronunciation_dictionary_stored_hash = str(
+            getattr(pronunciation_dictionary_snapshot, "snapshot_json_sha256", "")
         )
-        if snapshot_integrity_ok:
-            _record_check(
-                "pronunciation_dictionary_snapshot",
-                True,
-                {
-                    "snapshot_id": pronunciation_dictionary_snapshot.id,
-                    "snapshot_version": pronunciation_dictionary_snapshot.version,
-                },
-            )
-        else:
+        if not isinstance(pronunciation_dictionary_payload, dict):
             _record_check(
                 "pronunciation_dictionary_snapshot",
                 False,
                 {
                     "snapshot_id": pronunciation_dictionary_snapshot.id,
                     "snapshot_version": pronunciation_dictionary_snapshot.version,
-                    "expected_snapshot_id": expected_pronunciation_dictionary_snapshot_id,
-                    "expected_snapshot_version": expected_pronunciation_dictionary_snapshot_version,
+                    "reason": "pronunciation_dictionary_snapshot_payload_corrupted",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": pronunciation_dictionary_payload_hash,
+                    "stored_payload_hash": pronunciation_dictionary_stored_hash,
                 },
             )
+        elif pronunciation_dictionary_payload_hash != pronunciation_dictionary_stored_hash:
+            _record_check(
+                "pronunciation_dictionary_snapshot",
+                False,
+                {
+                    "snapshot_id": pronunciation_dictionary_snapshot.id,
+                    "snapshot_version": pronunciation_dictionary_snapshot.version,
+                    "reason": "pronunciation_dictionary_snapshot_payload_hash_mismatch",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": pronunciation_dictionary_payload_hash,
+                    "stored_payload_hash": pronunciation_dictionary_stored_hash,
+                },
+            )
+        else:
+            snapshot_integrity_ok = (
+                pronunciation_dictionary_snapshot.run_id == run.id
+                and (
+                    expected_pronunciation_dictionary_snapshot_id is None
+                    or pronunciation_dictionary_snapshot.id == expected_pronunciation_dictionary_snapshot_id
+                )
+                and (
+                    expected_pronunciation_dictionary_snapshot_version is None
+                    or pronunciation_dictionary_snapshot.version == expected_pronunciation_dictionary_snapshot_version
+                )
+            )
+            if snapshot_integrity_ok:
+                _record_check(
+                    "pronunciation_dictionary_snapshot",
+                    True,
+                    {
+                        "snapshot_id": pronunciation_dictionary_snapshot.id,
+                        "snapshot_version": pronunciation_dictionary_snapshot.version,
+                        "payload_hash_mismatch": False,
+                        "expected_payload_hash": pronunciation_dictionary_payload_hash,
+                        "stored_payload_hash": pronunciation_dictionary_stored_hash,
+                    },
+                )
+            else:
+                _record_check(
+                    "pronunciation_dictionary_snapshot",
+                    False,
+                    {
+                        "snapshot_id": pronunciation_dictionary_snapshot.id,
+                        "snapshot_version": pronunciation_dictionary_snapshot.version,
+                        "expected_snapshot_id": expected_pronunciation_dictionary_snapshot_id,
+                        "expected_snapshot_version": expected_pronunciation_dictionary_snapshot_version,
+                        "payload_hash_mismatch": False,
+                        "expected_payload_hash": pronunciation_dictionary_payload_hash,
+                        "stored_payload_hash": pronunciation_dictionary_stored_hash,
+                    },
+                )
 
     voice_map_snapshot = run.voice_map_snapshot
     if voice_map_snapshot is None:
@@ -1553,38 +1683,73 @@ def _build_run_artifact_integrity_report(
     else:
         expected_voice_map_snapshot_id = _coerce_non_negative_int(run_config.get("voice_map_snapshot_id"))
         expected_voice_map_snapshot_version = _coerce_non_negative_int(run_config.get("voice_map_snapshot_version"))
-        snapshot_integrity_ok = (
-            voice_map_snapshot.run_id == run.id
-            and (
-                expected_voice_map_snapshot_id is None
-                or voice_map_snapshot.id == expected_voice_map_snapshot_id
-            )
-            and (
-                expected_voice_map_snapshot_version is None
-                or voice_map_snapshot.version == expected_voice_map_snapshot_version
-            )
-            and isinstance(voice_map_snapshot.snapshot_json, dict)
-        )
-        if snapshot_integrity_ok:
-            _record_check(
-                "voice_map_snapshot",
-                True,
-                {
-                    "snapshot_id": voice_map_snapshot.id,
-                    "snapshot_version": voice_map_snapshot.version,
-                },
-            )
-        else:
+        voice_map_payload = voice_map_snapshot.snapshot_json
+        voice_map_payload_hash = _build_snapshot_json_checksum(voice_map_payload)
+        voice_map_stored_hash = str(getattr(voice_map_snapshot, "snapshot_json_sha256", ""))
+        if not isinstance(voice_map_payload, dict):
             _record_check(
                 "voice_map_snapshot",
                 False,
                 {
                     "snapshot_id": voice_map_snapshot.id,
                     "snapshot_version": voice_map_snapshot.version,
-                    "expected_snapshot_id": expected_voice_map_snapshot_id,
-                    "expected_snapshot_version": expected_voice_map_snapshot_version,
+                    "reason": "voice_map_snapshot_payload_corrupted",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": voice_map_payload_hash,
+                    "stored_payload_hash": voice_map_stored_hash,
                 },
             )
+        elif voice_map_payload_hash != voice_map_stored_hash:
+            _record_check(
+                "voice_map_snapshot",
+                False,
+                {
+                    "snapshot_id": voice_map_snapshot.id,
+                    "snapshot_version": voice_map_snapshot.version,
+                    "reason": "voice_map_snapshot_payload_hash_mismatch",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": voice_map_payload_hash,
+                    "stored_payload_hash": voice_map_stored_hash,
+                },
+            )
+        else:
+            snapshot_integrity_ok = (
+                voice_map_snapshot.run_id == run.id
+                and (
+                    expected_voice_map_snapshot_id is None
+                    or voice_map_snapshot.id == expected_voice_map_snapshot_id
+                )
+                and (
+                    expected_voice_map_snapshot_version is None
+                    or voice_map_snapshot.version == expected_voice_map_snapshot_version
+                )
+            )
+            if snapshot_integrity_ok:
+                _record_check(
+                    "voice_map_snapshot",
+                    True,
+                    {
+                        "snapshot_id": voice_map_snapshot.id,
+                        "snapshot_version": voice_map_snapshot.version,
+                        "payload_hash_mismatch": False,
+                        "expected_payload_hash": voice_map_payload_hash,
+                        "stored_payload_hash": voice_map_stored_hash,
+                    },
+                )
+            else:
+                _record_check(
+                    "voice_map_snapshot",
+                    False,
+                    {
+                        "snapshot_id": voice_map_snapshot.id,
+                        "snapshot_version": voice_map_snapshot.version,
+                        "expected_snapshot_id": expected_voice_map_snapshot_id,
+                        "expected_snapshot_version": expected_voice_map_snapshot_version,
+                        "payload_hash_mismatch": False,
+                        "expected_payload_hash": voice_map_payload_hash,
+                        "stored_payload_hash": voice_map_stored_hash,
+                    },
+                )
 
     time_series_snapshot = (
         session.query(TimeSeriesSnapshot)
@@ -1601,39 +1766,124 @@ def _build_run_artifact_integrity_report(
         expected_time_series_snapshot_version = _coerce_non_negative_int(
             run_config.get("time_series_snapshot_version")
         )
-        snapshot_integrity_ok = (
-            (expected_time_series_snapshot_id is None or time_series_snapshot.id == expected_time_series_snapshot_id)
-            and (
-                expected_time_series_snapshot_version is None
-                or time_series_snapshot.version == expected_time_series_snapshot_version
-            )
-            and isinstance(time_series_snapshot.snapshot_json, dict)
-        )
-        if snapshot_integrity_ok:
-            _record_check(
-                "time_series_snapshot",
-                True,
-                {
-                    "snapshot_id": time_series_snapshot.id,
-                    "snapshot_version": time_series_snapshot.version,
-                },
-            )
-        else:
+        time_series_payload = time_series_snapshot.snapshot_json
+        time_series_payload_hash = _build_snapshot_json_checksum(time_series_payload)
+        time_series_stored_hash = str(getattr(time_series_snapshot, "snapshot_json_sha256", ""))
+        if not isinstance(time_series_payload, dict):
             _record_check(
                 "time_series_snapshot",
                 False,
                 {
                     "snapshot_id": time_series_snapshot.id,
                     "snapshot_version": time_series_snapshot.version,
-                    "expected_snapshot_id": expected_time_series_snapshot_id,
-                    "expected_snapshot_version": expected_time_series_snapshot_version,
+                    "reason": "time_series_snapshot_payload_corrupted",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": time_series_payload_hash,
+                    "stored_payload_hash": time_series_stored_hash,
                 },
             )
+        elif time_series_payload_hash != time_series_stored_hash:
+            _record_check(
+                "time_series_snapshot",
+                False,
+                {
+                    "snapshot_id": time_series_snapshot.id,
+                    "snapshot_version": time_series_snapshot.version,
+                    "reason": "time_series_snapshot_payload_hash_mismatch",
+                    "payload_hash_mismatch": True,
+                    "expected_payload_hash": time_series_payload_hash,
+                    "stored_payload_hash": time_series_stored_hash,
+                },
+            )
+        else:
+            snapshot_integrity_ok = (
+                (expected_time_series_snapshot_id is None or time_series_snapshot.id == expected_time_series_snapshot_id)
+                and (
+                    expected_time_series_snapshot_version is None
+                    or time_series_snapshot.version == expected_time_series_snapshot_version
+                )
+            )
+            if snapshot_integrity_ok:
+                _record_check(
+                    "time_series_snapshot",
+                    True,
+                    {
+                        "snapshot_id": time_series_snapshot.id,
+                        "snapshot_version": time_series_snapshot.version,
+                        "payload_hash_mismatch": False,
+                        "expected_payload_hash": time_series_payload_hash,
+                        "stored_payload_hash": time_series_stored_hash,
+                    },
+                )
+            else:
+                _record_check(
+                    "time_series_snapshot",
+                    False,
+                    {
+                        "snapshot_id": time_series_snapshot.id,
+                        "snapshot_version": time_series_snapshot.version,
+                        "expected_snapshot_id": expected_time_series_snapshot_id,
+                        "expected_snapshot_version": expected_time_series_snapshot_version,
+                        "payload_hash_mismatch": False,
+                        "expected_payload_hash": time_series_payload_hash,
+                        "stored_payload_hash": time_series_stored_hash,
+                    },
+                )
+
+    project_raw_corpus_blobs = (
+        session.query(ProjectRawCorpusBlob)
+        .filter(ProjectRawCorpusBlob.project_id == run.project_id)
+        .order_by(ProjectRawCorpusBlob.id.asc())
+        .all()
+    )
+    if not project_raw_corpus_blobs:
+        _record_check("project_raw_corpus_blobs", False, {"reason": "raw_corpus_blob_not_found"})
+    else:
+        raw_corpus_mismatches: list[dict[str, object]] = []
+        for raw_corpus_blob in project_raw_corpus_blobs:
+            observed_raw_corpus_sha256 = hashlib.sha256(raw_corpus_blob.raw_corpus_blob or b"").hexdigest()
+            expected_raw_corpus_sha256 = str(raw_corpus_blob.blob_sha256)
+            if observed_raw_corpus_sha256 != expected_raw_corpus_sha256:
+                raw_corpus_mismatches.append(
+                    {
+                        "raw_corpus_blob_id": raw_corpus_blob.id,
+                        "expected_sha256": expected_raw_corpus_sha256,
+                        "observed_sha256": observed_raw_corpus_sha256,
+                        "reason": "hash_mismatch",
+                    }
+                )
+
+        _record_check(
+            "project_raw_corpus_blobs",
+            not raw_corpus_mismatches,
+            {
+                "observed_count": len(project_raw_corpus_blobs),
+                "mismatch_count": len(raw_corpus_mismatches),
+                "mismatches": raw_corpus_mismatches,
+            },
+        )
 
     return {
         "is_artifact_integrity_intact": all(check["passed"] for check in checks),
         "checks": checks,
     }
+
+
+def _refresh_run_artifact_integrity_in_config(
+    *,
+    session: Session,
+    run: Run,
+) -> None:
+    artifact_integrity = _build_run_artifact_integrity_report(
+        session=session,
+        run=run,
+    )
+    run_config = dict(run.config_json or {})
+    if run_config.get("artifact_integrity") != artifact_integrity:
+        run_config["artifact_integrity"] = artifact_integrity
+        run.config_json = run_config
+        session.add(run)
+        session.commit()
 
 
 def _execute_pipeline_and_finalize_run(
@@ -1798,6 +2048,85 @@ def persist_inferred_gender_fields(
             _build_character_map_item_payload_from_row(row)
             for row in character_rows
         ],
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/access",
+    response_model=ProjectAccessListResponse,
+    status_code=status.HTTP_200_OK,
+)
+def list_project_access_controls(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> ProjectAccessListResponse:
+    project = _get_project_or_404(session, project_id)
+    project_access = (
+        session.query(ProjectAccess)
+        .filter(ProjectAccess.project_id == project.id)
+        .order_by(ProjectAccess.created_at.asc(), ProjectAccess.id.asc())
+        .all()
+    )
+
+    return ProjectAccessListResponse(
+        project_id=project.id,
+        grants=[
+            ProjectAccessGrantResponse(
+                id=entry.id,
+                project_id=project.id,
+                principal_type=entry.principal_type,
+                principal_id=entry.principal_id,
+                role=entry.role,
+                created_at=entry.created_at,
+            )
+            for entry in project_access
+        ],
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/access",
+    response_model=ProjectAccessGrantResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_project_access_control(
+    project_id: int,
+    payload: ProjectAccessGrantRequest,
+    session: Session = Depends(get_session),
+) -> ProjectAccessGrantResponse:
+    project = _get_project_or_404(session, project_id)
+
+    grant = (
+        session.query(ProjectAccess)
+        .filter(
+            ProjectAccess.project_id == project.id,
+            ProjectAccess.principal_type == payload.principal_type,
+            ProjectAccess.principal_id == payload.principal_id,
+        )
+        .one_or_none()
+    )
+
+    if grant is None:
+        grant = ProjectAccess(
+            project_id=project.id,
+            principal_type=payload.principal_type,
+            principal_id=payload.principal_id,
+            role=payload.role,
+        )
+    else:
+        grant.role = payload.role
+
+    session.add(grant)
+    session.commit()
+    session.refresh(grant)
+
+    return ProjectAccessGrantResponse(
+        id=grant.id,
+        project_id=project.id,
+        principal_type=grant.principal_type,
+        principal_id=grant.principal_id,
+        role=grant.role,
+        created_at=grant.created_at,
     )
 
 
@@ -4272,6 +4601,10 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
             metric["hits"] += 1
         else:
             metric["misses"] += 1
+
+    if run.status == "completed":
+        _refresh_run_artifact_integrity_in_config(session=session, run=run)
+        session.refresh(run)
 
     return RunDetailResponse(
         run_id=run.id,

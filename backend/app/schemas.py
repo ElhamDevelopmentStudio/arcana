@@ -6,6 +6,10 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 from app.modes import DEFAULT_MODE, is_valid_mode
 
 
+ALLOWED_PROJECT_ACCESS_ROLES = frozenset({"owner", "editor", "viewer"})
+ALLOWED_PROJECT_ACCESS_PRINCIPAL_TYPES = frozenset({"user", "service", "system"})
+
+
 class ProjectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
 
@@ -20,6 +24,42 @@ class ProjectResponse(BaseModel):
     character_map_finalized: bool
     ingestion_timestamp: datetime | None
     created_at: datetime
+
+
+class ProjectAccessGrantRequest(BaseModel):
+    principal_id: str = Field(min_length=1, max_length=255)
+    principal_type: str = Field(default="user", min_length=1, max_length=40)
+    role: str = Field(default="viewer", min_length=1, max_length=40)
+
+    @field_validator("principal_type")
+    @classmethod
+    def normalize_principal_type(cls, value: str) -> str:
+        normalized = str(value).strip().lower()
+        if normalized not in ALLOWED_PROJECT_ACCESS_PRINCIPAL_TYPES:
+            raise ValueError("principal_type must be one of: user, service, system")
+        return normalized
+
+    @field_validator("role")
+    @classmethod
+    def normalize_role(cls, value: str) -> str:
+        normalized = str(value).strip().lower()
+        if normalized not in ALLOWED_PROJECT_ACCESS_ROLES:
+            raise ValueError("role must be one of: owner, editor, viewer")
+        return normalized
+
+
+class ProjectAccessGrantResponse(BaseModel):
+    id: int
+    project_id: int
+    principal_type: str
+    principal_id: str
+    role: str
+    created_at: datetime
+
+
+class ProjectAccessListResponse(BaseModel):
+    project_id: int
+    grants: list[ProjectAccessGrantResponse]
 
 
 class ProjectLLMSettingsRequest(BaseModel):
