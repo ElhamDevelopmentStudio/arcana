@@ -418,7 +418,7 @@ Definition of done for each task:
 - [x] [NFR5-004] Add least-privilege service role matrix for storage and DB.
 
 ### NFR-6 Compliance and Copyright Guardrails
-- [ ] [NFR6-001] Keep user-upload flow as default ingestion path.
+- [x] [NFR6-001] Keep user-upload flow as default ingestion path.
 - [ ] [NFR6-002] Add explicit legal warning UI for scraping mode.
 - [ ] [NFR6-003] Add “do not store source text” project option.
 - [ ] [NFR6-004] Implement derived-metrics-only persistence mode.
