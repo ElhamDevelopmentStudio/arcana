@@ -408,7 +408,7 @@ Definition of done for each task:
 
 ### NFR-4 Transparency
 - [x] [NFR4-001] Add UI disclaimer that outputs are probabilistic, not perfect.
-- [ ] [NFR4-002] Show confidence score on all major tag outputs.
+- [x] [NFR4-002] Show confidence score on all major tag outputs.
 - [ ] [NFR4-003] Add filtering by confidence thresholds in UI.
 
 ### NFR-5 Security and Privacy (SaaS)
