@@ -221,6 +221,7 @@ export function ProjectEmotionReviewPage() {
       step="Step 05.2"
       title="Emotion Peak/Trough Review"
       description="Optional review of emotional peaks, troughs, and low-confidence emotion tags."
+      showOutputDisclaimer
       action={
         projectId !== null ? (
           <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>

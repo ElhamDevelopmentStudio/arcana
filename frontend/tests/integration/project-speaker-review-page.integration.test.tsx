@@ -95,6 +95,9 @@ describe('project speaker review page', () => {
     const user = userEvent.setup();
     renderSpeakerReviewPage();
 
+    expect(screen.getByTestId('output-probabilistic-disclaimer')).toBeInTheDocument();
+    expect(screen.getByText(/AI outputs are probabilistic, not perfect/i)).toBeInTheDocument();
+
     expect(screen.getByTestId('speaker-review-candidates')).toHaveTextContent('Review candidates: 2');
     expect(screen.getByTestId('speaker-review-total')).toHaveTextContent('Total segments: 3');
 

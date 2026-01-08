@@ -155,6 +155,7 @@ export function ProjectSpeakerReviewPage() {
       step="Step 05.1"
       title="Speaker Tag Review"
       description="Optional review of low-confidence speaker tags extracted by the pipeline."
+      showOutputDisclaimer
       action={
         projectId !== null ? (
           <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>

@@ -221,6 +221,7 @@ export function ProjectLowConfidenceReviewPage() {
       step="Step 05.3"
       title="Low-Confidence Region Review"
       description="Optional review queue for uncertain low-confidence tag regions across tagging categories."
+      showOutputDisclaimer
       action={
         projectId !== null ? (
           <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>
