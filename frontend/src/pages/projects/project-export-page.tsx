@@ -8,6 +8,7 @@ import { useExportPayloadQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Download } from 'lucide-react';
+import { type ChangeEvent, useMemo, useState } from 'react';
 
 type MajorTagConfidenceRow = {
   segment_id: string;
@@ -78,6 +79,9 @@ export function ProjectExportPage() {
 
   const projectId = routeProjectId ?? storeProjectId;
   const exportPayloadQuery = useExportPayloadQuery(projectId, runId);
+  const [minimumConfidence, setMinimumConfidence] = useState(0.8);
+  const [showBelowThreshold, setShowBelowThreshold] = useState(true);
+
   const majorTagConfidenceRows = exportPayloadQuery.data?.segments
     ?.map((segment) => {
       if (!segment || typeof segment !== 'object') {
@@ -85,8 +89,41 @@ export function ProjectExportPage() {
       }
       return toMajorTagConfidenceRow(segment as Record<string, unknown>);
     })
-    .filter((row): row is MajorTagConfidenceRow => row !== null && row.segment_id !== 'n/a')
-    .slice(0, 10) ?? [];
+    .filter((row): row is MajorTagConfidenceRow => row !== null && row.segment_id !== 'n/a') ?? [];
+
+  const confidenceFilteredRows = useMemo(
+    () =>
+      majorTagConfidenceRows
+        .filter((segment) => {
+          const allConfidences = [
+            segment.speaker_confidence,
+            segment.emotion_confidence,
+            segment.type_confidence,
+            segment.tension_confidence,
+            segment.dominance_confidence,
+            segment.summary_confidence,
+          ].filter((value): value is number => typeof value === 'number');
+
+          if (allConfidences.length === 0) {
+            return false;
+          }
+
+          const minConfidence = allConfidences.reduce((minimum, current) => (current < minimum ? current : minimum), 1);
+          const threshold = Math.min(1, Math.max(0, minimumConfidence));
+
+          return showBelowThreshold ? minConfidence < threshold : minConfidence >= threshold;
+        })
+        .slice(0, 10),
+    [majorTagConfidenceRows, minimumConfidence, showBelowThreshold],
+  );
+
+  function updateMinimumConfidence(event: ChangeEvent<HTMLInputElement>) {
+    setMinimumConfidence(Math.round(Number(event.target.value) * 100) / 100);
+  }
+
+  function toggleFilterScope() {
+    setShowBelowThreshold((prev) => !prev);
+  }
 
   function downloadExportJson() {
     if (!exportPayloadQuery.data || projectId === null || runId === null) {
@@ -139,6 +176,32 @@ export function ProjectExportPage() {
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm text-muted-foreground">
                   <p>Preview the first 10 tag-bearing segments to inspect confidence spread before export.</p>
+                  <div className="space-y-2 rounded-xl border border-panel-border/50 bg-muted/30 px-3 py-2">
+                    <p className="text-xs font-medium text-foreground">
+                      Showing {confidenceFilteredRows.length} rows where min confidence is{' '}
+                      {showBelowThreshold ? 'below' : 'at least'} {Math.round(minimumConfidence * 100)}%
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="text-xs" htmlFor="export-confidence-threshold">
+                        Threshold:
+                        <span className="ml-1.5 text-foreground">{Math.round(minimumConfidence * 100)}%</span>
+                      </label>
+                      <input
+                        id="export-confidence-threshold"
+                        aria-label="Confidence threshold"
+                        data-testid="export-confidence-threshold"
+                        min={0}
+                        max={1}
+                        onChange={updateMinimumConfidence}
+                        step={0.01}
+                        type="range"
+                        value={minimumConfidence}
+                      />
+                      <Button onClick={toggleFilterScope} size="sm" type="button" variant="outline">
+                        {showBelowThreshold ? 'Show at or above threshold' : 'Show below threshold'}
+                      </Button>
+                    </div>
+                  </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -152,14 +215,14 @@ export function ProjectExportPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {majorTagConfidenceRows.length === 0 ? (
+                      {confidenceFilteredRows.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={7} className="text-muted-foreground">
-                            No major tag confidence fields were detected in this export payload.
+                            No major tag confidence fields were detected for current threshold.
                           </TableCell>
                         </TableRow>
                       ) : (
-                        majorTagConfidenceRows.map((segment) => (
+                        confidenceFilteredRows.map((segment) => (
                           <TableRow key={segment.segment_id} data-testid={`export-confidence-row-${segment.segment_id}`}>
                             <TableCell>
                               <p>
