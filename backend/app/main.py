@@ -98,6 +98,9 @@ from app.services.character_extraction import extract_character_candidates_from_
 from app.services.character_scrape import extract_character_candidates_from_scrape_url
 from app.services.epub_ingestion import extract_epub_chapters
 from app.services.character_merge import build_canonical_name_merge_suggestions, merge_character_candidates
+from app.services.character_merge import build_ambiguous_alias_collision_warnings
+from app.services.character_merge import build_duplicate_canonical_candidate_warnings
+from app.services.character_merge import build_low_confidence_extracted_character_warnings
 from app.services.character_merge import normalize_candidate_key
 from app.services.character_merge import detect_alias_conflicts
 from app.services.character_merge import resolve_alias_to_canonical_name
@@ -108,11 +111,16 @@ from app.services.export import (
 )
 from app.services.export import build_run_export_graph_json
 from app.services.export import build_run_export_academic_csv
-from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
+from app.services.ingestion_errors import (
+    MissingChaptersIngestionError,
+    UnsupportedEncodingIngestionError,
+    UnsupportedFormatIngestionError,
+)
 from app.services.ingestion import (
     build_duplicate_title_dedup_actions,
     build_duplicate_title_warnings,
     build_encoding_warning,
+    build_suspected_duplicate_content_warnings,
     build_internal_chapter_id,
     calculate_delta_affected_range,
     chapter_filename_sort_key,
@@ -122,7 +130,10 @@ from app.services.ingestion import (
     decode_text_with_metadata,
     detect_append_overlap_or_duplicate,
     detect_chapters,
+    detect_chapters_with_metadata,
     detect_chapters_from_file_boundaries,
+    detect_suspected_duplicate_content,
+    build_ambiguous_chapter_boundary_warning,
     detect_title_with_fallback,
     detect_text_encoding,
     extract_single_append_chapter,
@@ -154,6 +165,7 @@ from app.services.phonetics import replace_pronunciations_with_counts
 
 LOW_CONFIDENCE_STATE_VALUES = {"uncertain", "unknown"}
 LOW_CONFIDENCE_REGION_THRESHOLD = 0.8
+CHARACTER_EXTRACTION_LOW_CONFIDENCE_THRESHOLD = 0.7
 _RUN_RECOVERY_STALE_WINDOW_SECONDS = 600
 _PIPELINE_RECOVERY_CONFIG_KEY = "pipeline_recovery"
 _PROJECT_ACCESS_ROLE_HIERARCHY = {"viewer": 1, "editor": 2, "owner": 3}
@@ -260,6 +272,49 @@ def _required_project_access_scope(method: str, path: str) -> str:
         return _PROJECT_ACCESS_SCOPE_RUN_EXEC
 
     return _PROJECT_ACCESS_SCOPE_WRITE
+
+
+def _sanitize_provider_config_for_frontend(provider_config: object) -> dict[str, dict[str, object]]:
+    if not isinstance(provider_config, dict):
+        return {}
+
+    sanitized: dict[str, dict[str, object]] = {}
+    for provider_name, config in provider_config.items():
+        if not isinstance(config, dict):
+            continue
+
+        normalized_provider_name = str(provider_name).strip().lower()
+        if not normalized_provider_name:
+            continue
+
+        sanitized_config: dict[str, object] = {}
+        for key, value in config.items():
+            if not isinstance(key, str):
+                continue
+            normalized_key = key.strip().lower()
+            if normalized_key in {"api_key", "api_keys"}:
+                continue
+            sanitized_config[key] = value
+
+        sanitized[normalized_provider_name] = sanitized_config
+
+    return sanitized
+
+
+def _sanitize_run_config_for_frontend(run_config: object) -> dict[str, object]:
+    if not isinstance(run_config, dict):
+        return {}
+
+    sanitized = dict(run_config)
+
+    raw_provider_config = run_config.get("provider_config")
+    if raw_provider_config is not None:
+        sanitized["provider_config"] = _sanitize_provider_config_for_frontend(raw_provider_config)
+
+    if "provider_api_keys" in sanitized:
+        sanitized.pop("provider_api_keys")
+
+    return sanitized
 
 
 def _has_required_project_access(
@@ -1044,8 +1099,24 @@ def _persist_raw_corpus_blob(
     )
 
 
+def _project_allows_source_text_storage(project: Project) -> bool:
+    return not bool(project.do_not_store_source_text)
+
+
 def _build_full_corpus_text(rows: list[tuple[int, str, str]]) -> str:
     return "\n\n".join(row[2] for row in rows)
+
+
+def _build_ingested_chapter_text_payload(
+    project: Project,
+    *,
+    source_text: str,
+    original_to_normalized_offset_map: list[dict[str, int | str]],
+) -> tuple[str, str, list[dict[str, int | str]]]:
+    if _project_allows_source_text_storage(project):
+        return source_text, source_text, original_to_normalized_offset_map
+
+    return "", "", []
 
 
 def _build_character_map_item_payload(
@@ -2019,7 +2090,18 @@ def _build_run_artifact_integrity_report(
         .all()
     )
     if not project_raw_corpus_blobs:
-        _record_check("project_raw_corpus_blobs", False, {"reason": "raw_corpus_blob_not_found"})
+        project = session.query(Project).filter(Project.id == run.project_id).one_or_none()
+        if project is not None and project.do_not_store_source_text:
+            _record_check(
+                "project_raw_corpus_blobs",
+                True,
+                {
+                    "reason": "do_not_store_source_text",
+                    "observed_count": 0,
+                },
+            )
+        else:
+            _record_check("project_raw_corpus_blobs", False, {"reason": "raw_corpus_blob_not_found"})
     else:
         raw_corpus_mismatches: list[dict[str, object]] = []
         for raw_corpus_blob in project_raw_corpus_blobs:
@@ -2072,6 +2154,8 @@ def _execute_pipeline_and_finalize_run(
     session: Session,
     project: Project,
     run: Run,
+    principal_type: str | None = None,
+    principal_id: str | None = None,
 ) -> int:
     run_config = dict(run.config_json or {})
     try:
@@ -2080,6 +2164,9 @@ def _execute_pipeline_and_finalize_run(
             project=project,
             run=run,
             run_config=run_config,
+            principal_type=principal_type,
+            principal_id=principal_id,
+            project_id=project.id,
         )
         if run.status != "completed":
             run.status = "completed"
@@ -2518,10 +2605,55 @@ def _build_mergeable_candidates_from_candidates(
     source: str,
 ) -> list[dict[str, object]]:
     payloads: list[dict[str, object]] = []
+
+    def _normalize_trace(trace: object) -> dict[str, object] | None:
+        if isinstance(trace, dict):
+            kind = str(trace.get("kind", "")).strip()
+            chapter_index = trace.get("chapter_index")
+            span_start = trace.get("span_start")
+            span_end = trace.get("span_end")
+            excerpt = str(trace.get("excerpt", "")).strip()
+            weight = trace.get("weight")
+        else:
+            kind = str(getattr(trace, "kind", "")).strip()
+            chapter_index = getattr(trace, "chapter_index", None)
+            span_start = getattr(trace, "span_start", None)
+            span_end = getattr(trace, "span_end", None)
+            excerpt = str(getattr(trace, "excerpt", "")).strip()
+            weight = getattr(trace, "weight", None)
+
+        if not kind or chapter_index is None or span_start is None or span_end is None or not excerpt:
+            return None
+        if not isinstance(weight, int | float):
+            return None
+
+        return {
+            "kind": kind,
+            "chapter_index": int(chapter_index),
+            "span_start": int(span_start),
+            "span_end": int(span_end),
+            "excerpt": excerpt,
+            "weight": float(weight),
+        }
+
     for candidate in candidates:
-        source_trace = list(getattr(candidate, "source_trace", []))
+        source_trace = [
+            payload
+            for payload in (
+                _normalize_trace(trace)
+                for trace in list(getattr(candidate, "source_trace", []))
+            )
+            if payload is not None
+        ]
         inferred_gender = str(getattr(candidate, "inferred_gender", "unknown")).strip().lower() or "unknown"
-        inferred_source_trace = list(getattr(candidate, "inferred_source_trace", []))
+        inferred_source_trace = [
+            payload
+            for payload in (
+                _normalize_trace(trace)
+                for trace in list(getattr(candidate, "inferred_source_trace", []))
+            )
+            if payload is not None
+        ]
         payloads.append(
             {
                 "name": candidate.name,
@@ -2533,17 +2665,7 @@ def _build_mergeable_candidates_from_candidates(
                 "confidence": getattr(candidate, "confidence", 1.0),
                 "inferred_gender": inferred_gender,
                 "inferred_confidence": getattr(candidate, "inferred_confidence", 0.0),
-                "source_trace": [
-                    {
-                        "kind": trace.kind,
-                        "chapter_index": trace.chapter_index,
-                        "span_start": trace.span_start,
-                        "span_end": trace.span_end,
-                        "excerpt": trace.excerpt,
-                        "weight": trace.weight,
-                    }
-                    for trace in getattr(candidate, "source_trace", [])
-                ],
+                "source_trace": source_trace,
                 "inferred_source_trace": inferred_source_trace or source_trace,
             }
         )
@@ -2619,6 +2741,53 @@ def list_character_alias_collisions(
     )
 
 
+def _build_ambiguous_alias_collision_warnings(
+    canonical_payloads: list[dict[str, object]],
+    source: str,
+) -> list[dict[str, object]]:
+    warnings = build_ambiguous_alias_collision_warnings(
+        canonical_payloads,
+        source=source,
+    )
+    return warnings
+
+
+def _build_low_confidence_character_warnings(
+    candidate_payloads: list[dict[str, object]],
+    source: str,
+) -> list[dict[str, object]]:
+    warnings = build_low_confidence_extracted_character_warnings(
+        candidate_payloads,
+        source=source,
+        confidence_threshold=CHARACTER_EXTRACTION_LOW_CONFIDENCE_THRESHOLD,
+    )
+    return warnings
+
+
+def _build_character_extraction_warnings(
+    canonical_payloads: list[dict[str, object]],
+    candidate_payloads: list[dict[str, object]],
+    source: str,
+) -> list[dict[str, object]]:
+    warnings = _build_ambiguous_alias_collision_warnings(
+        canonical_payloads=canonical_payloads,
+        source=source,
+    )
+    warnings.extend(
+        _build_low_confidence_character_warnings(
+            candidate_payloads=candidate_payloads,
+            source=source,
+        )
+    )
+    warnings.extend(
+        build_duplicate_canonical_candidate_warnings(
+            candidate_payloads=candidate_payloads,
+            source=source,
+        )
+    )
+    return warnings
+
+
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(payload: ProjectCreate, session: Session = Depends(get_session)) -> ProjectResponse:
     project = Project(
@@ -2626,6 +2795,7 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         selected_mode=DEFAULT_MODE,
         selected_modes=[DEFAULT_MODE],
         llm_enabled=False,
+        do_not_store_source_text=payload.do_not_store_source_text,
         voice_config_json=dict(DEFAULT_VOICE_CONFIG),
         default_narrator_voice=DEFAULT_VOICE_CONFIG["narrator_voice"],
         default_male_voice=DEFAULT_VOICE_CONFIG["male_default_voice"],
@@ -2647,6 +2817,7 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         selected_mode=project.selected_mode,
         selected_modes=project.selected_modes,
         llm_enabled=project.llm_enabled,
+        do_not_store_source_text=project.do_not_store_source_text,
         character_map_finalized=project.character_map_finalized,
         configuration_snapshot_id=project.configuration_snapshot_id,
         ingestion_timestamp=project.ingestion_timestamp,
@@ -2667,7 +2838,7 @@ def get_project_llm_settings(
     return ProjectLLMSettingsResponse(
         project_id=project.id,
         llm_enabled=project.llm_enabled,
-        provider_config=project.llm_provider_config_json,
+        provider_config=_sanitize_provider_config_for_frontend(project.llm_provider_config_json),
     )
 
 
@@ -2694,7 +2865,7 @@ def update_project_llm_settings(
     return ProjectLLMSettingsResponse(
         project_id=project.id,
         llm_enabled=project.llm_enabled,
-        provider_config=project.llm_provider_config_json,
+        provider_config=_sanitize_provider_config_for_frontend(project.llm_provider_config_json),
     )
 
 
@@ -2785,28 +2956,19 @@ def ingest_txt(
 
     filename = file.filename or ""
     if not filename.lower().endswith(".txt"):
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
-            detail="Only .txt files are supported",
-        )
+        raise UnsupportedFormatIngestionError(detail="Only .txt files are supported")
 
     payload = file.file.read()
     raw_text, encoding, confidence = decode_text_with_metadata(payload)
     if is_likely_unsupported_encoding(raw_text):
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.UNSUPPORTED_ENCODING,
+        raise UnsupportedEncodingIngestionError(
             detail="Unable to decode TXT content reliably with supported encodings",
         )
     detected_title = detect_title_with_fallback(raw_text, filename=filename)
-    chapters = [(title, content) for title, content in detect_chapters(raw_text) if content.strip()]
+    detected_chapters, is_ambiguous_boundaries = detect_chapters_with_metadata(raw_text)
+    chapters = [(title, content) for title, content in detected_chapters if content.strip()]
     if not chapters:
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.MISSING_CHAPTERS,
-            detail="No non-empty chapters found in TXT input",
-        )
+        raise MissingChaptersIngestionError(detail="No non-empty chapters found in TXT input")
     warnings: list[dict[str, object]] = []
     chapter_normalization_reports: list[dict[str, object]] = []
     encoding_warnings: list[dict[str, object]] = []
@@ -2814,8 +2976,15 @@ def ingest_txt(
     if txt_warning is not None:
         warnings.append(txt_warning)
         encoding_warnings.append(txt_warning)
+    if is_ambiguous_boundaries:
+        warnings.append(build_ambiguous_chapter_boundary_warning("txt", len(chapters)))
     duplicate_title_warnings = build_duplicate_title_warnings("txt", chapters)
     warnings.extend(duplicate_title_warnings)
+    suspected_duplicate_content_warnings = build_suspected_duplicate_content_warnings(
+        "txt",
+        detect_suspected_duplicate_content(chapters),
+    )
+    warnings.extend(suspected_duplicate_content_warnings)
     dedup_actions = build_duplicate_title_dedup_actions("txt", chapters)
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
@@ -2829,6 +2998,11 @@ def ingest_txt(
         )
         chapter_normalization_reports.append(chapter_report)
         chapter_offset_map = build_original_to_normalized_offset_map(chapter_content, normalized)
+        stored_raw_text, stored_original_snapshot, stored_offset_map = _build_ingested_chapter_text_payload(
+            project=project,
+            source_text=chapter_content,
+            original_to_normalized_offset_map=chapter_offset_map,
+        )
         warnings.extend(quote_warnings)
         session.add(
             Chapter(
@@ -2836,11 +3010,11 @@ def ingest_txt(
                 chapter_index=idx,
                 chapter_internal_id=build_internal_chapter_id(idx),
                 chapter_title=chapter_title,
-                raw_text=chapter_content,
-                original_text_snapshot=chapter_content,
+                raw_text=stored_raw_text,
+                original_text_snapshot=stored_original_snapshot,
                 normalized_text=normalized,
                 normalized_text_snapshot=normalized,
-                original_to_normalized_offset_map=chapter_offset_map,
+                original_to_normalized_offset_map=stored_offset_map,
             )
         )
     normalization_report = build_normalization_report(
@@ -2848,18 +3022,20 @@ def ingest_txt(
         chapter_count=len(chapter_normalization_reports),
         chapter_reports=chapter_normalization_reports,
         suspected_duplicate_title_count=len(duplicate_title_warnings),
+        suspected_duplicate_content_count=len(suspected_duplicate_content_warnings),
         encoding_issue_count=len(encoding_warnings),
     )
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
-    _persist_raw_corpus_blob(
-        session=session,
-        project_id=project_id,
-        source="txt",
-        raw_corpus=raw_text,
-        source_filename=filename,
-    )
+    if _project_allows_source_text_storage(project):
+        _persist_raw_corpus_blob(
+            session=session,
+            project_id=project_id,
+            source="txt",
+            raw_corpus=raw_text,
+            source_filename=filename,
+        )
     _update_project_ingestion_log(
         project,
         source="txt",
@@ -2889,29 +3065,20 @@ def ingest_markdown(
     filename = file.filename or ""
     lower_filename = filename.lower()
     if not (lower_filename.endswith(".md") or lower_filename.endswith(".markdown")):
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
-            detail="Only .md or .markdown files are supported",
-        )
+        raise UnsupportedFormatIngestionError(detail="Only .md or .markdown files are supported")
 
     payload = file.file.read()
     markdown_text, encoding, confidence = decode_text_with_metadata(payload)
     if is_likely_unsupported_encoding(markdown_text):
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.UNSUPPORTED_ENCODING,
+        raise UnsupportedEncodingIngestionError(
             detail="Unable to decode Markdown content reliably with supported encodings",
         )
     normalized_source = normalize_markdown_for_ingestion(markdown_text)
     detected_title = detect_title_with_fallback(normalized_source, filename=filename)
-    chapters = [(title, content) for title, content in detect_chapters(normalized_source) if content.strip()]
+    detected_chapters, is_ambiguous_boundaries = detect_chapters_with_metadata(normalized_source)
+    chapters = [(title, content) for title, content in detected_chapters if content.strip()]
     if not chapters:
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.MISSING_CHAPTERS,
-            detail="No non-empty chapters found in Markdown input",
-        )
+        raise MissingChaptersIngestionError(detail="No non-empty chapters found in Markdown input")
     warnings: list[dict[str, object]] = []
     chapter_normalization_reports: list[dict[str, object]] = []
     encoding_warnings: list[dict[str, object]] = []
@@ -2919,8 +3086,15 @@ def ingest_markdown(
     if markdown_warning is not None:
         warnings.append(markdown_warning)
         encoding_warnings.append(markdown_warning)
+    if is_ambiguous_boundaries:
+        warnings.append(build_ambiguous_chapter_boundary_warning("markdown", len(chapters)))
     duplicate_title_warnings = build_duplicate_title_warnings("markdown", chapters)
     warnings.extend(duplicate_title_warnings)
+    suspected_duplicate_content_warnings = build_suspected_duplicate_content_warnings(
+        "markdown",
+        detect_suspected_duplicate_content(chapters),
+    )
+    warnings.extend(suspected_duplicate_content_warnings)
     dedup_actions = build_duplicate_title_dedup_actions("markdown", chapters)
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
@@ -2937,6 +3111,11 @@ def ingest_markdown(
             stored_chapter_content,
             normalized,
         )
+        stored_raw_text, stored_original_snapshot, stored_offset_map = _build_ingested_chapter_text_payload(
+            project=project,
+            source_text=stored_chapter_content,
+            original_to_normalized_offset_map=chapter_offset_map,
+        )
         warnings.extend(quote_warnings)
         session.add(
             Chapter(
@@ -2944,11 +3123,11 @@ def ingest_markdown(
                 chapter_index=chapter_index,
                 chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=stored_chapter_title,
-                raw_text=stored_chapter_content,
-                original_text_snapshot=stored_chapter_content,
+                raw_text=stored_raw_text,
+                original_text_snapshot=stored_original_snapshot,
                 normalized_text=normalized,
                 normalized_text_snapshot=normalized,
-                original_to_normalized_offset_map=chapter_offset_map,
+                original_to_normalized_offset_map=stored_offset_map,
             )
         )
     normalization_report = build_normalization_report(
@@ -2956,18 +3135,20 @@ def ingest_markdown(
         chapter_count=len(chapter_normalization_reports),
         chapter_reports=chapter_normalization_reports,
         suspected_duplicate_title_count=len(duplicate_title_warnings),
+        suspected_duplicate_content_count=len(suspected_duplicate_content_warnings),
         encoding_issue_count=len(encoding_warnings),
     )
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
-    _persist_raw_corpus_blob(
-        session=session,
-        project_id=project_id,
-        source="markdown",
-        raw_corpus=markdown_text,
-        source_filename=filename,
-    )
+    if _project_allows_source_text_storage(project):
+        _persist_raw_corpus_blob(
+            session=session,
+            project_id=project_id,
+            source="markdown",
+            raw_corpus=markdown_text,
+            source_filename=filename,
+        )
     _update_project_ingestion_log(
         project,
         source="markdown",
@@ -3002,11 +3183,7 @@ def ingest_epub(
     project = _get_project_or_404(session, project_id)
     filename = file.filename or ""
     if not filename.lower().endswith(".epub"):
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
-            detail="Only .epub files are supported",
-        )
+        raise UnsupportedFormatIngestionError(detail="Only .epub files are supported")
 
     payload = file.file.read()
     try:
@@ -3015,16 +3192,17 @@ def ingest_epub(
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
 
     if not chapters:
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.MISSING_CHAPTERS,
-            detail="No chapter content found in EPUB",
-        )
+        raise MissingChaptersIngestionError(detail="No chapter content found in EPUB")
 
     warnings: list[dict[str, object]] = []
     chapter_normalization_reports: list[dict[str, object]] = []
     duplicate_title_warnings = build_duplicate_title_warnings("epub", chapters)
     warnings.extend(duplicate_title_warnings)
+    suspected_duplicate_content_warnings = build_suspected_duplicate_content_warnings(
+        "epub",
+        detect_suspected_duplicate_content(chapters),
+    )
+    warnings.extend(suspected_duplicate_content_warnings)
     encoding_issue_count = 0
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -3039,6 +3217,11 @@ def ingest_epub(
         )
         chapter_normalization_reports.append(chapter_report)
         chapter_offset_map = build_original_to_normalized_offset_map(content, normalized)
+        stored_raw_text, stored_original_snapshot, stored_offset_map = _build_ingested_chapter_text_payload(
+            project=project,
+            source_text=content,
+            original_to_normalized_offset_map=chapter_offset_map,
+        )
         warnings.extend(quote_warnings)
         session.add(
             Chapter(
@@ -3046,11 +3229,11 @@ def ingest_epub(
                 chapter_index=chapter_index,
                 chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=title,
-                raw_text=content,
-                original_text_snapshot=content,
+                raw_text=stored_raw_text,
+                original_text_snapshot=stored_original_snapshot,
                 normalized_text=normalized,
                 normalized_text_snapshot=normalized,
-                original_to_normalized_offset_map=chapter_offset_map,
+                original_to_normalized_offset_map=stored_offset_map,
             )
         )
 
@@ -3063,20 +3246,22 @@ def ingest_epub(
         chapter_count=len(chapter_normalization_reports),
         chapter_reports=chapter_normalization_reports,
         suspected_duplicate_title_count=len(duplicate_title_warnings),
+        suspected_duplicate_content_count=len(suspected_duplicate_content_warnings),
         encoding_issue_count=encoding_issue_count,
     )
-    _persist_raw_corpus_blob(
-        session=session,
-        project_id=project_id,
-        source="epub",
-        raw_corpus=_build_full_corpus_text(
-            [
-                (index, chapter_title, chapter_content)
-                for index, (chapter_title, chapter_content) in enumerate(chapters, start=1)
-            ]
-        ),
-        source_filename=filename,
-    )
+    if _project_allows_source_text_storage(project):
+        _persist_raw_corpus_blob(
+            session=session,
+            project_id=project_id,
+            source="epub",
+            raw_corpus=_build_full_corpus_text(
+                [
+                    (index, chapter_title, chapter_content)
+                    for index, (chapter_title, chapter_content) in enumerate(chapters, start=1)
+                ]
+            ),
+            source_filename=filename,
+        )
     _update_project_ingestion_log(
         project,
         source="epub",
@@ -3090,11 +3275,7 @@ def ingest_epub(
 
     chapter_count = session.query(Chapter).filter(Chapter.project_id == project_id).count()
     if chapter_count == 0:
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.MISSING_CHAPTERS,
-            detail="No non-empty chapter content found in EPUB",
-        )
+        raise MissingChaptersIngestionError(detail="No non-empty chapter content found in EPUB")
     return IngestResponse(project_id=project_id, chapter_count=chapter_count)
 
 
@@ -3110,11 +3291,7 @@ def ingest_chapters_dir(
 ) -> IngestResponse:
     project = _get_project_or_404(session, project_id)
     if not files:
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.MISSING_CHAPTERS,
-            detail="At least one chapter file is required",
-        )
+        raise MissingChaptersIngestionError(detail="At least one chapter file is required")
 
     sorted_files = sorted(files, key=lambda upload: chapter_filename_sort_key(upload.filename or ""))
 
@@ -3125,18 +3302,12 @@ def ingest_chapters_dir(
     for upload in sorted_files:
         filename = upload.filename or ""
         if not filename.lower().endswith(".txt"):
-            raise make_ingestion_http_error(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
-                detail="Chapter directory only supports .txt files",
-            )
+            raise UnsupportedFormatIngestionError(detail="Chapter directory only supports .txt files")
 
         payload = upload.file.read()
         content = decode_text(payload).strip()
         if is_likely_unsupported_encoding(content):
-            raise make_ingestion_http_error(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error_type=IngestionErrorType.UNSUPPORTED_ENCODING,
+            raise UnsupportedEncodingIngestionError(
                 detail=f"Unable to decode chapter file reliably: {filename}",
             )
         encoding, confidence = detect_text_encoding(payload)
@@ -3155,14 +3326,15 @@ def ingest_chapters_dir(
     ]
     duplicate_title_warnings = build_duplicate_title_warnings("chapters-dir", chapter_rows)
     warnings.extend(duplicate_title_warnings)
+    suspected_duplicate_content_warnings = build_suspected_duplicate_content_warnings(
+        "chapters-dir",
+        detect_suspected_duplicate_content(chapter_rows),
+    )
+    warnings.extend(suspected_duplicate_content_warnings)
     dedup_actions = build_duplicate_title_dedup_actions("chapters-dir", chapter_rows)
 
     if not chapter_rows:
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.MISSING_CHAPTERS,
-            detail="No non-empty chapter content found",
-        )
+        raise MissingChaptersIngestionError(detail="No non-empty chapter content found")
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -3173,6 +3345,11 @@ def ingest_chapters_dir(
         )
         chapter_normalization_reports.append(chapter_report)
         chapter_offset_map = build_original_to_normalized_offset_map(chapter_content, normalized)
+        stored_raw_text, stored_original_snapshot, stored_offset_map = _build_ingested_chapter_text_payload(
+            project=project,
+            source_text=chapter_content,
+            original_to_normalized_offset_map=chapter_offset_map,
+        )
         warnings.extend(quote_warnings)
         session.add(
             Chapter(
@@ -3180,11 +3357,11 @@ def ingest_chapters_dir(
                 chapter_index=chapter_index,
                 chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=chapter_title,
-                raw_text=chapter_content,
-                original_text_snapshot=chapter_content,
+                raw_text=stored_raw_text,
+                original_text_snapshot=stored_original_snapshot,
                 normalized_text=normalized,
                 normalized_text_snapshot=normalized,
-                original_to_normalized_offset_map=chapter_offset_map,
+                original_to_normalized_offset_map=stored_offset_map,
             )
         )
 
@@ -3195,20 +3372,22 @@ def ingest_chapters_dir(
         chapter_count=len(chapter_normalization_reports),
         chapter_reports=chapter_normalization_reports,
         suspected_duplicate_title_count=len(duplicate_title_warnings),
+        suspected_duplicate_content_count=len(suspected_duplicate_content_warnings),
         encoding_issue_count=len(encoding_warnings),
     )
-    _persist_raw_corpus_blob(
-        session=session,
-        project_id=project_id,
-        source="chapters-dir",
-        raw_corpus=_build_full_corpus_text(
-            [
-                (index, chapter_title, chapter_content)
-                for index, (chapter_title, chapter_content) in enumerate(chapter_rows, start=1)
-            ]
-        ),
-        source_filename=None,
-    )
+    if _project_allows_source_text_storage(project):
+        _persist_raw_corpus_blob(
+            session=session,
+            project_id=project_id,
+            source="chapters-dir",
+            raw_corpus=_build_full_corpus_text(
+                [
+                    (index, chapter_title, chapter_content)
+                    for index, (chapter_title, chapter_content) in enumerate(chapter_rows, start=1)
+                ]
+            ),
+            source_filename=None,
+        )
     _update_project_ingestion_log(
         project,
         source="chapters-dir",
@@ -3237,18 +3416,12 @@ def append_chapter(
 
     filename = file.filename or ""
     if not filename.lower().endswith(".txt"):
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
-            detail="Append chapter only supports .txt files",
-        )
+        raise UnsupportedFormatIngestionError(detail="Append chapter only supports .txt files")
 
     payload = file.file.read()
     raw_text, encoding, confidence = decode_text_with_metadata(payload)
     if is_likely_unsupported_encoding(raw_text):
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.UNSUPPORTED_ENCODING,
+        raise UnsupportedEncodingIngestionError(
             detail="Unable to decode appended chapter reliably with supported encodings",
         )
     has_explicit_header = contains_explicit_chapter_header(raw_text)
@@ -3257,17 +3430,18 @@ def append_chapter(
     try:
         parsed_title, parsed_content = extract_single_append_chapter(parsed_chapters, fallback_title=fallback_title)
     except ValueError as exc:
-        raise make_ingestion_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type=IngestionErrorType.MISSING_CHAPTERS,
-            detail=str(exc),
-        ) from exc
+        raise MissingChaptersIngestionError(detail=str(exc)) from exc
 
     next_chapter_index = _get_next_chapter_index(session, project_id)
     chapter_title = to_internal_utf8(parsed_title if has_explicit_header else fallback_title)
     chapter_content = to_internal_utf8(parsed_content)
     existing_chapters = (
-        session.query(Chapter.chapter_index, Chapter.chapter_title, Chapter.raw_text)
+        session.query(
+            Chapter.chapter_index,
+            Chapter.chapter_title,
+            Chapter.raw_text,
+            Chapter.normalized_text,
+        )
         .filter(Chapter.project_id == project_id)
         .order_by(Chapter.chapter_index.asc())
         .all()
@@ -3275,7 +3449,14 @@ def append_chapter(
     overlap_match = detect_append_overlap_or_duplicate(
         new_title=chapter_title,
         new_content=chapter_content,
-        existing_chapters=[(row[0], row[1], row[2]) for row in existing_chapters],
+        existing_chapters=[
+            (
+                row[0],
+                row[1],
+                row[2] if row[2] else row[3],
+            )
+            for row in existing_chapters
+        ],
     )
     if overlap_match is not None:
         raise HTTPException(
@@ -3297,11 +3478,27 @@ def append_chapter(
     )
     chapter_normalization_reports.append(chapter_report)
     chapter_offset_map = build_original_to_normalized_offset_map(chapter_content, normalized)
+    stored_raw_text, stored_original_snapshot, stored_offset_map = _build_ingested_chapter_text_payload(
+        project=project,
+        source_text=chapter_content,
+        original_to_normalized_offset_map=chapter_offset_map,
+    )
     warnings: list[dict[str, object]] = [warning] if warning is not None else []
     warnings.extend(quote_warnings)
-    combined_titles = [(row[1], row[2]) for row in existing_chapters] + [(chapter_title, chapter_content)]
+    combined_titles = [
+        (row[1], row[2] if row[2] else row[3]) for row in existing_chapters
+    ] + [(chapter_title, chapter_content)]
     duplicate_title_warnings = build_duplicate_title_warnings("append-chapter", combined_titles)
     warnings.extend(duplicate_title_warnings)
+    suspected_duplicate_content_warnings = build_suspected_duplicate_content_warnings(
+        "append-chapter",
+        detect_suspected_duplicate_content(
+            combined_titles,
+            minimum_chars=120,
+            similarity_threshold=0.94,
+        ),
+    )
+    warnings.extend(suspected_duplicate_content_warnings)
     dedup_actions = build_duplicate_title_dedup_actions("append-chapter", combined_titles)
 
     session.add(
@@ -3310,11 +3507,11 @@ def append_chapter(
             chapter_index=next_chapter_index,
             chapter_internal_id=build_internal_chapter_id(next_chapter_index),
             chapter_title=chapter_title,
-            raw_text=chapter_content,
-            original_text_snapshot=chapter_content,
+            raw_text=stored_raw_text,
+            original_text_snapshot=stored_original_snapshot,
             normalized_text=normalized,
             normalized_text_snapshot=normalized,
-            original_to_normalized_offset_map=chapter_offset_map,
+            original_to_normalized_offset_map=stored_offset_map,
         )
     )
 
@@ -3333,22 +3530,24 @@ def append_chapter(
             chapter_count=1,
             chapter_reports=chapter_normalization_reports,
             suspected_duplicate_title_count=len(duplicate_title_warnings),
+            suspected_duplicate_content_count=len(suspected_duplicate_content_warnings),
             encoding_issue_count=len(encoding_warnings),
         ),
     )
-    _persist_raw_corpus_blob(
-        session=session,
-        project_id=project_id,
-        source="append-chapter",
-        raw_corpus=_build_full_corpus_text(
-            [
-                (row[0], row[1], row[2])
-                for row in existing_chapters
-            ]
-            + [(next_chapter_index, chapter_title, chapter_content)]
-        ),
-        source_filename=filename,
-    )
+    if _project_allows_source_text_storage(project):
+        _persist_raw_corpus_blob(
+            session=session,
+            project_id=project_id,
+            source="append-chapter",
+            raw_corpus=_build_full_corpus_text(
+                [
+                    (row[0], row[1], row[2])
+                    for row in existing_chapters
+                ]
+                + [(next_chapter_index, chapter_title, chapter_content)]
+            ),
+            source_filename=filename,
+        )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -3496,19 +3695,26 @@ def auto_extract_characters(
         [row.normalized_text for row in chapter_rows],
         known_names=existing_names,
     )
+    candidate_payloads = _build_mergeable_candidates_from_candidates(
+        candidates,
+        source="auto",
+    )
     mapped_candidates = [
         CharacterMapItem(**candidate_payload)
-        for candidate_payload in _build_mergeable_candidates_from_candidates(
-            candidates,
-            source="auto",
-        )
+        for candidate_payload in candidate_payloads
     ]
+    warnings = _build_character_extraction_warnings(
+        canonical_payloads=candidate_payloads,
+        candidate_payloads=candidate_payloads,
+        source="characters.extract",
+    )
 
     return CharacterExtractionResponse(
         project_id=project_id,
         status="complete",
         candidate_count=len(mapped_candidates),
         candidates=mapped_candidates,
+        warnings=warnings,
     )
 
 
@@ -3543,19 +3749,26 @@ def scrape_characters(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    candidate_payloads = _build_mergeable_candidates_from_candidates(
+        candidates,
+        source="scrape",
+    )
     mapped_candidates = [
         CharacterMapItem(**candidate_payload)
-        for candidate_payload in _build_mergeable_candidates_from_candidates(
-            candidates,
-            source="scrape",
-        )
+        for candidate_payload in candidate_payloads
     ]
+    warnings = _build_character_extraction_warnings(
+        canonical_payloads=candidate_payloads,
+        candidate_payloads=candidate_payloads,
+        source="characters.scrape",
+    )
 
     return CharacterExtractionResponse(
         project_id=project_id,
         status="complete",
         candidate_count=len(mapped_candidates),
         candidates=mapped_candidates,
+        warnings=warnings,
     )
 
 
@@ -3627,6 +3840,11 @@ def merged_candidate_characters(
         merged_payloads.extend(scrape_payloads)
         proposed_source_payloads.extend(scrape_payloads)
 
+    warnings = _build_character_extraction_warnings(
+        canonical_payloads=merged_payloads,
+        candidate_payloads=proposed_source_payloads,
+        source="characters.merged-candidates",
+    )
     merged_candidates = [CharacterMapItem(**payload) for payload in merge_character_candidates(merged_payloads)]
     proposed_candidates = [CharacterMapItem(**payload) for payload in _filter_new_character_payloads(
         payloads=proposed_source_payloads,
@@ -3644,6 +3862,7 @@ def merged_candidate_characters(
         candidates=merged_candidates,
         proposed_characters=proposed_candidates,
         canonical_merge_suggestions=canonical_merge_suggestions,
+        warnings=warnings,
     )
 
 
@@ -4435,6 +4654,7 @@ def update_voice_config(
 def create_run(
     project_id: int,
     payload: RunCreateRequest,
+    request: Request,
     session: Session = Depends(get_session),
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
@@ -4561,6 +4781,12 @@ def create_run(
     )
     session.add(run_configuration_snapshot)
     session.flush()
+    project_principal = _resolve_project_access_headers(request=request)
+    if project_principal is None:
+        principal_type = None
+        principal_id = None
+    else:
+        principal_type, principal_id = project_principal
     _append_run_changelog_entry(
         session=session,
         run=run,
@@ -4661,7 +4887,13 @@ def create_run(
         run.config_json = run_config_with_recovery
     session.commit()
     session.refresh(run)
-    segment_count = _execute_pipeline_and_finalize_run(session=session, project=project, run=run)
+    segment_count = _execute_pipeline_and_finalize_run(
+        session=session,
+        project=project,
+        run=run,
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
 
     return RunResponse(
         run_id=run.id,
@@ -4679,6 +4911,7 @@ def create_run(
 def recover_run(
     project_id: int,
     run_id: int,
+    request: Request,
     session: Session = Depends(get_session),
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
@@ -4726,7 +4959,20 @@ def recover_run(
     session.commit()
     session.refresh(run)
 
-    segment_count = _execute_pipeline_and_finalize_run(session=session, project=project, run=run)
+    project_principal = _resolve_project_access_headers(request=request)
+    if project_principal is None:
+        principal_type = None
+        principal_id = None
+    else:
+        principal_type, principal_id = project_principal
+
+    segment_count = _execute_pipeline_and_finalize_run(
+        session=session,
+        project=project,
+        run=run,
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
 
     return RunResponse(
         run_id=run.id,
@@ -4787,6 +5033,7 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
     if run.status == "completed":
         _refresh_run_artifact_integrity_in_config(session=session, run=run)
         session.refresh(run)
+    sanitized_run_config = _sanitize_run_config_for_frontend(run.config_json)
 
     return RunDetailResponse(
         run_id=run.id,
@@ -4795,7 +5042,7 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
         llm_provider_name=run.llm_provider_name,
         llm_model_identifier=run.llm_model_identifier,
         llm_model_version=run.llm_model_version,
-        config=run.config_json,
+        config=sanitized_run_config,
         started_at=run.started_at,
         finished_at=run.finished_at,
         segment_count=segment_count,
