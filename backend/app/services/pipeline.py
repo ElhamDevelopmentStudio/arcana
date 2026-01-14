@@ -27,6 +27,7 @@ from app.models import (
     SubSegmentTag,
 )
 from app.services.export import build_run_export
+from app.services.segment_reconstruction import reconstruct_chapter_text_from_segments
 from app.services.llm_router import (
     LLMRequest,
     LLMRouter,
@@ -116,7 +117,97 @@ _INCREMENTAL_RECOMPUTE_CONFIG_KEYS: tuple[str, ...] = (
 
 
 class PipelineError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, metadata: dict[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.metadata = metadata or {}
+
+
+def _coerce_non_negative_chapter_index(value: object) -> int | None:
+    try:
+        index = int(value)
+    except (TypeError, ValueError):
+        return None
+    if index <= 0:
+        return None
+    return index
+
+
+def _compute_text_diff_preview(expected: str, reconstructed: str, *, max_length: int = 120) -> str:
+    expected_norm = expected or ""
+    reconstructed_norm = reconstructed or ""
+    if expected_norm == reconstructed_norm:
+        return ""
+
+    mismatch_index = 0
+    max_compare = max(len(expected_norm), len(reconstructed_norm))
+    while mismatch_index < max_compare:
+        expected_char = expected_norm[mismatch_index:mismatch_index+1]
+        reconstructed_char = reconstructed_norm[mismatch_index:mismatch_index+1]
+        if expected_char != reconstructed_char:
+            break
+        mismatch_index += 1
+    else:
+        mismatch_index = max_compare
+
+    if mismatch_index >= max_compare:
+        return ""
+
+    start = max(0, mismatch_index - max_length // 2)
+    end = min(max_compare, mismatch_index + max_length // 2)
+    return expected_norm[start:end]
+
+
+def _build_chapter_content_integrity_report(
+    *,
+    chapters: list[object],
+    segment_payloads: list[dict[str, object]],
+) -> dict[str, object]:
+    normalized_by_chapter: dict[int, list[dict[str, object]]] = {}
+    for segment_payload in segment_payloads:
+        if not isinstance(segment_payload, dict):
+            continue
+
+        raw_chapter_id = segment_payload.get("chapter_id")
+        chapter_index = _coerce_non_negative_chapter_index(raw_chapter_id)
+        if chapter_index is None:
+            continue
+
+        normalized_by_chapter.setdefault(chapter_index, []).append(segment_payload)
+
+    mismatched_chapters: list[dict[str, object]] = []
+    for chapter in sorted(
+        chapters,
+        key=lambda item: (
+            int(getattr(item, "chapter_index"))
+            if _coerce_non_negative_chapter_index(getattr(item, "chapter_index", None)) is not None
+            else 0
+        ),
+    ):
+        chapter_index = _coerce_non_negative_chapter_index(getattr(chapter, "chapter_index", None))
+        if chapter_index is None:
+            continue
+        expected_text = str(getattr(chapter, "normalized_text", "")) or ""
+        payloads_for_chapter = normalized_by_chapter.get(chapter_index, [])
+        reconstructed = reconstruct_chapter_text_from_segments(
+            expected_text,
+            payloads_for_chapter,
+        )
+
+        if reconstructed != expected_text:
+            mismatch_entry = {
+                "chapter_index": chapter_index,
+                "expected_length": len(expected_text),
+                "reconstructed_length": len(reconstructed),
+                "preview": _compute_text_diff_preview(expected_text, reconstructed),
+            }
+            mismatched_chapters.append(mismatch_entry)
+
+    return {
+        "is_content_preserved": not mismatched_chapters,
+        "total_chapters": len(chapters),
+        "checked_chapters": len(chapters),
+        "mismatched_chapters": mismatched_chapters,
+    }
 
 
 @dataclass(frozen=True)
@@ -968,6 +1059,20 @@ def _append_deterministic_replay_warning(run: Run, requested_provider: str, actu
     run.config_json = config_snapshot
 
 
+def _append_llm_rule_only_state(
+    run: Run,
+    reason: str,
+    last_provider: str | None = None,
+) -> None:
+    config_snapshot = dict(run.config_json or {})
+    config_snapshot["llm_execution_mode"] = {
+        "mode": "rule_only",
+        "reason": reason,
+        "provider": last_provider,
+    }
+    run.config_json = config_snapshot
+
+
 def _build_probe_provider_order(
     session: Session,
     requested_provider: str,
@@ -1433,6 +1538,20 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
 
             total_segments += 1
 
+        chapter_content_integrity = _build_chapter_content_integrity_report(
+            chapters=chapters,
+            segment_payloads=segment_payloads,
+        )
+        run_config_with_integrity = dict(run.config_json or {})
+        run_config_with_integrity["chapter_content_integrity"] = chapter_content_integrity
+        run.config_json = run_config_with_integrity
+
+        if not bool(chapter_content_integrity.get("is_content_preserved")):
+            raise PipelineError(
+                "chapter-content integrity check failed during chapter reconstruction",
+                metadata={"chapter_content_integrity": chapter_content_integrity},
+            )
+
     llm_enabled = bool(run_config.get("llm_enabled", False))
     with _record_pipeline_stage(
         step_records=step_records,
@@ -1583,6 +1702,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
     final_model_identifier = None
     final_called_at = None
     success = False
+    all_providers_exhausted = False
 
     for active_provider in provider_candidates:
         if not is_supported_provider(active_provider):
@@ -1763,10 +1883,18 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         if provider_failure_detail in {"rate_limit", "quota", "quota_reached"}:
             if active_provider != provider_candidates[-1]:
                 continue
+            all_providers_exhausted = True
             break
 
         if provider_failure_detail is not None:
             break
+
+    if all_providers_exhausted or (not success and final_detail in {"rate_limit", "quota", "quota_reached"} and provider_candidates):
+        _append_llm_rule_only_state(
+            run=run,
+            reason=(str(final_detail) if final_detail is not None else "all_providers_unavailable"),
+            last_provider=final_provider,
+        )
 
     session.add(
         LLMCall(
