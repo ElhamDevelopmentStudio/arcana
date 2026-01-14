@@ -42,6 +42,17 @@ class UnsupportedFormatIngestionError(IngestionError):
         )
 
 
+class UnsupportedEncodingIngestionError(IngestionError):
+    """Raised when text content cannot be decoded with supported encodings."""
+
+    def __init__(self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST):
+        super().__init__(
+            status_code=status_code,
+            error_type=IngestionErrorType.UNSUPPORTED_ENCODING,
+            detail=detail,
+        )
+
+
 def make_ingestion_http_error(
     *,
     status_code: int,
