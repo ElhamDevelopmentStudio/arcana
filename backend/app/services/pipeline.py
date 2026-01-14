@@ -56,7 +56,11 @@ from app.services.quota import (
     mark_provider_successful_call,
 )
 from app.services.segmentation import segment_text_with_parent_paragraph
-from app.services.tagging import tag_segment
+from app.services.tagging import (
+    build_low_confidence_speaker_attribution_warnings,
+    build_high_ambiguity_dialogue_block_warnings,
+    tag_segment,
+)
 from app.services.normalization import build_segment_level_offset_map
 from app.services.voice import (
     _normalize_internal_thought_voice_policy,
@@ -1585,6 +1589,15 @@ def execute_pipeline(
         )
         run_config_with_integrity = dict(run.config_json or {})
         run_config_with_integrity["chapter_content_integrity"] = chapter_content_integrity
+        tagging_warnings = [
+            *build_low_confidence_speaker_attribution_warnings(
+                segment_payloads=segment_payloads,
+            ),
+            *build_high_ambiguity_dialogue_block_warnings(
+                segment_payloads=segment_payloads,
+            ),
+        ]
+        run_config_with_integrity["tagging_warnings"] = tagging_warnings
         run.config_json = run_config_with_integrity
 
         if not bool(chapter_content_integrity.get("is_content_preserved")):
