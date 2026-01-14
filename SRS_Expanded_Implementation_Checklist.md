@@ -432,8 +432,8 @@ Definition of done for each task:
 ### NFR-8 API Key Security
 - [x] [NFR8-001] Store API keys server-side only.
 - [x] [NFR8-002] Ensure API keys never reach frontend payloads/logs.
-- [ ] [NFR8-003] Scope key access per project/user context.
-- [ ] [NFR8-004] Implement key rotation workflow.
+- [X] [NFR8-003] Scope key access per project/user context.
+- [X] [NFR8-004] Implement key rotation workflow.
 - [ ] [NFR8-005] Add key usage audit logging with redaction.
 
 ## 8. Error Handling and Warnings (Ref: SRS.md §8)

@@ -638,6 +638,115 @@ def test_pipeline_rotates_provider_keys_before_fallback(monkeypatch: object) -> 
         session.close()
 
 
+def test_pipeline_rotates_provider_keys_on_quota_exhaustion(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Provider Key Quota Rotation Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        calls: list[str | None] = []
+
+        class _QuotaExhaustedLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                calls.append(api_key)
+                if api_key == "openrouter-key-a":
+                    return llm_router.LLMResponse(
+                        provider_used=provider_name,
+                        model_identifier=model_identifier,
+                        raw_output="",
+                        parsed_output={},
+                        confidence=None,
+                        token_usage_estimate=20,
+                        success_flag=False,
+                        error_code="quota",
+                        rate_limit_reset_at=None,
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    )
+
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="ok",
+                    parsed_output={"raw": "ok"},
+                    confidence=None,
+                    token_usage_estimate=32,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        def _fake_provider_api_keys(*, settings: object, provider_name: str) -> list[str]:
+            if provider_name == "openrouter":
+                return ["openrouter-key-a", "openrouter-key-b"]
+            return []
+
+        monkeypatch.setattr(pipeline, "get_provider_api_keys", _fake_provider_api_keys)
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "fallback-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _QuotaExhaustedLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="Probe should rotate keys on quota_reached.",
+        )
+
+        call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
+        assert call.success is True
+        assert call.provider == "openrouter"
+        assert calls == ["openrouter-key-a", "openrouter-key-b"]
+
+        provider_quotas = (
+            session.query(ProviderQuota)
+            .filter(ProviderQuota.provider == "openrouter")
+            .order_by(ProviderQuota.id.asc())
+            .all()
+        )
+        assert len(provider_quotas) == 1
+        assert provider_quotas[0].calls_used == 2
+        assert provider_quotas[0].last_rate_limit_status == "available"
+
+        key_quotas = (
+            session.query(ProviderApiKeyQuota)
+            .filter(ProviderApiKeyQuota.provider == "openrouter")
+            .order_by(ProviderApiKeyQuota.id.asc())
+            .all()
+        )
+        assert len(key_quotas) == 2
+        assert key_quotas[0].provider_api_key == "openrouter-key-a"
+        assert key_quotas[0].blocked is True
+        assert key_quotas[0].last_rate_limit_status == "temporarily_unavailable"
+        assert key_quotas[0].last_rate_limit_status_at is not None
+        assert key_quotas[1].provider_api_key == "openrouter-key-b"
+        assert key_quotas[1].blocked is False
+    finally:
+        session.close()
+
+
 def test_pipeline_falls_back_to_next_provider_after_all_keys_exhausted(monkeypatch: object) -> None:
     session = _new_session()
     try:
@@ -1037,6 +1146,7 @@ def test_pipeline_enters_rule_only_after_mixed_provider_outage(monkeypatch: obje
             settings: object,
             provider_name: str,
             max_calls_per_day: int,
+            **_: object,
         ) -> tuple[bool, str | None]:
             if provider_name in {"openrouter", "siliconflow"}:
                 return False, "quota_reached"
@@ -1781,6 +1891,7 @@ def _run_pipeline_with_stubbed_payloads(
         run: Run,
         run_config: dict,
         input_text: str,
+        **_: object,
     ) -> bool:
         return run_probe_succeeds
 
