@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+import pytest
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_mode_profile_snapshot.db"
 
@@ -10,6 +11,7 @@ from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
 from app.main import app
 from app.modes import MODE_DEFAULT_PROFILES
+from app.schemas import RunCreateRequest
 from app.services.mode_profiles import build_run_config_snapshot
 
 
@@ -69,6 +71,16 @@ def test_unit_build_run_config_snapshot_keeps_profile_snapshot_and_applies_overr
     assert snapshot["mode_profile_snapshot"]["provider_name"] == "openrouter"
 
 
+def test_unit_run_create_request_validates_emotion_taxonomy() -> None:
+    payload = RunCreateRequest(mode="audiobook", emotion_taxonomy="expanded")
+    assert payload.emotion_taxonomy == "expanded"
+
+
+def test_unit_run_create_request_rejects_invalid_emotion_taxonomy() -> None:
+    with pytest.raises(ValueError, match="emotion_taxonomy must be one of: basic, expanded"):
+        RunCreateRequest(mode="audiobook", emotion_taxonomy="ultra")
+
+
 def test_integration_run_config_stores_loaded_mode_profile_snapshot() -> None:
     with TestClient(app) as client:
         project_id = _create_project_with_ingested_text(client, "Mode Snapshot Integration")
@@ -87,6 +99,38 @@ def test_integration_run_config_stores_loaded_mode_profile_snapshot() -> None:
         assert config["max_segment_chars"] == MODE_DEFAULT_PROFILES["academic"]["max_segment_chars"]
         assert config["deterministic_mode"] is False
         assert config["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["academic"]
+
+
+def test_e2e_run_config_defaults_emotion_taxonomy_to_basic() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Emotion Taxonomy Default")
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "audiobook"},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+        assert detail_resp.status_code == 200
+        assert detail_resp.json()["config"]["emotion_taxonomy"] == "basic"
+
+
+def test_e2e_run_config_persists_explicit_emotion_taxonomy() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Emotion Taxonomy Expanded")
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "academic", "emotion_taxonomy": "expanded"},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+        assert detail_resp.status_code == 200
+        assert detail_resp.json()["config"]["emotion_taxonomy"] == "expanded"
 
 
 def test_e2e_run_config_uses_overrides_without_mutating_profile_snapshot() -> None:
@@ -148,16 +192,26 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
         "llm_confidence_threshold": 0.6,
+        "speaker_confidence_threshold": 0.6,
+        "high_ambiguity_dialogue_flag_threshold": 2,
+        "unstable_emotion_shift_transition_threshold": 4,
+        "unstable_emotion_shift_density_threshold": 0.5,
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
+        "web_scraping_enabled": False,
         "mode_profile_snapshot": {
             "max_segment_chars": 255,
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
             "llm_confidence_threshold": 0.6,
+            "speaker_confidence_threshold": 0.6,
+            "high_ambiguity_dialogue_flag_threshold": 2,
+            "unstable_emotion_shift_transition_threshold": 4,
+            "unstable_emotion_shift_density_threshold": 0.5,
             "deep_semantic_refinement": False,
             "deterministic_mode": False,
+            "web_scraping_enabled": False,
             "profile_intent": "user-tuned baseline with conservative defaults",
         },
     }

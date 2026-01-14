@@ -13,10 +13,17 @@ from app.services.mode_profiles import load_mode_profile, load_mode_profile_cata
 
 EXPECTED_CUSTOM_PROFILE = {
     "max_segment_chars": 255,
+    "deep_semantic_refinement": False,
     "llm_enabled": False,
     "provider_name": "openrouter",
     "max_calls_per_day": 25,
     "llm_confidence_threshold": 0.6,
+    "deterministic_mode": False,
+    "speaker_confidence_threshold": 0.6,
+    "high_ambiguity_dialogue_flag_threshold": 2,
+    "unstable_emotion_shift_transition_threshold": 4,
+    "unstable_emotion_shift_density_threshold": 0.5,
+    "web_scraping_enabled": False,
     "profile_intent": "user-tuned baseline with conservative defaults",
 }
 

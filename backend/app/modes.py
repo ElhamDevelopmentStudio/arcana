@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from enum import Enum
+from app.services.tagging import (
+    TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+    TAG_LOW_CONFIDENCE_THRESHOLD,
+    TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
+    TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
+)
 try:
     from enum import StrEnum
 except ImportError:  # pragma: no cover
@@ -36,8 +42,13 @@ class ModeDefaultProfile(TypedDict):
     provider_name: str
     max_calls_per_day: int
     llm_confidence_threshold: float
+    speaker_confidence_threshold: float
+    high_ambiguity_dialogue_flag_threshold: int
+    unstable_emotion_shift_transition_threshold: int
+    unstable_emotion_shift_density_threshold: float
     deep_semantic_refinement: bool
     deterministic_mode: bool
+    web_scraping_enabled: bool
     profile_intent: str
 
 
@@ -48,8 +59,13 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
         "llm_confidence_threshold": 0.6,
+        "speaker_confidence_threshold": TAG_LOW_CONFIDENCE_THRESHOLD,
+        "high_ambiguity_dialogue_flag_threshold": TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+        "unstable_emotion_shift_transition_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
+        "unstable_emotion_shift_density_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
+        "web_scraping_enabled": False,
         "profile_intent": "tts-ready segmentation and stable narration defaults",
     },
     ProjectMode.ACADEMIC.value: {
@@ -58,8 +74,13 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
         "llm_confidence_threshold": 0.6,
+        "speaker_confidence_threshold": TAG_LOW_CONFIDENCE_THRESHOLD,
+        "high_ambiguity_dialogue_flag_threshold": TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+        "unstable_emotion_shift_transition_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
+        "unstable_emotion_shift_density_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
+        "web_scraping_enabled": False,
         "profile_intent": "longer analytical segments for metric-friendly aggregation",
     },
     ProjectMode.AUTHOR.value: {
@@ -68,8 +89,13 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
         "llm_confidence_threshold": 0.6,
+        "speaker_confidence_threshold": TAG_LOW_CONFIDENCE_THRESHOLD,
+        "high_ambiguity_dialogue_flag_threshold": TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+        "unstable_emotion_shift_transition_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
+        "unstable_emotion_shift_density_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
+        "web_scraping_enabled": False,
         "profile_intent": "balanced segmentation for narrative-health diagnostics",
     },
     ProjectMode.CUSTOM.value: {
@@ -78,8 +104,13 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
         "llm_confidence_threshold": 0.6,
+        "speaker_confidence_threshold": TAG_LOW_CONFIDENCE_THRESHOLD,
+        "high_ambiguity_dialogue_flag_threshold": TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+        "unstable_emotion_shift_transition_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
+        "unstable_emotion_shift_density_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
+        "web_scraping_enabled": False,
         "profile_intent": "user-tuned baseline with conservative defaults",
     },
 }

@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+const defaultSpeakerConfidenceThreshold = 0.6;
+const defaultHighAmbiguityDialogueFlagThreshold = 2;
+const defaultUnstableEmotionShiftTransitionThreshold = 4;
+const defaultUnstableEmotionShiftDensityThreshold = 0.5;
+
 export const modeCatalogSchema = z.object({
   modes: z.array(z.string()),
   default_mode: z.string(),
@@ -12,6 +17,11 @@ export const modeCatalogSchema = z.object({
       provider_name: z.string().min(1),
       max_calls_per_day: z.number().int().positive(),
       deterministic_mode: z.boolean(),
+      speaker_confidence_threshold: z.number().min(0).max(1),
+      high_ambiguity_dialogue_flag_threshold: z.number().int().min(1).max(20),
+      unstable_emotion_shift_transition_threshold: z.number().int().min(1).max(20),
+      unstable_emotion_shift_density_threshold: z.number().min(0).max(1),
+      web_scraping_enabled: z.boolean(),
       profile_intent: z.string().min(1),
     }),
   ),
@@ -244,7 +254,17 @@ export const runRequestSchema = z.object({
   max_segment_chars: z.number().int().min(80).max(255),
   llm_enabled: z.boolean(),
   provider_name: z.string(),
+  speaker_confidence_threshold: z.number().min(0).max(1).default(defaultSpeakerConfidenceThreshold),
+  high_ambiguity_dialogue_flag_threshold: z.number().int().min(1).max(20).default(defaultHighAmbiguityDialogueFlagThreshold),
+  unstable_emotion_shift_transition_threshold: z.number().int().min(1).max(20).default(defaultUnstableEmotionShiftTransitionThreshold),
+  unstable_emotion_shift_density_threshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(defaultUnstableEmotionShiftDensityThreshold),
   deterministic_mode: z.boolean().default(false),
+  web_scraping_enabled: z.boolean().default(false),
+  emotion_taxonomy: z.enum(['basic', 'expanded']).default('basic'),
   max_calls_per_day: z.number().int().positive(),
   allow_unfinalized_character_map: z.boolean().default(false),
   internal_thought_voice_policy: z.enum(['character', 'narrator', 'thought_voice']).default('character'),
