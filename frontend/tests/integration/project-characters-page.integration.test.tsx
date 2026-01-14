@@ -50,6 +50,13 @@ const characterGenderComparisonQueryData = {
   ],
 };
 
+vi.mock('@/app/config/env', () => ({
+  appEnv: {
+    apiBaseUrl: 'http://localhost:8000',
+    featureScrapeEnabled: true,
+  },
+}));
+
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useImportCharactersMutation: () => ({
     isMutating: false,
@@ -326,6 +333,74 @@ describe('project characters page manual editor', () => {
     expect(screen.getByTestId('proposed-character-mire')).toBeInTheDocument();
     expect(screen.getByText('Mire → Mira')).toBeInTheDocument();
     expect(screen.getByText('Reason: name_similarity')).toBeInTheDocument();
+  });
+
+  it('requires legal acknowledgment before running web scrape', async () => {
+    const user = userEvent.setup();
+    scrapeCharactersMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      candidate_count: 2,
+      candidates: [
+        {
+          name: 'Milo',
+          verbalized_form: 'Milo',
+          gender: 'unknown',
+          aliases: [],
+          notes: null,
+          source: 'scrape',
+          confidence: 0.85,
+          source_trace: [],
+        },
+      ],
+    });
+    renderCharacterPage();
+
+    expect(screen.getByTestId('character-scrape-warning')).toHaveTextContent('Legal warning:');
+
+    await user.type(screen.getByLabelText('Character scrape source URL'), 'https://example.com/author-page');
+
+    const scrapeButton = screen.getByRole('button', { name: 'Scrape candidates' });
+    expect(scrapeButton).toBeDisabled();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Acknowledge scrape warning' }));
+    await user.click(scrapeButton);
+
+    expect(scrapeCharactersMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(scrapeCharactersMutationTrigger).toHaveBeenCalledWith({
+      source_url: 'https://example.com/author-page',
+      acknowledge_source_risk: true,
+    });
+    expect(screen.getByTestId('character-scrape-state')).toHaveTextContent('Scrape candidates: 1');
+  });
+
+  it('requires legal acknowledgment before merging with scrape URL', async () => {
+    const user = userEvent.setup();
+    mergeCharactersMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      status: 'complete',
+      candidate_count: 0,
+      proposed_characters: [],
+      candidates: [],
+      canonical_merge_suggestions: [],
+    });
+
+    renderCharacterPage();
+
+    expect(screen.getByTestId('character-merge-scrape-warning')).toHaveTextContent('Legal warning:');
+
+    await user.type(screen.getByLabelText('Optional merge scrape source URL'), 'https://example.com/author-page');
+    const mergeButton = screen.getByRole('button', { name: 'Merge user + auto + scraped candidates' });
+    expect(mergeButton).toBeDisabled();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Acknowledge merge scrape warning' }));
+    await user.click(mergeButton);
+
+    expect(mergeCharactersMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(mergeCharactersMutationTrigger).toHaveBeenCalledWith({
+      include_auto: true,
+      source_url: 'https://example.com/author-page',
+      acknowledge_source_risk: true,
+    });
   });
 
   it('applies and undoes canonical merge suggestions in the manual editor', async () => {
