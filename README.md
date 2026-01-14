@@ -261,6 +261,15 @@ Deterministic run model pinning:
 - If a value is provided, it is pinned in that run config and used for primary provider requests during that run.
 - The pinned model value is included in `run.config` and in LLM call logs (`model_identifier`).
 
+Run request segmentation target length config:
+
+- `POST /api/projects/{project_id}/runs` accepts:
+  - `max_segment_chars` (primary run config key)
+  - `segmentation_target_length` (alias for the same value)
+- If omitted, `max_segment_chars` defaults to `255` or the selected mode profile default.
+- Accepted range is `80` to `255`, and the resolved value is persisted as `max_segment_chars`
+  inside run configuration.
+
 Pipeline chunking for long corpora:
 
 - `POST /api/projects/{project_id}/runs` accepts `pipeline_chunk_max_chars` in the request body.

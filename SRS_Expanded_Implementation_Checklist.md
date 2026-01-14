@@ -454,7 +454,7 @@ Definition of done for each task:
 - [x] [ER-015] Add error/warning catalog page in docs with remediation guidance.
 
 ## 9. Configuration Requirements (Ref: SRS.md §9)
-- [ ] [CFG-001] Add segmentation target length config.
+- [x] [CFG-001] Add segmentation target length config.
 - [ ] [CFG-002] Add emotion taxonomy config (`basic` vs `expanded`).
 - [ ] [CFG-003] Add confidence thresholds config for warnings.
 - [ ] [CFG-004] Add web scraping enable/disable config.
