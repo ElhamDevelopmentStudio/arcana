@@ -2644,23 +2644,67 @@ def _build_academic_csv_rows(
 ) -> list[dict[str, str]]:
     outputs = academic_manifest.get("outputs")
     output_rows: list[dict[str, str]] = []
+    manifest_output_entry: Mapping[str, Any] | None = None
+
+    def _normalize_output_formats(value: Any) -> list[str]:
+        if not isinstance(value, (list, tuple, set)):
+            return []
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_format in value:
+            if not isinstance(raw_format, str):
+                continue
+            normalized_format = raw_format.strip().lower()
+            if not normalized_format or normalized_format in seen:
+                continue
+            normalized.append(normalized_format)
+            seen.add(normalized_format)
+        return normalized
+
+    if isinstance(outputs, list):
+        for output in outputs:
+            if not isinstance(output, Mapping):
+                continue
+            if str(output.get("output_id", "")).upper() == "AO-006":
+                manifest_output_entry = output
+                break
+
+    manifest_supported_formats = ["json"]
+    manifest_available_formats = ["json"]
+    manifest_status = "available"
+    manifest_status_reason = ""
+    if manifest_output_entry is not None:
+        normalized_supported_formats = _normalize_output_formats(
+            manifest_output_entry.get("supported_formats")
+        )
+        if normalized_supported_formats:
+            manifest_supported_formats = normalized_supported_formats
+        manifest_available_formats = _normalize_output_formats(
+            manifest_output_entry.get("available_formats")
+        )
+        raw_manifest_status = str(manifest_output_entry.get("status", "")).strip()
+        if raw_manifest_status:
+            manifest_status = raw_manifest_status
+        evidence = manifest_output_entry.get("evidence")
+        if isinstance(evidence, Mapping):
+            manifest_status_reason = str(evidence.get("status_reason") or "")
 
     output_rows.append(
         {
             "record_type": "manifest",
             "output_id": "AO-MANIFEST",
             "output_name": "academic_export_manifest",
-            "output_status": "available",
+            "output_status": manifest_status,
             "output_schema": academic_manifest.get("output_schema", "academic_json"),
-            "supported_formats": json.dumps(["json"], ensure_ascii=False),
-            "available_formats": json.dumps(["json"], ensure_ascii=False),
+            "supported_formats": _serialize_csv_record(manifest_supported_formats),
+            "available_formats": _serialize_csv_record(manifest_available_formats),
             "data_key": "academic_export_manifest",
             "record_index": "",
             "record_count": "",
             "record_payload": _serialize_csv_record(dict(academic_manifest)),
             "generated_by": academic_manifest.get("generated_by", "build_run_export"),
             "generated_at": academic_manifest.get("generated_at", ""),
-            "status_reason": "",
+            "status_reason": manifest_status_reason,
             "project_id": str(project.id),
             "run_id": str(run.id),
             "run_status": str(run.status),

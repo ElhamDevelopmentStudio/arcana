@@ -1564,6 +1564,52 @@ def test_export_json_manifest_respects_run_level_export_format_gates() -> None:
         assert outputs_by_id["AO-006"]["available_formats"] == ["json"]
 
 
+def test_export_json_manifest_hides_json_only_outputs_when_run_disables_json() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest CSV-Only Gate Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(b"Chapter 1\nThe lantern burned low and the rain beat softly outside."),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "max_segment_chars": 80,
+                "allow_unfinalized_character_map": True,
+                "export_formats": ["csv"],
+            },
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        manifest = export_resp.json()["manifest"]
+        academic_manifest = manifest["academic_export_manifest"]
+        outputs = academic_manifest.get("outputs")
+        assert isinstance(outputs, list)
+
+        outputs_by_id = {entry.get("output_id"): entry for entry in outputs if isinstance(entry, dict)}
+        assert outputs_by_id["AO-001"]["available_formats"] == ["csv"]
+        assert outputs_by_id["AO-002"]["available_formats"] == ["csv"]
+        assert outputs_by_id["AO-003"]["available_formats"] == ["csv"]
+        assert outputs_by_id["AO-004"]["available_formats"] == ["csv"]
+        assert outputs_by_id["AO-005"]["available_formats"] == ["csv"]
+        assert outputs_by_id["AO-006"]["available_formats"] == []
+        assert outputs_by_id["AO-006"]["status"] == "not_implemented"
+
+
 def test_export_json_rejects_graph_json_when_output_format_not_allowed() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Graph JSON Gate Project"})
@@ -1593,6 +1639,37 @@ def test_export_json_rejects_graph_json_when_output_format_not_allowed() -> None
         )
         assert blocked_graph_resp.status_code == 400
         assert "not allowed for this run" in blocked_graph_resp.json()["detail"]
+
+
+def test_export_json_rejects_academic_json_when_output_format_not_allowed() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Academic JSON Gate Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(b"Chapter 1\nA cold wind pushed through the hall."), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "max_segment_chars": 80,
+                "allow_unfinalized_character_map": True,
+                "export_formats": ["csv"],
+            },
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        blocked_json_resp = client.get(
+            f"/api/projects/{project_id}/exports/{run_id}.json",
+            params={"output_schema": "academic", "output_format": "json"},
+        )
+        assert blocked_json_resp.status_code == 400
+        assert "not allowed for this run" in blocked_json_resp.json()["detail"]
 
 
 def test_export_json_includes_comparative_run_metrics_snapshot() -> None:
@@ -1804,6 +1881,50 @@ def test_export_csv_supports_academic_output_schema() -> None:
 
         csv_output_ids = {row["output_id"] for row in output_rows if row["output_id"] != "AO-MANIFEST"}
         assert csv_output_ids == {"AO-001", "AO-002", "AO-003", "AO-004", "AO-005", "AO-006"}
+
+
+def test_export_csv_manifest_row_tracks_run_level_manifest_visibility() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Academic CSV Visibility Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(b"Chapter 1\nThe lantern burned low and the rain beat softly outside."), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "max_segment_chars": 80,
+                "allow_unfinalized_character_map": True,
+                "export_formats": ["csv"],
+            },
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        academic_csv_resp = client.get(
+            f"/api/projects/{project_id}/exports/{run_id}.csv",
+            params={"output_schema": "academic"},
+        )
+        assert academic_csv_resp.status_code == 200
+
+        rows = list(csv.DictReader(io.StringIO(academic_csv_resp.text)))
+        manifest_row = next((row for row in rows if row["record_type"] == "manifest"), None)
+        assert manifest_row is not None
+        assert manifest_row["output_status"] == "not_implemented"
+        assert manifest_row["available_formats"] == "[]"
+
+        ao_006_row = next((row for row in rows if row["record_type"] == "output" and row["output_id"] == "AO-006"), None)
+        assert ao_006_row is not None
+        assert ao_006_row["output_status"] == "not_implemented"
+        assert ao_006_row["available_formats"] == "[]"
+
+        ao_006_records = [row for row in rows if row["record_type"] == "data_record" and row["output_id"] == "AO-006"]
+        assert ao_006_records == []
 
 
 def test_export_csv_rejects_academic_format_when_csv_disabled() -> None:

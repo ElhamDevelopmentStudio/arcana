@@ -83,6 +83,12 @@ describe('mode catalog schema', () => {
     const parsed = modeCatalogSchema.parse(VALID_MODE_CATALOG);
     expect(parsed.mode_profiles.author.max_segment_chars).toBe(160);
     expect(parsed.mode_profiles.academic.provider_name).toBe('openrouter');
+    expect(parsed.mode_profiles.audiobook.export_formats).toEqual([
+      'json',
+      'csv',
+      'time_series_json',
+      'graph_json',
+    ]);
   });
 
   it('rejects payloads without mode profile contract', () => {

@@ -53,10 +53,10 @@ describe('runRequestSchema', () => {
       llm_enabled: false,
       provider_name: 'openrouter',
       max_calls_per_day: 25,
-      export_formats: [' CSV ', 'json', 'csv', 'time_series_json', 'CSV'],
+      export_formats: [' CSV ', 'json', 'csv', 'time_series_json', 'GRAPH_JSON', 'CSV'],
     });
 
-    expect(parsed.export_formats).toEqual(['csv', 'json', 'time_series_json']);
+    expect(parsed.export_formats).toEqual(['csv', 'json', 'time_series_json', 'graph_json']);
   });
 
   it('requires export formats when explicitly provided', () => {
