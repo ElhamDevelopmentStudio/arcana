@@ -50,6 +50,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/author_diagnostic_requirements_mapping.md`: USE-004 mapping from author flow to diagnostic report requirements
 - `docs/community_reader_readonly_dashboard_flow.md`: USE-005 read-only dashboard flow for community reader
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
+- `docs/error_warning_catalog.md`: error and warning catalog with remediation guidance
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
 - `shadow_slave_chapter_1_to_95.txt`: sample source text corpus
