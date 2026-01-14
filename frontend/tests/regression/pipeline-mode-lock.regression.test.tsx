@@ -19,13 +19,14 @@ const modeCatalogData = {
   modes: ['audiobook', 'academic', 'author', 'custom'],
   default_mode: 'audiobook',
   persisted_in: ['projects.selected_mode', 'runs.config_json.mode'],
-  mode_profiles: {
+      mode_profiles: {
         audiobook: {
           max_segment_chars: 120,
           llm_enabled: false,
           provider_name: 'openrouter',
           max_calls_per_day: 25,
           llm_confidence_threshold: 0.6,
+          contradiction_review_required: true,
           web_scraping_enabled: false,
           speaker_confidence_threshold: 0.6,
           high_ambiguity_dialogue_flag_threshold: 2,
@@ -172,6 +173,41 @@ describe('pipeline run mode lock regression', () => {
     expect(runPipelineMutationTrigger).toHaveBeenCalledTimes(1);
     expect(runPipelineMutationTrigger).toHaveBeenCalledWith(
       expect.objectContaining({ emotion_taxonomy: 'basic' }),
+    );
+  });
+
+  it('defaults contradiction review required to mode profile value in run payload', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ selectedMode: 'audiobook' });
+    renderPipelinePage();
+
+    await user.click(screen.getByTestId('run-pipeline-button'));
+
+    expect(runPipelineMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(runPipelineMutationTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({ contradiction_review_required: true }),
+    );
+  });
+
+  it('allows users to disable contradiction review gate', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ selectedMode: 'audiobook' });
+    renderPipelinePage();
+
+    const contradictionToggle = screen
+      .getByText('Review contradictions before export')
+      .closest('label')
+      ?.querySelector('[role=\"switch\"]');
+    expect(contradictionToggle).not.toBeNull();
+    if (contradictionToggle) {
+      await user.click(contradictionToggle as Element);
+    }
+
+    await user.click(screen.getByTestId('run-pipeline-button'));
+
+    expect(runPipelineMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(runPipelineMutationTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({ contradiction_review_required: false }),
     );
   });
 

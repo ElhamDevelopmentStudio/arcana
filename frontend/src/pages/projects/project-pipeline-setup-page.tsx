@@ -138,6 +138,8 @@ export function ProjectPipelineSetupPage() {
     false,
   );
   const [hasCustomUnstableEmotionShiftDensityThreshold, setHasCustomUnstableEmotionShiftDensityThreshold] = useState(false);
+  const [contradictionReviewRequired, setContradictionReviewRequired] = useState(true);
+  const [hasCustomContradictionReviewRequired, setHasCustomContradictionReviewRequired] = useState(false);
 
   const saveVoicesMutation = useSaveVoicesMutation(projectId);
   const runPipelineMutation = useRunPipelineMutation(projectId);
@@ -200,6 +202,7 @@ export function ProjectPipelineSetupPage() {
     setHasCustomHighAmbiguityDialogueFlagThreshold(false);
     setHasCustomUnstableEmotionShiftTransitionThreshold(false);
     setHasCustomUnstableEmotionShiftDensityThreshold(false);
+    setHasCustomContradictionReviewRequired(false);
   }, [runMode]);
 
   useEffect(() => {
@@ -253,6 +256,20 @@ export function ProjectPipelineSetupPage() {
     }
   }, [hasCustomUnstableEmotionShiftDensityThreshold, selectedProfile]);
 
+  useEffect(() => {
+    if (
+      !hasCustomContradictionReviewRequired &&
+      selectedProfile !== null &&
+      selectedProfile !== undefined
+    ) {
+      setContradictionReviewRequired(
+        selectedProfile.contradiction_review_required !== undefined
+          ? selectedProfile.contradiction_review_required
+          : true,
+      );
+    }
+  }, [hasCustomContradictionReviewRequired, selectedProfile]);
+
   async function handleSaveVoices(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (projectId === null) {
@@ -302,11 +319,12 @@ export function ProjectPipelineSetupPage() {
         high_ambiguity_dialogue_flag_threshold: highAmbiguityDialogueFlagThreshold,
         unstable_emotion_shift_transition_threshold: unstableEmotionShiftTransitionThreshold,
         unstable_emotion_shift_density_threshold: unstableEmotionShiftDensityThreshold,
-                deterministic_mode: deterministicMode,
-                web_scraping_enabled: webScrapingEnabled,
-                emotion_taxonomy: emotionTaxonomy,
-                provider_name: providerName,
-                max_calls_per_day: maxCallsPerDay,
+        contradiction_review_required: contradictionReviewRequired,
+        deterministic_mode: deterministicMode,
+        web_scraping_enabled: webScrapingEnabled,
+        emotion_taxonomy: emotionTaxonomy,
+        provider_name: providerName,
+        max_calls_per_day: maxCallsPerDay,
         allow_unfinalized_character_map: allowUnfinalizedCharacterMap,
         internal_thought_voice_policy: internalThoughtVoicePolicy,
         internal_thought_voice: trimmedThoughtVoice || undefined,
@@ -544,6 +562,16 @@ export function ProjectPipelineSetupPage() {
                   <option value="expanded">Expanded</option>
                 </NativeSelect>
               </div>
+              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
+                <span>Review contradictions before export</span>
+                <Switch
+                  checked={contradictionReviewRequired}
+                  onCheckedChange={(value) => {
+                    setHasCustomContradictionReviewRequired(true);
+                    setContradictionReviewRequired(value);
+                  }}
+                />
+              </label>
               <div className="grid gap-2">
                 <Label htmlFor="provider-name">Provider</Label>
                 <NativeSelect id="provider-name" value={providerName} onChange={(event) => setProviderName(event.target.value)}>

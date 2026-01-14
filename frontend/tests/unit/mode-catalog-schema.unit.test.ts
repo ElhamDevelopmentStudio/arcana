@@ -20,6 +20,7 @@ const VALID_MODE_CATALOG = {
         deterministic_mode: false,
         deep_semantic_refinement: false,
         web_scraping_enabled: false,
+        contradiction_review_required: true,
         profile_intent: 'tts-ready segmentation and stable narration defaults',
       },
       academic: {
@@ -35,6 +36,7 @@ const VALID_MODE_CATALOG = {
         deterministic_mode: false,
         deep_semantic_refinement: false,
         web_scraping_enabled: false,
+        contradiction_review_required: true,
         profile_intent: 'longer analytical segments for metric-friendly aggregation',
       },
       author: {
@@ -50,6 +52,7 @@ const VALID_MODE_CATALOG = {
         deterministic_mode: false,
         deep_semantic_refinement: false,
         web_scraping_enabled: false,
+        contradiction_review_required: true,
         profile_intent: 'balanced segmentation for narrative-health diagnostics',
       },
       custom: {
@@ -65,6 +68,7 @@ const VALID_MODE_CATALOG = {
         deterministic_mode: false,
         deep_semantic_refinement: false,
         web_scraping_enabled: false,
+        contradiction_review_required: true,
         profile_intent: 'user-tuned baseline with conservative defaults',
       },
   },

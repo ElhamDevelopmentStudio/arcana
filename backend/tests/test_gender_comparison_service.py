@@ -1,4 +1,7 @@
-from app.services.gender_comparison import compare_manual_and_inferred_gender_fields
+from app.services.gender_comparison import (
+    compare_manual_and_inferred_gender_fields,
+    build_insufficient_inference_evidence_warnings,
+)
 
 
 def test_unit_gender_comparison_flags_conflict_and_matches() -> None:
@@ -93,6 +96,25 @@ def test_unit_gender_comparison_requires_review_uses_threshold() -> None:
     assert low_threshold_payload[0]["requires_review"] is True
 
 
+def test_unit_gender_comparison_disables_review_when_flag_false() -> None:
+    rows = [
+        {
+            "name": "Nia",
+            "gender": "male",
+            "inferred_gender": "female",
+            "confidence": 1.0,
+            "inferred_confidence": 0.91,
+        },
+    ]
+
+    payload = compare_manual_and_inferred_gender_fields(
+        rows,
+        contradiction_review_required=False,
+    )
+
+    assert payload[0]["requires_review"] is False
+
+
 def test_unit_gender_comparison_include_only_conflicts() -> None:
     payload = compare_manual_and_inferred_gender_fields(
         [
@@ -106,3 +128,34 @@ def test_unit_gender_comparison_include_only_conflicts() -> None:
     assert len(payload) == 2
     names = [item["name"] for item in payload]
     assert names == ["Kai", "Nia"]
+
+
+def test_unit_insufficient_inference_evidence_warnings() -> None:
+    warnings = build_insufficient_inference_evidence_warnings(
+        [
+            {
+                "name": "Ari",
+                "gender": "male",
+                "inferred_gender": "unknown",
+                "confidence": 1.0,
+                "inferred_confidence": 0.0,
+            },
+            {
+                "name": "Lio",
+                "gender": "female",
+                "inferred_gender": "female",
+                "confidence": 0.9,
+                "inferred_confidence": 0.97,
+            },
+        ],
+        inferred_confidence_threshold=0.1,
+    )
+
+    assert len(warnings) == 1
+    warning = warnings[0]
+    assert warning["type"] == "inferred_gender_insufficient_evidence"
+    assert warning["source"] == "character-gender-comparison"
+    assert warning["character_name"] == "Ari"
+    assert warning["manual_gender"] == "male"
+    assert warning["inferred_gender"] == "unknown"
+    assert warning["requires_review"] is False

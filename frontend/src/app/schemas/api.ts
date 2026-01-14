@@ -4,6 +4,7 @@ const defaultSpeakerConfidenceThreshold = 0.6;
 const defaultHighAmbiguityDialogueFlagThreshold = 2;
 const defaultUnstableEmotionShiftTransitionThreshold = 4;
 const defaultUnstableEmotionShiftDensityThreshold = 0.5;
+const defaultContradictionReviewRequired = true;
 
 export const modeCatalogSchema = z.object({
   modes: z.array(z.string()),
@@ -21,6 +22,7 @@ export const modeCatalogSchema = z.object({
       high_ambiguity_dialogue_flag_threshold: z.number().int().min(1).max(20),
       unstable_emotion_shift_transition_threshold: z.number().int().min(1).max(20),
       unstable_emotion_shift_density_threshold: z.number().min(0).max(1),
+      contradiction_review_required: z.boolean(),
       web_scraping_enabled: z.boolean(),
       profile_intent: z.string().min(1),
     }),
@@ -262,6 +264,7 @@ export const runRequestSchema = z.object({
     .min(0)
     .max(1)
     .default(defaultUnstableEmotionShiftDensityThreshold),
+  contradiction_review_required: z.boolean().default(defaultContradictionReviewRequired),
   deterministic_mode: z.boolean().default(false),
   web_scraping_enabled: z.boolean().default(false),
   emotion_taxonomy: z.enum(['basic', 'expanded']).default('basic'),
