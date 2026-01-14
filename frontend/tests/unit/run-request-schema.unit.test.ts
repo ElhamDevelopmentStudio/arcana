@@ -46,6 +46,32 @@ describe('runRequestSchema', () => {
     expect(parsed.emotion_taxonomy).toBe('basic');
   });
 
+  it('normalizes and deduplicates export formats', () => {
+    const parsed = runRequestSchema.parse({
+      mode: 'academic',
+      max_segment_chars: 120,
+      llm_enabled: false,
+      provider_name: 'openrouter',
+      max_calls_per_day: 25,
+      export_formats: [' CSV ', 'json', 'csv', 'time_series_json', 'CSV'],
+    });
+
+    expect(parsed.export_formats).toEqual(['csv', 'json', 'time_series_json']);
+  });
+
+  it('requires export formats when explicitly provided', () => {
+    expect(() =>
+      runRequestSchema.parse({
+        mode: 'academic',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        export_formats: ['not_a_format'],
+      }),
+    ).toThrow(z.ZodError);
+  });
+
   it('accepts expanded taxonomy for run requests', () => {
     const parsed = runRequestSchema.parse({
       mode: 'academic',

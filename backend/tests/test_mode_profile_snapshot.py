@@ -67,6 +67,7 @@ def test_unit_build_run_config_snapshot_keeps_profile_snapshot_and_applies_overr
     assert snapshot["provider_name"] == "groq"
     assert snapshot["deep_semantic_refinement"] is True
     assert snapshot["deterministic_mode"] is True
+    assert snapshot["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
     assert snapshot["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["author"]
     assert snapshot["mode_profile_snapshot"]["provider_name"] == "openrouter"
 
@@ -74,6 +75,24 @@ def test_unit_build_run_config_snapshot_keeps_profile_snapshot_and_applies_overr
 def test_unit_run_create_request_validates_emotion_taxonomy() -> None:
     payload = RunCreateRequest(mode="audiobook", emotion_taxonomy="expanded")
     assert payload.emotion_taxonomy == "expanded"
+
+
+def test_unit_run_create_request_normalizes_export_formats() -> None:
+    payload = RunCreateRequest(
+        mode="audiobook",
+        export_formats=["CSV", " json ", "csv", "time_series_json", "GRAPH_JSON"],
+    )
+    assert payload.export_formats == ["csv", "json", "time_series_json", "graph_json"]
+
+
+def test_unit_run_create_request_rejects_invalid_export_formats() -> None:
+    with pytest.raises(ValueError, match="export_formats must be one of: json, csv, time_series_json, graph_json"):
+        RunCreateRequest(mode="audiobook", export_formats=["pdf", "json"])
+
+
+def test_unit_run_create_request_rejects_empty_export_formats() -> None:
+    with pytest.raises(ValueError, match="export_formats must contain at least one value"):
+        RunCreateRequest(mode="audiobook", export_formats=["  "])
 
 
 def test_unit_run_create_request_rejects_invalid_emotion_taxonomy() -> None:
@@ -96,9 +115,11 @@ def test_integration_run_config_stores_loaded_mode_profile_snapshot() -> None:
         assert detail_resp.status_code == 200
         config = detail_resp.json()["config"]
         assert config["mode"] == "academic"
+        assert config["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
         assert config["max_segment_chars"] == MODE_DEFAULT_PROFILES["academic"]["max_segment_chars"]
         assert config["deterministic_mode"] is False
         assert config["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["academic"]
+        assert config["mode_profile_snapshot"]["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
 
 
 def test_e2e_run_config_defaults_emotion_taxonomy_to_basic() -> None:
@@ -159,6 +180,7 @@ def test_e2e_run_config_uses_overrides_without_mutating_profile_snapshot() -> No
         assert config["provider_name"] == "siliconflow"
         assert config["max_calls_per_day"] == 3
         assert config["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["audiobook"]
+        assert config["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
         assert config["mode_profile_snapshot"]["provider_name"] == "openrouter"
 
 
@@ -188,6 +210,7 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
     assert build_run_config_snapshot("custom") == {
         "mode": "custom",
         "max_segment_chars": 255,
+        "export_formats": ["json", "csv", "time_series_json", "graph_json"],
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
@@ -202,6 +225,7 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
         "contradiction_review_required": True,
         "mode_profile_snapshot": {
             "max_segment_chars": 255,
+            "export_formats": ["json", "csv", "time_series_json", "graph_json"],
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,

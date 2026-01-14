@@ -35,9 +35,17 @@ DEFAULT_MODE: str = ProjectMode.AUDIOBOOK.value
 # Current persistence locations for selected mode.
 MODE_PERSISTENCE_PATHS: tuple[str, ...] = ("projects.selected_mode", "runs.config_json.mode")
 
+DEFAULT_EXPORT_FORMATS: tuple[str, ...] = (
+    "json",
+    "csv",
+    "time_series_json",
+    "graph_json",
+)
+
 
 class ModeDefaultProfile(TypedDict):
     max_segment_chars: int
+    export_formats: list[str]
     llm_enabled: bool
     provider_name: str
     max_calls_per_day: int
@@ -56,6 +64,7 @@ class ModeDefaultProfile(TypedDict):
 MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
     ProjectMode.AUDIOBOOK.value: {
         "max_segment_chars": 120,
+        "export_formats": list(DEFAULT_EXPORT_FORMATS),
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
@@ -72,6 +81,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
     },
     ProjectMode.ACADEMIC.value: {
         "max_segment_chars": 220,
+        "export_formats": list(DEFAULT_EXPORT_FORMATS),
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
@@ -88,6 +98,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
     },
     ProjectMode.AUTHOR.value: {
         "max_segment_chars": 160,
+        "export_formats": list(DEFAULT_EXPORT_FORMATS),
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
@@ -104,6 +115,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
     },
     ProjectMode.CUSTOM.value: {
         "max_segment_chars": 255,
+        "export_formats": list(DEFAULT_EXPORT_FORMATS),
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,

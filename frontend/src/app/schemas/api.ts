@@ -5,6 +5,41 @@ const defaultHighAmbiguityDialogueFlagThreshold = 2;
 const defaultUnstableEmotionShiftTransitionThreshold = 4;
 const defaultUnstableEmotionShiftDensityThreshold = 0.5;
 const defaultContradictionReviewRequired = true;
+const ALLOWED_EXPORT_FORMATS = ['json', 'csv', 'time_series_json', 'graph_json'] as const;
+
+const runExportFormatsSchema = z
+  .array(z.string())
+  .transform((formats) =>
+    Array.from(
+      new Set(
+        formats
+          .map((format) => format.trim().toLowerCase())
+          .filter((format) => format.length > 0),
+      ),
+    ),
+  )
+  .superRefine((formats, context) => {
+    if (formats.length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'export_formats must contain at least one value.',
+        path: [],
+      });
+      return;
+    }
+
+    for (let index = 0; index < formats.length; index += 1) {
+      const format = formats[index];
+      if (!ALLOWED_EXPORT_FORMATS.includes(format as (typeof ALLOWED_EXPORT_FORMATS)[number])) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'export_formats must be one of: json, csv, time_series_json, graph_json',
+          path: [index],
+        });
+      }
+    }
+  });
 
 export const modeCatalogSchema = z.object({
   modes: z.array(z.string()),
@@ -15,6 +50,40 @@ export const modeCatalogSchema = z.object({
     z.object({
       max_segment_chars: z.number().int().min(80).max(255),
       llm_enabled: z.boolean(),
+      export_formats: z
+        .array(z.string())
+        .transform((formats) =>
+          Array.from(
+            new Set(
+              formats
+                .map((format) => format.trim().toLowerCase())
+                .filter((format) => format.length > 0),
+            ),
+          ),
+        )
+        .superRefine((formats, context) => {
+          if (formats.length === 0) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'export_formats must contain at least one value.',
+              path: [],
+            });
+            return;
+          }
+
+          for (let index = 0; index < formats.length; index += 1) {
+            const format = formats[index];
+            if (!ALLOWED_EXPORT_FORMATS.includes(format as (typeof ALLOWED_EXPORT_FORMATS)[number])) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message:
+                  'export_formats must be one of: json, csv, time_series_json, graph_json',
+                path: [index],
+              });
+              break;
+            }
+          }
+        }),
       provider_name: z.string().min(1),
       max_calls_per_day: z.number().int().positive(),
       deterministic_mode: z.boolean(),
@@ -256,6 +325,7 @@ export const runRequestSchema = z.object({
   max_segment_chars: z.number().int().min(80).max(255),
   llm_enabled: z.boolean(),
   provider_name: z.string(),
+  export_formats: runExportFormatsSchema.optional(),
   speaker_confidence_threshold: z.number().min(0).max(1).default(defaultSpeakerConfidenceThreshold),
   high_ambiguity_dialogue_flag_threshold: z.number().int().min(1).max(20).default(defaultHighAmbiguityDialogueFlagThreshold),
   unstable_emotion_shift_transition_threshold: z.number().int().min(1).max(20).default(defaultUnstableEmotionShiftTransitionThreshold),

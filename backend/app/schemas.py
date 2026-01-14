@@ -14,6 +14,9 @@ from app.modes import DEFAULT_MODE, is_valid_mode
 
 ALLOWED_PROJECT_ACCESS_ROLES = frozenset({"owner", "editor", "viewer"})
 ALLOWED_PROJECT_ACCESS_PRINCIPAL_TYPES = frozenset({"user", "service", "system"})
+ALLOWED_RUN_EXPORT_FORMATS = frozenset(
+    {"json", "csv", "time_series_json", "graph_json"}
+)
 
 
 class ProjectCreate(BaseModel):
@@ -203,6 +206,7 @@ class ProjectModeSwitchResponse(BaseModel):
 
 class ModeDefaultProfileResponse(BaseModel):
     max_segment_chars: int = Field(ge=80, le=255)
+    export_formats: list[str]
     llm_enabled: bool
     provider_name: str = Field(min_length=1)
     max_calls_per_day: int = Field(ge=1, le=10000)
@@ -567,6 +571,7 @@ class RunCreateRequest(BaseModel):
     )
     llm_enabled: bool = False
     provider_name: str = "openrouter"
+    export_formats: list[str] | None = None
     deep_semantic_refinement: bool = False
     deterministic_mode: bool = False
     contradiction_review_required: bool = True
@@ -616,6 +621,36 @@ class RunCreateRequest(BaseModel):
         if not stripped:
             raise ValueError("provider_name must not be blank")
         return stripped.lower()
+
+    @field_validator("export_formats", mode="before")
+    @classmethod
+    def export_formats_must_be_normalized(
+        cls,
+        value: list[str] | tuple[str, ...] | set[str] | object | None,
+    ) -> list[str] | None:
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple, set)):
+            raise ValueError("export_formats must be a list of strings")
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_format in value:
+            if not isinstance(raw_format, str):
+                raise ValueError("export_formats values must be strings")
+            normalized_format = raw_format.strip().lower()
+            if not normalized_format:
+                continue
+            if normalized_format not in ALLOWED_RUN_EXPORT_FORMATS:
+                raise ValueError("export_formats must be one of: json, csv, time_series_json, graph_json")
+            if normalized_format not in seen:
+                normalized.append(normalized_format)
+                seen.add(normalized_format)
+
+        if not normalized:
+            raise ValueError("export_formats must contain at least one value")
+
+        return normalized
 
     @field_validator("internal_thought_voice_policy")
     @classmethod
