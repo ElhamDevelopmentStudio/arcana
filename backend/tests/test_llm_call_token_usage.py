@@ -887,6 +887,220 @@ def test_pipeline_marks_rule_only_mode_when_all_providers_unavailable(monkeypatc
         session.close()
 
 
+def test_pipeline_marks_rule_only_mode_when_all_providers_rate_limit(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Rule-Only Rate Limit Outage Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        observed_calls: list[tuple[str, str | None]] = []
+
+        class _RateLimitedLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                observed_calls.append((provider_name, api_key))
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="service overloaded",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="rate_limit",
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        def _fake_provider_api_keys(*, settings: object, provider_name: str) -> list[str]:
+            if provider_name == "openrouter":
+                return ["openrouter-key-a"]
+            if provider_name == "siliconflow":
+                return ["siliconflow-key"]
+            if provider_name == "groq":
+                return ["groq-key"]
+            return []
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_priority_order",
+            lambda **kwargs: ("openrouter", "siliconflow", "groq"),
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "fallback-key"),
+        )
+        monkeypatch.setattr(pipeline, "get_provider_api_keys", _fake_provider_api_keys)
+        monkeypatch.setattr(pipeline, "LLMRouter", _RateLimitedLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="The storm is still forming.",
+        )
+
+        assert observed_calls == [
+            ("openrouter", "openrouter-key-a"),
+            ("siliconflow", "siliconflow-key"),
+            ("groq", "groq-key"),
+        ]
+
+        session.refresh(run)
+        rule_only_state = (run.config_json or {}).get("llm_execution_mode")
+        assert isinstance(rule_only_state, dict)
+        assert rule_only_state["mode"] == "rule_only"
+        assert rule_only_state["reason"] == "rate_limit"
+        assert rule_only_state["provider"] == "groq"
+
+        call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
+        assert call.success is False
+        assert call.provider == "groq"
+        assert call.detail == "rate_limit"
+
+        provider_quotas = (
+            session.query(ProviderQuota)
+            .filter(ProviderQuota.provider.in_(["openrouter", "siliconflow", "groq"]))
+            .all()
+        )
+        assert len(provider_quotas) == 3
+        assert all(quota.blocked for quota in provider_quotas)
+        assert all(quota.last_rate_limit_status == "temporarily_unavailable" for quota in provider_quotas)
+    finally:
+        session.close()
+
+
+def test_pipeline_enters_rule_only_after_mixed_provider_outage(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Mixed Provider Outage Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        observed_calls: list[tuple[str, str | None]] = []
+
+        class _RateLimitedLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                observed_calls.append((provider_name, api_key))
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="service unavailable",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="rate_limit",
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        def _fake_provider_requestable(
+            *,
+            session: object,
+            settings: object,
+            provider_name: str,
+            max_calls_per_day: int,
+        ) -> tuple[bool, str | None]:
+            if provider_name in {"openrouter", "siliconflow"}:
+                return False, "quota_reached"
+            return True, None
+
+        def _fake_provider_api_keys(*, settings: object, provider_name: str) -> list[str]:
+            if provider_name == "groq":
+                return ["groq-key"]
+            return []
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_priority_order",
+            lambda **kwargs: ("openrouter", "siliconflow", "groq"),
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "fallback-key"),
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_api_keys",
+            _fake_provider_api_keys,
+        )
+        monkeypatch.setattr(
+            pipeline.llm_router,
+            "is_provider_requestable",
+            _fake_provider_requestable,
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _RateLimitedLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="The storm is approaching and then quiets.",
+        )
+
+        assert observed_calls == [("groq", "groq-key")]
+
+        session.refresh(run)
+        rule_only_state = (run.config_json or {}).get("llm_execution_mode")
+        assert isinstance(rule_only_state, dict)
+        assert rule_only_state["mode"] == "rule_only"
+        assert rule_only_state["reason"] == "rate_limit"
+        assert rule_only_state["provider"] == "groq"
+
+        call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
+        assert call.success is False
+        assert call.provider == "groq"
+        assert call.detail == "rate_limit"
+        assert call.request_count == 1
+
+        quotas = session.query(ProviderQuota).all()
+        assert len(quotas) == 1
+        assert quotas[0].provider == "groq"
+        assert quotas[0].blocked is True
+        assert quotas[0].last_rate_limit_status == "temporarily_unavailable"
+    finally:
+        session.close()
+
+
 def test_pipeline_uses_llm_router_as_the_only_llm_call_path(monkeypatch: object) -> None:
     session = _new_session()
     try:
