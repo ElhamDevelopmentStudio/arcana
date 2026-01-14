@@ -84,6 +84,7 @@ export const modeCatalogSchema = z.object({
             }
           }
         }),
+      export_chunk_size: z.number().int().min(1).max(10000),
       provider_name: z.string().min(1),
       max_calls_per_day: z.number().int().positive(),
       deterministic_mode: z.boolean(),
@@ -326,6 +327,7 @@ export const runRequestSchema = z.object({
   llm_enabled: z.boolean(),
   provider_name: z.string(),
   export_formats: runExportFormatsSchema.optional(),
+  export_chunk_size: z.number().int().min(1).max(10000).optional(),
   speaker_confidence_threshold: z.number().min(0).max(1).default(defaultSpeakerConfidenceThreshold),
   high_ambiguity_dialogue_flag_threshold: z.number().int().min(1).max(20).default(defaultHighAmbiguityDialogueFlagThreshold),
   unstable_emotion_shift_transition_threshold: z.number().int().min(1).max(20).default(defaultUnstableEmotionShiftTransitionThreshold),

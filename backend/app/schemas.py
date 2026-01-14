@@ -207,6 +207,7 @@ class ProjectModeSwitchResponse(BaseModel):
 class ModeDefaultProfileResponse(BaseModel):
     max_segment_chars: int = Field(ge=80, le=255)
     export_formats: list[str]
+    export_chunk_size: int = Field(ge=1, le=10000)
     llm_enabled: bool
     provider_name: str = Field(min_length=1)
     max_calls_per_day: int = Field(ge=1, le=10000)
@@ -572,6 +573,7 @@ class RunCreateRequest(BaseModel):
     llm_enabled: bool = False
     provider_name: str = "openrouter"
     export_formats: list[str] | None = None
+    export_chunk_size: int | None = Field(default=None, ge=1, le=10000)
     deep_semantic_refinement: bool = False
     deterministic_mode: bool = False
     contradiction_review_required: bool = True

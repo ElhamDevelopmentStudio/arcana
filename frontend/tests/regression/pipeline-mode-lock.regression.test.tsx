@@ -23,6 +23,7 @@ const modeCatalogData = {
       audiobook: {
           max_segment_chars: 120,
           export_formats: ['json', 'csv', 'time_series_json', 'graph_json'],
+          export_chunk_size: 500,
           llm_enabled: false,
           provider_name: 'openrouter',
           max_calls_per_day: 25,
@@ -240,6 +241,21 @@ describe('pipeline run mode lock regression', () => {
     expect(runPipelineMutationTrigger).toHaveBeenCalledWith(
       expect.objectContaining({
         export_formats: ['json', 'csv', 'time_series_json', 'graph_json'],
+      }),
+    );
+  });
+
+  it('defaults run payload export chunk size from selected mode profile', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ selectedMode: 'audiobook' });
+    renderPipelinePage();
+
+    await user.click(screen.getByTestId('run-pipeline-button'));
+
+    expect(runPipelineMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(runPipelineMutationTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        export_chunk_size: 500,
       }),
     );
   });

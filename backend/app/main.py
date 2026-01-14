@@ -5495,6 +5495,7 @@ def get_export_json(
         run=run,
         from_chapter_index=from_chapter_index,
         from_segment_index=from_segment_index,
+        apply_export_chunk_size=True,
     )
 
     if output_schema == "academic":
@@ -5625,6 +5626,7 @@ def get_export_csv(
             run=run,
             from_chapter_index=from_chapter_index,
             from_segment_index=from_segment_index,
+            apply_export_chunk_size=True,
         )
         manifest = export_payload.get("manifest", {})
         academic_reports = manifest.get("academic_reports", {})
@@ -5643,6 +5645,7 @@ def get_export_csv(
             run=run,
             from_chapter_index=from_chapter_index,
             from_segment_index=from_segment_index,
+            apply_export_chunk_size=True,
         )
         filename = f"project-{project_id}-run-{run_id}.csv"
     return Response(

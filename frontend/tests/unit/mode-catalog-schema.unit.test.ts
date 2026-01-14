@@ -10,6 +10,7 @@ const VALID_MODE_CATALOG = {
       audiobook: {
         max_segment_chars: 120,
         export_formats: ['json', 'csv', 'time_series_json', 'graph_json'],
+        export_chunk_size: 500,
         llm_enabled: false,
         provider_name: 'openrouter',
         max_calls_per_day: 25,
@@ -27,6 +28,7 @@ const VALID_MODE_CATALOG = {
       academic: {
         max_segment_chars: 220,
         export_formats: ['json', 'csv', 'time_series_json', 'graph_json'],
+        export_chunk_size: 500,
         llm_enabled: false,
         provider_name: 'openrouter',
         max_calls_per_day: 25,
@@ -44,6 +46,7 @@ const VALID_MODE_CATALOG = {
       author: {
         max_segment_chars: 160,
         export_formats: ['json', 'csv', 'time_series_json', 'graph_json'],
+        export_chunk_size: 500,
         llm_enabled: false,
         provider_name: 'openrouter',
         max_calls_per_day: 25,
@@ -61,6 +64,7 @@ const VALID_MODE_CATALOG = {
       custom: {
         max_segment_chars: 255,
         export_formats: ['json', 'csv', 'time_series_json', 'graph_json'],
+        export_chunk_size: 500,
         llm_enabled: false,
         provider_name: 'openrouter',
         max_calls_per_day: 25,
@@ -89,6 +93,7 @@ describe('mode catalog schema', () => {
       'time_series_json',
       'graph_json',
     ]);
+    expect(parsed.mode_profiles.audiobook.export_chunk_size).toBe(500);
   });
 
   it('rejects payloads without mode profile contract', () => {

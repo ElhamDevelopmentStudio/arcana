@@ -21,6 +21,7 @@ EXPECTED_MODE_PAYLOAD = {
         "audiobook": {
             "max_segment_chars": 120,
             "export_formats": ["json", "csv", "time_series_json", "graph_json"],
+            "export_chunk_size": 500,
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
@@ -38,6 +39,7 @@ EXPECTED_MODE_PAYLOAD = {
         "academic": {
             "max_segment_chars": 220,
             "export_formats": ["json", "csv", "time_series_json", "graph_json"],
+            "export_chunk_size": 500,
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
@@ -55,6 +57,7 @@ EXPECTED_MODE_PAYLOAD = {
         "author": {
             "max_segment_chars": 160,
             "export_formats": ["json", "csv", "time_series_json", "graph_json"],
+            "export_chunk_size": 500,
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
@@ -72,6 +75,7 @@ EXPECTED_MODE_PAYLOAD = {
         "custom": {
             "max_segment_chars": 255,
             "export_formats": ["json", "csv", "time_series_json", "graph_json"],
+            "export_chunk_size": 500,
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
@@ -127,6 +131,7 @@ def test_unit_mode_default_profiles_cover_every_mode_and_required_fields() -> No
     required_fields = {
         "max_segment_chars",
         "export_formats",
+        "export_chunk_size",
         "llm_enabled",
         "provider_name",
         "max_calls_per_day",

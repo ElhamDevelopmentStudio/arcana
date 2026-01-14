@@ -29,6 +29,7 @@ const DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD = 0.6;
 const DEFAULT_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD = 2;
 const DEFAULT_UNSTABLE_EMOTION_SHIFT_TRANSITION_THRESHOLD = 4;
 const DEFAULT_UNSTABLE_EMOTION_SHIFT_DENSITY_THRESHOLD = 0.5;
+const DEFAULT_EXPORT_CHUNK_SIZE = 500;
 const EXPORT_FORMAT_OPTIONS = ['json', 'csv', 'time_series_json', 'graph_json'] as const;
 
 function normalizeExportFormats(formats: readonly unknown[]): string[] {
@@ -149,8 +150,10 @@ export function ProjectPipelineSetupPage() {
   const [providerName, setProviderName] = useState('openrouter');
   const [maxCallsPerDay, setMaxCallsPerDay] = useState(25);
   const [exportFormats, setExportFormats] = useState<string[]>(Array.from(EXPORT_FORMAT_OPTIONS));
+  const [exportChunkSize, setExportChunkSize] = useState(DEFAULT_EXPORT_CHUNK_SIZE);
   const [allowUnfinalizedCharacterMap, setAllowUnfinalizedCharacterMap] = useState(false);
   const [hasCustomMaxSegmentChars, setHasCustomMaxSegmentChars] = useState(false);
+  const [hasCustomExportChunkSize, setHasCustomExportChunkSize] = useState(false);
   const [speakerConfidenceThreshold, setSpeakerConfidenceThreshold] = useState(DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD);
   const [highAmbiguityDialogueFlagThreshold, setHighAmbiguityDialogueFlagThreshold] = useState(
     DEFAULT_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
@@ -227,6 +230,7 @@ export function ProjectPipelineSetupPage() {
 
   useEffect(() => {
     setHasCustomMaxSegmentChars(false);
+    setHasCustomExportChunkSize(false);
     setHasCustomSpeakerConfidenceThreshold(false);
     setHasCustomHighAmbiguityDialogueFlagThreshold(false);
     setHasCustomUnstableEmotionShiftTransitionThreshold(false);
@@ -240,6 +244,12 @@ export function ProjectPipelineSetupPage() {
       setMaxSegmentChars(selectedProfile.max_segment_chars);
     }
   }, [hasCustomMaxSegmentChars, selectedProfile]);
+
+  useEffect(() => {
+    if (!hasCustomExportChunkSize && selectedProfile !== null && selectedProfile !== undefined) {
+      setExportChunkSize(selectedProfile.export_chunk_size ?? DEFAULT_EXPORT_CHUNK_SIZE);
+    }
+  }, [hasCustomExportChunkSize, selectedProfile]);
 
   useEffect(() => {
     if (!hasCustomSpeakerConfidenceThreshold && selectedProfile !== null && selectedProfile !== undefined) {
@@ -354,6 +364,7 @@ export function ProjectPipelineSetupPage() {
         mode: selectedMode,
         max_segment_chars: maxSegmentChars,
         llm_enabled: llmEnabled,
+        export_chunk_size: exportChunkSize,
         speaker_confidence_threshold: speakerConfidenceThreshold,
         high_ambiguity_dialogue_flag_threshold: highAmbiguityDialogueFlagThreshold,
         unstable_emotion_shift_transition_threshold: unstableEmotionShiftTransitionThreshold,
@@ -546,6 +557,20 @@ export function ProjectPipelineSetupPage() {
                   onChange={(event) => {
                     setHasCustomMaxSegmentChars(true);
                     setMaxSegmentChars(Number(event.target.value));
+                  }}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="export-chunk-size">Export chunk size</Label>
+                <Input
+                  id="export-chunk-size"
+                  min={1}
+                  max={10000}
+                  type="number"
+                  value={exportChunkSize}
+                  onChange={(event) => {
+                    setHasCustomExportChunkSize(true);
+                    setExportChunkSize(Number(event.target.value));
                   }}
                 />
               </div>

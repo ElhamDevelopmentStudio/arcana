@@ -68,6 +68,7 @@ def test_unit_build_run_config_snapshot_keeps_profile_snapshot_and_applies_overr
     assert snapshot["deep_semantic_refinement"] is True
     assert snapshot["deterministic_mode"] is True
     assert snapshot["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
+    assert snapshot["export_chunk_size"] == 500
     assert snapshot["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["author"]
     assert snapshot["mode_profile_snapshot"]["provider_name"] == "openrouter"
 
@@ -95,6 +96,14 @@ def test_unit_run_create_request_rejects_empty_export_formats() -> None:
         RunCreateRequest(mode="audiobook", export_formats=["  "])
 
 
+def test_unit_run_create_request_validates_export_chunk_size() -> None:
+    payload = RunCreateRequest(mode="audiobook", export_chunk_size=50)
+    assert payload.export_chunk_size == 50
+
+    with pytest.raises(ValueError, match="greater than or equal to 1"):
+        RunCreateRequest(mode="audiobook", export_chunk_size=0)
+
+
 def test_unit_run_create_request_rejects_invalid_emotion_taxonomy() -> None:
     with pytest.raises(ValueError, match="emotion_taxonomy must be one of: basic, expanded"):
         RunCreateRequest(mode="audiobook", emotion_taxonomy="ultra")
@@ -116,10 +125,12 @@ def test_integration_run_config_stores_loaded_mode_profile_snapshot() -> None:
         config = detail_resp.json()["config"]
         assert config["mode"] == "academic"
         assert config["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
+        assert config["export_chunk_size"] == 500
         assert config["max_segment_chars"] == MODE_DEFAULT_PROFILES["academic"]["max_segment_chars"]
         assert config["deterministic_mode"] is False
         assert config["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["academic"]
         assert config["mode_profile_snapshot"]["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
+        assert config["mode_profile_snapshot"]["export_chunk_size"] == 500
 
 
 def test_e2e_run_config_defaults_emotion_taxonomy_to_basic() -> None:
@@ -181,6 +192,7 @@ def test_e2e_run_config_uses_overrides_without_mutating_profile_snapshot() -> No
         assert config["max_calls_per_day"] == 3
         assert config["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["audiobook"]
         assert config["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
+        assert config["export_chunk_size"] == 500
         assert config["mode_profile_snapshot"]["provider_name"] == "openrouter"
 
 
@@ -211,6 +223,7 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
         "mode": "custom",
         "max_segment_chars": 255,
         "export_formats": ["json", "csv", "time_series_json", "graph_json"],
+        "export_chunk_size": 500,
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
@@ -226,6 +239,7 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
         "mode_profile_snapshot": {
             "max_segment_chars": 255,
             "export_formats": ["json", "csv", "time_series_json", "graph_json"],
+            "export_chunk_size": 500,
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,

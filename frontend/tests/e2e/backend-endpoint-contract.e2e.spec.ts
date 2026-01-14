@@ -25,7 +25,13 @@ type ModeCatalogResponse = {
   persisted_in: string[];
   mode_profiles: Record<
     string,
-    { max_segment_chars: number; llm_enabled: boolean; provider_name: string; export_formats: string[] }
+    {
+      max_segment_chars: number;
+      llm_enabled: boolean;
+      provider_name: string;
+      export_formats: string[];
+      export_chunk_size: number;
+    }
   >;
 };
 
@@ -70,6 +76,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(modesPayload.mode_profiles.audiobook.export_formats).toEqual(
       expect.arrayContaining(['json', 'csv', 'time_series_json', 'graph_json']),
     );
+    expect(modesPayload.mode_profiles.audiobook.export_chunk_size).toBeGreaterThan(0);
 
     const missingProjectTitle = await request.post(`${backendBaseUrl}/api/projects`, { data: { title: '' } });
     expect(missingProjectTitle.status()).toBe(422);
