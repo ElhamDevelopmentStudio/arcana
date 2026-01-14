@@ -10,7 +10,11 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_ingestion_error_types.db"
 from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
 from app.main import app
-from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
+from app.services.ingestion_errors import (
+    IngestionErrorType,
+    UnsupportedFormatIngestionError,
+    make_ingestion_http_error,
+)
 
 
 def setup_module() -> None:
@@ -40,6 +44,13 @@ def test_unit_make_ingestion_http_error_sets_error_type_header() -> None:
         error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
         detail="Only .txt files are supported",
     )
+    assert error.status_code == 400
+    assert error.headers == {"X-NIPE-Error-Type": "unsupported_format"}
+    assert error.detail == "Only .txt files are supported"
+
+
+def test_unit_unsupported_format_error_is_http_exception_with_header() -> None:
+    error = UnsupportedFormatIngestionError(detail="Only .txt files are supported")
     assert error.status_code == 400
     assert error.headers == {"X-NIPE-Error-Type": "unsupported_format"}
     assert error.detail == "Only .txt files are supported"
