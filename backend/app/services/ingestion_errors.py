@@ -53,6 +53,17 @@ class UnsupportedEncodingIngestionError(IngestionError):
         )
 
 
+class MissingChaptersIngestionError(IngestionError):
+    """Raised when uploaded content does not contain usable chapter text."""
+
+    def __init__(self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST):
+        super().__init__(
+            status_code=status_code,
+            error_type=IngestionErrorType.MISSING_CHAPTERS,
+            detail=detail,
+        )
+
+
 def make_ingestion_http_error(
     *,
     status_code: int,
