@@ -146,6 +146,7 @@ from app.services.llm_router import get_provider_runtime_settings
 from app.services.mode_switch import mark_runs_stale_for_gender_edit, mark_runs_stale_for_mode_switch
 from app.services.character_analytics import build_character_occurrence_analytics
 from app.services.gender_comparison import compare_manual_and_inferred_gender_fields
+from app.services.gender_comparison import build_manual_inferred_gender_contradiction_warnings
 from app.services.gender_inference import infer_character_genders
 from app.services.normalization import (
     build_original_to_normalized_offset_map,
@@ -2427,6 +2428,10 @@ def compare_character_genders(
             contradiction_review_threshold=settings.contradiction_review_threshold,
         )
     ]
+    warning_payloads = build_manual_inferred_gender_contradiction_warnings(
+        character_rows,
+        source="characters.gender-comparison",
+    )
 
     contradiction_count = len([payload for payload in comparison_payloads if payload.is_contradiction])
 
@@ -2435,6 +2440,7 @@ def compare_character_genders(
         comparison_count=len(comparison_payloads),
         contradiction_count=contradiction_count,
         comparisons=comparison_payloads,
+        warnings=warning_payloads,
     )
 
 
