@@ -1,4 +1,5 @@
 import os
+from hashlib import sha256
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -7,7 +8,16 @@ from fastapi.testclient import TestClient
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
-from app.models import LLMCall, LLMCache, Project, ProviderApiKeyQuota, ProviderQuota, ProviderToggle, Run
+from app.models import (
+    LLMCall,
+    LLMCache,
+    ProviderApiKeyQuota,
+    ProviderApiKeyUsageAudit,
+    ProviderQuota,
+    ProviderToggle,
+    Project,
+    Run,
+)
 from app.models import Chapter, Segment
 from app.services import llm_router, pipeline, quota as quota_service
 from app.services.llm_task_types import LLMTaskType
@@ -747,6 +757,112 @@ def test_pipeline_rotates_provider_keys_on_quota_exhaustion(monkeypatch: object)
         session.close()
 
 
+def test_pipeline_audit_records_each_llm_attempt_with_redaction(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="LLM Attempt Audit Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        attempts: list[str | None] = []
+
+        class _ProbeAuditLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                attempts.append(api_key)
+                if api_key == "openrouter-key-a":
+                    return llm_router.LLMResponse(
+                        provider_used=provider_name,
+                        model_identifier=model_identifier,
+                        raw_output="",
+                        parsed_output={},
+                        confidence=None,
+                        token_usage_estimate=20,
+                        success_flag=False,
+                        error_code="quota",
+                        rate_limit_reset_at=None,
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    )
+
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="ok",
+                    parsed_output={"raw": "ok"},
+                    confidence=None,
+                    token_usage_estimate=32,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        def _fake_provider_api_keys(*, settings: object, provider_name: str) -> list[str]:
+            if provider_name == "openrouter":
+                return ["openrouter-key-a", "openrouter-key-b"]
+            return []
+
+        monkeypatch.setattr(pipeline, "get_provider_api_keys", _fake_provider_api_keys)
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "fallback-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _ProbeAuditLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="Probe should log each key attempt.",
+        )
+
+        call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
+        assert call.success is True
+        assert call.provider == "openrouter"
+        assert attempts == ["openrouter-key-a", "openrouter-key-b"]
+
+        audit_entries = (
+            session.query(ProviderApiKeyUsageAudit)
+            .filter(ProviderApiKeyUsageAudit.run_id == run.id)
+            .order_by(ProviderApiKeyUsageAudit.attempt_index.asc())
+            .all()
+        )
+        assert [entry.attempt_index for entry in audit_entries] == [1, 2]
+        assert [entry.provider for entry in audit_entries] == ["openrouter", "openrouter"]
+        assert [entry.success for entry in audit_entries] == [False, True]
+        assert [entry.error_code for entry in audit_entries] == ["quota", None]
+        assert all(entry.provider_api_key_fingerprint for entry in audit_entries)
+        assert audit_entries[0].provider_api_key_fingerprint == sha256("openrouter-key-a".encode("utf-8")).hexdigest()
+        assert audit_entries[1].provider_api_key_fingerprint == sha256("openrouter-key-b".encode("utf-8")).hexdigest()
+        assert audit_entries[0].provider_api_key_masked == "••••ey-a"
+        assert audit_entries[1].provider_api_key_masked == "••••ey-b"
+        assert all(
+            "openrouter-key-a" not in str(entry.provider_api_key_masked or "")
+            and "openrouter-key-b" not in str(entry.provider_api_key_masked or "")
+            for entry in audit_entries
+        )
+    finally:
+        session.close()
+
+
 def test_pipeline_falls_back_to_next_provider_after_all_keys_exhausted(monkeypatch: object) -> None:
     session = _new_session()
     try:
@@ -834,6 +950,25 @@ def test_pipeline_falls_back_to_next_provider_after_all_keys_exhausted(monkeypat
             ("openrouter", "openrouter-key-b"),
             ("siliconflow", "siliconflow-key"),
         ]
+        audit_entries = (
+            session.query(ProviderApiKeyUsageAudit)
+            .filter(ProviderApiKeyUsageAudit.run_id == run.id)
+            .order_by(ProviderApiKeyUsageAudit.attempt_index.asc())
+            .all()
+        )
+        assert [entry.provider for entry in audit_entries] == [
+            "openrouter",
+            "openrouter",
+            "siliconflow",
+        ]
+        assert [entry.provider_api_key_masked for entry in audit_entries] == [
+            "••••ey-a",
+            "••••ey-b",
+            "••••-key",
+        ]
+        assert [entry.success for entry in audit_entries] == [False, False, True]
+        assert [entry.error_code for entry in audit_entries] == ["rate_limit", "rate_limit", None]
+        assert [entry.attempt_index for entry in audit_entries] == [1, 2, 3]
 
         openrouter_quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one()
         assert openrouter_quota.blocked is True

@@ -434,7 +434,7 @@ Definition of done for each task:
 - [x] [NFR8-002] Ensure API keys never reach frontend payloads/logs.
 - [X] [NFR8-003] Scope key access per project/user context.
 - [X] [NFR8-004] Implement key rotation workflow.
-- [ ] [NFR8-005] Add key usage audit logging with redaction.
+- [X] [NFR8-005] Add key usage audit logging with redaction.
 
 ## 8. Error Handling and Warnings (Ref: SRS.md §8)
 - [ ] [ER-001] Implement ingestion error class: unsupported format.

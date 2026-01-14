@@ -70,14 +70,48 @@ ALTER TABLE llm_calls ADD COLUMN IF NOT EXISTS model_identifier VARCHAR(255);
 ALTER TABLE llm_calls ADD COLUMN IF NOT EXISTS called_at TIMESTAMPTZ;
 ALTER TABLE llm_calls ADD COLUMN IF NOT EXISTS is_cache_hit BOOLEAN NOT NULL DEFAULT FALSE;
 
+CREATE TABLE IF NOT EXISTS provider_api_key_usage_audit (
+    id SERIAL PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    provider VARCHAR(100) NOT NULL,
+    task_type VARCHAR(100) NOT NULL,
+    request_id VARCHAR(36),
+    attempt_index INTEGER NOT NULL,
+    provider_api_key_masked VARCHAR(64),
+    provider_api_key_fingerprint VARCHAR(64),
+    model_identifier VARCHAR(255),
+    success BOOLEAN NOT NULL,
+    error_code VARCHAR(64),
+    token_usage_estimate INTEGER,
+    called_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS provider_quota (
     id SERIAL PRIMARY KEY,
     provider VARCHAR(100) NOT NULL,
     day_key VARCHAR(20) NOT NULL,
+    scope_key VARCHAR(120) NOT NULL DEFAULT 'global',
     calls_used INTEGER NOT NULL DEFAULT 0,
     max_calls_per_day INTEGER NOT NULL,
     blocked BOOLEAN NOT NULL DEFAULT FALSE,
-    CONSTRAINT uq_provider_day UNIQUE (provider, day_key)
+    CONSTRAINT uq_provider_day_scope UNIQUE (provider, day_key, scope_key)
+);
+
+CREATE TABLE IF NOT EXISTS provider_api_key_quota (
+    id SERIAL PRIMARY KEY,
+    provider VARCHAR(100) NOT NULL,
+    provider_api_key VARCHAR(255) NOT NULL,
+    day_key VARCHAR(20) NOT NULL,
+    scope_key VARCHAR(120) NOT NULL DEFAULT 'global',
+    calls_used INTEGER NOT NULL DEFAULT 0,
+    max_calls_per_day INTEGER NOT NULL,
+    blocked BOOLEAN NOT NULL DEFAULT FALSE,
+    last_rate_limit_status VARCHAR(64),
+    last_rate_limit_status_at TIMESTAMPTZ,
+    last_rate_limit_reset_at TIMESTAMPTZ,
+    last_successful_call_at TIMESTAMPTZ,
+    CONSTRAINT uq_provider_api_key_day_scope UNIQUE (provider, provider_api_key, day_key, scope_key)
 );
 
 CREATE TABLE IF NOT EXISTS llm_cache (
