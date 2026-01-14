@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
-from app.models import ProviderQuota
+from app.models import ProviderApiKeyQuota, ProviderQuota
 from app.services.quota import (
     consume_quota,
     consume_api_key_quota,
@@ -174,5 +174,152 @@ def test_is_api_key_available_for_request_is_false_when_key_is_exhausted() -> No
             provider_api_key=key,
             max_calls_per_day=1,
         ) is False
+    finally:
+        session.close()
+
+
+def test_scope_isolated_provider_quota_by_project_and_principal() -> None:
+    session_factory = get_session_factory()
+    session = session_factory()
+
+    try:
+        provider = "openrouter"
+
+        global_allowed, global_count = consume_quota(
+            session=session,
+            provider=provider,
+            max_calls_per_day=1,
+        )
+        user_a_allowed, user_a_count = consume_quota(
+            session=session,
+            provider=provider,
+            max_calls_per_day=1,
+            project_id=1,
+            principal_type="user",
+            principal_id="alice",
+        )
+        user_b_allowed, user_b_count = consume_quota(
+            session=session,
+            provider=provider,
+            max_calls_per_day=1,
+            project_id=1,
+            principal_type="user",
+            principal_id="bob",
+        )
+        project_two_allowed, project_two_count = consume_quota(
+            session=session,
+            provider=provider,
+            max_calls_per_day=1,
+            project_id=2,
+            principal_type="user",
+            principal_id="alice",
+        )
+        global_second, global_second_count = consume_quota(
+            session=session,
+            provider=provider,
+            max_calls_per_day=1,
+            project_id=1,
+            principal_type="user",
+            principal_id="alice",
+        )
+
+        assert global_allowed is True
+        assert global_count == 1
+        assert get_provider_request_count(session, provider=provider) == 1
+        assert user_a_allowed is True
+        assert user_a_count == 1
+        assert get_provider_request_count(session, provider=provider, project_id=1, principal_type="user", principal_id="alice") == 1
+        assert user_b_allowed is True
+        assert user_b_count == 1
+        assert get_provider_request_count(session, provider=provider, project_id=1, principal_type="user", principal_id="bob") == 1
+        assert project_two_allowed is True
+        assert project_two_count == 1
+        assert get_provider_request_count(session, provider=provider, project_id=2, principal_type="user", principal_id="alice") == 1
+        assert global_second is False
+        assert global_second_count == 1
+        assert get_provider_request_count(session, provider=provider, project_id=1, principal_type="user", principal_id="alice") == 1
+
+        quota_rows = session.query(ProviderQuota).all()
+        assert len(quota_rows) == 4
+        scope_keys = {row.scope_key for row in quota_rows}
+        assert scope_keys == {
+            "global",
+            "project:1|principal:user:alice",
+            "project:1|principal:user:bob",
+            "project:2|principal:user:alice",
+        }
+    finally:
+        session.close()
+
+
+def test_scope_isolated_api_key_quota_by_project_and_principal() -> None:
+    session_factory = get_session_factory()
+    session = session_factory()
+
+    try:
+        provider = "groq"
+        api_key = "shared-key"
+
+        consume_api_key_quota(
+            session=session,
+            provider=provider,
+            provider_api_key=api_key,
+            max_calls_per_day=1,
+            project_id=1,
+            principal_type="user",
+            principal_id="alice",
+        )
+        consume_api_key_quota(
+            session=session,
+            provider=provider,
+            provider_api_key=api_key,
+            max_calls_per_day=1,
+            project_id=1,
+            principal_type="user",
+            principal_id="bob",
+        )
+        consume_api_key_quota(
+            session=session,
+            provider=provider,
+            provider_api_key=api_key,
+            max_calls_per_day=1,
+            project_id=2,
+            principal_type="user",
+            principal_id="alice",
+        )
+
+        assert (
+            session.query(ProviderApiKeyQuota)
+            .filter(
+                ProviderApiKeyQuota.provider == provider,
+                ProviderApiKeyQuota.provider_api_key == api_key,
+                ProviderApiKeyQuota.scope_key == "project:1|principal:user:alice",
+            )
+            .one()
+            .calls_used
+            == 1
+        )
+        assert (
+            session.query(ProviderApiKeyQuota)
+            .filter(
+                ProviderApiKeyQuota.provider == provider,
+                ProviderApiKeyQuota.provider_api_key == api_key,
+                ProviderApiKeyQuota.scope_key == "project:1|principal:user:bob",
+            )
+            .one()
+            .calls_used
+            == 1
+        )
+        assert (
+            session.query(ProviderApiKeyQuota)
+            .filter(
+                ProviderApiKeyQuota.provider == provider,
+                ProviderApiKeyQuota.provider_api_key == api_key,
+                ProviderApiKeyQuota.scope_key == "project:2|principal:user:alice",
+            )
+            .one()
+            .calls_used
+            == 1
+        )
     finally:
         session.close()

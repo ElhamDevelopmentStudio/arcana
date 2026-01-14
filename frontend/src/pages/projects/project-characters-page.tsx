@@ -164,6 +164,7 @@ export function ProjectCharactersPage() {
   const [mergeCandidates, setMergeCandidates] = useState<CharacterMapDto['characters']>([]);
   const [proposedCandidates, setProposedCandidates] = useState<CharacterMapDto['characters']>([]);
   const [mergeSuggestions, setMergeSuggestions] = useState<CharacterExtractionDto['canonical_merge_suggestions']>([]);
+  const [characterExtractionWarnings, setCharacterExtractionWarnings] = useState<CharacterExtractionDto['warnings']>([]);
   const [mergeUndoHistory, setMergeUndoHistory] = useState<CharacterMergeUndoEntry[]>([]);
   const [mergeScrapeUrl, setMergeScrapeUrl] = useState<string>('');
   const [mergeScrapeAcknowledged, setMergeScrapeAcknowledged] = useState<boolean>(false);
@@ -235,6 +236,14 @@ export function ProjectCharactersPage() {
   const manualPreviewCount = useMemo(
     () => manualRows.filter((row) => row.name.trim() && row.verbalized.trim()).length,
     [manualRows],
+  );
+  const aliasCollisionWarnings = useMemo(
+    () => (characterExtractionWarnings ?? []).filter((warning) => warning.type === 'ambiguous_alias_collision'),
+    [characterExtractionWarnings],
+  );
+  const lowConfidenceWarnings = useMemo(
+    () => (characterExtractionWarnings ?? []).filter((warning) => warning.type === 'low_confidence_character_candidate'),
+    [characterExtractionWarnings],
   );
   const characterNameOptions = useMemo(() => {
     if (!characterMapQuery.data) {
@@ -337,6 +346,7 @@ export function ProjectCharactersPage() {
     try {
       const payload = await autoExtractCharactersMutation.trigger();
       setAutoExtractedCandidates(payload.candidates);
+      setCharacterExtractionWarnings(payload.warnings ?? []);
       toast.success(`Auto-extracted ${payload.candidate_count} character candidates.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Character auto-extraction failed.');
@@ -364,6 +374,7 @@ export function ProjectCharactersPage() {
         acknowledge_source_risk: true,
       });
       setScrapedCandidates(payload.candidates);
+      setCharacterExtractionWarnings(payload.warnings ?? []);
       toast.success(`Scraped ${payload.candidate_count} character candidates.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Character scrape failed.');
@@ -393,6 +404,7 @@ export function ProjectCharactersPage() {
       setMergeCandidates(merged.candidates);
       setProposedCandidates(merged.proposed_characters);
       setMergeSuggestions(merged.canonical_merge_suggestions);
+      setCharacterExtractionWarnings(merged.warnings ?? []);
       setMergeUndoHistory([]);
       toast.success(`Merged ${merged.candidate_count} candidate records.`);
     } catch (error) {
@@ -613,6 +625,51 @@ export function ProjectCharactersPage() {
                 {importedCount !== null ? `Imported rows: ${importedCount}` : 'No import completed yet.'}
               </p>
             </form>
+
+            {aliasCollisionWarnings.length === 0 ? null : (
+              <div
+                className="space-y-2 rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"
+                data-testid="character-alias-collision-warnings"
+              >
+                <p className="font-medium">Character warnings</p>
+                <ul className="space-y-1 text-xs">
+                  {aliasCollisionWarnings.map((warning) => (
+                    <li className="space-y-0.5" key={`${warning.alias}-${warning.source}`}>
+                      <p>
+                        {warning.alias} → {warning.canonical_names.join(', ')}
+                      </p>
+                      <p className="text-[11px] opacity-90">{warning.message}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {lowConfidenceWarnings.length === 0 ? null : (
+              <div
+                className="space-y-2 rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"
+                data-testid="character-low-confidence-warnings"
+              >
+                <p className="font-medium">Low-confidence extracted characters</p>
+                <ul className="space-y-1 text-xs">
+                  {lowConfidenceWarnings.map((warning) => {
+                    const warningConfidence = warning.confidence === undefined ? 'low' : `${Math.round(warning.confidence * 100)}%`;
+                    const warningThreshold =
+                      warning.threshold === undefined ? '' : ` (threshold: ${Math.round(warning.threshold * 100)}%)`;
+                    const warningName = warning.candidate_name || warning.alias;
+
+                    return (
+                      <li className="space-y-0.5" key={`${warning.alias}-${warning.source}-${warningConfidence}-${warningThreshold}`}>
+                        <p>
+                          {warningName} · {warningConfidence}{warningThreshold}
+                        </p>
+                        <p className="text-[11px] opacity-90">{warning.message}</p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
 
             <div className="space-y-2 text-sm text-muted-foreground">
               <form className="grid gap-2" onSubmit={handleAutoExtract}>

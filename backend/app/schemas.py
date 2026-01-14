@@ -213,6 +213,7 @@ class ModeDefaultProfileResponse(BaseModel):
     unstable_emotion_shift_density_threshold: float = Field(ge=0.0, le=1.0)
     deep_semantic_refinement: bool
     deterministic_mode: bool
+    contradiction_review_required: bool
     web_scraping_enabled: bool
     profile_intent: str = Field(min_length=1)
 
@@ -568,6 +569,7 @@ class RunCreateRequest(BaseModel):
     provider_name: str = "openrouter"
     deep_semantic_refinement: bool = False
     deterministic_mode: bool = False
+    contradiction_review_required: bool = True
     max_calls_per_day: int = Field(default=25, ge=1, le=10000)
     llm_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     speaker_confidence_threshold: float = Field(

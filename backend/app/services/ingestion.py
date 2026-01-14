@@ -1,4 +1,6 @@
 import re
+from difflib import SequenceMatcher
+from typing import Any
 
 TEXTUAL_CHAPTER_NUMBER_PATTERN = (
     "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|"
@@ -16,6 +18,9 @@ MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 AMBIGUOUS_CHAPTER_BREAK_RE = re.compile(r"\n\s*(?:\*{3,}|-{3,}|_{3,}|={3,}|~{3,})\s*\n")
 MAX_TITLE_CANDIDATE_LENGTH = 120
 DEFAULT_INGESTION_TITLE = "Untitled Novel"
+SUSPECTED_DUPLICATE_CONTENT_THRESHOLD = 0.95
+SUSPECTED_DUPLICATE_CONTENT_MIN_LENGTH = 220
+SUSPECTED_DUPLICATE_CONTENT_MIN_SUBSTRING_RATIO = 0.85
 
 ENCODING_BOM_MAP: tuple[tuple[bytes, str, float], ...] = (
     (b"\xff\xfe\x00\x00", "utf-32-le", 1.0),
@@ -37,12 +42,19 @@ def decode_text_with_metadata(raw_bytes: bytes) -> tuple[str, str, float]:
 
 
 def detect_chapters(raw_text: str) -> list[tuple[str, str]]:
+    chapters, _ = detect_chapters_with_metadata(raw_text)
+    return chapters
+
+
+def detect_chapters_with_metadata(
+    raw_text: str,
+) -> tuple[list[tuple[str, str]], bool]:
     matches = list(CHAPTER_HEADER_RE.finditer(raw_text))
     if not matches:
         fallback_chapters = detect_fallback_chapters_for_ambiguous_text(raw_text)
         if fallback_chapters:
-            return fallback_chapters
-        return [("Chapter 1", raw_text.strip())]
+            return fallback_chapters, True
+        return [("Chapter 1", raw_text.strip())], False
 
     chapters: list[tuple[str, str]] = []
     for index, match in enumerate(matches, start=1):
@@ -57,9 +69,9 @@ def detect_chapters(raw_text: str) -> list[tuple[str, str]]:
     if not chapters:
         fallback_chapters = detect_fallback_chapters_for_ambiguous_text(raw_text)
         if fallback_chapters:
-            return fallback_chapters
-        return [("Chapter 1", raw_text.strip())]
-    return chapters
+            return fallback_chapters, True
+        return [("Chapter 1", raw_text.strip())], False
+    return chapters, False
 
 
 def contains_explicit_chapter_header(raw_text: str) -> bool:
@@ -78,6 +90,109 @@ def detect_fallback_chapters_for_ambiguous_text(
     if any(len(section) < min_section_chars for section in sections):
         return []
     return [(f"Chapter {index}", section) for index, section in enumerate(sections, start=1)]
+
+
+def _normalize_for_duplicate_detection(value: str) -> str:
+    return " ".join(value.split()).strip().lower()
+
+
+def _content_similarity(a: str, b: str) -> float:
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    return SequenceMatcher(None, a, b, autojunk=False).ratio()
+
+
+def detect_suspected_duplicate_content(
+    chapters: list[tuple[str, str]],
+    *,
+    similarity_threshold: float = SUSPECTED_DUPLICATE_CONTENT_THRESHOLD,
+    minimum_chars: int = SUSPECTED_DUPLICATE_CONTENT_MIN_LENGTH,
+) -> list[dict[str, Any]]:
+    normalized_chapters: list[tuple[int, str, str]] = []
+    for index, (title, content) in enumerate(chapters, start=1):
+        normalized_content = _normalize_for_duplicate_detection(content)
+        if len(normalized_content) < minimum_chars:
+            continue
+        normalized_chapters.append((index, title, normalized_content))
+
+    suspected_duplicates: list[dict[str, Any]] = []
+    for left_pos in range(len(normalized_chapters)):
+        left_index, left_title, left_content = normalized_chapters[left_pos]
+        for right_pos in range(left_pos + 1, len(normalized_chapters)):
+            right_index, right_title, right_content = normalized_chapters[right_pos]
+
+            if not left_content or not right_content:
+                continue
+
+            shorter = left_content if len(left_content) <= len(right_content) else right_content
+            longer = right_content if len(left_content) <= len(right_content) else left_content
+            if shorter in longer:
+                ratio = float(len(shorter)) / float(len(longer))
+                if ratio >= SUSPECTED_DUPLICATE_CONTENT_MIN_SUBSTRING_RATIO:
+                    suspected_duplicates.append(
+                        {
+                            "chapter_index_a": left_index,
+                            "chapter_index_b": right_index,
+                            "chapter_title_a": left_title,
+                            "chapter_title_b": right_title,
+                            "similarity": round(ratio, 4),
+                        }
+                    )
+                    continue
+
+            similarity = _content_similarity(left_content, right_content)
+            if similarity >= similarity_threshold:
+                suspected_duplicates.append(
+                    {
+                        "chapter_index_a": left_index,
+                        "chapter_index_b": right_index,
+                        "chapter_title_a": left_title,
+                        "chapter_title_b": right_title,
+                        "similarity": round(similarity, 4),
+                    }
+                )
+
+    return suspected_duplicates
+
+
+def build_suspected_duplicate_content_warnings(
+    source: str,
+    suspected_pairs: list[dict[str, Any]],
+) -> list[dict[str, str | float | int | list[int]]]:
+    warnings: list[dict[str, str | float | int | list[int]]] = []
+    for pair in suspected_pairs:
+        warnings.append(
+            {
+                "source": source,
+                "level": "warning",
+                "type": "suspected_duplicate_content",
+                "chapter_indices": [pair["chapter_index_a"], pair["chapter_index_b"]],
+                "similarity": pair["similarity"],
+                "message": (
+                    f"Suspected duplicated content between chapters {pair['chapter_index_a']} and "
+                    f"{pair['chapter_index_b']} with similarity {pair['similarity']}"
+                ),
+            }
+        )
+    return warnings
+
+
+def build_ambiguous_chapter_boundary_warning(
+    source: str,
+    section_count: int,
+) -> dict[str, str | int]:
+    return {
+        "source": source,
+        "level": "warning",
+        "type": "ambiguous_chapter_boundaries",
+        "section_count": section_count,
+        "message": (
+            f"Detected ambiguous chapter boundary markers for {source}; "
+            f"fallback split produced {section_count} chapter(s)."
+        ),
+    }
 
 
 def detect_title_with_fallback(raw_text: str, filename: str | None = None) -> str:

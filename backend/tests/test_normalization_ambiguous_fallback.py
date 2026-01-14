@@ -9,8 +9,13 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_norm_ambiguous_fallback.db"
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
-from app.models import Chapter
-from app.services.ingestion import detect_chapters, detect_fallback_chapters_for_ambiguous_text
+from app.models import Chapter, Project
+from app.services.ingestion import (
+    build_ambiguous_chapter_boundary_warning,
+    detect_chapters,
+    detect_chapters_with_metadata,
+    detect_fallback_chapters_for_ambiguous_text,
+)
 
 
 def setup_module() -> None:
@@ -49,6 +54,21 @@ def test_unit_detect_fallback_chapters_for_ambiguous_text_uses_scene_breaks() ->
     assert chapters[1][0] == "Chapter 2"
 
 
+def test_unit_detect_chapters_detects_ambiguous_boundary_fallback() -> None:
+    chapters, is_ambiguous_boundaries = detect_chapters_with_metadata(_ambiguous_text_with_scene_breaks())
+    assert is_ambiguous_boundaries is True
+    assert len(chapters) == 2
+
+
+def test_unit_build_ambiguous_chapter_boundary_warning_payload() -> None:
+    warning = build_ambiguous_chapter_boundary_warning("txt", section_count=2)
+    assert warning["source"] == "txt"
+    assert warning["level"] == "warning"
+    assert warning["type"] == "ambiguous_chapter_boundaries"
+    assert warning["section_count"] == 2
+    assert "fallback split produced 2" in str(warning["message"])
+
+
 def test_integration_txt_ingestion_applies_ambiguous_fallback_when_headers_absent() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Norm Ambiguous Integration"})
@@ -61,6 +81,30 @@ def test_integration_txt_ingestion_applies_ambiguous_fallback_when_headers_absen
         )
         assert ingest_resp.status_code == 200
         assert ingest_resp.json()["chapter_count"] == 2
+
+
+def test_integration_txt_ingestion_logs_ambiguous_chapter_boundary_warning() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Norm Ambiguous Warning Integration"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("ambiguous.txt", io.BytesIO(_ambiguous_text_with_scene_breaks().encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+    session = get_session_factory()()
+    try:
+        project = session.query(Project).filter(Project.id == project_id).one()
+        warnings = project.ingestion_log_json.get("warnings", [])
+        ambiguous_warnings = [item for item in warnings if item.get("type") == "ambiguous_chapter_boundaries"]
+        assert len(ambiguous_warnings) == 1
+        assert ambiguous_warnings[0]["source"] == "txt"
+        assert ambiguous_warnings[0]["section_count"] == 2
+    finally:
+        session.close()
 
 
 def test_e2e_ambiguous_fallback_persists_multiple_chapter_rows() -> None:
@@ -94,3 +138,7 @@ def test_regression_ambiguous_fallback_does_not_split_tiny_sections() -> None:
     chapters = detect_chapters(tiny_sections)
     assert len(chapters) == 1
     assert chapters[0][0] == "Chapter 1"
+
+    detected_chapters, is_ambiguous_boundaries = detect_chapters_with_metadata(tiny_sections)
+    assert is_ambiguous_boundaries is False
+    assert len(detected_chapters) == 1

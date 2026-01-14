@@ -92,4 +92,45 @@ describe('runDetailSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('accepts optional changelog entries', () => {
+    const parsed = runDetailSchema.parse({
+      run_id: 30,
+      project_id: 3,
+      status: 'completed',
+      config: {
+        mode: 'audiobook',
+        max_segment_chars: 210,
+      },
+      changelog_entries: [
+        {
+          id: 1,
+          event_type: 'run_created',
+          event_message: 'Run record created',
+          event_metadata: {
+            mode: 'audiobook',
+          },
+          created_at: '2026-02-25T00:00:00Z',
+        },
+      ],
+      started_at: '2026-02-25T00:00:00Z',
+      finished_at: '2026-02-25T00:01:00Z',
+      segment_count: 8,
+      llm_calls: [
+        {
+          id: 1,
+          provider: 'openrouter',
+          task_type: 'emotion_refinement',
+          success: true,
+          request_count: 1,
+          is_cache_hit: false,
+          detail: null,
+          created_at: '2026-02-25T00:00:01Z',
+        },
+      ],
+    });
+
+    expect(parsed.changelog_entries).toHaveLength(1);
+    expect(parsed.changelog_entries[0].event_type).toBe('run_created');
+  });
 });

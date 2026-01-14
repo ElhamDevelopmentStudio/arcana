@@ -1,5 +1,4 @@
 import re
-from collections.abc import Callable
 
 POSITIVE_WORDS = {
     "happy",
@@ -134,8 +133,6 @@ TONE_REVERSAL_MARKERS = {
     "excellent",
 }
 
-ShiftMarkerDetector = tuple[str, Callable[[str], dict[str, object]]]
-
 TAG_LOW_CONFIDENCE_THRESHOLD = 0.6
 TAG_VERY_LOW_CONFIDENCE_THRESHOLD = 0.3
 TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD = 2
@@ -168,7 +165,7 @@ DOMINANCE_PRONOUN_TOKENS = {
     "our",
 }
 
-EMOTION_SECONDARY_LABEL_HINTS = {
+_BASIC_EMOTION_SECONDARY_LABEL_HINTS = {
     "positive": [
         ("joyful", {"joy", "happy", "smile", "great"}),
         ("hopeful", {"hope", "warm", "relief"}),
@@ -180,6 +177,27 @@ EMOTION_SECONDARY_LABEL_HINTS = {
         ("angry", {"angry", "hate", "grim", "cold"}),
         ("grief", {"sad", "bad"}),
         ("violent", {"blood", "terrible"}),
+    ],
+    "neutral": [
+        ("neutral", {"neutral"}),
+    ],
+}
+
+_EXPANDED_EMOTION_SECONDARY_LABEL_HINTS = {
+    "positive": [
+        ("joyful", {"joy", "happy", "smile", "great", "glee", "delight", "bright"}),
+        ("hopeful", {"hope", "warm", "relief", "trust", "bright", "dream"}),
+        ("gratitude", {"grateful", "thank", "blessed", "fortunate"}),
+        ("calm", {"calm", "peace", "steady", "gentle", "still"}),
+        ("curious", {"curious", "wonder", "what", "intrigued"}),
+    ],
+    "negative": [
+        ("fearful", {"fear", "despair", "threatened", "threat", "afraid", "panic", "alarmed"}),
+        ("angry", {"angry", "hate", "grim", "cold", "resent", "rage"}),
+        ("grief", {"sad", "bad", "grieve", "sorrow", "mourn"}),
+        ("violent", {"blood", "terrible", "violent", "attack", "murder", "kill", "fighting"}),
+        ("tense", {"tense", "urgent", "desperate", "desperately", "escape", "trapped"}),
+        ("worried", {"worry", "worried", "uncertain", "concern", "anxious"}),
     ],
     "neutral": [
         ("neutral", {"neutral"}),
@@ -217,6 +235,11 @@ DESCRIPTION_HINT_RE = re.compile(
 
 def _tokenize(text: str) -> list[str]:
     return re.findall(r"[A-Za-z']+", text.lower())
+
+
+def _coerce_emotion_taxonomy(value: object) -> str:
+    taxonomy = str(value).strip().lower()
+    return taxonomy if taxonomy in {"basic", "expanded"} else "basic"
 
 
 def _build_trimmed_span(raw_text: str, raw_start: int, candidate: str) -> tuple[int, int]:
@@ -664,8 +687,13 @@ def detect_structure(text: str) -> str:
     return STRUCTURAL_TYPE_NARRATION
 
 
-def _pick_secondary_label(sentiment: str, tokens: list[str]) -> str:
-    for label, hints in EMOTION_SECONDARY_LABEL_HINTS.get(sentiment, []):
+def _pick_secondary_label(sentiment: str, tokens: list[str], emotion_taxonomy: str) -> str:
+    hints_by_taxonomy = (
+        _EXPANDED_EMOTION_SECONDARY_LABEL_HINTS
+        if _coerce_emotion_taxonomy(emotion_taxonomy) == "expanded"
+        else _BASIC_EMOTION_SECONDARY_LABEL_HINTS
+    )
+    for label, hints in hints_by_taxonomy.get(sentiment, []):
         if any(token in tokens for token in hints):
             return label
     return "neutral" if sentiment == "neutral" else sentiment
@@ -1309,7 +1337,8 @@ def _build_sub_segment_boundaries(*, segment_text: str, tag_payloads: list[tuple
     return boundaries
 
 
-def detect_emotion_shift(text: str) -> dict[str, object]:
+def detect_emotion_shift(text: str, emotion_taxonomy: str = "basic") -> dict[str, object]:
+    taxonomy = _coerce_emotion_taxonomy(emotion_taxonomy)
     units = _extract_emotion_units(text)
     if len(units) < 2:
         return {
@@ -1327,7 +1356,10 @@ def detect_emotion_shift(text: str) -> dict[str, object]:
 
     evaluated: list[dict[str, object]] = []
     for unit in units:
-        valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(str(unit["text"]))
+        valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(
+            str(unit["text"]),
+            emotion_taxonomy=taxonomy,
+        )
         evaluated.append(
             {
                 "text": unit["text"],
@@ -1415,24 +1447,20 @@ def detect_emotion_shift(text: str) -> dict[str, object]:
     }
 
 
-def detect_shift_markers(text: str) -> dict[str, dict[str, object]]:
+def detect_shift_markers(text: str, emotion_taxonomy: str = "basic") -> dict[str, dict[str, object]]:
     """
     Run all registered intra-segment shift markers for a segment.
     """
+    taxonomy = _coerce_emotion_taxonomy(emotion_taxonomy)
     return {
-        marker_name: detector(text) for marker_name, detector in _SHIFT_MARKER_DETECTORS
+        "emotion_shift": detect_emotion_shift(text, emotion_taxonomy=taxonomy),
+        "narration_internal_thought_shift": detect_narration_internal_thought_shift(text),
+        "internal_external_speech_shift": detect_internal_external_speech_shift(text),
+        "tone_reversal": detect_tone_reversal(text),
     }
 
-
-_SHIFT_MARKER_DETECTORS: tuple[ShiftMarkerDetector, ...] = (
-    ("emotion_shift", detect_emotion_shift),
-    ("narration_internal_thought_shift", detect_narration_internal_thought_shift),
-    ("internal_external_speech_shift", detect_internal_external_speech_shift),
-    ("tone_reversal", detect_tone_reversal),
-)
-
-
-def compute_valence(text: str) -> tuple[float, float, float, str, str]:
+def compute_valence(text: str, emotion_taxonomy: str = "basic") -> tuple[float, float, float, str, str]:
+    taxonomy = _coerce_emotion_taxonomy(emotion_taxonomy)
     tokens = _tokenize(text)
     if not tokens:
         return 0.0, 0.0, 0.4, "neutral", "neutral"
@@ -1455,7 +1483,19 @@ def compute_valence(text: str) -> tuple[float, float, float, str, str]:
     else:
         primary_label = "neutral"
 
-    secondary_label = _pick_secondary_label(sentiment=primary_label, tokens=tokens)
+    if taxonomy == "expanded":
+        primary_label = _pick_secondary_label(
+            sentiment=primary_label,
+            tokens=tokens,
+            emotion_taxonomy=taxonomy,
+        )
+        secondary_label = primary_label
+    else:
+        secondary_label = _pick_secondary_label(
+            sentiment=primary_label,
+            tokens=tokens,
+            emotion_taxonomy=taxonomy,
+        )
     return round(valence, 4), round(intensity, 4), confidence, primary_label, secondary_label
 
 
@@ -1594,7 +1634,8 @@ def resolve_speaker(text: str) -> tuple[str, float]:
     return "unknown", 0.2
 
 
-def tag_segment(text: str) -> dict[str, object]:
+def tag_segment(text: str, emotion_taxonomy: str = "basic") -> dict[str, object]:
+    taxonomy = _coerce_emotion_taxonomy(emotion_taxonomy)
     dialogue_blocks = detect_dialogue_blocks(text)
     narration_blocks = detect_narration_blocks(text)
     structure = detect_structure(text)
@@ -1607,10 +1648,13 @@ def tag_segment(text: str) -> dict[str, object]:
     type_confidence = _compute_type_confidence(structure)
     type_state = _confidence_state(type_confidence)
     type_evidence = _build_type_evidence(text, structure)
-    valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
+    valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(
+        text,
+        emotion_taxonomy=taxonomy,
+    )
     emotion_state = _confidence_state(emotion_confidence)
     speaker_state = _confidence_state(speaker_confidence)
-    shift_markers = detect_shift_markers(text)
+    shift_markers = detect_shift_markers(text, emotion_taxonomy=taxonomy)
     emotion_shift = shift_markers["emotion_shift"]
     narration_internal_thought_shift = shift_markers["narration_internal_thought_shift"]
     internal_external_speech_shift = shift_markers["internal_external_speech_shift"]

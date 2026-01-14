@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   useAppendChapterMutation,
   useCreateProjectMutation,
@@ -32,6 +33,7 @@ export function ProjectNewPage() {
   const [markdownFile, setMarkdownFile] = useState<File | null>(null);
   const [epubFile, setEpubFile] = useState<File | null>(null);
   const [appendChapterFile, setAppendChapterFile] = useState<File | null>(null);
+  const [doNotStoreSourceText, setDoNotStoreSourceText] = useState(false);
 
   const projectId = useWorkspaceStore((state) => state.projectId);
   const chapterCount = useWorkspaceStore((state) => state.chapterCount);
@@ -62,7 +64,10 @@ export function ProjectNewPage() {
     }
 
     try {
-      const project = await createProjectMutation.trigger({ title: title.trim() });
+      const project = await createProjectMutation.trigger({
+        title: title.trim(),
+        do_not_store_source_text: doNotStoreSourceText,
+      });
       setProject({
         projectId: project.id,
         projectTitle: project.title,
@@ -202,6 +207,19 @@ export function ProjectNewPage() {
                   onChange={(event) => setTitle(event.target.value)}
                 />
               </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="do-not-store-source-text"
+                  checked={doNotStoreSourceText}
+                  onCheckedChange={(checked) => setDoNotStoreSourceText(checked === true)}
+                />
+                <Label htmlFor="do-not-store-source-text" className="text-sm leading-relaxed">
+                  Store only derived metrics
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Enable this to avoid retaining raw source text while keeping normalized content and derived artifacts.
+              </p>
 
               <div className="mt-auto space-y-2">
                 <Button data-testid="create-project-button" disabled={isBusy} type="submit">

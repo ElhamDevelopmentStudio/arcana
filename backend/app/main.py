@@ -141,12 +141,13 @@ from app.services.ingestion import (
     normalize_markdown_for_ingestion,
     to_internal_utf8,
 )
-from app.services.mode_profiles import PROFILE_CONFIG_KEYS, build_run_config_snapshot
+from app.services.mode_profiles import PROFILE_CONFIG_KEYS, build_run_config_snapshot, load_mode_profile
 from app.services.llm_router import get_provider_runtime_settings
 from app.services.mode_switch import mark_runs_stale_for_gender_edit, mark_runs_stale_for_mode_switch
 from app.services.character_analytics import build_character_occurrence_analytics
 from app.services.gender_comparison import compare_manual_and_inferred_gender_fields
 from app.services.gender_comparison import build_manual_inferred_gender_contradiction_warnings
+from app.services.gender_comparison import build_insufficient_inference_evidence_warnings
 from app.services.gender_inference import infer_character_genders
 from app.services.normalization import (
     build_original_to_normalized_offset_map,
@@ -1532,6 +1533,27 @@ def _coalesce_internal_thought_policy(
             explicit_overrides["internal_thought_voice"] = project_thought_voice
 
 
+def _resolve_contradiction_review_required(
+    *,
+    project: Project,
+    run: Run | None = None,
+) -> bool:
+    if run is not None:
+        run_config = run.config_json if isinstance(run.config_json, dict) else {}
+        override = run_config.get("contradiction_review_required")
+        if isinstance(override, bool):
+            return override
+
+    mode_name = run.config_json.get("mode") if run is not None and isinstance(run.config_json, dict) else None
+    selected_mode = str(mode_name).strip() if mode_name else project.selected_mode
+    try:
+        profile = load_mode_profile(selected_mode)
+        profile_value = profile.get("contradiction_review_required")
+        return bool(profile_value)
+    except ValueError:
+        return True
+
+
 def _coerce_utc_datetime(value: object | None) -> datetime | None:
     if isinstance(value, datetime):
         if value.tzinfo is None:
@@ -2410,8 +2432,10 @@ def compare_character_genders(
     include_only_conflicts: bool = False,
     session: Session = Depends(get_session),
 ) -> CharacterGenderComparisonResponse:
-    _get_project_or_404(session, project_id)
+    project = _get_project_or_404(session, project_id)
     settings = get_settings()
+    profile = load_mode_profile(project.selected_mode)
+    contradiction_review_required = bool(profile.get("contradiction_review_required", True))
 
     character_rows = (
         session.query(Character)
@@ -2425,12 +2449,21 @@ def compare_character_genders(
         for payload in compare_manual_and_inferred_gender_fields(
             character_rows,
             include_only_conflicts=include_only_conflicts,
+            contradiction_review_required=contradiction_review_required,
             contradiction_review_threshold=settings.contradiction_review_threshold,
         )
     ]
     warning_payloads = build_manual_inferred_gender_contradiction_warnings(
         character_rows,
         source="characters.gender-comparison",
+        contradiction_review_required=contradiction_review_required,
+        contradiction_review_threshold=settings.contradiction_review_threshold,
+    )
+    warning_payloads.extend(
+        build_insufficient_inference_evidence_warnings(
+            character_rows,
+            source="characters.gender-comparison",
+        )
     )
 
     contradiction_count = len([payload for payload in comparison_payloads if payload.is_contradiction])
@@ -4687,6 +4720,7 @@ def create_run(
         mode=payload.mode,
         overrides=explicit_overrides,
     )
+    run_config["emotion_taxonomy"] = str(explicit_overrides.get("emotion_taxonomy", "basic"))
 
     run_config["ingestion_warnings"] = list((project.ingestion_log_json or {}).get("warnings", []))
     run_config["normalization_report"] = (
@@ -5416,12 +5450,14 @@ def get_export_json(
     run = _get_run_or_404(session, project_id, run_id)
     settings = get_settings()
     character_rows = session.query(Character).filter(Character.project_id == project.id).all()
+    contradiction_review_required = _resolve_contradiction_review_required(project=project, run=run)
     requires_review_count = len(
         [
             payload
             for payload in compare_manual_and_inferred_gender_fields(
                 character_rows,
                 contradiction_review_threshold=settings.contradiction_review_threshold,
+                contradiction_review_required=contradiction_review_required,
             )
             if payload["requires_review"]
         ]
@@ -5514,12 +5550,14 @@ def get_export_csv(
     run = _get_run_or_404(session, project_id, run_id)
     settings = get_settings()
     character_rows = session.query(Character).filter(Character.project_id == project.id).all()
+    contradiction_review_required = _resolve_contradiction_review_required(project=project, run=run)
     requires_review_count = len(
         [
             payload
             for payload in compare_manual_and_inferred_gender_fields(
                 character_rows,
                 contradiction_review_threshold=settings.contradiction_review_threshold,
+                contradiction_review_required=contradiction_review_required,
             )
             if payload["requires_review"]
         ]

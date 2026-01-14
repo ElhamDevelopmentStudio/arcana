@@ -48,6 +48,7 @@ class ModeDefaultProfile(TypedDict):
     unstable_emotion_shift_density_threshold: float
     deep_semantic_refinement: bool
     deterministic_mode: bool
+    contradiction_review_required: bool
     web_scraping_enabled: bool
     profile_intent: str
 
@@ -65,6 +66,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "unstable_emotion_shift_density_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
+        "contradiction_review_required": True,
         "web_scraping_enabled": False,
         "profile_intent": "tts-ready segmentation and stable narration defaults",
     },
@@ -80,6 +82,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "unstable_emotion_shift_density_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
+        "contradiction_review_required": True,
         "web_scraping_enabled": False,
         "profile_intent": "longer analytical segments for metric-friendly aggregation",
     },
@@ -95,6 +98,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "unstable_emotion_shift_density_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
+        "contradiction_review_required": True,
         "web_scraping_enabled": False,
         "profile_intent": "balanced segmentation for narrative-health diagnostics",
     },
@@ -110,6 +114,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
         "unstable_emotion_shift_density_threshold": TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
+        "contradiction_review_required": True,
         "web_scraping_enabled": False,
         "profile_intent": "user-tuned baseline with conservative defaults",
     },

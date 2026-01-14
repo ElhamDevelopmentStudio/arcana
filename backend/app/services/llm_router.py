@@ -1099,6 +1099,10 @@ def is_provider_requestable(
     settings: Any,
     provider_name: str,
     max_calls_per_day: int,
+    *,
+    project_id: int | str | None = None,
+    principal_type: str | None = None,
+    principal_id: str | None = None,
 ) -> tuple[bool, str | None]:
     provider = _normalize_provider_name(provider_name)
     if not is_supported_provider(provider):
@@ -1109,7 +1113,14 @@ def is_provider_requestable(
     if not is_provider_enabled(session=session, provider=provider):
         return False, "provider_disabled"
 
-    if not quota.is_provider_available_for_request(session=session, provider=provider, max_calls_per_day=max_calls_per_day):
+    if not quota.is_provider_available_for_request(
+        session=session,
+        provider=provider,
+        max_calls_per_day=max_calls_per_day,
+        project_id=project_id,
+        principal_type=principal_type,
+        principal_id=principal_id,
+    ):
         return False, "quota_reached"
 
     _, _, runtime_api_key = get_provider_runtime_settings(settings=settings, provider_name=provider)
@@ -1126,6 +1137,9 @@ def is_provider_requestable(
             provider=provider,
             provider_api_key=key,
             max_calls_per_day=max_calls_per_day,
+            project_id=project_id,
+            principal_type=principal_type,
+            principal_id=principal_id,
         ):
             continue
         return True, None
@@ -1138,6 +1152,10 @@ def select_probe_provider_candidates(
     settings: Any,
     requested_provider: str,
     max_calls_per_day: int,
+    *,
+    project_id: int | str | None = None,
+    principal_type: str | None = None,
+    principal_id: str | None = None,
 ) -> tuple[str, ...]:
     requested = _normalize_provider_name(requested_provider)
     candidate_order = [requested]
@@ -1158,6 +1176,9 @@ def select_probe_provider_candidates(
             settings=settings,
             provider_name=provider,
             max_calls_per_day=max_calls_per_day,
+            project_id=project_id,
+            principal_type=principal_type,
+            principal_id=principal_id,
         )
         if requestable:
             selected.append(provider)

@@ -60,6 +60,10 @@ from app.services.tagging import (
     build_low_confidence_speaker_attribution_warnings,
     build_high_ambiguity_dialogue_block_warnings,
     build_unstable_rapid_emotion_shift_warnings,
+    TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+    TAG_LOW_CONFIDENCE_THRESHOLD,
+    TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
+    TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
     tag_segment,
 )
 from app.services.normalization import build_segment_level_offset_map
@@ -460,6 +464,7 @@ def _build_chunk_segment_payloads(
     voice_config: dict[str, object],
     llm_confidence_threshold: float,
     deep_semantic_refinement: bool,
+    emotion_taxonomy: str = "basic",
 ) -> dict[str, object]:
     segment_payloads: list[dict[str, object]] = []
     sub_segment_payloads: list[list[dict[str, object]]] = []
@@ -477,7 +482,7 @@ def _build_chunk_segment_payloads(
             if parent_sentence_end_index < parent_sentence_start_index:
                 parent_sentence_end_index = parent_sentence_start_index
 
-            tags = tag_segment(original_text)
+            tags = tag_segment(original_text, emotion_taxonomy=emotion_taxonomy)
             speaker = str(tags["speaker"])
             speaker_entry = _resolve_speaker_entry(speaker=speaker, character_lookup=character_lookup)
             normalized_speaker = speaker.strip().lower()
@@ -1454,6 +1459,23 @@ def execute_pipeline(
         llm_confidence_threshold = _coerce_confidence_threshold(
             run_config.get("llm_confidence_threshold", _LLM_CONFIDENCE_THRESHOLD_DEFAULT)
         )
+        speaker_confidence_threshold = _coerce_confidence_threshold(
+            run_config.get("speaker_confidence_threshold", TAG_LOW_CONFIDENCE_THRESHOLD)
+        )
+        high_ambiguity_dialogue_flag_threshold = _coerce_positive_int(
+            run_config.get("high_ambiguity_dialogue_flag_threshold", TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD),
+            default=TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+        )
+        unstable_emotion_shift_transition_threshold = _coerce_positive_int(
+            run_config.get("unstable_emotion_shift_transition_threshold", TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD),
+            default=TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
+        )
+        unstable_emotion_shift_density_threshold = _coerce_confidence_threshold(
+            run_config.get(
+                "unstable_emotion_shift_density_threshold",
+                TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
+            )
+        )
         deep_semantic_refinement = bool(run_config.get("deep_semantic_refinement", False))
         max_chunk_chars = _resolve_pipeline_chunk_max_chars(run_config)
         chapter_work_items = _build_chunk_work_items(chapters=chapters[incremental_scope:])
@@ -1500,23 +1522,24 @@ def execute_pipeline(
         completed_stages=completed_stages,
     ):
         if chunk_jobs:
-            with ThreadPoolExecutor(max_workers=min(8, len(chunk_jobs))) as executor:
-                futures = {
-                    executor.submit(
-                        _build_chunk_segment_payloads,
-                        chunk_index=chunk_index,
+                with ThreadPoolExecutor(max_workers=min(8, len(chunk_jobs))) as executor:
+                    futures = {
+                        executor.submit(
+                            _build_chunk_segment_payloads,
+                            chunk_index=chunk_index,
                         chunk_count=chunk_count,
                         chapter_batch=chapter_batch,
                         max_chars=max_chars,
                         name_to_verbalized=name_to_verbalized,
-                        character_lookup=character_lookup,
-                        character_pronunciations=character_pronunciations,
-                        voice_config=voice_config,
-                        llm_confidence_threshold=llm_confidence_threshold,
-                        deep_semantic_refinement=deep_semantic_refinement,
-                    ): chunk_index
-                    for chunk_index, chapter_batch in enumerate(chunk_jobs, start=1)
-                }
+                            character_lookup=character_lookup,
+                            character_pronunciations=character_pronunciations,
+                            voice_config=voice_config,
+                            llm_confidence_threshold=llm_confidence_threshold,
+                            deep_semantic_refinement=deep_semantic_refinement,
+                            emotion_taxonomy=str(run_config.get("emotion_taxonomy", "basic")),
+                        ): chunk_index
+                        for chunk_index, chapter_batch in enumerate(chunk_jobs, start=1)
+                    }
                 ordered_payloads: dict[int, dict[str, object]] = {}
                 for future in as_completed(futures):
                     chunk_payload = future.result()
@@ -1593,12 +1616,16 @@ def execute_pipeline(
         tagging_warnings = [
             *build_low_confidence_speaker_attribution_warnings(
                 segment_payloads=segment_payloads,
+                confidence_threshold=speaker_confidence_threshold,
             ),
             *build_high_ambiguity_dialogue_block_warnings(
                 segment_payloads=segment_payloads,
+                ambiguity_flag_threshold=high_ambiguity_dialogue_flag_threshold,
             ),
             *build_unstable_rapid_emotion_shift_warnings(
                 segment_payloads=segment_payloads,
+                transition_threshold=unstable_emotion_shift_transition_threshold,
+                density_threshold=unstable_emotion_shift_density_threshold,
             ),
         ]
         run_config_with_integrity["tagging_warnings"] = tagging_warnings

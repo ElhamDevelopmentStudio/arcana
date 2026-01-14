@@ -17,6 +17,7 @@ class Project(Base):
     selected_mode: Mapped[str] = mapped_column(String(50), nullable=False, default=DEFAULT_MODE)
     selected_modes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     llm_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    do_not_store_source_text: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     configuration_snapshot_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     voice_config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     llm_provider_config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
@@ -253,6 +254,11 @@ class Run(Base):
     )
     comparison_workspace_runs: Mapped[list["ComparisonWorkspaceRun"]] = relationship(
         "ComparisonWorkspaceRun",
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+    provider_api_key_usage_audit_entries: Mapped[list["ProviderApiKeyUsageAudit"]] = relationship(
+        "ProviderApiKeyUsageAudit",
         back_populates="run",
         cascade="all, delete-orphan",
     )
@@ -578,6 +584,29 @@ class LLMCall(Base):
     )
 
 
+class ProviderApiKeyUsageAudit(Base):
+    __tablename__ = "provider_api_key_usage_audit"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    task_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    attempt_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_api_key_masked: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_api_key_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    model_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_usage_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    run: Mapped[Run] = relationship("Run", back_populates="provider_api_key_usage_audit_entries")
+
+
 class RunChangelogEntry(Base):
     __tablename__ = "run_changelog_entries"
 
@@ -618,11 +647,14 @@ class LLMCache(Base):
 
 class ProviderQuota(Base):
     __tablename__ = "provider_quota"
-    __table_args__ = (UniqueConstraint("provider", "day_key", name="uq_provider_day"),)
+    __table_args__ = (
+        UniqueConstraint("provider", "day_key", "scope_key", name="uq_provider_day_scope"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     day_key: Mapped[str] = mapped_column(String(20), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(120), nullable=False, default="global")
     calls_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_calls_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
     blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -638,12 +670,21 @@ class ProviderQuota(Base):
 
 class ProviderApiKeyQuota(Base):
     __tablename__ = "provider_api_key_quota"
-    __table_args__ = (UniqueConstraint("provider", "provider_api_key", "day_key", name="uq_provider_api_key_day"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_api_key",
+            "day_key",
+            "scope_key",
+            name="uq_provider_api_key_day_scope",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     provider_api_key: Mapped[str] = mapped_column(String(255), nullable=False)
     day_key: Mapped[str] = mapped_column(String(20), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(120), nullable=False, default="global")
     calls_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_calls_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
     blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

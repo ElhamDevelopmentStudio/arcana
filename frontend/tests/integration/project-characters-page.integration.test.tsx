@@ -403,6 +403,61 @@ describe('project characters page manual editor', () => {
     });
   });
 
+  it('renders low-confidence character extraction warnings', async () => {
+    const user = userEvent.setup();
+    autoExtractCharactersMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      status: 'complete',
+      candidate_count: 2,
+      candidates: [
+        {
+          name: 'Mira',
+          verbalized_form: 'Mira',
+          gender: 'female',
+          aliases: [],
+          notes: null,
+          source: 'auto',
+          confidence: 0.58,
+          source_trace: [],
+        },
+        {
+          name: 'Jalen',
+          verbalized_form: 'Jalen',
+          gender: 'male',
+          aliases: [],
+          notes: null,
+          source: 'auto',
+          confidence: 0.85,
+          source_trace: [],
+        },
+      ],
+      warnings: [
+        {
+          type: 'low_confidence_character_candidate',
+          level: 'warning',
+          source: 'characters.extract',
+          alias: 'Mira',
+          canonical_names: [],
+          message: "Low-confidence extracted character 'Mira' (confidence 58.0%) from source 'characters.extract'.",
+          candidate_name: 'Mira',
+          confidence: 0.58,
+          threshold: 0.7,
+        },
+      ],
+    });
+
+    renderCharacterPage();
+
+    await user.click(screen.getByRole('button', { name: 'Extract candidate names from text' }));
+
+    expect(screen.getByTestId('character-low-confidence-warnings')).toBeInTheDocument();
+    expect(screen.getByTestId('character-low-confidence-warnings')).toHaveTextContent(
+      'Low-confidence extracted characters',
+    );
+    expect(screen.getByTestId('character-low-confidence-warnings')).toHaveTextContent('Mira');
+    expect(screen.getByTestId('character-low-confidence-warnings')).toHaveTextContent('58%');
+  });
+
   it('applies and undoes canonical merge suggestions in the manual editor', async () => {
     const user = userEvent.setup();
     characterMapQueryData = {

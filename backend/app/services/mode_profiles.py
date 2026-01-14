@@ -17,6 +17,7 @@ PROFILE_CONFIG_KEYS: tuple[str, ...] = (
     "unstable_emotion_shift_density_threshold",
     "deep_semantic_refinement",
     "deterministic_mode",
+    "contradiction_review_required",
     "web_scraping_enabled",
 )
 

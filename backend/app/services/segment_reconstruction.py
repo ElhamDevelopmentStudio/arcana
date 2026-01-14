@@ -79,7 +79,7 @@ def reconstruct_chapter_text_from_segments(chapter_text: str, segment_payloads: 
 
         return "".join(reconstructed)
 
-        ordered = sorted(prepared_segments, key=lambda entry: (entry[2], entry[3]))
+    ordered = sorted(prepared_segments, key=lambda entry: (entry[2], entry[3]))
     return "".join(segment_text for _, __, ___, ____, segment_text in ordered)
 
 
