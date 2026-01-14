@@ -447,7 +447,7 @@ Definition of done for each task:
 - [x] [ER-008] Implement character warning: low-confidence extracted characters.
 - [x] [ER-009] Implement character warning: duplicate canonical candidates.
 - [x] [ER-010] Implement gender warning: manual vs inferred contradiction.
-- [ ] [ER-011] Implement gender warning: insufficient inference evidence.
+- [x] [ER-011] Implement gender warning: insufficient inference evidence.
 - [ ] [ER-012] Implement tagging warning: low-confidence speaker attribution.
 - [ ] [ER-013] Implement tagging warning: high-ambiguity dialogue blocks.
 - [ ] [ER-014] Implement tagging warning: unstable rapid emotion shifts.
