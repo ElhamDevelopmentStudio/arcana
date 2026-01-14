@@ -280,6 +280,21 @@ Run request emotion taxonomy config:
 - Run snapshots (`run_configuration_snapshot`) include `emotion_taxonomy`.
 - If the value is omitted, backend parsing stores `"basic"` and front-end schema sets this default.
 
+Run request internal-thought voice policy config:
+
+- `POST /api/projects/{project_id}/runs` accepts:
+  - `internal_thought_voice_policy` (`character` | `narrator` | `thought_voice`)
+  - `internal_thought_voice` (optional custom fallback voice id)
+- Defaults are sourced from project voice defaults and resolve to `character` when omitted.
+- `character`: internal thought segments follow the resolved dialogue-style speaker voice.
+- `narrator`: internal thought segments use the narrator voice.
+- `thought_voice`: internal thought segments use `internal_thought_voice` when provided, otherwise narrator voice.
+- This policy is also persisted in `run.config` (and appears in run snapshots), and voice settings can be updated beforehand via `PUT /api/projects/{project_id}/voices`.
+- `frontend/src/pages/projects/project-pipeline-setup-page.tsx` exposes this as:
+  - Internal-thought policy selector.
+  - Custom thought voice input (enabled only for `thought_voice` policy).
+  - Live internal-thought preview row that mirrors effective resolution.
+
 Run request warning-threshold config:
 
 - `POST /api/projects/{project_id}/runs` accepts warning-signal thresholds:

@@ -459,7 +459,7 @@ Definition of done for each task:
 - [x] [CFG-003] Add confidence thresholds config for warnings.
 - [x] [CFG-004] Add web scraping enable/disable config.
 - [x] [CFG-005] Add contradiction-review-required toggle config.
-- [ ] [CFG-006] Add internal thought voice policy config.
+- [x] [CFG-006] Add internal thought voice policy config.
 - [ ] [CFG-007] Add export formats config.
 - [ ] [CFG-008] Add export chunk-size config.
 - [ ] [CFG-009] Add deterministic mode toggles config.
