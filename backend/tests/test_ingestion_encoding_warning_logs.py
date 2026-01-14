@@ -211,6 +211,59 @@ def test_e2e_run_detail_carries_high_ambiguity_dialogue_block_warning() -> None:
         assert warning["ambiguity_flags"]
 
 
+def test_e2e_run_detail_carries_unstable_rapid_emotion_shift_warning() -> None:
+    rapid_text = (
+        "happy but fearful; hope then dark; joy then angry; relief and calm; "
+        "hate and bad; love then blood; grateful yet despair; good and happy"
+    ).strip()
+    assert rapid_text
+
+    with TestClient(app) as client:
+        project_resp = client.post(
+            "/api/projects",
+            json={"title": "Unstable Emotion Shift Warning E2E"},
+        )
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "rapid-emotional-shifts.txt",
+                    io.BytesIO(rapid_text.encode("utf-8")),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "audiobook", "llm_enabled": False},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+        assert detail_resp.status_code == 200
+        config = detail_resp.json()["config"]
+        warnings = config["tagging_warnings"]
+        assert any(
+            warning["type"] == "unstable_rapid_emotion_shift"
+            for warning in warnings
+        )
+        warning = next(
+            warning
+            for warning in warnings
+            if warning["type"] == "unstable_rapid_emotion_shift"
+        )
+        assert warning["source"] == "tagging"
+        assert warning["transition_count"] >= 4
+        assert warning["unit_count"] >= 6
+        assert warning["emotion_shift_density"] > 0.0
+
+
 def test_regression_utf8_ingestion_keeps_warning_list_empty() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Encoding Warning Regression"})

@@ -59,6 +59,7 @@ from app.services.segmentation import segment_text_with_parent_paragraph
 from app.services.tagging import (
     build_low_confidence_speaker_attribution_warnings,
     build_high_ambiguity_dialogue_block_warnings,
+    build_unstable_rapid_emotion_shift_warnings,
     tag_segment,
 )
 from app.services.normalization import build_segment_level_offset_map
@@ -1594,6 +1595,9 @@ def execute_pipeline(
                 segment_payloads=segment_payloads,
             ),
             *build_high_ambiguity_dialogue_block_warnings(
+                segment_payloads=segment_payloads,
+            ),
+            *build_unstable_rapid_emotion_shift_warnings(
                 segment_payloads=segment_payloads,
             ),
         ]
