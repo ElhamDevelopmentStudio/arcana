@@ -370,6 +370,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     const runDetailPayload = (await runDetailResponse.json()) as { status: string; config: Record<string, unknown> };
     expect(runDetailPayload.status).toBe('completed');
     expect(runDetailPayload.config.mode).toBe('author');
+    expect(runDetailPayload.config.config_schema_version).toBe('1.0.0');
 
     const runWithFormatOverrideResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
       data: {

@@ -463,7 +463,7 @@ Definition of done for each task:
 - [x] [CFG-007] Add export formats config.
 - [x] [CFG-008] Add export chunk-size config.
 - [x] [CFG-009] Add deterministic mode toggles config.
-- [ ] [CFG-010] Define config schema versioning field.
+- [x] [CFG-010] Define config schema versioning field.
 - [ ] [CFG-011] Persist immutable config snapshot per run.
 - [ ] [CFG-012] Add config diff viewer between runs.
 - [ ] [CFG-013] Add config validation error messages with field-level details.

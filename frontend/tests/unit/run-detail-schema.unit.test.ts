@@ -10,6 +10,7 @@ describe('runDetailSchema', () => {
       status: 'completed',
       config: {
         mode: 'academic',
+        config_schema_version: '1.0.0',
         max_segment_chars: 220,
         llm_enabled: false,
         provider_name: 'openrouter',
@@ -32,6 +33,7 @@ describe('runDetailSchema', () => {
     });
 
     expect(parsed.config.mode).toBe('academic');
+    expect(parsed.config.config_schema_version).toBe('1.0.0');
     expect((parsed.config.mode_profile_snapshot as Record<string, unknown>).profile_intent).toBe(
       'longer analytical segments for metric-friendly aggregation',
     );

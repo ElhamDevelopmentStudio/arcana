@@ -142,7 +142,12 @@ from app.services.ingestion import (
     normalize_markdown_for_ingestion,
     to_internal_utf8,
 )
-from app.services.mode_profiles import PROFILE_CONFIG_KEYS, build_run_config_snapshot, load_mode_profile
+from app.services.mode_profiles import (
+    PROFILE_CONFIG_KEYS,
+    RUN_CONFIG_SCHEMA_VERSION,
+    build_run_config_snapshot,
+    load_mode_profile,
+)
 from app.services.llm_router import get_provider_runtime_settings
 from app.services.mode_switch import mark_runs_stale_for_gender_edit, mark_runs_stale_for_mode_switch
 from app.services.character_analytics import build_character_occurrence_analytics
@@ -1219,6 +1224,7 @@ def _build_run_configuration_snapshot_payload(
 ) -> dict[str, object]:
     return {
         "schema_version": "1.0.0",
+        "config_schema_version": str(run_config.get("config_schema_version", RUN_CONFIG_SCHEMA_VERSION)),
         "project_id": int(project_id),
         "run_id": int(run_id),
         "version": int(version),
