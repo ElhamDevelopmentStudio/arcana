@@ -462,7 +462,7 @@ Definition of done for each task:
 - [x] [CFG-006] Add internal thought voice policy config.
 - [x] [CFG-007] Add export formats config.
 - [x] [CFG-008] Add export chunk-size config.
-- [ ] [CFG-009] Add deterministic mode toggles config.
+- [x] [CFG-009] Add deterministic mode toggles config.
 - [ ] [CFG-010] Define config schema versioning field.
 - [ ] [CFG-011] Persist immutable config snapshot per run.
 - [ ] [CFG-012] Add config diff viewer between runs.

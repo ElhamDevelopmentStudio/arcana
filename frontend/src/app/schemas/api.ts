@@ -338,6 +338,15 @@ export const runRequestSchema = z.object({
     .default(defaultUnstableEmotionShiftDensityThreshold),
   contradiction_review_required: z.boolean().default(defaultContradictionReviewRequired),
   deterministic_mode: z.boolean().default(false),
+  deterministic_model_identifier: z.string().trim().transform((value) => value || undefined).optional(),
+  deterministic_seed: z.number().int().min(0).optional(),
+  randomization_config: z
+    .object({
+      seed: z.number().int().min(0).optional(),
+      strategy: z.string().min(1).optional(),
+      shuffle_enabled: z.boolean().optional(),
+    })
+    .optional(),
   web_scraping_enabled: z.boolean().default(false),
   emotion_taxonomy: z.enum(['basic', 'expanded']).default('basic'),
   max_calls_per_day: z.number().int().positive(),

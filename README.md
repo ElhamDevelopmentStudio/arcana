@@ -263,6 +263,11 @@ Deterministic run model pinning:
   `config.deterministic_model_identifier` for that run.
 - If a value is provided, it is pinned in that run config and used for primary provider requests during that run.
 - The pinned model value is included in `run.config` and in LLM call logs (`model_identifier`).
+- `frontend/src/pages/projects/project-pipeline-setup-page.tsx` now exposes deterministic controls for:
+  - deterministic mode toggle
+  - deterministic model identifier (optional pin)
+  - deterministic seed
+  - randomization strategy and shuffle flag (sent in `randomization_config`)
 
 Run request segmentation target length config:
 

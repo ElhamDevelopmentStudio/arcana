@@ -395,6 +395,51 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     };
     expect(runWithFormatOverrideDetail.config.export_formats).toEqual(['json', 'csv']);
 
+    const deterministicRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: false,
+        deterministic_mode: true,
+        deterministic_seed: 2026,
+        deterministic_model_identifier: 'openai/gpt-4o-mini',
+        randomization_config: {
+          seed: 2026,
+          strategy: 'stable',
+          shuffle_enabled: false,
+        },
+      },
+    });
+    expect(deterministicRunResponse.status()).toBe(200);
+    const deterministicRunPayload = (await deterministicRunResponse.json()) as { run_id: number };
+    const deterministicRunDetailResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${deterministicRunPayload.run_id}`,
+    );
+    expect(deterministicRunDetailResponse.status()).toBe(200);
+    const deterministicRunDetail = (await deterministicRunDetailResponse.json()) as {
+      config: {
+        deterministic_mode: boolean;
+        deterministic_seed: number;
+        deterministic_model_identifier: string;
+        randomization_config: {
+          seed: number;
+          strategy: string;
+          shuffle_enabled: boolean;
+        };
+      };
+    };
+    expect(deterministicRunDetail.config.deterministic_mode).toBe(true);
+    expect(deterministicRunDetail.config.deterministic_seed).toBe(2026);
+    expect(deterministicRunDetail.config.deterministic_model_identifier).toBe('openai/gpt-4o-mini');
+    expect(deterministicRunDetail.config.randomization_config).toEqual({
+      seed: 2026,
+      strategy: 'stable',
+      shuffle_enabled: false,
+    });
+
     const invalidExportFormatRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
       data: {
         mode: 'academic',
