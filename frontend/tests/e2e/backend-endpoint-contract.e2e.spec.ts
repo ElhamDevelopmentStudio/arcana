@@ -371,6 +371,10 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(runDetailPayload.status).toBe('completed');
     expect(runDetailPayload.config.mode).toBe('author');
     expect(runDetailPayload.config.config_schema_version).toBe('1.0.0');
+    expect(typeof runDetailPayload.config.configuration_snapshot_id).toBe('string');
+    expect(String(runDetailPayload.config.configuration_snapshot_id)).toMatch(new RegExp(`^run-${runId}-config-\\d+$`));
+    expect(typeof runDetailPayload.config.configuration_snapshot_version).toBe('number');
+    expect(Number(runDetailPayload.config.configuration_snapshot_version)).toBeGreaterThanOrEqual(1);
 
     const runWithFormatOverrideResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
       data: {
