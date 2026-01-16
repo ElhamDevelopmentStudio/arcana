@@ -332,6 +332,17 @@ Run request web scraping toggle config:
 - For this initial implementation, the default for all mode profiles is `false`, and the
   `GET /api/modes` payload exposes `web_scraping_enabled` on each `mode_profiles` entry for UI bootstrap.
 
+Run config schema versioning + diff viewer:
+
+- Every run now persists `config_schema_version` in `run.config` (currently `1.0.0`).
+- Run configuration snapshots also include `config_schema_version`.
+- `GET /api/projects/{project_id}/runs/config-diff?base_run_id=<id>&target_run_id=<id>` returns a normalized config diff for two runs in the same project:
+  - `changed_fields` with `base_value` and `target_value`
+  - `base_only_fields`
+  - `target_only_fields`
+- Runtime-only run metadata fields (for example snapshot pointer IDs/versions) are excluded from this diff output so comparisons focus on effective run configuration.
+- `frontend/src/pages/projects/project-run-monitor-page.tsx` now includes a `Run Config Diff Viewer` panel to inspect these diffs by run ID.
+
 Pipeline chunking for long corpora:
 
 - `POST /api/projects/{project_id}/runs` accepts `pipeline_chunk_max_chars` in the request body.

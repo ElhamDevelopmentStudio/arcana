@@ -7,10 +7,13 @@ import { ProjectRunMonitorPage } from '@/pages/projects/project-run-monitor-page
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useRunDetailQueryMock = vi.fn();
+const useRunConfigDiffQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) =>
     useRunDetailQueryMock(...args),
+  useRunConfigDiffQuery: (...args: Parameters<typeof useRunConfigDiffQueryMock>) =>
+    useRunConfigDiffQueryMock(...args),
 }));
 
 function renderRunMonitorPage() {
@@ -54,6 +57,12 @@ describe('project run monitor page', () => {
       runId: 303,
     });
     useRunDetailQueryMock.mockReset();
+    useRunConfigDiffQueryMock.mockReset();
+    useRunConfigDiffQueryMock.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
   });
 
   it('displays degraded-mode banner when run is in rule-only mode', () => {
@@ -90,5 +99,40 @@ describe('project run monitor page', () => {
     renderRunMonitorPage();
 
     expect(screen.queryByTestId('llm-degraded-banner')).not.toBeInTheDocument();
+  });
+
+  it('renders run config diff output when comparison data is available', () => {
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+    useRunConfigDiffQueryMock.mockReturnValue({
+      data: {
+        project_id: 303,
+        base_run_id: 303,
+        target_run_id: 304,
+        base_config_schema_version: '1.0.0',
+        target_config_schema_version: '1.0.0',
+        is_identical: false,
+        changed_fields: [
+          {
+            field: 'mode',
+            base_value: 'author',
+            target_value: 'academic',
+          },
+        ],
+        base_only_fields: [],
+        target_only_fields: ['deterministic_seed'],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+
+    expect(screen.getByText(/Run Config Diff Viewer/i)).toBeInTheDocument();
+    expect(screen.getByText(/"author" → "academic"/i)).toBeInTheDocument();
+    expect(screen.getByText(/deterministic_seed/i)).toBeInTheDocument();
   });
 });

@@ -400,6 +400,31 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     };
     expect(runWithFormatOverrideDetail.config.export_formats).toEqual(['json', 'csv']);
 
+    const runConfigDiffResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/config-diff`
+      + `?base_run_id=${runId}&target_run_id=${runWithFormatOverridePayload.run_id}`,
+    );
+    expect(runConfigDiffResponse.status()).toBe(200);
+    const runConfigDiffPayload = (await runConfigDiffResponse.json()) as {
+      project_id: number;
+      base_run_id: number;
+      target_run_id: number;
+      base_config_schema_version: string;
+      target_config_schema_version: string;
+      is_identical: boolean;
+      changed_fields: Array<{ field: string; base_value: unknown; target_value: unknown }>;
+      base_only_fields: string[];
+      target_only_fields: string[];
+    };
+    expect(runConfigDiffPayload.project_id).toBe(projectId);
+    expect(runConfigDiffPayload.base_run_id).toBe(runId);
+    expect(runConfigDiffPayload.target_run_id).toBe(runWithFormatOverridePayload.run_id);
+    expect(runConfigDiffPayload.base_config_schema_version).toBe('1.0.0');
+    expect(runConfigDiffPayload.target_config_schema_version).toBe('1.0.0');
+    expect(runConfigDiffPayload.is_identical).toBe(false);
+    expect(runConfigDiffPayload.changed_fields.some((entry) => entry.field === 'mode')).toBe(true);
+    expect(runConfigDiffPayload.changed_fields.some((entry) => entry.field === 'export_formats')).toBe(true);
+
     const deterministicRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
       data: {
         mode: 'author',

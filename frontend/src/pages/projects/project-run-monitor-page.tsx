@@ -1,10 +1,13 @@
+import { useMemo, useState } from 'react';
+
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
+import { Input } from '@/components/ui/input';
+import { useRunConfigDiffQuery, useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, LineChart, ShieldAlert, TriangleAlert, Waves } from 'lucide-react';
@@ -18,6 +21,19 @@ export function ProjectRunMonitorPage() {
 
   const projectId = routeProjectId ?? storeProjectId;
   const runDetailQuery = useRunDetailQuery(projectId, runId);
+  const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
+  const comparisonRunId = useMemo(() => {
+    const trimmed = comparisonRunIdInput.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return null;
+    }
+    return parsed;
+  }, [comparisonRunIdInput]);
+  const runConfigDiffQuery = useRunConfigDiffQuery(projectId, runId, comparisonRunId);
   const llmExecutionMode = runDetailQuery.data?.config?.llm_execution_mode;
   const isRuleOnlyMode =
     typeof llmExecutionMode === 'object' &&
@@ -153,6 +169,72 @@ export function ProjectRunMonitorPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Run Config Diff Viewer</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>Compare this run configuration against another run ID from the same project.</p>
+          <div className="max-w-sm">
+            <Input
+              value={comparisonRunIdInput}
+              onChange={(event) => setComparisonRunIdInput(event.target.value)}
+              placeholder="Enter comparison run ID"
+              inputMode="numeric"
+            />
+          </div>
+          {comparisonRunIdInput.trim() && comparisonRunId === null ? (
+            <p className="text-destructive">Enter a valid positive run ID to load a config diff.</p>
+          ) : null}
+          {runConfigDiffQuery.isLoading ? <p>Loading config diff...</p> : null}
+          {runConfigDiffQuery.error ? <p className="text-destructive">{runConfigDiffQuery.error.message}</p> : null}
+          {runConfigDiffQuery.data ? (
+            <div className="space-y-3">
+              <p>
+                Compared run <strong className="text-foreground">{runConfigDiffQuery.data.base_run_id}</strong> to run{' '}
+                <strong className="text-foreground">{runConfigDiffQuery.data.target_run_id}</strong>.
+              </p>
+              <p>
+                Schema versions: base{' '}
+                <strong className="text-foreground">{runConfigDiffQuery.data.base_config_schema_version}</strong>, target{' '}
+                <strong className="text-foreground">{runConfigDiffQuery.data.target_config_schema_version}</strong>.
+              </p>
+              {runConfigDiffQuery.data.is_identical ? (
+                <p>No configuration differences detected.</p>
+              ) : (
+                <p>
+                  Changed fields: <strong className="text-foreground">{runConfigDiffQuery.data.changed_fields.length}</strong>
+                </p>
+              )}
+
+              {runConfigDiffQuery.data.changed_fields.length > 0 ? (
+                <div className="space-y-2">
+                  {runConfigDiffQuery.data.changed_fields.map((entry) => (
+                    <div key={entry.field} className="rounded-xl bg-background/70 px-3 py-2">
+                      <p className="font-medium text-foreground">{entry.field}</p>
+                      <p className="text-xs">
+                        {JSON.stringify(entry.base_value)} → {JSON.stringify(entry.target_value)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {runConfigDiffQuery.data.base_only_fields.length > 0 ? (
+                <p>
+                  Base-only fields: <strong className="text-foreground">{runConfigDiffQuery.data.base_only_fields.join(', ')}</strong>
+                </p>
+              ) : null}
+              {runConfigDiffQuery.data.target_only_fields.length > 0 ? (
+                <p>
+                  Target-only fields: <strong className="text-foreground">{runConfigDiffQuery.data.target_only_fields.join(', ')}</strong>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
     </WorkflowPageShell>
   );
 }

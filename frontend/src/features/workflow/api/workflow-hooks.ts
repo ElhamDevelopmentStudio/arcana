@@ -12,6 +12,8 @@ import type { PronunciationDictionaryPreviewRequestDto } from '@/app/schemas/api
 export const workspaceKeys = {
   modeCatalog: ['mode-catalog'] as const,
   runDetail: (projectId: number, runId: number) => ['run-detail', projectId, runId] as const,
+  runConfigDiff: (projectId: number, baseRunId: number, targetRunId: number) =>
+    ['run-config-diff', projectId, baseRunId, targetRunId] as const,
   exportPayload: (projectId: number, runId: number) => ['export-payload', projectId, runId] as const,
   tensionGraph: (projectId: number, runId: number) => ['tension-graph', projectId, runId] as const,
   characterAnalytics: (projectId: number, runId: number) => ['character-analytics', projectId, runId] as const,
@@ -33,6 +35,20 @@ export function useRunDetailQuery(projectId: number | null, runId: number | null
   return useSWR(
     projectId !== null && runId !== null ? workspaceKeys.runDetail(projectId, runId) : null,
     async ([, currentProjectId, currentRunId]) => nipeApiClient.getRunDetail(currentProjectId, currentRunId),
+  );
+}
+
+export function useRunConfigDiffQuery(
+  projectId: number | null,
+  baseRunId: number | null,
+  targetRunId: number | null,
+) {
+  return useSWR(
+    projectId !== null && baseRunId !== null && targetRunId !== null
+      ? workspaceKeys.runConfigDiff(projectId, baseRunId, targetRunId)
+      : null,
+    async ([, currentProjectId, currentBaseRunId, currentTargetRunId]) =>
+      nipeApiClient.getRunConfigDiff(currentProjectId, currentBaseRunId, currentTargetRunId),
   );
 }
 

@@ -809,6 +809,24 @@ class RunDetailResponse(BaseModel):
     changelog_entries: list[RunChangelogEntry] = Field(default_factory=list)
 
 
+class RunConfigFieldDiff(BaseModel):
+    field: str = Field(min_length=1)
+    base_value: Any | None = None
+    target_value: Any | None = None
+
+
+class RunConfigDiffResponse(BaseModel):
+    project_id: int
+    base_run_id: int
+    target_run_id: int
+    base_config_schema_version: str = Field(default="1.0.0", min_length=1)
+    target_config_schema_version: str = Field(default="1.0.0", min_length=1)
+    is_identical: bool
+    changed_fields: list[RunConfigFieldDiff] = Field(default_factory=list)
+    base_only_fields: list[str] = Field(default_factory=list)
+    target_only_fields: list[str] = Field(default_factory=list)
+
+
 class NarrativeHealthChapterRange(BaseModel):
     start_chapter: int = Field(ge=1)
     end_chapter: int = Field(ge=1)

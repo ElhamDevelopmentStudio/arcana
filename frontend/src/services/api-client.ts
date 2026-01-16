@@ -22,11 +22,13 @@ import {
   projectLLMSettingsResponseSchema,
   projectModeSwitchResponseSchema,
   runDetailSchema,
+  runConfigDiffResponseSchema,
   runRequestSchema,
   runResponseSchema,
   characterGenderComparisonResponseSchema,
   voiceConfigResponseSchema,
   type RunRequestDto,
+  type RunConfigDiffResponseDto,
   type ProjectLLMSettingsRequestDto,
   type ProjectLLMSettingsResponseDto,
   type VoiceConfigDto,
@@ -335,6 +337,24 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}`);
       return runDetailSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getRunConfigDiff(
+    projectId: number,
+    baseRunId: number,
+    targetRunId: number,
+  ): Promise<RunConfigDiffResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/runs/config-diff`, {
+        params: {
+          base_run_id: baseRunId,
+          target_run_id: targetRunId,
+        },
+      });
+      return runConfigDiffResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
