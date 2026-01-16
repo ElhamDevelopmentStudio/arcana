@@ -468,7 +468,7 @@ Definition of done for each task:
 - [x] [CFG-012] Add config diff viewer between runs.
 - [x] [CFG-013] Add config validation error messages with field-level details.
 - [x] [CFG-014] Add config preset import/export tooling.
-- [ ] [CFG-015] Add integration tests for config compatibility across releases.
+- [x] [CFG-015] Add integration tests for config compatibility across releases.
 
 ## 10. MVP Definition Coverage (Ref: SRS.md §10)
 
