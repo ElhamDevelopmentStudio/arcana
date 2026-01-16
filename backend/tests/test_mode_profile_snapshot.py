@@ -92,6 +92,27 @@ def test_unit_run_create_request_rejects_invalid_export_formats() -> None:
         RunCreateRequest(mode="audiobook", export_formats=["pdf", "json"])
 
 
+def test_integration_run_create_validation_errors_include_field_level_details() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Run Validation Errors")
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "audiobook",
+                "export_formats": ["invalid_format"],
+            },
+        )
+        assert run_resp.status_code == 422
+        payload = run_resp.json()
+        assert payload["detail"] == "Run configuration validation failed."
+        assert any(
+            str(field_error.get("field", "")).startswith("export_formats")
+            and "one of: json, csv, time_series_json, graph_json" in str(field_error.get("message", ""))
+            for field_error in payload.get("field_errors", [])
+        )
+
+
 def test_unit_run_create_request_rejects_empty_export_formats() -> None:
     with pytest.raises(ValueError, match="export_formats must contain at least one value"):
         RunCreateRequest(mode="audiobook", export_formats=["  "])

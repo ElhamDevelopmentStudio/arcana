@@ -482,6 +482,18 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       },
     });
     expect(invalidExportFormatRunResponse.status()).toBe(422);
+    const invalidExportFormatRunPayload = (await invalidExportFormatRunResponse.json()) as {
+      detail: string;
+      field_errors: Array<{ field: string; message: string; code: string }>;
+    };
+    expect(invalidExportFormatRunPayload.detail).toBe('Run configuration validation failed.');
+    expect(
+      invalidExportFormatRunPayload.field_errors.some(
+        (entry) =>
+          entry.field.startsWith('export_formats')
+          && entry.message.includes('one of: json, csv, time_series_json, graph_json'),
+      ),
+    ).toBe(true);
 
     const workspaceCreateResponse = await request.post(`${backendBaseUrl}/api/comparison-workspaces`, {
       data: { name: uniqueTitle('comparison-workspace') },

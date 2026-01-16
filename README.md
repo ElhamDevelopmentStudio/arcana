@@ -343,6 +343,13 @@ Run config schema versioning + diff viewer:
 - Runtime-only run metadata fields (for example snapshot pointer IDs/versions) are excluded from this diff output so comparisons focus on effective run configuration.
 - `frontend/src/pages/projects/project-run-monitor-page.tsx` now includes a `Run Config Diff Viewer` panel to inspect these diffs by run ID.
 
+Run config validation errors (field-level):
+
+- Invalid run configuration payloads sent to `POST /api/projects/{project_id}/runs` now return:
+  - `detail`: `"Run configuration validation failed."`
+  - `field_errors`: array of `{ field, message, code }`
+- Field paths are normalized (for example `export_formats.0`) so frontend and API consumers can render precise inline or summary validation feedback.
+
 Pipeline chunking for long corpora:
 
 - `POST /api/projects/{project_id}/runs` accepts `pipeline_chunk_max_chars` in the request body.
