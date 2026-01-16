@@ -467,7 +467,7 @@ Definition of done for each task:
 - [x] [CFG-011] Persist immutable config snapshot per run.
 - [x] [CFG-012] Add config diff viewer between runs.
 - [x] [CFG-013] Add config validation error messages with field-level details.
-- [ ] [CFG-014] Add config preset import/export tooling.
+- [x] [CFG-014] Add config preset import/export tooling.
 - [ ] [CFG-015] Add integration tests for config compatibility across releases.
 
 ## 10. MVP Definition Coverage (Ref: SRS.md §10)

@@ -350,6 +350,18 @@ Run config validation errors (field-level):
   - `field_errors`: array of `{ field, message, code }`
 - Field paths are normalized (for example `export_formats.0`) so frontend and API consumers can render precise inline or summary validation feedback.
 
+Run config preset import/export tooling:
+
+- `GET /api/projects/{project_id}/runs/{run_id}/config-preset` exports a reusable run-preset payload:
+  - `preset_schema_version`
+  - `generated_at`
+  - `run_config` (sanitized, reusable config keys only)
+- Runtime-only snapshot pointers are excluded from exported presets.
+- `frontend/src/pages/projects/project-pipeline-setup-page.tsx` now supports:
+  - importing preset JSON files (raw run payload or object containing `run_config`)
+  - exporting the current pipeline setup as a preset JSON file.
+- `frontend/src/pages/projects/project-run-monitor-page.tsx` now supports exporting a preset from an existing run via backend contract.
+
 Pipeline chunking for long corpora:
 
 - `POST /api/projects/{project_id}/runs` accepts `pipeline_chunk_max_chars` in the request body.

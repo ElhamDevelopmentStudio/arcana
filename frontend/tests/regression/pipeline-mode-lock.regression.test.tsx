@@ -339,4 +339,43 @@ describe('pipeline run mode lock regression', () => {
       }),
     );
   });
+
+  it('imports run preset json and uses imported values in run payload', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ selectedMode: 'audiobook' });
+    renderPipelinePage();
+
+    const presetFile = new File(
+      [
+        JSON.stringify({
+          run_config: {
+            mode: 'audiobook',
+            max_segment_chars: 175,
+            llm_enabled: false,
+            provider_name: 'openrouter',
+            max_calls_per_day: 40,
+            export_formats: ['json', 'csv'],
+            deterministic_mode: true,
+            deterministic_seed: 2026,
+          },
+        }),
+      ],
+      'run-preset.json',
+      { type: 'application/json' },
+    );
+
+    await user.upload(screen.getByLabelText('Import run preset (.json)'), presetFile);
+    await user.click(screen.getByTestId('run-pipeline-button'));
+
+    expect(runPipelineMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(runPipelineMutationTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_segment_chars: 175,
+        max_calls_per_day: 40,
+        export_formats: ['json', 'csv'],
+        deterministic_mode: true,
+        deterministic_seed: 2026,
+      }),
+    );
+  });
 });

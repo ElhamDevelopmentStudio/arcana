@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { useRunConfigDiffQuery, useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
+import { useRunConfigDiffQuery, useRunConfigPresetMutation, useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, LineChart, ShieldAlert, TriangleAlert, Waves } from 'lucide-react';
@@ -21,6 +21,7 @@ export function ProjectRunMonitorPage() {
 
   const projectId = routeProjectId ?? storeProjectId;
   const runDetailQuery = useRunDetailQuery(projectId, runId);
+  const runConfigPresetMutation = useRunConfigPresetMutation(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
     const trimmed = comparisonRunIdInput.trim();
@@ -57,6 +58,24 @@ export function ProjectRunMonitorPage() {
 
   const runStatus = runDetailQuery.data?.status ?? 'not-started';
   const segmentCount = runDetailQuery.data?.segment_count ?? 0;
+
+  async function handleExportRunConfigPreset() {
+    if (projectId === null || runId === null) {
+      return;
+    }
+    try {
+      const preset = await runConfigPresetMutation.trigger();
+      const blob = new Blob([JSON.stringify(preset, null, 2)], { type: 'application/json' });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `run-config-preset-project-${projectId}-run-${runId}.json`;
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      // errors are surfaced from runConfigPresetMutation.error in the page body
+    }
+  }
 
   return (
     <WorkflowPageShell
@@ -96,6 +115,13 @@ export function ProjectRunMonitorPage() {
               variant="outline"
             >
               How to review low-confidence outputs
+            </Button>
+            <Button
+              disabled={runId === null || runConfigPresetMutation.isMutating}
+              onClick={handleExportRunConfigPreset}
+              variant="outline"
+            >
+              {runConfigPresetMutation.isMutating ? 'Exporting preset...' : 'Export run config preset'}
             </Button>
             <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>
               Continue to Export <ChevronRight className="size-4" />
@@ -141,6 +167,7 @@ export function ProjectRunMonitorPage() {
 
             {runDetailQuery.isLoading ? <p>Loading run detail...</p> : null}
             {runDetailQuery.error ? <p className="text-destructive">{runDetailQuery.error.message}</p> : null}
+            {runConfigPresetMutation.error ? <p className="text-destructive">{runConfigPresetMutation.error.message}</p> : null}
 
             {runDetailQuery.data ? (
               <pre className="max-h-72 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">

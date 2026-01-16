@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -21,7 +21,7 @@ import {
   useSaveVoicesMutation,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
-import type { RunRequestDto } from '@/app/schemas/api';
+import { runRequestSchema, type RunRequestDto } from '@/app/schemas/api';
 
 type InternalThoughtVoicePolicy = 'character' | 'narrator' | 'thought_voice';
 type EmotionTaxonomy = 'basic' | 'expanded';
@@ -132,6 +132,7 @@ export function ProjectPipelineSetupPage() {
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const selectedMode = useWorkspaceStore((state) => state.selectedMode);
+  const setSelectedMode = useWorkspaceStore((state) => state.setSelectedMode);
   const setRunId = useWorkspaceStore((state) => state.setRunId);
 
   const projectId = routeProjectId ?? storeProjectId;
@@ -365,35 +366,10 @@ export function ProjectPipelineSetupPage() {
       const trimmedThoughtVoice =
         internalThoughtVoicePolicy === 'thought_voice' ? internalThoughtVoice.trim() : '';
 
-      const runPayload: RunRequestDto = {
-        mode: selectedMode,
-        max_segment_chars: maxSegmentChars,
-        llm_enabled: llmEnabled,
-        export_chunk_size: exportChunkSize,
-        speaker_confidence_threshold: speakerConfidenceThreshold,
-        high_ambiguity_dialogue_flag_threshold: highAmbiguityDialogueFlagThreshold,
-        unstable_emotion_shift_transition_threshold: unstableEmotionShiftTransitionThreshold,
-        unstable_emotion_shift_density_threshold: unstableEmotionShiftDensityThreshold,
-        export_formats: exportFormats,
-        contradiction_review_required: contradictionReviewRequired,
-        deterministic_mode: deterministicMode,
-        web_scraping_enabled: webScrapingEnabled,
-        emotion_taxonomy: emotionTaxonomy,
-        provider_name: providerName,
-        max_calls_per_day: maxCallsPerDay,
-        allow_unfinalized_character_map: allowUnfinalizedCharacterMap,
-        internal_thought_voice_policy: internalThoughtVoicePolicy,
-        internal_thought_voice: trimmedThoughtVoice || undefined,
-      };
-      if (deterministicMode) {
-        runPayload.deterministic_model_identifier = deterministicModelIdentifier.trim() || undefined;
-        runPayload.deterministic_seed = deterministicSeed;
-        runPayload.randomization_config = {
-          seed: deterministicSeed,
-          strategy: deterministicRandomizationStrategy.trim() || 'stable',
-          shuffle_enabled: deterministicShuffleEnabled,
-        };
-      }
+      const runPayload = buildCurrentRunPayload({
+        forceMode: selectedMode,
+        trimmedThoughtVoice,
+      });
 
       const run = await runPipelineMutation.trigger(runPayload);
       setRunId(run.run_id);
@@ -401,6 +377,178 @@ export function ProjectPipelineSetupPage() {
       navigate(projectRoute(projectId, 'run-monitor'));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Pipeline run failed.');
+    }
+  }
+
+  function buildCurrentRunPayload(params?: {
+    forceMode?: string | null;
+    trimmedThoughtVoice?: string;
+  }): RunRequestDto {
+    const resolvedMode = params?.forceMode ?? selectedMode ?? runMode ?? 'audiobook';
+    const trimmedThoughtVoice =
+      params?.trimmedThoughtVoice
+      ?? (internalThoughtVoicePolicy === 'thought_voice' ? internalThoughtVoice.trim() : '');
+    const runPayload: RunRequestDto = {
+      mode: resolvedMode,
+      max_segment_chars: maxSegmentChars,
+      llm_enabled: llmEnabled,
+      export_chunk_size: exportChunkSize,
+      speaker_confidence_threshold: speakerConfidenceThreshold,
+      high_ambiguity_dialogue_flag_threshold: highAmbiguityDialogueFlagThreshold,
+      unstable_emotion_shift_transition_threshold: unstableEmotionShiftTransitionThreshold,
+      unstable_emotion_shift_density_threshold: unstableEmotionShiftDensityThreshold,
+      export_formats: exportFormats,
+      contradiction_review_required: contradictionReviewRequired,
+      deterministic_mode: deterministicMode,
+      web_scraping_enabled: webScrapingEnabled,
+      emotion_taxonomy: emotionTaxonomy,
+      provider_name: providerName,
+      max_calls_per_day: maxCallsPerDay,
+      allow_unfinalized_character_map: allowUnfinalizedCharacterMap,
+      internal_thought_voice_policy: internalThoughtVoicePolicy,
+      internal_thought_voice: trimmedThoughtVoice || undefined,
+    };
+    if (deterministicMode) {
+      runPayload.deterministic_model_identifier = deterministicModelIdentifier.trim() || undefined;
+      runPayload.deterministic_seed = deterministicSeed;
+      runPayload.randomization_config = {
+        seed: deterministicSeed,
+        strategy: deterministicRandomizationStrategy.trim() || 'stable',
+        shuffle_enabled: deterministicShuffleEnabled,
+      };
+    }
+    return runPayload;
+  }
+
+  function handleExportCurrentPreset() {
+    const presetPayload = {
+      preset_schema_version: '1.0.0',
+      exported_at: new Date().toISOString(),
+      run_config: buildCurrentRunPayload(),
+    };
+    const blob = new Blob([JSON.stringify(presetPayload, null, 2)], { type: 'application/json' });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = `pipeline-run-config-preset-project-${projectId ?? 'unknown'}.json`;
+    link.click();
+    URL.revokeObjectURL(objectUrl);
+    toast.success('Run config preset exported.');
+  }
+
+  function applyImportedRunPreset(preset: Partial<RunRequestDto>) {
+    if (typeof preset.mode === 'string' && preset.mode.trim()) {
+      setSelectedMode(preset.mode.trim().toLowerCase());
+    }
+    if (typeof preset.max_segment_chars === 'number') {
+      setHasCustomMaxSegmentChars(true);
+      setMaxSegmentChars(preset.max_segment_chars);
+    }
+    if (typeof preset.llm_enabled === 'boolean') {
+      setLlmEnabled(preset.llm_enabled);
+    }
+    if (typeof preset.provider_name === 'string' && preset.provider_name.trim()) {
+      setProviderName(preset.provider_name.trim().toLowerCase());
+    }
+    if (typeof preset.max_calls_per_day === 'number') {
+      setMaxCallsPerDay(preset.max_calls_per_day);
+    }
+    if (Array.isArray(preset.export_formats)) {
+      const normalizedPresetFormats = normalizeExportFormats(preset.export_formats);
+      if (normalizedPresetFormats.length > 0) {
+        setExportFormats(orderExportFormats(normalizedPresetFormats));
+      }
+    }
+    if (typeof preset.export_chunk_size === 'number') {
+      setHasCustomExportChunkSize(true);
+      setExportChunkSize(preset.export_chunk_size);
+    }
+    if (typeof preset.contradiction_review_required === 'boolean') {
+      setHasCustomContradictionReviewRequired(true);
+      setContradictionReviewRequired(preset.contradiction_review_required);
+    }
+    if (typeof preset.deterministic_mode === 'boolean') {
+      setDeterministicMode(preset.deterministic_mode);
+    }
+    if (typeof preset.deterministic_model_identifier === 'string') {
+      setDeterministicModelIdentifier(preset.deterministic_model_identifier);
+    }
+    if (typeof preset.deterministic_seed === 'number') {
+      setDeterministicSeed(preset.deterministic_seed);
+    }
+    if (preset.randomization_config && typeof preset.randomization_config === 'object') {
+      const seed = (preset.randomization_config as { seed?: unknown }).seed;
+      const strategy = (preset.randomization_config as { strategy?: unknown }).strategy;
+      const shuffleEnabled = (preset.randomization_config as { shuffle_enabled?: unknown }).shuffle_enabled;
+      if (typeof seed === 'number') {
+        setDeterministicSeed(seed);
+      }
+      if (typeof strategy === 'string') {
+        setDeterministicRandomizationStrategy(strategy);
+      }
+      if (typeof shuffleEnabled === 'boolean') {
+        setDeterministicShuffleEnabled(shuffleEnabled);
+      }
+    }
+    if (typeof preset.web_scraping_enabled === 'boolean') {
+      setWebScrapingEnabled(preset.web_scraping_enabled);
+    }
+    if (preset.emotion_taxonomy === 'basic' || preset.emotion_taxonomy === 'expanded') {
+      setEmotionTaxonomy(preset.emotion_taxonomy);
+    }
+    if (typeof preset.allow_unfinalized_character_map === 'boolean') {
+      setAllowUnfinalizedCharacterMap(preset.allow_unfinalized_character_map);
+    }
+    if (
+      preset.internal_thought_voice_policy === 'character'
+      || preset.internal_thought_voice_policy === 'narrator'
+      || preset.internal_thought_voice_policy === 'thought_voice'
+    ) {
+      setInternalThoughtVoicePolicy(preset.internal_thought_voice_policy);
+    }
+    if (typeof preset.internal_thought_voice === 'string') {
+      setInternalThoughtVoice(preset.internal_thought_voice);
+    }
+    if (typeof preset.speaker_confidence_threshold === 'number') {
+      setHasCustomSpeakerConfidenceThreshold(true);
+      setSpeakerConfidenceThreshold(preset.speaker_confidence_threshold);
+    }
+    if (typeof preset.high_ambiguity_dialogue_flag_threshold === 'number') {
+      setHasCustomHighAmbiguityDialogueFlagThreshold(true);
+      setHighAmbiguityDialogueFlagThreshold(preset.high_ambiguity_dialogue_flag_threshold);
+    }
+    if (typeof preset.unstable_emotion_shift_transition_threshold === 'number') {
+      setHasCustomUnstableEmotionShiftTransitionThreshold(true);
+      setUnstableEmotionShiftTransitionThreshold(preset.unstable_emotion_shift_transition_threshold);
+    }
+    if (typeof preset.unstable_emotion_shift_density_threshold === 'number') {
+      setHasCustomUnstableEmotionShiftDensityThreshold(true);
+      setUnstableEmotionShiftDensityThreshold(preset.unstable_emotion_shift_density_threshold);
+    }
+  }
+
+  async function handleImportPresetFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const rawPresetText = await file.text();
+      const rawPresetPayload = JSON.parse(rawPresetText) as unknown;
+      const candidatePreset =
+        typeof rawPresetPayload === 'object'
+        && rawPresetPayload !== null
+        && 'run_config' in rawPresetPayload
+          ? (rawPresetPayload as { run_config: unknown }).run_config
+          : rawPresetPayload;
+      const parsedPreset = runRequestSchema.partial().parse(candidatePreset);
+      applyImportedRunPreset(parsedPreset);
+      toast.success('Run config preset imported.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to import run preset.');
+    } finally {
+      event.target.value = '';
     }
   }
 
@@ -539,6 +687,21 @@ export function ProjectPipelineSetupPage() {
               <div className="grid gap-2">
                 <Label htmlFor="run-mode">Selected mode</Label>
                 <Input id="run-mode" disabled value={selectedMode ?? 'not selected'} />
+              </div>
+              <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                <Label htmlFor="run-preset-import">Import run preset (.json)</Label>
+                <Input
+                  id="run-preset-import"
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={handleImportPresetFile}
+                />
+                <Button type="button" variant="outline" onClick={handleExportCurrentPreset}>
+                  Export current run preset
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Import accepts either a raw run payload JSON or an exported object with `run_config`.
+                </p>
               </div>
               <div className="grid gap-2">
                 <Label>Export formats</Label>

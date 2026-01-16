@@ -23,12 +23,14 @@ import {
   projectModeSwitchResponseSchema,
   runDetailSchema,
   runConfigDiffResponseSchema,
+  runConfigPresetResponseSchema,
   runRequestSchema,
   runResponseSchema,
   characterGenderComparisonResponseSchema,
   voiceConfigResponseSchema,
   type RunRequestDto,
   type RunConfigDiffResponseDto,
+  type RunConfigPresetResponseDto,
   type ProjectLLMSettingsRequestDto,
   type ProjectLLMSettingsResponseDto,
   type VoiceConfigDto,
@@ -374,6 +376,15 @@ export class NipeApiClient {
         },
       });
       return runConfigDiffResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getRunConfigPreset(projectId: number, runId: number): Promise<RunConfigPresetResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/config-preset`);
+      return runConfigPresetResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

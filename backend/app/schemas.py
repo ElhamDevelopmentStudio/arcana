@@ -827,6 +827,14 @@ class RunConfigDiffResponse(BaseModel):
     target_only_fields: list[str] = Field(default_factory=list)
 
 
+class RunConfigPresetResponse(BaseModel):
+    project_id: int
+    run_id: int
+    preset_schema_version: str = Field(default="1.0.0", min_length=1)
+    generated_at: str = Field(min_length=1)
+    run_config: dict[str, Any] = Field(default_factory=dict)
+
+
 class NarrativeHealthChapterRange(BaseModel):
     start_chapter: int = Field(ge=1)
     end_chapter: int = Field(ge=1)

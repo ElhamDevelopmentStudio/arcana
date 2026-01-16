@@ -92,6 +92,7 @@ from app.schemas import (
     PolarityGraphResponse,
     RunDetailResponse,
     RunConfigDiffResponse,
+    RunConfigPresetResponse,
     RunResponse,
     VoiceConfigRequest,
     VoiceConfigResponse,
@@ -370,6 +371,34 @@ _RUN_CONFIG_DIFF_EXCLUDED_FIELDS: frozenset[str] = frozenset(
     }
 )
 
+_RUN_CONFIG_PRESET_FIELDS: tuple[str, ...] = (
+    "mode",
+    "max_segment_chars",
+    "llm_enabled",
+    "provider_name",
+    "export_formats",
+    "export_chunk_size",
+    "deep_semantic_refinement",
+    "deterministic_mode",
+    "contradiction_review_required",
+    "max_calls_per_day",
+    "llm_confidence_threshold",
+    "speaker_confidence_threshold",
+    "high_ambiguity_dialogue_flag_threshold",
+    "unstable_emotion_shift_transition_threshold",
+    "unstable_emotion_shift_density_threshold",
+    "deterministic_model_identifier",
+    "web_scraping_enabled",
+    "deterministic_seed",
+    "randomization_config",
+    "emotion_taxonomy",
+    "allow_unfinalized_character_map",
+    "internal_thought_voice_policy",
+    "internal_thought_voice",
+    "incremental_recompute",
+    "pipeline_chunk_max_chars",
+)
+
 
 def _prepare_run_config_for_diff(run_config: object) -> dict[str, object]:
     prepared = _sanitize_run_config_for_frontend(run_config)
@@ -411,6 +440,15 @@ def _build_run_config_diff(
         "base_only_fields": sorted(base_keys - target_keys),
         "target_only_fields": sorted(target_keys - base_keys),
     }
+
+
+def _build_run_config_preset(run_config: object) -> dict[str, object]:
+    sanitized_run_config = _sanitize_run_config_for_frontend(run_config)
+    preset: dict[str, object] = {}
+    for field_name in _RUN_CONFIG_PRESET_FIELDS:
+        if field_name in sanitized_run_config and sanitized_run_config[field_name] is not None:
+            preset[field_name] = sanitized_run_config[field_name]
+    return preset
 
 
 def _has_required_project_access(
@@ -5128,6 +5166,26 @@ def recover_run(
         project_id=project.id,
         status=run.status,
         segment_count=segment_count,
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/runs/{run_id}/config-preset",
+    response_model=RunConfigPresetResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_run_config_preset(
+    project_id: int,
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> RunConfigPresetResponse:
+    _get_project_or_404(session, project_id)
+    run = _get_run_or_404(session, project_id, run_id)
+    return RunConfigPresetResponse(
+        project_id=project_id,
+        run_id=run.id,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        run_config=_build_run_config_preset(run.config_json),
     )
 
 

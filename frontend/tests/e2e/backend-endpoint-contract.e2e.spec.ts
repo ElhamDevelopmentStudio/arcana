@@ -376,6 +376,32 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(typeof runDetailPayload.config.configuration_snapshot_version).toBe('number');
     expect(Number(runDetailPayload.config.configuration_snapshot_version)).toBeGreaterThanOrEqual(1);
 
+    const runConfigPresetResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/config-preset`,
+    );
+    expect(runConfigPresetResponse.status()).toBe(200);
+    const runConfigPresetPayload = (await runConfigPresetResponse.json()) as {
+      project_id: number;
+      run_id: number;
+      preset_schema_version: string;
+      generated_at: string;
+      run_config: Record<string, unknown>;
+    };
+    expect(runConfigPresetPayload.project_id).toBe(projectId);
+    expect(runConfigPresetPayload.run_id).toBe(runId);
+    expect(runConfigPresetPayload.preset_schema_version).toBe('1.0.0');
+    expect(typeof runConfigPresetPayload.generated_at).toBe('string');
+    expect(runConfigPresetPayload.run_config.mode).toBe('author');
+    expect(Object.hasOwn(runConfigPresetPayload.run_config, 'configuration_snapshot_id')).toBe(false);
+    expect(Object.hasOwn(runConfigPresetPayload.run_config, 'configuration_snapshot_version')).toBe(false);
+
+    const runFromPresetResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: runConfigPresetPayload.run_config,
+    });
+    expect(runFromPresetResponse.status()).toBe(200);
+    const runFromPresetPayload = (await runFromPresetResponse.json()) as { run_id: number };
+    expect(runFromPresetPayload.run_id).toBeGreaterThan(0);
+
     const runWithFormatOverrideResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
       data: {
         mode: 'academic',
