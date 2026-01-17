@@ -308,6 +308,16 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(upsertPayload.characters).toHaveLength(1);
     expect(upsertPayload.character_map_finalized).toBe(false);
 
+    const refreshedCharacterMapResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/characters`);
+    expect(refreshedCharacterMapResponse.status()).toBe(200);
+    const refreshedCharacterMapPayload = (await refreshedCharacterMapResponse.json()) as {
+      character_map_finalized: boolean;
+      characters: Array<{ name: string; aliases: string[] }>;
+    };
+    expect(refreshedCharacterMapPayload.character_map_finalized).toBe(false);
+    const refreshedAliceRow = refreshedCharacterMapPayload.characters.find((entry) => entry.name === 'Alice');
+    expect(refreshedAliceRow?.aliases).toEqual(expect.arrayContaining(['Al']));
+
     const runBlockedResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
       data: {
         mode: 'author',
