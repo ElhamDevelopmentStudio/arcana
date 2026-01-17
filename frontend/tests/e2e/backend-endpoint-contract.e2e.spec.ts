@@ -270,8 +270,30 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       `${backendBaseUrl}/api/projects/${projectId}/characters/gender-comparison?include_only_conflicts=true`,
     );
     expect(compareResponse.status()).toBe(200);
-    const comparePayload = (await compareResponse.json()) as { comparison_count: number };
+    const comparePayload = (await compareResponse.json()) as {
+      comparison_count: number;
+      contradiction_count: number;
+      comparisons: Array<{
+        name: string;
+        manual_gender: string;
+        inferred_gender: string;
+        contradiction_severity: number;
+        is_contradiction: boolean;
+        requires_review: boolean;
+      }>;
+    };
     expect(comparePayload.comparison_count).toBeGreaterThanOrEqual(0);
+    expect(comparePayload.contradiction_count).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(comparePayload.comparisons)).toBe(true);
+    for (const entry of comparePayload.comparisons) {
+      expect(typeof entry.name).toBe('string');
+      expect(typeof entry.manual_gender).toBe('string');
+      expect(typeof entry.inferred_gender).toBe('string');
+      expect(entry.contradiction_severity).toBeGreaterThanOrEqual(0);
+      expect(entry.contradiction_severity).toBeLessThanOrEqual(1);
+      expect(typeof entry.is_contradiction).toBe('boolean');
+      expect(typeof entry.requires_review).toBe('boolean');
+    }
 
     const upsertInvalidResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
       data: {
