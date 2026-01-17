@@ -880,6 +880,12 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
               source: 'user',
               confidence: 1,
             },
+            {
+              term: 'Nimble',
+              verbalized_form: 'Nim-buhl',
+              source: 'user',
+              confidence: 1,
+            },
           ],
         },
       },
@@ -928,11 +934,31 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       before: string;
       after: string;
       replacements: Array<{ term: string; count: number; scope: string; verbalized_form: string }>;
+      warnings?: Array<{ type: string; term?: string; scopes?: string[] }>;
       included_scopes: string[];
     };
     expect(previewPayload.project_id).toBe(projectId);
     expect(previewPayload.replacements.length).toBeGreaterThan(0);
-    expect(previewPayload.after).toContain('Nim-ble');
+    expect(previewPayload.after).toContain('Nim-buhl');
+    expect(previewPayload.after).not.toContain('Nim-ble');
+    expect(previewPayload.replacements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          term: 'Nimble',
+          verbalized_form: 'Nim-buhl',
+          scope: 'character',
+        }),
+      ]),
+    );
+    expect(previewPayload.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'ambiguous_replacement',
+          term: 'Nimble',
+          scopes: expect.arrayContaining(['character', 'global']),
+        }),
+      ]),
+    );
     expect(previewPayload.included_scopes).toEqual(
       expect.arrayContaining(['global', 'character', 'place', 'artifact', 'invented']),
     );

@@ -477,7 +477,7 @@ Definition of done for each task:
 - [x] [MVP-002] Verify normalization includes chapters/dedupe/quote normalization/reports.
 - [x] [MVP-003] Verify character map supports aliases and review UI.
 - [x] [MVP-004] Verify dual gender system with inference + contradiction flags.
-- [ ] [MVP-005] Verify pronunciation overrides and preview.
+- [x] [MVP-005] Verify pronunciation overrides and preview.
 - [ ] [MVP-006] Verify TTS segmentation target <=255.
 - [ ] [MVP-007] Verify tagging includes structural + emotion + speaker + confidence.
 - [ ] [MVP-008] Verify voice mapping includes character + defaults + narrator.
