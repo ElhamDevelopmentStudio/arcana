@@ -483,7 +483,7 @@ Definition of done for each task:
 - [x] [MVP-008] Verify voice mapping includes character + defaults + narrator.
 - [x] [MVP-009] Verify audiobook JSON + CSV exports.
 - [x] [MVP-010] Verify basic dashboards (tension/polarity/prominence).
-- [ ] [MVP-011] Verify incremental append update flow.
+- [x] [MVP-011] Verify incremental append update flow.
 
 ### MVP Excludes guardrails
 - [ ] [MVP-012] Add explicit backlog labels for excluded “nice-to-have” features.
