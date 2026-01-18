@@ -82,6 +82,11 @@ def test_export_includes_per_segment_tag_bundle_and_confidence() -> None:
         assert segments
 
         for segment in segments:
+            assert isinstance(segment.get("type"), str)
+            assert "speaker_id" in segment
+            assert isinstance(segment.get("emotion_primary_label"), str)
+            assert isinstance(segment.get("emotion_secondary_label"), str)
+
             tag_bundle = segment["tag_bundle"]
             assert isinstance(tag_bundle, dict)
             assert tag_bundle.get("type") == segment["type"]
@@ -94,6 +99,9 @@ def test_export_includes_per_segment_tag_bundle_and_confidence() -> None:
             assert isinstance(segment_confidence, dict)
             assert isinstance(bundle_confidence, dict)
             assert bundle_confidence == segment_confidence
+            assert isinstance(segment_confidence.get("type"), (int, float))
+            assert isinstance(segment_confidence.get("speaker"), (int, float))
+            assert isinstance(segment_confidence.get("emotion"), (int, float))
 
             assert tag_bundle.get("type_confidence") == segment_confidence["type"]
             assert tag_bundle.get("speaker_confidence") == segment_confidence["speaker"]
