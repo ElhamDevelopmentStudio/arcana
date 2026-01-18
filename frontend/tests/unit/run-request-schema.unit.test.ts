@@ -210,4 +210,16 @@ describe('runRequestSchema', () => {
       }),
     ).toThrow(z.ZodError);
   });
+
+  it('rejects max_segment_chars above 255', () => {
+    expect(() =>
+      runRequestSchema.parse({
+        mode: 'author',
+        max_segment_chars: 256,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+      }),
+    ).toThrow(z.ZodError);
+  });
 });
