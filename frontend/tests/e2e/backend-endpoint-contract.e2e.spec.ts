@@ -857,6 +857,17 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       ),
     ).toBe(true);
 
+    const exportCsvResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runId}.csv`);
+    expect(exportCsvResponse.status()).toBe(200);
+    expect(exportCsvResponse.headers()['content-type']).toContain('text/csv');
+    const exportCsvBody = await exportCsvResponse.text();
+    const [csvHeader, firstCsvRow] = exportCsvBody.trim().split('\n');
+    expect(csvHeader).toContain('segment_id');
+    expect(csvHeader).toContain('normalized_text');
+    expect(csvHeader).toContain('phonetic_text');
+    expect(csvHeader).toContain('resolved_voice_id');
+    expect(firstCsvRow).toBeTruthy();
+
     const pronunciationScopes: Array<[string, string, string, string]> = [
       ['global', 'global', 'Nimble', 'Nim-ble'],
       ['places', 'place', 'Atlantis', 'At-Lan-tis'],
