@@ -486,7 +486,12 @@ Definition of done for each task:
 - [x] [MVP-011] Verify incremental append update flow.
 
 ### MVP Excludes guardrails
-- [ ] [MVP-012] Add explicit backlog labels for excluded “nice-to-have” features.
+- [x] [MVP-012] Add explicit backlog labels for excluded “nice-to-have” features.
+- Label convention for excluded scope: `[BACKLOG]` + `[MVP-EXCLUDED]` + `[NICE-TO-HAVE]`.
+- `[BACKLOG][MVP-EXCLUDED][NICE-TO-HAVE]` full motif recurrence modeling.
+- `[BACKLOG][MVP-EXCLUDED][NICE-TO-HAVE]` advanced comparative clustering.
+- `[BACKLOG][MVP-EXCLUDED][NICE-TO-HAVE]` community sentiment overlay.
+- `[BACKLOG][MVP-EXCLUDED][NICE-TO-HAVE]` automatic web scraping by default.
 - [ ] [MVP-013] Add release gate preventing excluded features from blocking MVP sign-off.
 
 ## 11. Acceptance Criteria Execution (Ref: SRS.md §11)
