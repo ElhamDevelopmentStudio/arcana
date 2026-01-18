@@ -482,7 +482,7 @@ Definition of done for each task:
 - [x] [MVP-007] Verify tagging includes structural + emotion + speaker + confidence.
 - [x] [MVP-008] Verify voice mapping includes character + defaults + narrator.
 - [x] [MVP-009] Verify audiobook JSON + CSV exports.
-- [ ] [MVP-010] Verify basic dashboards (tension/polarity/prominence).
+- [x] [MVP-010] Verify basic dashboards (tension/polarity/prominence).
 - [ ] [MVP-011] Verify incremental append update flow.
 
 ### MVP Excludes guardrails
