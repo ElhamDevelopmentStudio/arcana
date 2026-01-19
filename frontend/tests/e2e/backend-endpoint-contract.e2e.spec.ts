@@ -1159,6 +1159,8 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     };
     expect(previewPayload.project_id).toBe(projectId);
     expect(previewPayload.replacements.length).toBeGreaterThan(0);
+    expect(previewPayload.before).toBe('Nimble and Atlantis meet Alice in Aegis and Avernus.');
+    expect(previewPayload.after).toBe('Nim-buhl and At-Lan-tis meet Al-iss in EE-gis and Ah-vernus.');
     expect(previewPayload.after).toContain('Nim-buhl');
     expect(previewPayload.after).not.toContain('Nim-ble');
     expect(previewPayload.replacements).toEqual(
