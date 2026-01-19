@@ -1459,6 +1459,65 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(typeof resolvedSegment?.speaker_state).toBe('string');
   });
 
+  test('gender comparison detects and flags manual-inferred contradictions', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-gender-contradiction-flags'));
+    const projectId = project.id;
+
+    const upsertResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Nia',
+            verbalized_form: 'Nia',
+            gender: 'male',
+            confidence: 1.0,
+            inferred_gender: 'female',
+            inferred_confidence: 0.91,
+            inferred_source_trace: [],
+          },
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'female',
+            confidence: 1.0,
+            inferred_gender: 'female',
+            inferred_confidence: 0.89,
+            inferred_source_trace: [],
+          },
+        ],
+      },
+    });
+    expect(upsertResponse.status()).toBe(200);
+
+    const comparisonResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/characters/gender-comparison`);
+    expect(comparisonResponse.status()).toBe(200);
+    const comparisonPayload = (await comparisonResponse.json()) as {
+      comparison_count: number;
+      contradiction_count: number;
+      comparisons: Array<{
+        name: string;
+        is_contradiction: boolean;
+        requires_review: boolean;
+        contradiction_severity: number;
+      }>;
+      warnings: Array<{ type: string; character_name: string; requires_review: boolean; contradiction_severity: number }>;
+    };
+    expect(comparisonPayload.comparison_count).toBe(2);
+    expect(comparisonPayload.contradiction_count).toBe(1);
+    expect(comparisonPayload.warnings.length).toBe(1);
+    expect(comparisonPayload.warnings[0].type).toBe('manual_inferred_gender_contradiction');
+    expect(comparisonPayload.warnings[0].character_name).toBe('Nia');
+    expect(comparisonPayload.warnings[0].requires_review).toBe(true);
+    expect(comparisonPayload.warnings[0].contradiction_severity).toBeGreaterThan(0);
+
+    const byName = Object.fromEntries(comparisonPayload.comparisons.map((entry) => [entry.name, entry]));
+    expect(byName.Nia.is_contradiction).toBe(true);
+    expect(byName.Nia.requires_review).toBe(true);
+    expect(byName.Nia.contradiction_severity).toBeGreaterThan(0);
+    expect(byName.Kai.is_contradiction).toBe(false);
+    expect(byName.Kai.requires_review).toBe(false);
+  });
+
   test('export includes emotion labels and valence-intensity details for real run', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-emotion-tags'));
     const projectId = project.id;
