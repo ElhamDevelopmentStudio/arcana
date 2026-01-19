@@ -43,6 +43,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/shadow_slave_success_checklist.md`: Shadow Slave end-to-end success criteria checklist (`SRS.md §1.3`)
 - `docs/architecture.md`: architecture baseline including deterministic reproducibility objective
 - `docs/acceptance_kpis.md`: acceptance KPI definitions aligned to SRS success criteria
+- `docs/final_acceptance_report_template.md`: final release acceptance report template with pass/fail per criterion
 - `docs/persona_end_to_end_flows.md`: one end-to-end flow per SRS persona
 - `docs/system_modes.md`: canonical MODE-001 enum contract for SRS section 3 mode values
 - `docs/audiobook_ui_api_mapping.md`: USE-002 mapping from audiobook UI steps to concrete API endpoints
