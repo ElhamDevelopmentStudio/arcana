@@ -508,7 +508,7 @@ Definition of done for each task:
 
 ## 12. Cross-Cutting Engineering Tasks (Supports all SRS sections)
 - [x] [X-001] Set up migration framework and migration naming convention.
-- [ ] [X-002] Add architecture decision records (ADRs) for mode system, tagging, LLM router.
+- [x] [X-002] Add architecture decision records (ADRs) for mode system, tagging, LLM router.
 - [ ] [X-003] Add background job framework for long-running pipeline stages.
 - [ ] [X-004] Add run status lifecycle (`queued/running/completed/failed/cancelled`).
 - [ ] [X-005] Add cancellation API for running jobs.

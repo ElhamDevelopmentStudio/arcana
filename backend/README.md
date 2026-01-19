@@ -149,6 +149,12 @@ Migration framework validation (`backend/migrations` ordering + naming conventio
 python scripts_validate_migration_framework.py
 ```
 
+Architecture decision records validation (`docs/adrs` coverage and ADR structure):
+
+```bash
+python scripts_validate_adrs.py
+```
+
 Persona flow validation (`SRS.md §2.1` vs `docs/persona_end_to_end_flows.md`):
 
 ```bash

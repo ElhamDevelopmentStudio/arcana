@@ -45,6 +45,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/acceptance_kpis.md`: acceptance KPI definitions aligned to SRS success criteria
 - `docs/final_acceptance_report_template.md`: final release acceptance report template with pass/fail per criterion
 - `docs/migration_framework.md`: migration framework baseline and required SQL migration naming convention
+- `docs/adrs/`: architecture decision records for mode system, tagging, and LLM router
 - `docs/persona_end_to_end_flows.md`: one end-to-end flow per SRS persona
 - `docs/system_modes.md`: canonical MODE-001 enum contract for SRS section 3 mode values
 - `docs/audiobook_ui_api_mapping.md`: USE-002 mapping from audiobook UI steps to concrete API endpoints
@@ -486,6 +487,12 @@ Migration framework validation (`backend/migrations` + naming convention):
 
 ```bash
 python backend/scripts_validate_migration_framework.py
+```
+
+Architecture decision records validation (`docs/adrs` coverage and ADR structure):
+
+```bash
+python backend/scripts_validate_adrs.py
 ```
 
 Persona flow validation (`SRS.md §2.1` vs `docs/persona_end_to_end_flows.md`):
