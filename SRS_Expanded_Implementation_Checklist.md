@@ -507,7 +507,7 @@ Definition of done for each task:
 - [x] [ACC-010] Create final acceptance report template with pass/fail per criterion.
 
 ## 12. Cross-Cutting Engineering Tasks (Supports all SRS sections)
-- [ ] [X-001] Set up migration framework and migration naming convention.
+- [x] [X-001] Set up migration framework and migration naming convention.
 - [ ] [X-002] Add architecture decision records (ADRs) for mode system, tagging, LLM router.
 - [ ] [X-003] Add background job framework for long-running pipeline stages.
 - [ ] [X-004] Add run status lifecycle (`queued/running/completed/failed/cancelled`).
