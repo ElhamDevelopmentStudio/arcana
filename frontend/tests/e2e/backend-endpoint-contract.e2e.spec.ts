@@ -239,6 +239,64 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     ).sort((a, b) => a - b);
     expect(shadowSlaveChapterIds).toEqual([1, 2, 3]);
 
+    const phoneticProject = await createProject(request, uniqueTitle('e2e-acc004-phonetic-export'));
+    const phoneticIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${phoneticProject.id}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'phonetic-export-source.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from(
+            'Chapter 1\nThe Aegis stood above the tower while the crew watched in silence.',
+          ),
+        },
+      },
+    });
+    expect(phoneticIngestResponse.status()).toBe(200);
+
+    const phoneticDictionaryResponse = await request.put(
+      `${backendBaseUrl}/api/projects/${phoneticProject.id}/pronunciation-dictionary/global`,
+      {
+        data: {
+          entries: [{ term: 'Aegis', verbalized_form: 'EE-gis', confidence: 1 }],
+        },
+      },
+    );
+    expect(phoneticDictionaryResponse.status()).toBe(200);
+
+    const phoneticRunResponse = await request.post(`${backendBaseUrl}/api/projects/${phoneticProject.id}/runs`, {
+      data: {
+        mode: 'audiobook',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 2,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(phoneticRunResponse.status()).toBe(200);
+    const phoneticRunPayload = (await phoneticRunResponse.json()) as { run_id: number };
+
+    const phoneticExportResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${phoneticProject.id}/exports/${phoneticRunPayload.run_id}.json`,
+    );
+    expect(phoneticExportResponse.status()).toBe(200);
+    const phoneticExportPayload = (await phoneticExportResponse.json()) as {
+      status: string;
+      segments: Array<{ phonetic_text: string; normalized_text: string }>;
+    };
+    expect(phoneticExportPayload.status).toBe('completed');
+    expect(
+      phoneticExportPayload.segments.every((segment) => typeof segment.phonetic_text === 'string' && segment.phonetic_text.length > 0),
+    ).toBe(true);
+    expect(
+      phoneticExportPayload.segments.some((segment) => segment.phonetic_text.includes('EE-gis')),
+    ).toBe(true);
+    expect(
+      phoneticExportPayload.segments.some(
+        (segment) => segment.normalized_text.includes('Aegis') && segment.phonetic_text.includes('EE-gis'),
+      ),
+    ).toBe(true);
+
     const invalidMarkdownResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/markdown`, {
       multipart: {
         file: {
