@@ -1587,6 +1587,102 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(firstExportPayload.segments).toEqual(secondExportPayload.segments);
   });
 
+  test('incremental append recompute preserves unaffected output segments', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-incremental-append-affected-only'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'incremental-source.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from(
+            'Chapter 1\nMoonlit waves battered the harbor wall through the night.\n\n'
+              + 'Chapter 2\nAt dawn, the sentries found fresh tracks by the eastern gate.',
+          ),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const baselineRunPayload = {
+      mode: 'author',
+      max_segment_chars: 120,
+      llm_enabled: false,
+      provider_name: 'openrouter',
+      max_calls_per_day: 25,
+      allow_unfinalized_character_map: true,
+      deterministic_mode: true,
+      deterministic_seed: 20260226,
+      randomization_config: {
+        strategy: 'stable',
+        shuffle_enabled: false,
+      },
+    };
+
+    const baselineRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: baselineRunPayload,
+    });
+    expect(baselineRunResponse.status()).toBe(200);
+    const baselineRun = (await baselineRunResponse.json()) as { run_id: number };
+
+    const baselineExportResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/exports/${baselineRun.run_id}.json`,
+    );
+    expect(baselineExportResponse.status()).toBe(200);
+    const baselineExport = (await baselineExportResponse.json()) as {
+      status: string;
+      segments: Array<Record<string, unknown>>;
+    };
+    expect(baselineExport.status).toBe('completed');
+    expect(baselineExport.segments.length).toBeGreaterThan(0);
+
+    const appendResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/append-chapter`, {
+      multipart: {
+        file: {
+          name: 'append-chapter-3.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from(
+            'Chapter 3\nThe bells rang once, then silence spread over the flooded square.',
+          ),
+        },
+      },
+    });
+    expect(appendResponse.status()).toBe(200);
+
+    const incrementalRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        ...baselineRunPayload,
+        incremental_recompute: true,
+      },
+    });
+    expect(incrementalRunResponse.status()).toBe(200);
+    const incrementalRun = (await incrementalRunResponse.json()) as { run_id: number };
+
+    const incrementalExportResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/exports/${incrementalRun.run_id}.json`,
+    );
+    expect(incrementalExportResponse.status()).toBe(200);
+    const incrementalExport = (await incrementalExportResponse.json()) as {
+      status: string;
+      segments: Array<Record<string, unknown>>;
+    };
+    expect(incrementalExport.status).toBe('completed');
+
+    const maxBaselineChapterId = Math.max(
+      ...(baselineExport.segments.map((segment) => Number(segment.chapter_id ?? 0))),
+    );
+    const incrementalPrefixSegments = incrementalExport.segments.filter(
+      (segment) => Number(segment.chapter_id ?? 0) <= maxBaselineChapterId,
+    );
+    const incrementalAppendedSegments = incrementalExport.segments.filter(
+      (segment) => Number(segment.chapter_id ?? 0) > maxBaselineChapterId,
+    );
+
+    expect(incrementalPrefixSegments).toEqual(baselineExport.segments);
+    expect(incrementalAppendedSegments.length).toBeGreaterThan(0);
+  });
+
   test('export includes emotion labels and valence-intensity details for real run', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-emotion-tags'));
     const projectId = project.id;
