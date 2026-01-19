@@ -1422,6 +1422,9 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     const exportPayload = (await exportResponse.json()) as {
       segments: Array<{
         speaker: string;
+        gender: string;
+        voice_id?: string;
+        resolved_voice_id?: string;
         speaker_id: number | null;
         confidence: { speaker: number; emotion?: number };
         speaker_evidence?: { status?: string; method?: string };
@@ -1429,10 +1432,26 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       }>;
     };
 
+    expect(exportPayload.segments.every((segment) => typeof segment.speaker === 'string')).toBe(true);
+    expect(exportPayload.segments.every((segment) => typeof segment.gender === 'string')).toBe(true);
+    expect(exportPayload.segments.every((segment) => typeof segment.voice_id === 'string')).toBe(true);
+    expect(exportPayload.segments.every((segment) => typeof segment.resolved_voice_id === 'string')).toBe(true);
+
+    const attributableSegments = exportPayload.segments.filter((segment) => segment.speaker_id !== null);
+    expect(attributableSegments.length).toBeGreaterThan(0);
+    expect(attributableSegments.every((segment) => segment.speaker.toLowerCase() !== 'unknown')).toBe(true);
+    expect(attributableSegments.every((segment) => segment.gender.toLowerCase() !== 'unknown')).toBe(true);
+    expect(attributableSegments.every((segment) => segment.voice_id && segment.voice_id.length > 0)).toBe(true);
+    expect(attributableSegments.every((segment) => segment.resolved_voice_id === segment.voice_id)).toBe(true);
+
     const resolvedSegment = exportPayload.segments.find((segment) => segment.speaker.toLowerCase() === 'alice');
     expect(resolvedSegment).toBeDefined();
     expect(typeof resolvedSegment?.speaker_id).toBe('number');
     expect(resolvedSegment?.speaker_id).toBeGreaterThan(0);
+    expect(resolvedSegment?.gender).toBe('female');
+    expect(typeof resolvedSegment?.voice_id).toBe('string');
+    expect(typeof resolvedSegment?.resolved_voice_id).toBe('string');
+    expect(resolvedSegment?.resolved_voice_id).toBe(resolvedSegment?.voice_id);
     expect(typeof resolvedSegment?.confidence.speaker).toBe('number');
     expect(resolvedSegment?.confidence.speaker).toBeGreaterThan(0.0);
     expect(typeof resolvedSegment?.speaker_evidence).toBe('object');
