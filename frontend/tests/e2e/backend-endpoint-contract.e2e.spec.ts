@@ -1502,6 +1502,24 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     };
 
     expect(exportPayload.segments.length).toBeGreaterThan(0);
+    expect(
+      exportPayload.segments.every(
+        (entry) =>
+          typeof entry.emotion_valence === 'number' &&
+          entry.emotion_valence >= -1 &&
+          entry.emotion_valence <= 1 &&
+          typeof entry.emotion_intensity === 'number' &&
+          entry.emotion_intensity >= 0 &&
+          entry.emotion_intensity <= 1 &&
+          typeof entry.emotion_primary_label === 'string' &&
+          entry.emotion_primary_label.length > 0 &&
+          typeof entry.emotion_secondary_label === 'string' &&
+          entry.emotion_secondary_label.length > 0 &&
+          typeof entry.confidence?.emotion === 'number' &&
+          (entry.confidence?.emotion ?? 0) >= 0 &&
+          (entry.confidence?.emotion ?? 0) <= 1,
+      ),
+    ).toBe(true);
     const segment = exportPayload.segments[0];
     expect(typeof segment.emotion_valence).toBe('number');
     expect(typeof segment.emotion_intensity).toBe('number');
