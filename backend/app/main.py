@@ -169,6 +169,7 @@ from app.services.background_jobs import submit_background_job
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.llm_router import is_supported_provider
 from app.services.run_status import (
+    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
     RUN_STATUS_QUEUED,
@@ -284,7 +285,7 @@ def _required_project_access_scope(method: str, path: str) -> str:
     suffix = _normalize_project_route_suffix(path)
     parts = [part for part in suffix.split("/") if part]
 
-    if method_upper == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "recover":
+    if method_upper == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] in {"recover", "cancel"}:
         return _PROJECT_ACCESS_SCOPE_RUN_EXEC
 
     if method_upper == "POST" and parts == ["runs"]:
@@ -5198,6 +5199,60 @@ def recover_run(
     return RunResponse(
         run_id=run.id,
         project_id=project.id,
+        status=run.status,
+        segment_count=segment_count,
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/runs/{run_id}/cancel",
+    response_model=RunResponse,
+    status_code=status.HTTP_200_OK,
+)
+def cancel_run(
+    project_id: int,
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> RunResponse:
+    _get_project_or_404(session, project_id)
+    run = _get_run_or_404(session, project_id, run_id)
+
+    if run.status not in {RUN_STATUS_QUEUED, RUN_STATUS_RUNNING}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only queued or running runs can be cancelled.",
+        )
+
+    previous_status = run.status
+    run.status = RUN_STATUS_CANCELLED
+    if run.finished_at is None:
+        run.finished_at = datetime.now(timezone.utc)
+    _set_pipeline_recovery_state(
+        run,
+        session=session,
+        status=RUN_STATUS_CANCELLED,
+        metadata={
+            "reason": "manual_cancellation",
+            "previous_status": previous_status,
+        },
+    )
+    session.add(run)
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
+        event_type="pipeline_cancel_requested",
+        event_message="Pipeline cancellation requested",
+        event_metadata={
+            "previous_status": previous_status,
+        },
+    )
+    session.commit()
+    session.refresh(run)
+
+    segment_count = session.query(Segment).filter(Segment.run_id == run.id).count()
+    return RunResponse(
+        run_id=run.id,
+        project_id=project_id,
         status=run.status,
         segment_count=segment_count,
     )

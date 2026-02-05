@@ -58,6 +58,7 @@ Migration naming convention:
 - `GET /api/projects/{project_id}/characters/alias-collisions`
 - `PUT /api/projects/{project_id}/voices`
 - `POST /api/projects/{project_id}/runs`
+- `POST /api/projects/{project_id}/runs/{run_id}/cancel`
 - `GET /api/projects/{project_id}/runs/{run_id}`
 - `GET /api/projects/{project_id}/exports/{run_id}.json`
 
