@@ -31,6 +31,16 @@ cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
+## Local smoke test (one command)
+
+From repository root:
+
+```bash
+python3 backend/scripts_run_local_smoke.py
+```
+
+This starts a temporary backend instance (SQLite), runs backend smoke API coverage, and runs a focused frontend live-backend contract Playwright smoke case.
+
 ## Optional SQL migration script
 
 ```bash
