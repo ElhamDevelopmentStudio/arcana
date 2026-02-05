@@ -7,13 +7,21 @@ from sqlalchemy.types import JSON
 from app.database import Base
 from app.services.encryption import EncryptedBinary, EncryptedText
 from app.modes import DEFAULT_MODE
+from app.services.project_lifecycle import PROJECT_LIFECYCLE_DRAFT
 
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle_state IN ('draft', 'ingested', 'configured', 'running', 'completed', 'failed', 'archived')",
+            name="ck_project_lifecycle_state_allowed",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(String(40), nullable=False, default=PROJECT_LIFECYCLE_DRAFT)
     selected_mode: Mapped[str] = mapped_column(String(50), nullable=False, default=DEFAULT_MODE)
     selected_modes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     llm_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
