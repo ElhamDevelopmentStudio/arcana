@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Callable, Protocol, TypeVar
 
+from app.services.structured_logging import emit_structured_log
+
 
 T = TypeVar("T")
 
@@ -50,6 +52,42 @@ def submit_background_job(
     execute: Callable[[], T],
     executor_name: str | None = None,
 ) -> T:
+    normalized_job_name = job_name.strip()
+    if not normalized_job_name:
+        raise BackgroundJobFrameworkError("job_name must not be blank.")
     executor = get_background_job_executor(executor_name)
-    return executor.submit(job_name=job_name, execute=execute)
-
+    emit_structured_log(
+        service="background_jobs",
+        event="background_job_submitted",
+        message="Background job submitted",
+        metadata={
+            "job_name": normalized_job_name,
+            "executor_name": executor.name,
+        },
+    )
+    try:
+        result = executor.submit(job_name=normalized_job_name, execute=execute)
+    except Exception as exc:  # noqa: BLE001
+        emit_structured_log(
+            level="error",
+            service="background_jobs",
+            event="background_job_failed",
+            message="Background job failed",
+            metadata={
+                "job_name": normalized_job_name,
+                "executor_name": executor.name,
+                "error_type": exc.__class__.__name__,
+                "error_message": str(exc),
+            },
+        )
+        raise
+    emit_structured_log(
+        service="background_jobs",
+        event="background_job_completed",
+        message="Background job completed",
+        metadata={
+            "job_name": normalized_job_name,
+            "executor_name": executor.name,
+        },
+    )
+    return result

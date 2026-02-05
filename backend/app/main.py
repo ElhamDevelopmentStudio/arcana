@@ -2328,6 +2328,29 @@ def _refresh_run_artifact_integrity_in_config(
         session.commit()
 
 
+def _emit_service_log(
+    *,
+    service: str,
+    event: str,
+    message: str,
+    level: str = "info",
+    project_id: int | None = None,
+    run_id: int | None = None,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    from app.services.structured_logging import emit_structured_log
+
+    emit_structured_log(
+        service=service,
+        event=event,
+        message=message,
+        level=level,
+        project_id=project_id,
+        run_id=run_id,
+        metadata=metadata,
+    )
+
+
 def _execute_pipeline_and_finalize_run(
     session: Session,
     project: Project,
@@ -2336,6 +2359,18 @@ def _execute_pipeline_and_finalize_run(
     principal_id: str | None = None,
 ) -> int:
     run_config = dict(run.config_json or {})
+    _emit_service_log(
+        service="pipeline_execution",
+        event="pipeline_execution_started",
+        message="Pipeline execution started",
+        project_id=project.id,
+        run_id=run.id,
+        metadata={
+            "mode": str(run_config.get("mode", DEFAULT_MODE)),
+            "principal_type": principal_type or "system",
+            "principal_id": principal_id or "",
+        },
+    )
     try:
         result = execute_pipeline(
             session=session,
@@ -2395,6 +2430,17 @@ def _execute_pipeline_and_finalize_run(
                 metadata={"artifact_integrity": artifact_integrity_report},
             )
         session.commit()
+        _emit_service_log(
+            service="pipeline_execution",
+            event="pipeline_execution_completed",
+            message="Pipeline execution completed",
+            project_id=project.id,
+            run_id=run.id,
+            metadata={
+                "segment_count": int(result["segment_count"]),
+                "status": run.status,
+            },
+        )
         return int(result["segment_count"])
     except PipelineError as exc:
         session.rollback()
@@ -2414,6 +2460,15 @@ def _execute_pipeline_and_finalize_run(
         )
         session.add(run)
         session.commit()
+        _emit_service_log(
+            service="pipeline_execution",
+            event="pipeline_execution_failed",
+            message="Pipeline execution failed with pipeline error",
+            level="error",
+            project_id=project.id,
+            run_id=run.id,
+            metadata=error_metadata,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         session.rollback()
@@ -2430,6 +2485,19 @@ def _execute_pipeline_and_finalize_run(
         )
         session.add(run)
         session.commit()
+        _emit_service_log(
+            service="pipeline_execution",
+            event="pipeline_execution_failed",
+            message="Pipeline execution failed with unhandled exception",
+            level="error",
+            project_id=project.id,
+            run_id=run.id,
+            metadata={
+                "reason": "unhandled_exception",
+                "error_type": exc.__class__.__name__,
+                "error_message": str(exc),
+            },
+        )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Pipeline failed") from exc
 @app.post(
     "/api/projects/{project_id}/characters/infer",
@@ -5091,6 +5159,17 @@ def create_run(
         run.config_json = run_config_with_recovery
     session.commit()
     session.refresh(run)
+    _emit_service_log(
+        service="run_orchestration",
+        event="run_execution_dispatched",
+        message="Run execution dispatched",
+        project_id=project.id,
+        run_id=run.id,
+        metadata={
+            "mode": str(run_config.get("mode", DEFAULT_MODE)),
+            "recovery": False,
+        },
+    )
     segment_count = submit_background_job(
         job_name="pipeline_execute_run",
         execute=lambda: _execute_pipeline_and_finalize_run(
@@ -5100,6 +5179,18 @@ def create_run(
             principal_type=principal_type,
             principal_id=principal_id,
         ),
+    )
+    _emit_service_log(
+        service="run_orchestration",
+        event="run_execution_submit_completed",
+        message="Run execution submit completed",
+        project_id=project.id,
+        run_id=run.id,
+        metadata={
+            "mode": str(run_config.get("mode", DEFAULT_MODE)),
+            "segment_count": segment_count,
+            "recovery": False,
+        },
     )
 
     return RunResponse(
@@ -5177,6 +5268,18 @@ def recover_run(
     )
     session.commit()
     session.refresh(run)
+    _emit_service_log(
+        service="run_orchestration",
+        event="run_recovery_dispatched",
+        message="Run recovery dispatched",
+        project_id=project.id,
+        run_id=run.id,
+        metadata={
+            "attempt": next_attempt,
+            "mode": str((run.config_json or {}).get("mode", DEFAULT_MODE)),
+            "recovery": True,
+        },
+    )
 
     project_principal = _resolve_project_access_headers(request=request)
     if project_principal is None:
@@ -5194,6 +5297,18 @@ def recover_run(
             principal_type=principal_type,
             principal_id=principal_id,
         ),
+    )
+    _emit_service_log(
+        service="run_orchestration",
+        event="run_recovery_submit_completed",
+        message="Run recovery submit completed",
+        project_id=project.id,
+        run_id=run.id,
+        metadata={
+            "attempt": next_attempt,
+            "segment_count": segment_count,
+            "recovery": True,
+        },
     )
 
     return RunResponse(
@@ -5248,6 +5363,17 @@ def cancel_run(
     )
     session.commit()
     session.refresh(run)
+    _emit_service_log(
+        service="run_orchestration",
+        event="run_cancelled",
+        message="Run cancelled",
+        project_id=project_id,
+        run_id=run.id,
+        metadata={
+            "previous_status": previous_status,
+            "current_status": run.status,
+        },
+    )
 
     segment_count = session.query(Segment).filter(Segment.run_id == run.id).count()
     return RunResponse(

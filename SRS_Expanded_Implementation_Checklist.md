@@ -512,7 +512,7 @@ Definition of done for each task:
 - [x] [X-003] Add background job framework for long-running pipeline stages.
 - [x] [X-004] Add run status lifecycle (`queued/running/completed/failed/cancelled`).
 - [x] [X-005] Add cancellation API for running jobs.
-- [ ] [X-006] Add structured log schema across all services.
+- [x] [X-006] Add structured log schema across all services.
 - [ ] [X-007] Add correlation ID propagation across API -> worker -> export.
 - [ ] [X-008] Add observability dashboards for pipeline stage durations.
 - [ ] [X-009] Add unit-test coverage thresholds by module.
