@@ -229,6 +229,13 @@ Optional slow test execution for USE-009:
 RUN_SLOW_TRACEABILITY=1 pytest tests/test_large_corpus_traceability_regression.py -q
 ```
 
+Backend module-level unit coverage thresholds:
+
+```bash
+pytest tests -q --cov=app --cov-report=json:coverage.unit.json
+python scripts_validate_unit_coverage_thresholds.py --coverage-json coverage.unit.json --thresholds unit_coverage_thresholds.json
+```
+
 Ingestion path matrix validation (`ING-016`, TXT/dir/markdown/encoding/append coverage):
 
 ```bash
