@@ -1,0 +1,18 @@
+[
+  {
+    "name": "Sunny",
+    "verbalized_form": "Sunny",
+    "gender": "male",
+    "aliases": ["Sunless"],
+    "source": "user_import",
+    "confidence": 1.0
+  },
+  {
+    "name": "Nephis",
+    "verbalized_form": "Ne-fis",
+    "gender": "female",
+    "aliases": ["Changing Star"],
+    "source": "user_import",
+    "confidence": 1.0
+  }
+]

@@ -519,7 +519,7 @@ Definition of done for each task:
 - [x] [X-010] Add integration test suite per mode.
 - [x] [X-011] Add end-to-end golden dataset snapshots for regression.
 - [x] [X-012] Add smoke test script for local setup in one command.
-- [ ] [X-013] Add seed fixtures for quick onboarding.
+- [x] [X-013] Add seed fixtures for quick onboarding.
 - [ ] [X-014] Add contributor docs for “How to add a new tag type”.
 - [ ] [X-015] Add contributor docs for “How to add a new LLM provider adapter”.
 - [ ] [X-016] Add contributor docs for “How to evolve export schema safely”.

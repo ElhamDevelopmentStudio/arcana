@@ -31,6 +31,16 @@ cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
+## Quick onboarding seed fixtures
+
+Seed fixture bundle for first-run local onboarding:
+
+- `seed_fixtures/quick_onboarding/minimal-novel.txt`
+- `seed_fixtures/quick_onboarding/characters-minimal.json`
+- `seed_fixtures/quick_onboarding/run-request.json`
+
+These fixtures are validated by `backend/tests/test_onboarding_seed_fixtures.py`.
+
 ## Local smoke test (one command)
 
 From repository root:
