@@ -51,15 +51,22 @@ def submit_background_job(
     job_name: str,
     execute: Callable[[], T],
     executor_name: str | None = None,
+    correlation_id: str | None = None,
 ) -> T:
     normalized_job_name = job_name.strip()
     if not normalized_job_name:
         raise BackgroundJobFrameworkError("job_name must not be blank.")
+    normalized_correlation_id = None
+    if isinstance(correlation_id, str):
+        candidate_correlation_id = correlation_id.strip()
+        if candidate_correlation_id:
+            normalized_correlation_id = candidate_correlation_id
     executor = get_background_job_executor(executor_name)
     emit_structured_log(
         service="background_jobs",
         event="background_job_submitted",
         message="Background job submitted",
+        correlation_id=normalized_correlation_id,
         metadata={
             "job_name": normalized_job_name,
             "executor_name": executor.name,
@@ -73,6 +80,7 @@ def submit_background_job(
             service="background_jobs",
             event="background_job_failed",
             message="Background job failed",
+            correlation_id=normalized_correlation_id,
             metadata={
                 "job_name": normalized_job_name,
                 "executor_name": executor.name,
@@ -85,6 +93,7 @@ def submit_background_job(
         service="background_jobs",
         event="background_job_completed",
         message="Background job completed",
+        correlation_id=normalized_correlation_id,
         metadata={
             "job_name": normalized_job_name,
             "executor_name": executor.name,

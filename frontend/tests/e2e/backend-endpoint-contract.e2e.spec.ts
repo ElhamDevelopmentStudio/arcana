@@ -2270,6 +2270,64 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(exportPayload.segments.length).toBeGreaterThan(0);
   });
 
+  test('correlation ID propagates from run API to export payload and headers', async ({ request }) => {
+    const correlationId = `corr-e2e-${Date.now()}`;
+    const project = await createProject(request, uniqueTitle('e2e-correlation-id'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'correlation-id.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nA distant bell rang while the archive doors closed.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 130,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+      headers: {
+        'X-Correlation-Id': correlationId,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const runDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runPayload.run_id}`);
+    expect(runDetailResponse.status()).toBe(200);
+    const runDetailPayload = (await runDetailResponse.json()) as { config: Record<string, unknown> };
+    expect(runDetailPayload.config.correlation_id).toBe(correlationId);
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    expect(exportResponse.headers()['x-correlation-id']).toBe(correlationId);
+    const exportPayload = (await exportResponse.json()) as {
+      correlation_id: string;
+      manifest: {
+        correlation_id: string;
+        run: {
+          correlation_id: string;
+        };
+        academic_export_manifest: {
+          correlation_id: string;
+        };
+      };
+    };
+    expect(exportPayload.correlation_id).toBe(correlationId);
+    expect(exportPayload.manifest.correlation_id).toBe(correlationId);
+    expect(exportPayload.manifest.run.correlation_id).toBe(correlationId);
+    expect(exportPayload.manifest.academic_export_manifest.correlation_id).toBe(correlationId);
+  });
+
   test('export includes structural confidence score on each segment', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-structure-confidence'));
     const projectId = project.id;

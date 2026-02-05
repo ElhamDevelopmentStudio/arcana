@@ -3,6 +3,7 @@ from bisect import bisect_right
 from collections.abc import Mapping
 import hashlib
 import json
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.exception_handlers import request_validation_exception_handler as fastapi_request_validation_exception_handler
@@ -188,6 +189,7 @@ LOW_CONFIDENCE_REGION_THRESHOLD = 0.8
 CHARACTER_EXTRACTION_LOW_CONFIDENCE_THRESHOLD = 0.7
 _RUN_RECOVERY_STALE_WINDOW_SECONDS = 600
 _PIPELINE_RECOVERY_CONFIG_KEY = "pipeline_recovery"
+_CORRELATION_ID_HEADER = "X-Correlation-Id"
 _PROJECT_ACCESS_ROLE_HIERARCHY = {"viewer": 1, "editor": 2, "owner": 3}
 _PROJECT_ACCESS_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _PROJECT_ACCESS_HEADER_TYPE = "x-principal-type"
@@ -260,6 +262,32 @@ def _resolve_project_access_headers(request: Request) -> tuple[str | None, str |
         )
 
     return principal_type, principal_id
+
+
+def _resolve_request_correlation_id(request: Request) -> str:
+    correlation_id_header = request.headers.get(_CORRELATION_ID_HEADER)
+    if correlation_id_header is not None:
+        correlation_id = str(correlation_id_header).strip()
+        if correlation_id:
+            return correlation_id
+    return str(uuid4())
+
+
+def _resolve_correlation_id_from_run_config(run_config: Mapping[str, object] | None) -> str | None:
+    if not isinstance(run_config, Mapping):
+        return None
+    raw_correlation_id = run_config.get("correlation_id")
+    if not isinstance(raw_correlation_id, str):
+        return None
+    correlation_id = raw_correlation_id.strip()
+    return correlation_id or None
+
+
+def _build_export_correlation_headers(run_config: Mapping[str, object] | None) -> dict[str, str]:
+    correlation_id = _resolve_correlation_id_from_run_config(run_config)
+    if not correlation_id:
+        return {}
+    return {_CORRELATION_ID_HEADER: correlation_id}
 
 
 def _required_project_role_for_scope(access_scope: str) -> str:
@@ -2336,6 +2364,7 @@ def _emit_service_log(
     level: str = "info",
     project_id: int | None = None,
     run_id: int | None = None,
+    correlation_id: str | None = None,
     metadata: dict[str, object] | None = None,
 ) -> None:
     from app.services.structured_logging import emit_structured_log
@@ -2347,6 +2376,7 @@ def _emit_service_log(
         level=level,
         project_id=project_id,
         run_id=run_id,
+        correlation_id=correlation_id,
         metadata=metadata,
     )
 
@@ -2359,12 +2389,14 @@ def _execute_pipeline_and_finalize_run(
     principal_id: str | None = None,
 ) -> int:
     run_config = dict(run.config_json or {})
+    correlation_id = _resolve_correlation_id_from_run_config(run_config)
     _emit_service_log(
         service="pipeline_execution",
         event="pipeline_execution_started",
         message="Pipeline execution started",
         project_id=project.id,
         run_id=run.id,
+        correlation_id=correlation_id,
         metadata={
             "mode": str(run_config.get("mode", DEFAULT_MODE)),
             "principal_type": principal_type or "system",
@@ -2436,6 +2468,7 @@ def _execute_pipeline_and_finalize_run(
             message="Pipeline execution completed",
             project_id=project.id,
             run_id=run.id,
+            correlation_id=correlation_id,
             metadata={
                 "segment_count": int(result["segment_count"]),
                 "status": run.status,
@@ -2467,6 +2500,7 @@ def _execute_pipeline_and_finalize_run(
             level="error",
             project_id=project.id,
             run_id=run.id,
+            correlation_id=correlation_id,
             metadata=error_metadata,
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -2492,6 +2526,7 @@ def _execute_pipeline_and_finalize_run(
             level="error",
             project_id=project.id,
             run_id=run.id,
+            correlation_id=correlation_id,
             metadata={
                 "reason": "unhandled_exception",
                 "error_type": exc.__class__.__name__,
@@ -4920,6 +4955,7 @@ def create_run(
     session: Session = Depends(get_session),
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
+    correlation_id = _resolve_request_correlation_id(request)
     if (
         not payload.allow_unfinalized_character_map
         and not project.character_map_finalized
@@ -5001,6 +5037,7 @@ def create_run(
         run_config["idempotency_key"] = idempotency_key
         run_config["idempotency_signature"] = idempotency_signature
 
+    run_config["correlation_id"] = correlation_id
     project.selected_mode = str(run_config["mode"])
     project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)
     run = Run(
@@ -5165,6 +5202,7 @@ def create_run(
         message="Run execution dispatched",
         project_id=project.id,
         run_id=run.id,
+        correlation_id=correlation_id,
         metadata={
             "mode": str(run_config.get("mode", DEFAULT_MODE)),
             "recovery": False,
@@ -5179,6 +5217,7 @@ def create_run(
             principal_type=principal_type,
             principal_id=principal_id,
         ),
+        correlation_id=correlation_id,
     )
     _emit_service_log(
         service="run_orchestration",
@@ -5186,6 +5225,7 @@ def create_run(
         message="Run execution submit completed",
         project_id=project.id,
         run_id=run.id,
+        correlation_id=correlation_id,
         metadata={
             "mode": str(run_config.get("mode", DEFAULT_MODE)),
             "segment_count": segment_count,
@@ -5214,6 +5254,7 @@ def recover_run(
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
     run = _get_run_or_404(session, project_id, run_id)
+    correlation_id = _resolve_request_correlation_id(request)
 
     if run.status == RUN_STATUS_COMPLETED:
         raise HTTPException(
@@ -5235,10 +5276,12 @@ def recover_run(
     except (TypeError, ValueError):
         next_attempt = 1
 
-    run.config_json = _prepare_run_recovery_config(
+    run_config_with_recovery = _prepare_run_recovery_config(
         run_config=dict(run.config_json or {}),
         attempt=next_attempt,
     )
+    run_config_with_recovery["correlation_id"] = correlation_id
+    run.config_json = run_config_with_recovery
     run.status = RUN_STATUS_QUEUED
     run.started_at = datetime.now(timezone.utc)
     run.finished_at = None
@@ -5274,6 +5317,7 @@ def recover_run(
         message="Run recovery dispatched",
         project_id=project.id,
         run_id=run.id,
+        correlation_id=correlation_id,
         metadata={
             "attempt": next_attempt,
             "mode": str((run.config_json or {}).get("mode", DEFAULT_MODE)),
@@ -5297,6 +5341,7 @@ def recover_run(
             principal_type=principal_type,
             principal_id=principal_id,
         ),
+        correlation_id=correlation_id,
     )
     _emit_service_log(
         service="run_orchestration",
@@ -5304,6 +5349,7 @@ def recover_run(
         message="Run recovery submit completed",
         project_id=project.id,
         run_id=run.id,
+        correlation_id=correlation_id,
         metadata={
             "attempt": next_attempt,
             "segment_count": segment_count,
@@ -5369,6 +5415,7 @@ def cancel_run(
         message="Run cancelled",
         project_id=project_id,
         run_id=run.id,
+        correlation_id=_resolve_correlation_id_from_run_config(run.config_json),
         metadata={
             "previous_status": previous_status,
             "current_status": run.status,
@@ -5867,6 +5914,7 @@ def get_export_json(
 ) -> JSONResponse:
     project = _get_project_or_404(session, project_id)
     run = _get_run_or_404(session, project_id, run_id)
+    export_headers = _build_export_correlation_headers(run.config_json)
     settings = get_settings()
     character_rows = session.query(Character).filter(Character.project_id == project.id).all()
     contradiction_review_required = _resolve_contradiction_review_required(project=project, run=run)
@@ -5939,7 +5987,7 @@ def get_export_json(
             )
 
         if requested_output_format == "json":
-            return JSONResponse(content=payload)
+            return JSONResponse(content=payload, headers=export_headers)
 
         if requested_output_format == "graph_json":
             selected_output_id = (output_id or "AO-004").upper()
@@ -5956,7 +6004,8 @@ def get_export_json(
                     run=run,
                     academic_reports=manifest.get("academic_reports", {}),
                     academic_manifest=manifest.get("academic_export_manifest", {}),
-                )
+                ),
+                headers=export_headers,
             )
 
         raise HTTPException(
@@ -5973,9 +6022,9 @@ def get_export_json(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Unsupported output_format for author schema. Supported values: json.",
             )
-        return JSONResponse(content=payload["manifest"]["narrative_health_report"])
+        return JSONResponse(content=payload["manifest"]["narrative_health_report"], headers=export_headers)
 
-    return JSONResponse(content=payload)
+    return JSONResponse(content=payload, headers=export_headers)
 
 
 @app.get("/api/projects/{project_id}/exports/{run_id}.csv", status_code=status.HTTP_200_OK)
@@ -5989,6 +6038,7 @@ def get_export_csv(
 ) -> Response:
     project = _get_project_or_404(session, project_id)
     run = _get_run_or_404(session, project_id, run_id)
+    export_headers = _build_export_correlation_headers(run.config_json)
     settings = get_settings()
     character_rows = session.query(Character).filter(Character.project_id == project.id).all()
     contradiction_review_required = _resolve_contradiction_review_required(project=project, run=run)
@@ -6066,8 +6116,10 @@ def get_export_csv(
             apply_export_chunk_size=True,
         )
         filename = f"project-{project_id}-run-{run_id}.csv"
+    response_headers = dict(export_headers)
+    response_headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return Response(
         content=csv_data,
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=response_headers,
     )

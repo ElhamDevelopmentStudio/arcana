@@ -77,8 +77,13 @@ def test_emit_structured_log_writes_json_payload(caplog: pytest.LogCaptureFixtur
 
 def test_submit_background_job_emits_submit_and_complete_logs(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.INFO, logger=STRUCTURED_LOGGER_NAME)
+    correlation_id = "corr-job-success-001"
 
-    result = submit_background_job(job_name="pipeline_execute_run", execute=lambda: 42)
+    result = submit_background_job(
+        job_name="pipeline_execute_run",
+        execute=lambda: 42,
+        correlation_id=correlation_id,
+    )
 
     assert result == 42
     records = _parse_structured_records(caplog)
@@ -86,22 +91,29 @@ def test_submit_background_job_emits_submit_and_complete_logs(caplog: pytest.Log
     assert events.count("background_job_submitted") == 1
     assert events.count("background_job_completed") == 1
     assert "background_job_failed" not in events
+    assert {record.get("correlation_id") for record in records} == {correlation_id}
 
 
 def test_submit_background_job_emits_failure_log_and_reraises(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.INFO, logger=STRUCTURED_LOGGER_NAME)
+    correlation_id = "corr-job-failure-001"
 
     def _failing_job() -> int:
         raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError, match="boom"):
-        submit_background_job(job_name="pipeline_execute_run", execute=_failing_job)
+        submit_background_job(
+            job_name="pipeline_execute_run",
+            execute=_failing_job,
+            correlation_id=correlation_id,
+        )
 
     records = _parse_structured_records(caplog)
     events = [str(record["event"]) for record in records]
     assert events.count("background_job_submitted") == 1
     assert events.count("background_job_failed") == 1
     assert "background_job_completed" not in events
+    assert {record.get("correlation_id") for record in records} == {correlation_id}
 
 
 def test_submit_background_job_rejects_blank_name() -> None:

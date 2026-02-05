@@ -513,7 +513,7 @@ Definition of done for each task:
 - [x] [X-004] Add run status lifecycle (`queued/running/completed/failed/cancelled`).
 - [x] [X-005] Add cancellation API for running jobs.
 - [x] [X-006] Add structured log schema across all services.
-- [ ] [X-007] Add correlation ID propagation across API -> worker -> export.
+- [x] [X-007] Add correlation ID propagation across API -> worker -> export.
 - [ ] [X-008] Add observability dashboards for pipeline stage durations.
 - [ ] [X-009] Add unit-test coverage thresholds by module.
 - [ ] [X-010] Add integration test suite per mode.
