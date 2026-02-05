@@ -521,7 +521,7 @@ Definition of done for each task:
 - [x] [X-012] Add smoke test script for local setup in one command.
 - [x] [X-013] Add seed fixtures for quick onboarding.
 - [x] [X-014] Add contributor docs for “How to add a new tag type”.
-- [ ] [X-015] Add contributor docs for “How to add a new LLM provider adapter”.
+- [x] [X-015] Add contributor docs for “How to add a new LLM provider adapter”.
 - [ ] [X-016] Add contributor docs for “How to evolve export schema safely”.
 - [ ] [X-017] Add release checklist for data migrations and backward compatibility.
 - [ ] [X-018] Add rollback plan template for failed releases.

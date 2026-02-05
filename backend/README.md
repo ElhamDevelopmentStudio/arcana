@@ -225,6 +225,12 @@ Contributor guide validation for adding a new tag type (`X-014`):
 python scripts_validate_tag_type_contributor_doc.py
 ```
 
+Contributor guide validation for adding a new LLM provider adapter (`X-015`):
+
+```bash
+python scripts_validate_llm_provider_adapter_contributor_doc.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash
