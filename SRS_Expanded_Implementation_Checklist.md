@@ -526,7 +526,7 @@ Definition of done for each task:
 - [x] [X-017] Add release checklist for data migrations and backward compatibility.
 - [x] [X-018] Add rollback plan template for failed releases.
 - [x] [X-019] Add security review checklist per release.
-- [ ] [X-020] Add performance regression gate in CI for core pipelines.
+- [x] [X-020] Add performance regression gate in CI for core pipelines.
 
 ## 13. Frontend Parallel Delivery Track (Ref: SRS.md §§2–11)
 
