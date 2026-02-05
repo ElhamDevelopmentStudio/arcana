@@ -1,0 +1,53 @@
+{
+  "mixed_narration_dialogue_segment.txt": {
+    "segment_count": 1,
+    "segments": [
+      {
+        "segment_index": 1,
+        "type": "mixed",
+        "speaker": "unknown",
+        "type_confidence": 0.72,
+        "emotion_primary_label": "neutral",
+        "emotion_shift_has_shift": false,
+        "emotion_shift_count": 0,
+        "emotion_shift_boundaries": 0,
+        "ambiguity_flags": [
+          "ambiguous_speaker_attribution",
+          "mixed_dialogue_and_narration",
+          "mixed_structure"
+        ]
+      }
+    ]
+  },
+  "rapid_emotional_shifts.txt": {
+    "segment_count": 2,
+    "segments": [
+      {
+        "segment_index": 1,
+        "type": "description",
+        "speaker": "unknown",
+        "type_confidence": 0.75,
+        "emotion_primary_label": "neutral",
+        "emotion_shift_has_shift": true,
+        "emotion_shift_count": 3,
+        "emotion_shift_boundaries": 1,
+        "ambiguity_flags": [
+          "ambiguous_speaker_attribution"
+        ]
+      },
+      {
+        "segment_index": 2,
+        "type": "action",
+        "speaker": "unknown",
+        "type_confidence": 0.78,
+        "emotion_primary_label": "neutral",
+        "emotion_shift_has_shift": true,
+        "emotion_shift_count": 1,
+        "emotion_shift_boundaries": 1,
+        "ambiguity_flags": [
+          "ambiguous_speaker_attribution"
+        ]
+      }
+    ]
+  }
+}

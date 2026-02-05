@@ -517,7 +517,7 @@ Definition of done for each task:
 - [x] [X-008] Add observability dashboards for pipeline stage durations.
 - [x] [X-009] Add unit-test coverage thresholds by module.
 - [x] [X-010] Add integration test suite per mode.
-- [ ] [X-011] Add end-to-end golden dataset snapshots for regression.
+- [x] [X-011] Add end-to-end golden dataset snapshots for regression.
 - [ ] [X-012] Add smoke test script for local setup in one command.
 - [ ] [X-013] Add seed fixtures for quick onboarding.
 - [ ] [X-014] Add contributor docs for “How to add a new tag type”.
