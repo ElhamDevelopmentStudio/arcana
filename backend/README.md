@@ -275,6 +275,12 @@ API contract changelog validation for frontend maintainers (`FE-003`):
 python scripts_validate_api_contract_changelog.py
 ```
 
+UI impact matrix validation for SRS-to-frontend mapping (`FE-004`):
+
+```bash
+python scripts_validate_ui_impact_matrix.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash

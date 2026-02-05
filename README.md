@@ -57,6 +57,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/contributor_add_llm_provider_adapter.md`: contributor guide for adding a new LLM provider adapter safely
 - `docs/contributor_evolve_export_schema_safely.md`: contributor guide for evolving export schema safely
 - `docs/api_contract_changelog.md`: API contract changelog for frontend maintainers
+- `docs/frontend_ui_impact_matrix.md`: UI impact matrix mapping SRS sections to frontend pages/components
 - `docs/release_migration_backward_compatibility_checklist.md`: release checklist for migrations and backward compatibility
 - `docs/release_rollback_plan_template.md`: rollback plan template for failed release response
 - `docs/release_security_review_checklist.md`: release security review checklist template
