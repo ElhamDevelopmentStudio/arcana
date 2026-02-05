@@ -269,6 +269,12 @@ PR template frontend-impact validation (`FE-001`):
 python scripts_validate_pr_template_frontend_impact.py
 ```
 
+API contract changelog validation for frontend maintainers (`FE-003`):
+
+```bash
+python scripts_validate_api_contract_changelog.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash
