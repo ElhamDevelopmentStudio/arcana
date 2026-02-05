@@ -928,6 +928,64 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(Array.isArray(audiobookPrepDashboardPayload.export_readiness.blocking_reasons)).toBe(true);
     expect(Array.isArray(audiobookPrepDashboardPayload.export_readiness.warning_reasons)).toBe(true);
 
+    const pipelineStageDurationsDashboardResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/pipeline-stage-durations-dashboard`,
+    );
+    expect(pipelineStageDurationsDashboardResponse.status()).toBe(200);
+    const pipelineStageDurationsDashboardPayload = (await pipelineStageDurationsDashboardResponse.json()) as {
+      schema_version: string;
+      output_schema: string;
+      output_format: string;
+      output_id: string;
+      output_name: string;
+      project_id: number;
+      run_id: number;
+      run_status: string;
+      generated_at: string;
+      total_duration_ms: number;
+      stage_count: number;
+      slowest_stage_name: string | null;
+      slowest_stage_duration_ms: number | null;
+      stages: Array<{
+        stage_name: string;
+        duration_ms: number;
+        share_of_total: number;
+      }>;
+    };
+    expect(pipelineStageDurationsDashboardPayload.schema_version).toBe('1.0.0');
+    expect(pipelineStageDurationsDashboardPayload.output_schema).toBe('pipeline_stage_durations_dashboard_json');
+    expect(pipelineStageDurationsDashboardPayload.output_format).toBe('json');
+    expect(pipelineStageDurationsDashboardPayload.output_id).toBe('OBS-001');
+    expect(pipelineStageDurationsDashboardPayload.output_name).toBe('pipeline_stage_durations_dashboard');
+    expect(pipelineStageDurationsDashboardPayload.project_id).toBe(projectId);
+    expect(pipelineStageDurationsDashboardPayload.run_id).toBe(runId);
+    expect(pipelineStageDurationsDashboardPayload.run_status).toBe('completed');
+    expect(typeof pipelineStageDurationsDashboardPayload.generated_at).toBe('string');
+    expect(pipelineStageDurationsDashboardPayload.total_duration_ms).toBeGreaterThanOrEqual(0);
+    expect(pipelineStageDurationsDashboardPayload.stage_count).toBeGreaterThan(0);
+    expect(Array.isArray(pipelineStageDurationsDashboardPayload.stages)).toBe(true);
+    expect(pipelineStageDurationsDashboardPayload.stages.length).toBe(
+      pipelineStageDurationsDashboardPayload.stage_count,
+    );
+    expect(
+      pipelineStageDurationsDashboardPayload.stages.some((stage) => stage.stage_name === 'load_and_validate_source_data'),
+    ).toBe(true);
+    expect(
+      pipelineStageDurationsDashboardPayload.stages.every(
+        (stage) =>
+          typeof stage.duration_ms === 'number'
+          && stage.duration_ms >= 0
+          && typeof stage.share_of_total === 'number'
+          && stage.share_of_total >= 0
+          && stage.share_of_total <= 1,
+      ),
+    ).toBe(true);
+    expect(typeof pipelineStageDurationsDashboardPayload.slowest_stage_name === 'string').toBe(true);
+    expect(
+      pipelineStageDurationsDashboardPayload.slowest_stage_duration_ms === null
+      || pipelineStageDurationsDashboardPayload.slowest_stage_duration_ms >= 0,
+    ).toBe(true);
+
     const cooccurrenceGraphResponse = await request.get(
       `${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/character-cooccurrence-graph`,
     );

@@ -10,6 +10,7 @@ import {
   useAudiobookPrepDashboardQuery,
   useCharacterCooccurrenceGraphQuery,
   useExportPayloadQuery,
+  usePipelineStageDurationsDashboardQuery,
   useTensionGraphQuery,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
@@ -295,6 +296,7 @@ export function ProjectDashboardsPage() {
   const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
   const cooccurrenceGraphQuery = useCharacterCooccurrenceGraphQuery(projectId, runId);
   const audiobookPrepDashboardQuery = useAudiobookPrepDashboardQuery(projectId, runId);
+  const pipelineStageDurationsQuery = usePipelineStageDurationsDashboardQuery(projectId, runId);
   const [showSmoothed, setShowSmoothed] = useState(true);
 
   const rawSeries = useMemo(() => {
@@ -423,11 +425,13 @@ export function ProjectDashboardsPage() {
     !characterAnalyticsQuery.isLoading &&
     !cooccurrenceGraphQuery.isLoading &&
     !audiobookPrepDashboardQuery.isLoading &&
+    !pipelineStageDurationsQuery.isLoading &&
     !exportPayloadQuery.error &&
     !tensionGraphQuery.error &&
     !characterAnalyticsQuery.error &&
     !cooccurrenceGraphQuery.error &&
-    !audiobookPrepDashboardQuery.error;
+    !audiobookPrepDashboardQuery.error &&
+    !pipelineStageDurationsQuery.error;
 
   function downloadDashboardSnapshot() {
     if (!canExportDashboardSnapshot || projectId === null || runId === null) {
@@ -442,6 +446,7 @@ export function ProjectDashboardsPage() {
       character_analytics: characterAnalyticsQuery.data ?? null,
       cooccurrence_graph: cooccurrenceGraphPayload,
       audiobook_prep_dashboard: audiobookPrepDashboardQuery.data ?? null,
+      pipeline_stage_durations_dashboard: pipelineStageDurationsQuery.data ?? null,
       show_smoothed_graph: showSmoothed,
     };
 
@@ -534,6 +539,52 @@ export function ProjectDashboardsPage() {
           ) : null}
           {audiobookPrepDashboardQuery.error ? (
             <p className="text-destructive">{audiobookPrepDashboardQuery.error.message}</p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pipeline Stage Durations</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p data-testid="dashboards-stage-duration-total">
+            Total pipeline time:{' '}
+            <span className="font-medium text-foreground">
+              {pipelineStageDurationsQuery.isLoading
+                ? 'Loading…'
+                : pipelineStageDurationsQuery.error
+                  ? 'Unavailable'
+                  : `${pipelineStageDurationsQuery.data?.total_duration_ms ?? 0} ms`}
+            </span>
+          </p>
+          <p data-testid="dashboards-stage-duration-slowest">
+            Slowest stage:{' '}
+            <span className="font-medium text-foreground">
+              {pipelineStageDurationsQuery.data?.slowest_stage_name
+                ? `${pipelineStageDurationsQuery.data.slowest_stage_name} (${pipelineStageDurationsQuery.data.slowest_stage_duration_ms ?? 0} ms)`
+                : 'Unavailable'}
+            </span>
+          </p>
+          <p>
+            Stages:{' '}
+            <span className="font-medium text-foreground">
+              {pipelineStageDurationsQuery.data?.stage_count ?? 0}
+            </span>
+          </p>
+          {(pipelineStageDurationsQuery.data?.stages ?? []).slice(0, 10).map((stage) => (
+            <div
+              key={stage.stage_name}
+              className="grid gap-1 rounded border border-panel-border/50 bg-panel/40 px-3 py-2 sm:grid-cols-[1fr_auto_auto] sm:grid"
+              data-testid={`dashboards-stage-duration-${toGraphTestId(stage.stage_name)}`}
+            >
+              <p className="font-medium text-foreground">{stage.stage_name}</p>
+              <p>{stage.duration_ms} ms</p>
+              <p>{Math.round(stage.share_of_total * 100)}%</p>
+            </div>
+          ))}
+          {pipelineStageDurationsQuery.error ? (
+            <p className="text-destructive">{pipelineStageDurationsQuery.error.message}</p>
           ) : null}
         </CardContent>
       </Card>
