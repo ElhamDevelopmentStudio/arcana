@@ -10,6 +10,7 @@ from app.services.tagging import (
 )
 
 from app.modes import DEFAULT_MODE, is_valid_mode
+from app.services.run_status import RunStatus
 
 
 ALLOWED_PROJECT_ACCESS_ROLES = frozenset({"owner", "editor", "viewer"})
@@ -762,7 +763,7 @@ class RunCreateRequest(BaseModel):
 class RunResponse(BaseModel):
     run_id: int
     project_id: int
-    status: str
+    status: RunStatus
     segment_count: int
 
 
@@ -796,7 +797,7 @@ class LLMCacheMetrics(BaseModel):
 class RunDetailResponse(BaseModel):
     run_id: int
     project_id: int
-    status: str
+    status: RunStatus
     llm_provider_name: str | None = None
     llm_model_identifier: str | None = None
     llm_model_version: str | None = None
@@ -967,7 +968,7 @@ class CharacterCooccurrenceGraphResponse(BaseModel):
     output_name: str = Field(default="character_cooccurrence_graph")
     project_id: int
     run_id: int
-    run_status: str
+    run_status: RunStatus
     generated_at: str
     generated_by: str = Field(default="build_run_export_graph_json")
     graph: CharacterCooccurrenceGraphData
@@ -989,7 +990,7 @@ class AudiobookPrepDashboardResponse(BaseModel):
     output_name: str = Field(default="audiobook_prep_dashboard")
     project_id: int
     run_id: int
-    run_status: str
+    run_status: RunStatus
     generated_at: str
     generated_by: str = Field(default="build_audiobook_prep_dashboard")
     unresolved_speaker_count: int = Field(ge=0)
@@ -1013,7 +1014,7 @@ class ComparisonWorkspaceRunDescriptor(BaseModel):
     run_id: int
     project_id: int
     project_title: str
-    status: str
+    status: RunStatus
     segment_count: int
     run_config_mode: str
 

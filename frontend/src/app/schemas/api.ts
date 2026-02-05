@@ -6,6 +6,7 @@ const defaultUnstableEmotionShiftTransitionThreshold = 4;
 const defaultUnstableEmotionShiftDensityThreshold = 0.5;
 const defaultContradictionReviewRequired = true;
 const ALLOWED_EXPORT_FORMATS = ['json', 'csv', 'time_series_json', 'graph_json'] as const;
+const runStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']);
 
 const runExportFormatsSchema = z
   .array(z.string())
@@ -358,7 +359,7 @@ export const runRequestSchema = z.object({
 export const runResponseSchema = z.object({
   run_id: z.number().int(),
   project_id: z.number().int(),
-  status: z.string(),
+  status: runStatusSchema,
   segment_count: z.number().int().nonnegative(),
 });
 
@@ -372,7 +373,7 @@ const llmCacheMetricsSchema = z.record(
 export const runDetailSchema = z.object({
   run_id: z.number().int(),
   project_id: z.number().int(),
-  status: z.string(),
+  status: runStatusSchema,
   config: z.record(z.string(), z.unknown()),
   changelog_entries: z
     .array(
@@ -572,7 +573,7 @@ export const characterCooccurrenceGraphResponseSchema = z.object({
   output_name: z.string(),
   project_id: z.number().int(),
   run_id: z.number().int(),
-  run_status: z.string(),
+  run_status: runStatusSchema,
   generated_at: z.string(),
   generated_by: z.string(),
   graph: characterCooccurrenceGraphDataSchema,
@@ -630,7 +631,7 @@ export const audiobookPrepDashboardResponseSchema = z.object({
   output_name: z.string(),
   project_id: z.number().int().nonnegative(),
   run_id: z.number().int().nonnegative(),
-  run_status: z.string(),
+  run_status: runStatusSchema,
   generated_at: z.string(),
   generated_by: z.string(),
   unresolved_speaker_count: z.number().int().nonnegative(),

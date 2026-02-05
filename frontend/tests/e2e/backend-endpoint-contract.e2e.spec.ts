@@ -535,8 +535,20 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
 
     const runDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runId}`);
     expect(runDetailResponse.status()).toBe(200);
-    const runDetailPayload = (await runDetailResponse.json()) as { status: string; config: Record<string, unknown> };
+    const runDetailPayload = (await runDetailResponse.json()) as {
+      status: string;
+      config: Record<string, unknown>;
+      changelog_entries: Array<{ event_type: string }>;
+    };
+    expect(['queued', 'running', 'completed', 'failed', 'cancelled']).toContain(runDetailPayload.status);
     expect(runDetailPayload.status).toBe('completed');
+    const changelogEventTypes = runDetailPayload.changelog_entries.map((entry) => entry.event_type);
+    expect(changelogEventTypes).toContain('pipeline_execution_queued');
+    expect(changelogEventTypes).toContain('pipeline_execution_started');
+    expect(changelogEventTypes).toContain('pipeline_completed');
+    expect(changelogEventTypes.indexOf('pipeline_execution_queued')).toBeLessThan(
+      changelogEventTypes.indexOf('pipeline_execution_started'),
+    );
     expect(runDetailPayload.config.mode).toBe('author');
     expect(runDetailPayload.config.config_schema_version).toBe('1.0.0');
     const normalizationReport = runDetailPayload.config.normalization_report as {

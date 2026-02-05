@@ -80,11 +80,13 @@ def test_run_creation_records_changelog_entries_with_timestamps() -> None:
 
         event_types = [row.event_type for row in changelog_rows]
         assert "run_created" in event_types
+        assert "pipeline_execution_queued" in event_types
         assert "pipeline_execution_started" in event_types
         assert "pipeline_completed" in event_types
         assert "run_configuration_snapshot_created" in event_types
         assert "time_series_snapshot_created" in event_types
         assert all(row.run_id == run.id and row.created_at is not None for row in changelog_rows)
+        assert event_types.index("pipeline_execution_queued") < event_types.index("pipeline_execution_started")
 
         payload = [
             {
