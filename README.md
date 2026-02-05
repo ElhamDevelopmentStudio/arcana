@@ -59,6 +59,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/release_migration_backward_compatibility_checklist.md`: release checklist for migrations and backward compatibility
 - `docs/release_rollback_plan_template.md`: rollback plan template for failed release response
 - `docs/release_security_review_checklist.md`: release security review checklist template
+- `.github/pull_request_template.md`: PR template with required paired frontend-impact note for backend/API changes
 - `backend/performance_regression_thresholds.json`: per-mode thresholds used by the CI performance regression gate
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `docs/error_warning_catalog.md`: error and warning catalog with remediation guidance
