@@ -13,6 +13,7 @@ Usage rules:
 - For each completed task, record PR/commit link and date in your tracker.
 - If a task reveals new subtasks, append them under the same SRS section with the same reference style.
 - Implement backend and frontend in parallel for each feature slice; do not defer all frontend work until backend completion.
+- Every feature slice must include backend + frontend acceptance notes (or explicitly deferred FE task IDs).
 - For every API/data-model change, either implement matching frontend behavior in the same slice or log an explicit deferred FE task ID.
 
 Definition of done for each task:
@@ -532,7 +533,7 @@ Definition of done for each task:
 
 ### 13.1 Parallel Delivery Contract
 - [x] [FE-001] Add “paired frontend impact” note to PR template for all backend/API changes.
-- [ ] [FE-002] Add checklist policy that every feature slice must include backend + frontend acceptance notes.
+- [x] [FE-002] Add checklist policy that every feature slice must include backend + frontend acceptance notes.
 - [ ] [FE-003] Add API contract changelog section consumed by frontend maintainers.
 - [ ] [FE-004] Add UI impact matrix mapping SRS sections to frontend pages/components.
 - [ ] [FE-005] Add “deferred FE task ID required” policy when backend ships without UI.
