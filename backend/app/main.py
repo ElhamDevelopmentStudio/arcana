@@ -165,6 +165,7 @@ from app.services.normalization import (
     normalize_text_with_report,
 )
 from app.services.voice_preview import recompute_voice_previews_for_runs
+from app.services.background_jobs import submit_background_job
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.llm_router import is_supported_provider
 from app.services.provider_toggle import (
@@ -5074,12 +5075,15 @@ def create_run(
         run.config_json = run_config_with_recovery
     session.commit()
     session.refresh(run)
-    segment_count = _execute_pipeline_and_finalize_run(
-        session=session,
-        project=project,
-        run=run,
-        principal_type=principal_type,
-        principal_id=principal_id,
+    segment_count = submit_background_job(
+        job_name="pipeline_execute_run",
+        execute=lambda: _execute_pipeline_and_finalize_run(
+            session=session,
+            project=project,
+            run=run,
+            principal_type=principal_type,
+            principal_id=principal_id,
+        ),
     )
 
     return RunResponse(
@@ -5153,12 +5157,15 @@ def recover_run(
     else:
         principal_type, principal_id = project_principal
 
-    segment_count = _execute_pipeline_and_finalize_run(
-        session=session,
-        project=project,
-        run=run,
-        principal_type=principal_type,
-        principal_id=principal_id,
+    segment_count = submit_background_job(
+        job_name="pipeline_recover_run",
+        execute=lambda: _execute_pipeline_and_finalize_run(
+            session=session,
+            project=project,
+            run=run,
+            principal_type=principal_type,
+            principal_id=principal_id,
+        ),
     )
 
     return RunResponse(
