@@ -3154,6 +3154,11 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
     )
 
 
+@app.post("/api/projects/drafts", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+def create_project_draft(payload: ProjectCreate, session: Session = Depends(get_session)) -> ProjectResponse:
+    return create_project(payload=payload, session=session)
+
+
 @app.get(
     "/api/projects/{project_id}/llm",
     response_model=ProjectLLMSettingsResponse,
