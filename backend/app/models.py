@@ -21,6 +21,8 @@ class Project(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     lifecycle_state: Mapped[str] = mapped_column(String(40), nullable=False, default=PROJECT_LIFECYCLE_DRAFT)
     selected_mode: Mapped[str] = mapped_column(String(50), nullable=False, default=DEFAULT_MODE)
     selected_modes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)

@@ -49,15 +49,34 @@ def _apply_schema_compatibility_updates(engine) -> None:
         return
 
     project_columns = {column["name"] for column in inspector.get_columns("projects")}
-    if "lifecycle_state" in project_columns:
-        return
-
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                "ALTER TABLE projects ADD COLUMN lifecycle_state VARCHAR(40) NOT NULL DEFAULT 'draft'"
+        if "lifecycle_state" not in project_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE projects ADD COLUMN lifecycle_state VARCHAR(40) NOT NULL DEFAULT 'draft'"
+                )
             )
-        )
+
+        if "description" not in project_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE projects ADD COLUMN description TEXT"
+                )
+            )
+
+        if "tags" not in project_columns:
+            if engine.dialect.name == "postgresql":
+                connection.execute(
+                    text(
+                        "ALTER TABLE projects ADD COLUMN tags JSON NOT NULL DEFAULT '[]'::json"
+                    )
+                )
+            else:
+                connection.execute(
+                    text(
+                        "ALTER TABLE projects ADD COLUMN tags JSON NOT NULL DEFAULT '[]'"
+                    )
+                )
 
 
 def get_session() -> Generator[Session, None, None]:
