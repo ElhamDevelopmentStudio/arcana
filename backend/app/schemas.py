@@ -1115,6 +1115,40 @@ class PipelineStageDurationsDashboardResponse(BaseModel):
     stages: list[PipelineStageDurationItem] = Field(default_factory=list)
 
 
+ProjectLifecycleState = Literal["draft", "ingested", "configured", "running", "completed", "failed", "archived"]
+
+
+class ProjectControlPanelStateCount(BaseModel):
+    lifecycle_state: ProjectLifecycleState
+    project_count: int = Field(ge=0)
+
+
+class ProjectControlPanelRecentFailureItem(BaseModel):
+    project_id: int = Field(ge=1)
+    project_title: str = Field(min_length=1, max_length=255)
+    run_id: int | None = Field(default=None, ge=1)
+    failed_at: str = Field(min_length=1)
+    error_code: str | None = Field(default=None, min_length=1, max_length=120)
+    error_message: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
+class ProjectControlPanelSummaryResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="project_control_panel_summary_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="CP-001")
+    output_name: str = Field(default="project_control_panel_summary")
+    generated_at: str = Field(min_length=1)
+    generated_by: str = Field(default="build_project_control_panel_summary", min_length=1)
+    total_projects: int = Field(ge=0)
+    project_counts_by_state: list[ProjectControlPanelStateCount] = Field(default_factory=list)
+    active_run_count: int = Field(ge=0)
+    blocked_export_project_count: int = Field(ge=0)
+    blocked_export_run_count: int = Field(ge=0)
+    recent_failure_count: int = Field(ge=0)
+    recent_failures: list[ProjectControlPanelRecentFailureItem] = Field(default_factory=list)
+
+
 
 class ComparisonWorkspaceCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
