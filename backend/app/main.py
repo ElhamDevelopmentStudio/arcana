@@ -84,6 +84,7 @@ from app.schemas import (
     ProjectIngestionSourceAttachResponse,
     ProjectMetadataUpdateRequest,
     ProjectMetadataUpdateResponse,
+    ProjectControlPanelProjectListResponse,
     ProjectControlPanelSummaryResponse,
     ProjectLLMSettingsRequest,
     ProjectLLMSettingsResponse,
@@ -223,6 +224,9 @@ _CONTROL_PANEL_STATE_ORDER = (
     PROJECT_LIFECYCLE_COMPLETED,
     PROJECT_LIFECYCLE_FAILED,
     PROJECT_LIFECYCLE_ARCHIVED,
+)
+_CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES = frozenset(
+    {"ingest", "select_mode", "configure", "run", "rerun", "export", "review_failure", "archived", "none"}
 )
 
 _PROJECT_SERVICE_ROLE_SCOPE_MATRIX: dict[str, dict[str, set[str]]] = {
@@ -3333,6 +3337,170 @@ def get_project_control_panel_summary(session: Session = Depends(get_session)) -
         blocked_export_run_count=blocked_export_run_count,
         recent_failure_count=len(failed_runs),
         recent_failures=recent_failures,
+    )
+
+
+def _resolve_project_control_panel_next_required_action(
+    *,
+    lifecycle_state: str,
+    last_run_status: str | None,
+) -> str:
+    normalized_lifecycle_state = str(lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+    normalized_last_run_status = str(last_run_status).strip().lower() if last_run_status else None
+
+    if normalized_lifecycle_state == PROJECT_LIFECYCLE_ARCHIVED:
+        return "archived"
+    if normalized_last_run_status == RUN_STATUS_FAILED:
+        return "review_failure"
+    if normalized_last_run_status == RUN_STATUS_CANCELLED:
+        return "rerun"
+    if normalized_last_run_status in {RUN_STATUS_QUEUED, RUN_STATUS_RUNNING}:
+        return "none"
+    if normalized_last_run_status == RUN_STATUS_COMPLETED:
+        return "export"
+    if normalized_lifecycle_state == PROJECT_LIFECYCLE_DRAFT:
+        return "ingest"
+    if normalized_lifecycle_state in {PROJECT_LIFECYCLE_INGESTED, PROJECT_LIFECYCLE_CONFIGURED}:
+        return "run"
+    if normalized_lifecycle_state == PROJECT_LIFECYCLE_FAILED:
+        return "review_failure"
+    if normalized_lifecycle_state == PROJECT_LIFECYCLE_COMPLETED:
+        return "export"
+    if normalized_lifecycle_state == PROJECT_LIFECYCLE_RUNNING:
+        return "none"
+    return "configure"
+
+
+@app.get(
+    "/api/dashboard/project-control-panel/projects",
+    response_model=ProjectControlPanelProjectListResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_control_panel_project_list(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    lifecycle_state: str | None = Query(default=None, alias="status"),
+    selected_mode: str | None = Query(default=None),
+    last_run_status: str | None = Query(default=None),
+    next_required_action: str | None = Query(default=None),
+    session: Session = Depends(get_session),
+) -> ProjectControlPanelProjectListResponse:
+    generated_at = datetime.now(timezone.utc).isoformat()
+    normalized_status = str(lifecycle_state).strip().lower() if lifecycle_state is not None else None
+    if normalized_status is not None and normalized_status not in set(_CONTROL_PANEL_STATE_ORDER):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "status must be one of: "
+                f"{', '.join(_CONTROL_PANEL_STATE_ORDER)}"
+            ),
+        )
+
+    normalized_selected_mode = str(selected_mode).strip().lower() if selected_mode is not None else None
+    if normalized_selected_mode == "":
+        normalized_selected_mode = None
+    normalized_last_run_status = str(last_run_status).strip().lower() if last_run_status is not None else None
+    if normalized_last_run_status == "":
+        normalized_last_run_status = None
+    if normalized_last_run_status is not None and normalized_last_run_status not in {
+        RUN_STATUS_QUEUED,
+        RUN_STATUS_RUNNING,
+        RUN_STATUS_COMPLETED,
+        RUN_STATUS_FAILED,
+        RUN_STATUS_CANCELLED,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="last_run_status must be one of: queued, running, completed, failed, cancelled",
+        )
+
+    normalized_next_required_action = (
+        str(next_required_action).strip().lower()
+        if next_required_action is not None
+        else None
+    )
+    if normalized_next_required_action == "":
+        normalized_next_required_action = None
+    if (
+        normalized_next_required_action is not None
+        and normalized_next_required_action not in _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "next_required_action must be one of: "
+                "ingest, select_mode, configure, run, rerun, export, review_failure, archived, none"
+            ),
+        )
+
+    projects = session.query(Project).all()
+    runs = session.query(Run).all()
+
+    latest_run_by_project: dict[int, Run] = {}
+    for run in runs:
+        current_latest = latest_run_by_project.get(run.project_id)
+        if current_latest is None:
+            latest_run_by_project[run.project_id] = run
+            continue
+        run_started_at = run.started_at or datetime.min.replace(tzinfo=timezone.utc)
+        current_started_at = current_latest.started_at or datetime.min.replace(tzinfo=timezone.utc)
+        if run_started_at > current_started_at or (run_started_at == current_started_at and run.id > current_latest.id):
+            latest_run_by_project[run.project_id] = run
+
+    rows: list[dict[str, object]] = []
+    for project in projects:
+        lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+        if lifecycle_state not in set(_CONTROL_PANEL_STATE_ORDER):
+            lifecycle_state = PROJECT_LIFECYCLE_DRAFT
+        latest_run = latest_run_by_project.get(project.id)
+        last_status = str(latest_run.status).strip().lower() if latest_run is not None else None
+        updated_at_candidates = [
+            project.created_at,
+            project.ingestion_timestamp,
+            latest_run.started_at if latest_run is not None else None,
+            latest_run.finished_at if latest_run is not None else None,
+        ]
+        updated_at = max(candidate for candidate in updated_at_candidates if candidate is not None)
+        next_action = _resolve_project_control_panel_next_required_action(
+            lifecycle_state=lifecycle_state,
+            last_run_status=last_status,
+        )
+        row = {
+            "project_id": project.id,
+            "status": lifecycle_state,
+            "selected_mode": str(project.selected_mode).strip().lower() or DEFAULT_MODE,
+            "last_run_status": last_status,
+            "updated_at": _serialize_datetime_to_utc_iso(updated_at) or generated_at,
+            "next_required_action": next_action,
+        }
+
+        if normalized_status is not None and row["status"] != normalized_status:
+            continue
+        if normalized_selected_mode is not None and row["selected_mode"] != normalized_selected_mode:
+            continue
+        if normalized_last_run_status is not None and row["last_run_status"] != normalized_last_run_status:
+            continue
+        if (
+            normalized_next_required_action is not None
+            and row["next_required_action"] != normalized_next_required_action
+        ):
+            continue
+
+        rows.append(row)
+
+    rows.sort(key=lambda item: (str(item["updated_at"]), int(item["project_id"])), reverse=True)
+    total_items = len(rows)
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    paged_rows = rows[start_index:end_index]
+
+    return ProjectControlPanelProjectListResponse(
+        generated_at=generated_at,
+        total_items=total_items,
+        page=page,
+        page_size=page_size,
+        has_next_page=end_index < total_items,
+        items=paged_rows,
     )
 
 
