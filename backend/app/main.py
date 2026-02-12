@@ -28,6 +28,7 @@ from app.models import (
     SubSegmentTag,
     RunChangelogEntry,
     Project,
+    ProjectActivityEvent,
     ProjectLifecycleTransition,
     ProjectRawCorpusBlob,
     PronunciationDictionary,
@@ -228,6 +229,9 @@ _CONTROL_PANEL_STATE_ORDER = (
 )
 _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES = frozenset(
     {"ingest", "select_mode", "configure", "run", "rerun", "export", "review_failure", "archived", "none"}
+)
+_PROJECT_ACTIVITY_EVENT_TYPES = frozenset(
+    {"ingest", "mode_change", "run_start", "run_complete", "export", "manual_edit", "rerun"}
 )
 
 _PROJECT_SERVICE_ROLE_SCOPE_MATRIX: dict[str, dict[str, set[str]]] = {
@@ -1241,6 +1245,44 @@ def _merge_selected_modes(existing_modes: list[str] | None, mode: str) -> list[s
     if mode not in merged:
         merged.append(mode)
     return merged
+
+
+def _resolve_project_activity_actor(
+    *,
+    principal_type: str | None = None,
+    principal_id: str | None = None,
+) -> str:
+    normalized_principal_type = str(principal_type).strip() if principal_type is not None else ""
+    normalized_principal_id = str(principal_id).strip() if principal_id is not None else ""
+    if normalized_principal_type and normalized_principal_id:
+        return f"{normalized_principal_type}:{normalized_principal_id}"
+    if normalized_principal_type:
+        return normalized_principal_type
+    return "system"
+
+
+def _append_project_activity_event(
+    *,
+    session: Session,
+    project_id: int,
+    event_type: str,
+    run_id: int | None = None,
+    actor: str = "system",
+    event_metadata: dict[str, object] | None = None,
+) -> None:
+    normalized_event_type = str(event_type).strip().lower()
+    if normalized_event_type not in _PROJECT_ACTIVITY_EVENT_TYPES:
+        raise ValueError(f"Unsupported project activity event type: {event_type}")
+    normalized_actor = str(actor).strip() or "system"
+    session.add(
+        ProjectActivityEvent(
+            project_id=project_id,
+            run_id=run_id,
+            event_type=normalized_event_type,
+            actor=normalized_actor,
+            event_metadata=dict(event_metadata or {}),
+        )
+    )
 
 
 def _transition_project_lifecycle_state(
@@ -2467,12 +2509,10 @@ def _execute_pipeline_and_finalize_run(
             "principal_id": principal_id or "",
         },
     )
-    if principal_type is not None and principal_id is not None and str(principal_id).strip():
-        lifecycle_actor = f"{principal_type}:{principal_id}"
-    elif principal_type is not None:
-        lifecycle_actor = str(principal_type).strip() or "system"
-    else:
-        lifecycle_actor = "system"
+    lifecycle_actor = _resolve_project_activity_actor(
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
     try:
         result = execute_pipeline(
             session=session,
@@ -2538,6 +2578,17 @@ def _execute_pipeline_and_finalize_run(
                 "artifact integrity check failed after pipeline completion",
                 metadata={"artifact_integrity": artifact_integrity_report},
             )
+        _append_project_activity_event(
+            session=session,
+            project_id=project.id,
+            run_id=run.id,
+            event_type="run_complete",
+            actor=lifecycle_actor,
+            event_metadata={
+                "status": run.status,
+                "segment_count": int(result["segment_count"]),
+            },
+        )
         session.commit()
         _emit_service_log(
             service="pipeline_execution",
@@ -2575,6 +2626,17 @@ def _execute_pipeline_and_finalize_run(
             event_message="Pipeline error",
             event_metadata=error_metadata,
         )
+        _append_project_activity_event(
+            session=session,
+            project_id=project.id,
+            run_id=run.id,
+            event_type="run_complete",
+            actor=lifecycle_actor,
+            event_metadata={
+                "status": run.status,
+                "reason": str(error_metadata.get("reason", "pipeline_error")),
+            },
+        )
         session.add(run)
         session.add(project)
         session.commit()
@@ -2608,6 +2670,17 @@ def _execute_pipeline_and_finalize_run(
             event_type="pipeline_failed",
             event_message="Pipeline execution failed",
             event_metadata={"reason": "unhandled_exception"},
+        )
+        _append_project_activity_event(
+            session=session,
+            project_id=project.id,
+            run_id=run.id,
+            event_type="run_complete",
+            actor=lifecycle_actor,
+            event_metadata={
+                "status": run.status,
+                "reason": "unhandled_exception",
+            },
         )
         session.add(run)
         session.add(project)
@@ -3293,6 +3366,16 @@ def update_project_metadata(
     if "tags" in provided_fields:
         project.tags = list(payload.tags or [])
 
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        event_type="manual_edit",
+        event_metadata={
+            "updated_fields": sorted(
+                field for field in provided_fields if field in {"title", "description", "tags"}
+            )
+        },
+    )
     updated_at = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -3649,6 +3732,16 @@ def switch_project_mode(
     _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_CONFIGURED, session=session)
     project.selected_mode = payload.mode
     project.selected_modes = _merge_selected_modes(project.selected_modes, payload.mode)
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        event_type="mode_change",
+        event_metadata={
+            "previous_mode": previous_mode,
+            "selected_mode": payload.mode,
+            "stale_runs_marked": stale_runs_marked,
+        },
+    )
     session.add(project)
     session.commit()
     session.refresh(project)
@@ -3766,6 +3859,15 @@ def ingest_txt(
         normalization_report=normalization_report,
     )
     _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        event_type="ingest",
+        event_metadata={
+            "source": "txt",
+            "chapter_count": len(chapters),
+        },
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -3880,6 +3982,15 @@ def ingest_markdown(
         normalization_report=normalization_report,
     )
     _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        event_type="ingest",
+        event_metadata={
+            "source": "markdown",
+            "chapter_count": len(chapters),
+        },
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -3994,6 +4105,15 @@ def ingest_epub(
         normalization_report=normalization_report,
     )
     _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        event_type="ingest",
+        event_metadata={
+            "source": "epub",
+            "chapter_count": len(chapter_normalization_reports),
+        },
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -4121,6 +4241,15 @@ def ingest_chapters_dir(
         normalization_report=normalization_report,
     )
     _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        event_type="ingest",
+        event_metadata={
+            "source": "chapters-dir",
+            "chapter_count": len(chapter_rows),
+        },
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -4275,6 +4404,15 @@ def append_chapter(
             source_filename=filename,
         )
     _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        event_type="ingest",
+        event_metadata={
+            "source": "append-chapter",
+            "chapter_index": next_chapter_index,
+        },
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -5518,6 +5656,21 @@ def create_run(
         principal_id = None
     else:
         principal_type, principal_id = project_principal
+    activity_actor = _resolve_project_activity_actor(
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        run_id=run.id,
+        event_type="run_start",
+        actor=activity_actor,
+        event_metadata={
+            "mode": str(run_config.get("mode", DEFAULT_MODE)),
+            "recovery": False,
+        },
+    )
     _append_run_changelog_entry(
         session=session,
         run=run,
@@ -5764,6 +5917,22 @@ def recover_run(
         principal_id = None
     else:
         principal_type, principal_id = project_principal
+    activity_actor = _resolve_project_activity_actor(
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        run_id=run.id,
+        event_type="rerun",
+        actor=activity_actor,
+        event_metadata={
+            "attempt": next_attempt,
+            "previous_status": previous_status,
+        },
+    )
+    session.commit()
 
     segment_count = submit_background_job(
         job_name="pipeline_recover_run",
@@ -6549,6 +6718,17 @@ def get_export_json(
             )
 
         if requested_output_format == "json":
+            _append_project_activity_event(
+                session=session,
+                project_id=project.id,
+                run_id=run.id,
+                event_type="export",
+                event_metadata={
+                    "output_schema": "academic",
+                    "output_format": "json",
+                },
+            )
+            session.commit()
             return JSONResponse(content=payload, headers=export_headers)
 
         if requested_output_format == "graph_json":
@@ -6560,6 +6740,18 @@ def get_export_json(
                 )
 
             manifest = payload.get("manifest", {})
+            _append_project_activity_event(
+                session=session,
+                project_id=project.id,
+                run_id=run.id,
+                event_type="export",
+                event_metadata={
+                    "output_schema": "academic",
+                    "output_format": "graph_json",
+                    "output_id": selected_output_id,
+                },
+            )
+            session.commit()
             return JSONResponse(
                 content=build_run_export_graph_json(
                     project=project,
@@ -6584,8 +6776,30 @@ def get_export_json(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Unsupported output_format for author schema. Supported values: json.",
             )
+        _append_project_activity_event(
+            session=session,
+            project_id=project.id,
+            run_id=run.id,
+            event_type="export",
+            event_metadata={
+                "output_schema": "author",
+                "output_format": "json",
+            },
+        )
+        session.commit()
         return JSONResponse(content=payload["manifest"]["narrative_health_report"], headers=export_headers)
 
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        run_id=run.id,
+        event_type="export",
+        event_metadata={
+            "output_schema": "default",
+            "output_format": "json",
+        },
+    )
+    session.commit()
     return JSONResponse(content=payload, headers=export_headers)
 
 
@@ -6668,6 +6882,17 @@ def get_export_csv(
             academic_manifest=academic_manifest,
         )
         filename = f"project-{project_id}-run-{run_id}-academic.csv"
+        _append_project_activity_event(
+            session=session,
+            project_id=project.id,
+            run_id=run.id,
+            event_type="export",
+            event_metadata={
+                "output_schema": "academic",
+                "output_format": "csv",
+            },
+        )
+        session.commit()
     else:
         csv_data = build_run_export_csv(
             session=session,
@@ -6678,6 +6903,17 @@ def get_export_csv(
             apply_export_chunk_size=True,
         )
         filename = f"project-{project_id}-run-{run_id}.csv"
+        _append_project_activity_event(
+            session=session,
+            project_id=project.id,
+            run_id=run.id,
+            event_type="export",
+            event_metadata={
+                "output_schema": "default",
+                "output_format": "csv",
+            },
+        )
+        session.commit()
     response_headers = dict(export_headers)
     response_headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return Response(
