@@ -4,7 +4,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_project_control_panel_project_list_endpoint.db"
+DB_FILE = "test_nipe_project_control_panel_project_list_endpoint.db"
+DB_URL = f"sqlite:///./{DB_FILE}"
+os.environ["DATABASE_URL"] = DB_URL
 
 from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
@@ -12,7 +14,7 @@ from app.main import app
 
 
 def setup_module() -> None:
-    db_file = Path("test_nipe_project_control_panel_project_list_endpoint.db")
+    db_file = Path(DB_FILE)
     if db_file.exists():
         db_file.unlink()
     clear_settings_cache()
@@ -23,7 +25,7 @@ def setup_module() -> None:
 def teardown_module() -> None:
     reset_engine()
     clear_settings_cache()
-    db_file = Path("test_nipe_project_control_panel_project_list_endpoint.db")
+    db_file = Path(DB_FILE)
     if db_file.exists():
         db_file.unlink()
 
@@ -39,7 +41,10 @@ def _sample_txt() -> str:
 
 def test_integration_project_control_panel_project_list_empty_state() -> None:
     with TestClient(app) as client:
-        response = client.get("/api/dashboard/project-control-panel/projects")
+        response = client.get(
+            "/api/dashboard/project-control-panel/projects",
+            params={"status": "archived", "next_required_action": "ingest"},
+        )
     assert response.status_code == 200
     payload = response.json()
     assert payload["schema_version"] == "1.0.0"

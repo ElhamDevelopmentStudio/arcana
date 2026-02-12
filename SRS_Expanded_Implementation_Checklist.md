@@ -377,7 +377,7 @@ Definition of done for each task:
 - [x] [VR-018] Implement backend dashboard summary endpoint returning control-panel aggregate metrics.
 - [x] [VR-019] Define backend project list contract for dashboard rows (`project_id`, status, selected mode, last run status, updated timestamp, next required action).
 - [x] [VR-020] Implement paginated/filterable backend project list endpoint for dashboard consumption.
-- [ ] [VR-021] Add integration tests for dashboard summary and project-list contract stability.
+- [x] [VR-021] Add integration tests for dashboard summary and project-list contract stability.
 
 ## 6. Data Persistence Requirements (Ref: SRS.md §6)
 - [X] [DR-001] Persist raw corpus blobs with project linkage.

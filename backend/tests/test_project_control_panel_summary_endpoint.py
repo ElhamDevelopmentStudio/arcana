@@ -4,7 +4,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_project_control_panel_summary_endpoint.db"
+DB_FILE = "test_nipe_project_control_panel_summary_endpoint.db"
+DB_URL = f"sqlite:///./{DB_FILE}"
+os.environ["DATABASE_URL"] = DB_URL
 
 from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
@@ -12,7 +14,7 @@ from app.main import app
 
 
 def setup_module() -> None:
-    db_file = Path("test_nipe_project_control_panel_summary_endpoint.db")
+    db_file = Path(DB_FILE)
     if db_file.exists():
         db_file.unlink()
     clear_settings_cache()
@@ -23,7 +25,7 @@ def setup_module() -> None:
 def teardown_module() -> None:
     reset_engine()
     clear_settings_cache()
-    db_file = Path("test_nipe_project_control_panel_summary_endpoint.db")
+    db_file = Path(DB_FILE)
     if db_file.exists():
         db_file.unlink()
 
