@@ -1,4 +1,4 @@
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import useSWRMutation from 'swr/mutation';
 
 import { runRequestSchema, type RunRequestDto } from '@/app/schemas/api';
@@ -8,37 +8,26 @@ import type { CharacterMapUpdateDto } from '@/app/schemas/api';
 import type { CharacterScrapeRequestDto } from '@/app/schemas/api';
 import type { CharacterCandidatesMergeRequestDto } from '@/app/schemas/api';
 import type { PronunciationDictionaryPreviewRequestDto } from '@/app/schemas/api';
+import {
+  resolveWorkspaceMutationInvalidationTargets,
+  workspaceKeys,
+  type WorkspaceMutationName,
+} from './workspace-cache';
 
-export const workspaceKeys = {
-  health: ['health'] as const,
-  modeCatalog: ['mode-catalog'] as const,
-  projectControlPanelSummary: ['project-control-panel-summary'] as const,
-  projectControlPanelProjectList: (params: {
-    page: number;
-    page_size: number;
-    status?: string;
-    selected_mode?: string;
-    last_run_status?: string;
-    next_required_action?: string;
-  }) => ['project-control-panel-project-list', params] as const,
-  runDetail: (projectId: number, runId: number) => ['run-detail', projectId, runId] as const,
-  runConfigPreset: (projectId: number, runId: number) => ['run-config-preset', projectId, runId] as const,
-  runConfigDiff: (projectId: number, baseRunId: number, targetRunId: number) =>
-    ['run-config-diff', projectId, baseRunId, targetRunId] as const,
-  exportPayload: (projectId: number, runId: number) => ['export-payload', projectId, runId] as const,
-  tensionGraph: (projectId: number, runId: number) => ['tension-graph', projectId, runId] as const,
-  characterAnalytics: (projectId: number, runId: number) => ['character-analytics', projectId, runId] as const,
-  characterCooccurrenceGraph: (projectId: number, runId: number) => [
-    'character-cooccurrence-graph',
-    projectId,
-    runId,
-  ] as const,
-  audiobookPrepDashboard: (projectId: number, runId: number) => ['audiobook-prep-dashboard', projectId, runId] as const,
-  pipelineStageDurationsDashboard: (projectId: number, runId: number) =>
-    ['pipeline-stage-durations-dashboard', projectId, runId] as const,
-  characterMap: (projectId: number) => ['character-map', projectId] as const,
-  characterGenderComparison: (projectId: number) => ['character-gender-comparison', projectId] as const,
-};
+export { workspaceKeys } from './workspace-cache';
+
+function useWorkspaceMutationInvalidator() {
+  const { mutate } = useSWRConfig();
+  return async (
+    mutation: WorkspaceMutationName,
+    context: {
+      projectId?: number | null;
+    } = {},
+  ) => {
+    const targets = resolveWorkspaceMutationInvalidationTargets(mutation, context);
+    await Promise.all(targets.map((target) => mutate(target as never)));
+  };
+}
 
 export function useModeCatalogQuery(enabled: boolean) {
   return useSWR(enabled ? workspaceKeys.modeCatalog : null, async () => nipeApiClient.getModeCatalog());
@@ -150,22 +139,35 @@ export function usePipelineStageDurationsDashboardQuery(projectId: number | null
 }
 
 export function useCreateProjectMutation() {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
   return useSWRMutation(
     ['create-project'],
     async (_, { arg }: { arg: { title: string; do_not_store_source_text: boolean } }) =>
       nipeApiClient.createProject(arg.title, arg.do_not_store_source_text),
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('create_project');
+      },
+    },
   );
 }
 
 export function useCreateProjectDraftMutation() {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
   return useSWRMutation(
     ['create-project-draft'],
     async (_, { arg }: { arg: { title: string; do_not_store_source_text: boolean } }) =>
       nipeApiClient.createProjectDraft(arg.title, arg.do_not_store_source_text),
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('create_project_draft');
+      },
+    },
   );
 }
 
 export function useSwitchModeMutation(projectId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
   return useSWRMutation(
     projectId !== null ? ['switch-mode', projectId] : null,
     async (_, { arg }: { arg: { mode: string } }) => {
@@ -173,6 +175,11 @@ export function useSwitchModeMutation(projectId: number | null) {
         throw new Error('Project must exist before mode switching.');
       }
       return nipeApiClient.switchProjectMode(projectId, arg.mode);
+    },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('switch_mode', { projectId });
+      },
     },
   );
 }
@@ -348,6 +355,7 @@ export function useSaveVoicesMutation(projectId: number | null) {
 }
 
 export function useRunPipelineMutation(projectId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
   return useSWRMutation(
     projectId !== null ? ['run-pipeline', projectId] : null,
     async (_, { arg }: { arg: RunRequestDto }) => {
@@ -356,10 +364,16 @@ export function useRunPipelineMutation(projectId: number | null) {
       }
       return nipeApiClient.runPipeline(projectId, runRequestSchema.parse(arg));
     },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('run_pipeline', { projectId });
+      },
+    },
   );
 }
 
 export function useCancelRunMutation(projectId: number | null, runId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
   return useSWRMutation(
     projectId !== null && runId !== null ? ['cancel-run', projectId, runId] : null,
     async () => {
@@ -367,6 +381,11 @@ export function useCancelRunMutation(projectId: number | null, runId: number | n
         throw new Error('Project and run are required before cancelling a run.');
       }
       return nipeApiClient.cancelRun(projectId, runId);
+    },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('cancel_run', { projectId });
+      },
     },
   );
 }
