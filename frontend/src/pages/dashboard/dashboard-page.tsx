@@ -12,10 +12,43 @@ import { ApiPanelEmpty, ApiPanelError, ApiPanelLoading } from '@/components/ui/a
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   useProjectControlPanelProjectListQuery,
   useProjectControlPanelSummaryQuery,
 } from '@/features/workflow/api/workflow-hooks';
+
+const projectStatusFilterOptions: NonNullable<ProjectControlPanelProjectListRequestDto['status']>[] = [
+  'draft',
+  'ingested',
+  'configured',
+  'running',
+  'completed',
+  'failed',
+  'archived',
+];
+
+const runStatusFilterOptions: NonNullable<ProjectControlPanelProjectListRequestDto['last_run_status']>[] = [
+  'queued',
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+];
+
+const nextRequiredActionFilterOptions: NonNullable<ProjectControlPanelProjectListRequestDto['next_required_action']>[] =
+  [
+    'ingest',
+    'select_mode',
+    'configure',
+    'run',
+    'rerun',
+    'export',
+    'review_failure',
+    'archived',
+    'none',
+  ];
 
 function toWorkflowRoute(projectId: number, nextRequiredAction: string) {
   if (nextRequiredAction === 'select_mode') {
@@ -54,14 +87,19 @@ function readDashboardQueryFromSearchParams(
 function normalizeDashboardListQuery(
   fromUrl: ProjectControlPanelProjectListRequestDto,
   fallback: DashboardListQueryState,
+  hasDashboardQueryParams: boolean,
 ): DashboardListQueryState {
+  if (!hasDashboardQueryParams) {
+    return fallback;
+  }
+
   return {
     page: fromUrl.page ?? fallback.page,
     page_size: fromUrl.page_size ?? fallback.page_size,
-    status: fromUrl.status ?? fallback.status,
-    selected_mode: fromUrl.selected_mode ?? fallback.selected_mode,
-    last_run_status: fromUrl.last_run_status ?? fallback.last_run_status,
-    next_required_action: fromUrl.next_required_action ?? fallback.next_required_action,
+    status: fromUrl.status,
+    selected_mode: fromUrl.selected_mode,
+    last_run_status: fromUrl.last_run_status,
+    next_required_action: fromUrl.next_required_action,
   };
 }
 
@@ -84,6 +122,22 @@ function buildDashboardSearchParams(query: DashboardListQueryState): URLSearchPa
   return params;
 }
 
+function hasAnyDashboardQueryParams(searchParams: URLSearchParams): boolean {
+  return (
+    searchParams.has('page') ||
+    searchParams.has('page_size') ||
+    searchParams.has('status') ||
+    searchParams.has('selected_mode') ||
+    searchParams.has('last_run_status') ||
+    searchParams.has('next_required_action')
+  );
+}
+
+function toOptionalQueryText(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -96,9 +150,10 @@ export function DashboardPage() {
     () => readDashboardQueryFromSearchParams(searchParams),
     [searchParams],
   );
+  const hasDashboardQueryParams = useMemo(() => hasAnyDashboardQueryParams(searchParams), [searchParams]);
   const effectiveListQuery = useMemo(
-    () => normalizeDashboardListQuery(dashboardListQueryFromUrl, dashboardListQueryState),
-    [dashboardListQueryFromUrl, dashboardListQueryState],
+    () => normalizeDashboardListQuery(dashboardListQueryFromUrl, dashboardListQueryState, hasDashboardQueryParams),
+    [dashboardListQueryFromUrl, dashboardListQueryState, hasDashboardQueryParams],
   );
 
   useEffect(() => {
@@ -122,6 +177,22 @@ export function DashboardPage() {
   const listErrorMessage =
     listQuery.error instanceof Error ? listQuery.error.message : 'Unable to load control-panel project list.';
   const listItems = listQuery.data?.items ?? [];
+
+  const applyDashboardListQuery = (nextQuery: DashboardListQueryState) => {
+    setSearchParams(buildDashboardSearchParams(nextQuery), { replace: true });
+  };
+
+  const updateDashboardFilters = (
+    patch: Partial<
+      Pick<DashboardListQueryState, 'status' | 'selected_mode' | 'last_run_status' | 'next_required_action'>
+    >,
+  ) => {
+    applyDashboardListQuery({
+      ...effectiveListQuery,
+      ...patch,
+      page: 1,
+    });
+  };
 
   return (
     <WorkflowPageShell
@@ -186,6 +257,117 @@ export function DashboardPage() {
           <CardDescription>Live control-panel project list from backend contract.</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-6 grid gap-3 md:grid-cols-5" data-testid="dashboard-filter-controls">
+            <div className="space-y-1.5">
+              <Label htmlFor="dashboard-filter-status">Status</Label>
+              <select
+                className="border-input bg-background/85 h-10 w-full rounded-xl border px-3 text-sm"
+                data-testid="dashboard-filter-status"
+                id="dashboard-filter-status"
+                onChange={(event) => {
+                  updateDashboardFilters({
+                    status:
+                      event.target.value === ''
+                        ? undefined
+                        : (event.target.value as NonNullable<ProjectControlPanelProjectListRequestDto['status']>),
+                  });
+                }}
+                value={effectiveListQuery.status ?? ''}
+              >
+                <option value="">All statuses</option>
+                {projectStatusFilterOptions.map((statusOption) => (
+                  <option key={statusOption} value={statusOption}>
+                    {statusOption}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="dashboard-filter-selected-mode">Mode</Label>
+              <Input
+                data-testid="dashboard-filter-selected-mode"
+                id="dashboard-filter-selected-mode"
+                onChange={(event) => {
+                  updateDashboardFilters({
+                    selected_mode: toOptionalQueryText(event.target.value),
+                  });
+                }}
+                placeholder="e.g. author"
+                value={effectiveListQuery.selected_mode ?? ''}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="dashboard-filter-last-run-status">Last run</Label>
+              <select
+                className="border-input bg-background/85 h-10 w-full rounded-xl border px-3 text-sm"
+                data-testid="dashboard-filter-last-run-status"
+                id="dashboard-filter-last-run-status"
+                onChange={(event) => {
+                  updateDashboardFilters({
+                    last_run_status:
+                      event.target.value === ''
+                        ? undefined
+                        : (event.target.value as NonNullable<ProjectControlPanelProjectListRequestDto['last_run_status']>),
+                  });
+                }}
+                value={effectiveListQuery.last_run_status ?? ''}
+              >
+                <option value="">Any run status</option>
+                {runStatusFilterOptions.map((runStatusOption) => (
+                  <option key={runStatusOption} value={runStatusOption}>
+                    {runStatusOption}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="dashboard-filter-next-required-action">Next action</Label>
+              <select
+                className="border-input bg-background/85 h-10 w-full rounded-xl border px-3 text-sm"
+                data-testid="dashboard-filter-next-required-action"
+                id="dashboard-filter-next-required-action"
+                onChange={(event) => {
+                  updateDashboardFilters({
+                    next_required_action:
+                      event.target.value === ''
+                        ? undefined
+                        : (event.target.value as NonNullable<
+                            ProjectControlPanelProjectListRequestDto['next_required_action']
+                          >),
+                  });
+                }}
+                value={effectiveListQuery.next_required_action ?? ''}
+              >
+                <option value="">Any next action</option>
+                {nextRequiredActionFilterOptions.map((nextActionOption) => (
+                  <option key={nextActionOption} value={nextActionOption}>
+                    {nextActionOption}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <Button
+                className="w-full"
+                data-testid="dashboard-filter-clear"
+                onClick={() => {
+                  applyDashboardListQuery({
+                    ...effectiveListQuery,
+                    page: 1,
+                    status: undefined,
+                    selected_mode: undefined,
+                    last_run_status: undefined,
+                    next_required_action: undefined,
+                  });
+                }}
+                type="button"
+                variant="outline"
+              >
+                Clear filters
+              </Button>
+            </div>
+          </div>
+
           {listQuery.isLoading && listQuery.data === undefined ? (
             <div data-testid="dashboard-list-loading">
               <ApiPanelLoading description="Fetching project rows and workflow state." title="Loading projects list" />
