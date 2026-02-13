@@ -6,6 +6,7 @@ import {
   characterImportSchema,
   characterAnalyticsResponseSchema,
   characterCooccurrenceGraphResponseSchema,
+  characterGenderComparisonRequestSchema,
   characterMapSchema,
   characterMapUpdateSchema,
   characterMapFinalizeSchema,
@@ -21,17 +22,24 @@ import {
   modeCatalogSchema,
   healthSchema,
   projectControlPanelSummaryResponseSchema,
+  projectControlPanelProjectListRequestSchema,
   projectControlPanelProjectListResponseSchema,
+  projectCreateRequestSchema,
   projectSchema,
   projectLLMSettingsRequestSchema,
   projectLLMSettingsResponseSchema,
+  projectModeSwitchRequestSchema,
   projectModeSwitchResponseSchema,
   runDetailSchema,
+  runConfigDiffRequestSchema,
   runConfigDiffResponseSchema,
   runConfigPresetResponseSchema,
   runRequestSchema,
   runResponseSchema,
   characterGenderComparisonResponseSchema,
+  singleFileUploadRequestSchema,
+  multiFileUploadRequestSchema,
+  voiceConfigSchema,
   voiceConfigResponseSchema,
   type RunRequestDto,
   type RunConfigDiffResponseDto,
@@ -40,6 +48,7 @@ import {
   type ProjectLLMSettingsResponseDto,
   type HealthDto,
   type ProjectControlPanelSummaryResponseDto,
+  type ProjectControlPanelProjectListRequestDto,
   type ProjectControlPanelProjectListResponseDto,
   type VoiceConfigDto,
   type CharacterMapDto,
@@ -92,11 +101,12 @@ export class NipeApiClient {
   }
 
   async createProject(title: string, doNotStoreSourceText: boolean = false) {
+    const parsedPayload = projectCreateRequestSchema.parse({
+      title,
+      do_not_store_source_text: doNotStoreSourceText,
+    });
     try {
-      const response = await this.client.post('/api/projects', {
-        title,
-        do_not_store_source_text: doNotStoreSourceText,
-      });
+      const response = await this.client.post('/api/projects', parsedPayload);
       return projectSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
@@ -104,11 +114,12 @@ export class NipeApiClient {
   }
 
   async createProjectDraft(title: string, doNotStoreSourceText: boolean = false) {
+    const parsedPayload = projectCreateRequestSchema.parse({
+      title,
+      do_not_store_source_text: doNotStoreSourceText,
+    });
     try {
-      const response = await this.client.post('/api/projects/drafts', {
-        title,
-        do_not_store_source_text: doNotStoreSourceText,
-      });
+      const response = await this.client.post('/api/projects/drafts', parsedPayload);
       return projectSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
@@ -124,17 +135,14 @@ export class NipeApiClient {
     }
   }
 
-  async getProjectControlPanelProjectList(params?: {
-    page?: number;
-    page_size?: number;
-    status?: string;
-    selected_mode?: string;
-    last_run_status?: string;
-    next_required_action?: string;
-  }): Promise<ProjectControlPanelProjectListResponseDto> {
+  async getProjectControlPanelProjectList(
+    params?: ProjectControlPanelProjectListRequestDto,
+  ): Promise<ProjectControlPanelProjectListResponseDto> {
+    const parsedParams = projectControlPanelProjectListRequestSchema.parse(params ?? {});
+    const hasParams = Object.keys(parsedParams).length > 0;
     try {
       const response = await this.client.get('/api/dashboard/project-control-panel/projects', {
-        params,
+        params: hasParams ? parsedParams : undefined,
       });
       return projectControlPanelProjectListResponseSchema.parse(response.data);
     } catch (error) {
@@ -165,8 +173,9 @@ export class NipeApiClient {
   }
 
   async switchProjectMode(projectId: number, mode: string) {
+    const parsedPayload = projectModeSwitchRequestSchema.parse({ mode });
     try {
-      const response = await this.client.put(`/api/projects/${projectId}/mode`, { mode });
+      const response = await this.client.put(`/api/projects/${projectId}/mode`, parsedPayload);
       return projectModeSwitchResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
@@ -174,8 +183,9 @@ export class NipeApiClient {
   }
 
   async ingestTxt(projectId: number, file: File) {
+    const parsedPayload = singleFileUploadRequestSchema.parse({ file });
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', parsedPayload.file);
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/txt`, formData, {
         headers: {
@@ -189,8 +199,9 @@ export class NipeApiClient {
   }
 
   async ingestChapterDirectory(projectId: number, files: File[]) {
+    const parsedPayload = multiFileUploadRequestSchema.parse({ files });
     const formData = new FormData();
-    for (const file of files) {
+    for (const file of parsedPayload.files) {
       formData.append('files', file);
     }
     try {
@@ -206,8 +217,9 @@ export class NipeApiClient {
   }
 
   async ingestMarkdown(projectId: number, file: File) {
+    const parsedPayload = singleFileUploadRequestSchema.parse({ file });
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', parsedPayload.file);
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/markdown`, formData, {
         headers: {
@@ -221,8 +233,9 @@ export class NipeApiClient {
   }
 
   async ingestEpub(projectId: number, file: File) {
+    const parsedPayload = singleFileUploadRequestSchema.parse({ file });
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', parsedPayload.file);
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/epub`, formData, {
         headers: {
@@ -236,8 +249,9 @@ export class NipeApiClient {
   }
 
   async appendChapter(projectId: number, file: File) {
+    const parsedPayload = singleFileUploadRequestSchema.parse({ file });
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', parsedPayload.file);
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/append-chapter`, formData, {
         headers: {
@@ -251,8 +265,9 @@ export class NipeApiClient {
   }
 
   async importCharacters(projectId: number, file: File) {
+    const parsedPayload = singleFileUploadRequestSchema.parse({ file });
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', parsedPayload.file);
 
     try {
       const response = await this.client.post(`/api/projects/${projectId}/characters/import`, formData, {
@@ -290,8 +305,11 @@ export class NipeApiClient {
     projectId: number,
     includeOnlyConflicts: boolean = false,
   ): Promise<CharacterGenderComparisonResponseDto> {
+    const parsedParams = characterGenderComparisonRequestSchema.parse({
+      include_only_conflicts: includeOnlyConflicts,
+    });
     const response = await this.client.get(`/api/projects/${projectId}/characters/gender-comparison`, {
-      params: includeOnlyConflicts ? { include_only_conflicts: true } : undefined,
+      params: parsedParams.include_only_conflicts ? parsedParams : undefined,
     });
 
     try {
@@ -359,8 +377,9 @@ export class NipeApiClient {
   }
 
   async saveVoices(projectId: number, payload: VoiceConfigDto) {
+    const parsedPayload = voiceConfigSchema.parse(payload);
     try {
-      const response = await this.client.put(`/api/projects/${projectId}/voices`, payload);
+      const response = await this.client.put(`/api/projects/${projectId}/voices`, parsedPayload);
       return voiceConfigResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
@@ -401,12 +420,13 @@ export class NipeApiClient {
     baseRunId: number,
     targetRunId: number,
   ): Promise<RunConfigDiffResponseDto> {
+    const parsedParams = runConfigDiffRequestSchema.parse({
+      base_run_id: baseRunId,
+      target_run_id: targetRunId,
+    });
     try {
       const response = await this.client.get(`/api/projects/${projectId}/runs/config-diff`, {
-        params: {
-          base_run_id: baseRunId,
-          target_run_id: targetRunId,
-        },
+        params: parsedParams,
       });
       return runConfigDiffResponseSchema.parse(response.data);
     } catch (error) {
