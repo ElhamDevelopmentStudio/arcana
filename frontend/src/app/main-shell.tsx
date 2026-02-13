@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { DashboardSquare02Icon, PanelLeftCloseIcon, PanelLeftOpenIcon, Search01Icon } from 'hugeicons-react';
 
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { ProjectStepNav } from '@/app/project-step-nav';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 import { useCriticalRoutePrefetch } from '@/features/workflow/prefetch/critical-route-prefetch';
+import { useUiRouteStateStore } from '@/app/state/ui-route-state-store';
 
 function getProjectIdFromPath(pathname: string, fallback: string | undefined): string | null {
   if (fallback) {
@@ -100,12 +101,24 @@ export function MainShell() {
   const params = useParams<{ project_id?: string }>();
   const projectId = getProjectIdFromPath(location.pathname, params.project_id);
   const currentProjectId = parseProjectIdParam(projectId ?? undefined);
+  const setProjectLastRoute = useUiRouteStateStore((state) => state.setProjectLastRoute);
   const routeMeta = resolveRouteMeta(location.pathname);
 
   useCriticalRoutePrefetch({
     pathname: location.pathname,
     projectId: currentProjectId,
   });
+
+  useEffect(() => {
+    if (currentProjectId === null) {
+      return;
+    }
+    const routePrefix = `/projects/${currentProjectId}/`;
+    if (!location.pathname.startsWith(routePrefix)) {
+      return;
+    }
+    setProjectLastRoute(currentProjectId, `${location.pathname}${location.search}`);
+  }, [currentProjectId, location.pathname, location.search, setProjectLastRoute]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">

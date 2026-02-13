@@ -27,6 +27,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Frontend entry flow now starts at landing route `/` with CTA navigation to `/dashboard` and project draft creation bootstrap
 - Global frontend health dependency gate now blocks interactions when `GET /health` is not reachable or not `ok`
 - Route-level frontend prefetch strategy now warms critical next-step page chunks across workflow transitions
+- Dashboard query state and last-visited project route state now persist across reloads for control-panel workflows
 - Global Tailwind-based design system in `frontend/src/styles/globals.css`
 - Frontend API/state foundations using Axios + SWR + Zustand + Zod + date-fns
 - Frontend test stack with centralized Vitest + Playwright suites (unit, integration, regression, e2e, visual)
