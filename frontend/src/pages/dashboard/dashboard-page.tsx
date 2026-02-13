@@ -8,6 +8,7 @@ import {
 import { useUiRouteStateStore, type DashboardListQueryState } from '@/app/state/ui-route-state-store';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
+import { ApiPanelEmpty, ApiPanelError, ApiPanelLoading } from '@/components/ui/api-panel-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -116,6 +117,10 @@ export function DashboardPage() {
   const summaryQuery = useProjectControlPanelSummaryQuery(true);
   const listQuery = useProjectControlPanelProjectListQuery(true, effectiveListQuery);
 
+  const summaryErrorMessage =
+    summaryQuery.error instanceof Error ? summaryQuery.error.message : 'Unable to load control-panel summary.';
+  const listErrorMessage =
+    listQuery.error instanceof Error ? listQuery.error.message : 'Unable to load control-panel project list.';
   const listItems = listQuery.data?.items ?? [];
 
   return (
@@ -130,27 +135,49 @@ export function DashboardPage() {
       title="Project Control Panel"
     >
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardDescription>Total projects</CardDescription>
-            <CardTitle>{summaryQuery.data?.total_projects ?? 0}</CardTitle>
-          </CardHeader>
-          <CardContent />
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Active runs</CardDescription>
-            <CardTitle>{summaryQuery.data?.active_run_count ?? 0}</CardTitle>
-          </CardHeader>
-          <CardContent />
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Recent failures</CardDescription>
-            <CardTitle>{summaryQuery.data?.recent_failure_count ?? 0}</CardTitle>
-          </CardHeader>
-          <CardContent />
-        </Card>
+        {summaryQuery.isLoading && summaryQuery.data === undefined ? (
+          <div className="md:col-span-3" data-testid="dashboard-summary-loading">
+            <ApiPanelLoading
+              description="Fetching control-panel summary metrics."
+              title="Loading control panel summary"
+            />
+          </div>
+        ) : summaryQuery.error ? (
+          <div className="md:col-span-3" data-testid="dashboard-summary-error">
+            <ApiPanelError
+              description={summaryErrorMessage}
+              onRetry={() => {
+                void summaryQuery.mutate();
+              }}
+              retryLabel="Retry summary"
+              title="Summary unavailable"
+            />
+          </div>
+        ) : (
+          <>
+            <Card>
+              <CardHeader>
+                <CardDescription>Total projects</CardDescription>
+                <CardTitle>{summaryQuery.data?.total_projects ?? 0}</CardTitle>
+              </CardHeader>
+              <CardContent />
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardDescription>Active runs</CardDescription>
+                <CardTitle>{summaryQuery.data?.active_run_count ?? 0}</CardTitle>
+              </CardHeader>
+              <CardContent />
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardDescription>Recent failures</CardDescription>
+                <CardTitle>{summaryQuery.data?.recent_failure_count ?? 0}</CardTitle>
+              </CardHeader>
+              <CardContent />
+            </Card>
+          </>
+        )}
       </div>
 
       <Card>
@@ -159,8 +186,25 @@ export function DashboardPage() {
           <CardDescription>Live control-panel project list from backend contract.</CardDescription>
         </CardHeader>
         <CardContent>
-          {listItems.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No projects found.</p>
+          {listQuery.isLoading && listQuery.data === undefined ? (
+            <div data-testid="dashboard-list-loading">
+              <ApiPanelLoading description="Fetching project rows and workflow state." title="Loading projects list" />
+            </div>
+          ) : listQuery.error ? (
+            <div data-testid="dashboard-list-error">
+              <ApiPanelError
+                description={listErrorMessage}
+                onRetry={() => {
+                  void listQuery.mutate();
+                }}
+                retryLabel="Retry projects list"
+                title="Project list unavailable"
+              />
+            </div>
+          ) : listItems.length === 0 ? (
+            <div data-testid="dashboard-list-empty">
+              <ApiPanelEmpty description="No projects found." title="No projects available" />
+            </div>
           ) : (
             <div className="space-y-3" data-testid="dashboard-project-list">
               {listItems.map((item) => (
