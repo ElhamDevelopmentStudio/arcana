@@ -87,6 +87,7 @@ from app.schemas import (
     ProjectMetadataUpdateRequest,
     ProjectMetadataUpdateResponse,
     ProjectAllowedActionsResponse,
+    ProjectActivityTimelineResponse,
     ProjectControlPanelProjectListResponse,
     ProjectControlPanelSummaryResponse,
     ProjectLLMSettingsRequest,
@@ -3787,6 +3788,55 @@ def get_project_allowed_actions(
             lifecycle_state=normalized_lifecycle_state,
             last_run_status=normalized_last_run_status,
         ),
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/timeline",
+    response_model=ProjectActivityTimelineResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_activity_timeline(
+    project_id: int,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    session: Session = Depends(get_session),
+) -> ProjectActivityTimelineResponse:
+    _get_project_or_404(session, project_id)
+    generated_at = datetime.now(timezone.utc).isoformat()
+    query = session.query(ProjectActivityEvent).filter(ProjectActivityEvent.project_id == project_id)
+    total_items = query.count()
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    events = (
+        query.order_by(ProjectActivityEvent.created_at.desc(), ProjectActivityEvent.id.desc())
+        .offset(start_index)
+        .limit(page_size)
+        .all()
+    )
+
+    items: list[dict[str, object]] = []
+    for event in events:
+        metadata_payload = event.event_metadata if isinstance(event.event_metadata, dict) else {}
+        items.append(
+            {
+                "event_id": event.id,
+                "event_type": event.event_type,
+                "actor": str(event.actor).strip() or "system",
+                "run_id": event.run_id,
+                "created_at": _serialize_datetime_to_utc_iso(event.created_at) or generated_at,
+                "event_metadata": dict(metadata_payload),
+            }
+        )
+
+    return ProjectActivityTimelineResponse(
+        generated_at=generated_at,
+        project_id=project_id,
+        total_items=total_items,
+        page=page,
+        page_size=page_size,
+        has_next_page=end_index < total_items,
+        items=items,
     )
 
 

@@ -1138,6 +1138,15 @@ ProjectAllowedAction = Literal[
     "restore",
 ]
 ProjectActionRunStatus = Literal["queued", "running", "completed", "failed", "cancelled", "interrupted"]
+ProjectActivityTimelineEventType = Literal[
+    "ingest",
+    "mode_change",
+    "run_start",
+    "run_complete",
+    "export",
+    "manual_edit",
+    "rerun",
+]
 
 
 class ProjectControlPanelStateCount(BaseModel):
@@ -1208,6 +1217,31 @@ class ProjectAllowedActionsResponse(BaseModel):
     last_run_status: ProjectActionRunStatus | None = None
     next_required_action: ProjectControlPanelNextRequiredAction
     allowed_actions: list[ProjectAllowedAction] = Field(default_factory=list)
+
+
+class ProjectActivityTimelineItem(BaseModel):
+    event_id: int = Field(ge=1)
+    event_type: ProjectActivityTimelineEventType
+    actor: str = Field(min_length=1, max_length=255)
+    run_id: int | None = Field(default=None, ge=1)
+    created_at: str = Field(min_length=1)
+    event_metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class ProjectActivityTimelineResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="project_activity_timeline_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="CP-004")
+    output_name: str = Field(default="project_activity_timeline")
+    generated_at: str = Field(min_length=1)
+    generated_by: str = Field(default="build_project_activity_timeline", min_length=1)
+    project_id: int = Field(ge=1)
+    total_items: int = Field(ge=0)
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=200)
+    has_next_page: bool = False
+    items: list[ProjectActivityTimelineItem] = Field(default_factory=list)
 
 
 
