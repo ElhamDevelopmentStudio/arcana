@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.chart_contracts import build_polarity_graph_contract, build_tension_graph_contract
 from app.config import get_settings
 from app.database import get_session, get_session_factory, init_db
-from app.modes import DEFAULT_MODE, get_mode_catalog
+from app.modes import DEFAULT_MODE, get_mode_catalog, is_valid_mode
 from app.models import (
     Chapter,
     Character,
@@ -5802,119 +5802,39 @@ def update_voice_config(
     return VoiceConfigResponse(project_id=project.id, voice_config=project.voice_config_json)
 
 
-@app.post(
-    "/api/projects/{project_id}/runs",
-    response_model=RunResponse,
-    status_code=status.HTTP_200_OK,
-)
-def create_run(
-    project_id: int,
-    payload: RunCreateRequest,
+def _create_and_dispatch_run(
+    *,
+    session: Session,
+    project: Project,
+    run_config: Mapping[str, object],
     request: Request,
-    session: Session = Depends(get_session),
+    rerun_lineage_metadata: dict[str, object] | None = None,
 ) -> RunResponse:
-    project = _get_project_or_404(session, project_id)
+    resolved_run_config: dict[str, object] = dict(run_config)
     correlation_id = _resolve_request_correlation_id(request)
-    if (
-        not payload.allow_unfinalized_character_map
-        and not project.character_map_finalized
-        and session.query(Character).filter(Character.project_id == project.id).count() > 0
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Character map is not finalized. Set `allow_unfinalized_character_map` to true to run with an "
-                "unfinalized map."
-            ),
-        )
-
-    explicit_overrides = payload.model_dump(exclude={"mode"}, exclude_unset=True)
-    explicit_overrides.setdefault("llm_enabled", project.llm_enabled)
-    project_provider_config = dict(project.llm_provider_config_json or {})
-    if project_provider_config:
-        explicit_overrides.setdefault("provider_config", project_provider_config)
-    _coalesce_internal_thought_policy(project=project, explicit_overrides=explicit_overrides)
-    run_config = build_run_config_snapshot(
-        mode=payload.mode,
-        overrides=explicit_overrides,
-    )
-    run_config["emotion_taxonomy"] = str(explicit_overrides.get("emotion_taxonomy", "basic"))
-
-    run_config["ingestion_warnings"] = list((project.ingestion_log_json or {}).get("warnings", []))
-    run_config["normalization_report"] = (
-        project.ingestion_log_json or {}
-    ).get("normalization_report", {})
-    run_config_extra_fields = {
-        key: value
-        for key, value in explicit_overrides.items()
-        if key not in PROFILE_CONFIG_KEYS and key != "allow_unfinalized_character_map"
-    }
-    run_config.update(run_config_extra_fields)
-    if bool(run_config.get("deterministic_mode")):
-        pinned_model = str(run_config.get("deterministic_model_identifier") or "").strip()
-        if not pinned_model:
-            _, pinned_model, _ = get_provider_runtime_settings(
-                settings=get_settings(),
-                provider_name=str(run_config.get("provider_name", "openrouter")),
-            )
-        run_config["deterministic_model_identifier"] = pinned_model
-
-        deterministic_seed = run_config.get("deterministic_seed")
-        if deterministic_seed is None:
-            deterministic_seed = 0
-        deterministic_seed_int = int(deterministic_seed)
-        run_config["deterministic_seed"] = deterministic_seed_int
-
-        resolved_randomization_config = run_config.get("randomization_config")
-        if not isinstance(resolved_randomization_config, dict):
-            resolved_randomization_config = {}
-        resolved_randomization_config = dict(resolved_randomization_config)
-        resolved_randomization_config.setdefault("seed", deterministic_seed_int)
-        resolved_randomization_config.setdefault("strategy", "stable")
-        resolved_randomization_config.setdefault("shuffle_enabled", False)
-        run_config["randomization_config"] = resolved_randomization_config
-    else:
-        run_config.pop("deterministic_model_identifier", None)
-        run_config.pop("deterministic_seed", None)
-        run_config.pop("randomization_config", None)
-
-    idempotency_key = payload.idempotency_key
-    if idempotency_key is not None:
-        idempotency_signature = _build_idempotent_rerun_signature(
-            session=session,
-            project=project,
-            run_config=run_config,
-        )
-        matching_run = _find_matching_idempotent_run(
-            session=session,
-            project_id=project.id,
-            idempotency_key=idempotency_key,
-            idempotency_signature=idempotency_signature,
-        )
-        if matching_run is not None:
-            return _build_run_response_from_existing(session=session, run=matching_run)
-        run_config["idempotency_key"] = idempotency_key
-        run_config["idempotency_signature"] = idempotency_signature
-
-    run_config["correlation_id"] = correlation_id
-    project.selected_mode = str(run_config["mode"])
+    resolved_run_config["correlation_id"] = correlation_id
+    project.selected_mode = str(resolved_run_config.get("mode", DEFAULT_MODE))
     project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)
     _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_RUNNING, session=session)
     run = Run(
         project_id=project.id,
         status=RUN_STATUS_QUEUED,
-        deterministic_seed=(int(run_config["deterministic_seed"]) if bool(run_config.get("deterministic_mode")) else None),
+        deterministic_seed=(
+            int(resolved_run_config["deterministic_seed"])
+            if bool(resolved_run_config.get("deterministic_mode"))
+            else None
+        ),
         deterministic_model_identifier=(
-            str(run_config.get("deterministic_model_identifier")).strip()
-            if bool(run_config.get("deterministic_mode"))
+            str(resolved_run_config.get("deterministic_model_identifier")).strip()
+            if bool(resolved_run_config.get("deterministic_mode"))
             else None
         ),
         deterministic_randomization_config=(
-            dict(run_config.get("randomization_config"))
-            if bool(run_config.get("deterministic_mode"))
+            dict(resolved_run_config.get("randomization_config"))
+            if bool(resolved_run_config.get("deterministic_mode"))
             else None
         ),
-        config_json=run_config,
+        config_json=resolved_run_config,
         started_at=datetime.now(timezone.utc),
     )
     session.add(run)
@@ -5926,9 +5846,9 @@ def create_run(
         event_type="run_created",
         event_message="Run record created",
         event_metadata={
-            "mode": run_config["mode"],
-            "llm_enabled": bool(run_config.get("llm_enabled")),
-            "provider_name": str(run_config.get("provider_name")),
+            "mode": resolved_run_config["mode"],
+            "llm_enabled": bool(resolved_run_config.get("llm_enabled")),
+            "provider_name": str(resolved_run_config.get("provider_name")),
         },
     )
     run_config_with_snapshot = dict(run.config_json or {})
@@ -5951,17 +5871,31 @@ def create_run(
         principal_type=principal_type,
         principal_id=principal_id,
     )
+    run_start_metadata: dict[str, object] = {
+        "mode": str(resolved_run_config.get("mode", DEFAULT_MODE)),
+        "recovery": False,
+    }
+    if rerun_lineage_metadata is not None:
+        run_start_metadata["rerun"] = True
     _append_project_activity_event(
         session=session,
         project_id=project.id,
         run_id=run.id,
         event_type="run_start",
         actor=activity_actor,
-        event_metadata={
-            "mode": str(run_config.get("mode", DEFAULT_MODE)),
-            "recovery": False,
-        },
+        event_metadata=run_start_metadata,
     )
+    if rerun_lineage_metadata is not None:
+        rerun_event_metadata = dict(rerun_lineage_metadata)
+        rerun_event_metadata["rerun_run_id"] = run.id
+        _append_project_activity_event(
+            session=session,
+            project_id=project.id,
+            run_id=run.id,
+            event_type="rerun",
+            actor=activity_actor,
+            event_metadata=rerun_event_metadata,
+        )
     _append_run_changelog_entry(
         session=session,
         run=run,
@@ -6048,7 +5982,7 @@ def create_run(
         run=run,
         event_type="pipeline_execution_queued",
         event_message="Pipeline execution queued",
-        event_metadata={"mode": run_config["mode"]},
+        event_metadata={"mode": resolved_run_config["mode"]},
     )
     run.status = RUN_STATUS_RUNNING
     session.add(run)
@@ -6057,7 +5991,7 @@ def create_run(
         run=run,
         event_type="pipeline_execution_started",
         event_message="Pipeline execution started",
-        event_metadata={"mode": run_config["mode"]},
+        event_metadata={"mode": resolved_run_config["mode"]},
     )
     recovery_state = _coerce_recovery_state(run.config_json).get(_PIPELINE_RECOVERY_CONFIG_KEY)
     if not isinstance(recovery_state, dict) or not recovery_state:
@@ -6080,7 +6014,7 @@ def create_run(
         run_id=run.id,
         correlation_id=correlation_id,
         metadata={
-            "mode": str(run_config.get("mode", DEFAULT_MODE)),
+            "mode": str(resolved_run_config.get("mode", DEFAULT_MODE)),
             "recovery": False,
         },
     )
@@ -6103,7 +6037,7 @@ def create_run(
         run_id=run.id,
         correlation_id=correlation_id,
         metadata={
-            "mode": str(run_config.get("mode", DEFAULT_MODE)),
+            "mode": str(resolved_run_config.get("mode", DEFAULT_MODE)),
             "segment_count": segment_count,
             "recovery": False,
         },
@@ -6114,6 +6048,204 @@ def create_run(
         project_id=project.id,
         status=run.status,
         segment_count=segment_count,
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/runs",
+    response_model=RunResponse,
+    status_code=status.HTTP_200_OK,
+)
+def create_run(
+    project_id: int,
+    payload: RunCreateRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> RunResponse:
+    project = _get_project_or_404(session, project_id)
+    if (
+        not payload.allow_unfinalized_character_map
+        and not project.character_map_finalized
+        and session.query(Character).filter(Character.project_id == project.id).count() > 0
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Character map is not finalized. Set `allow_unfinalized_character_map` to true to run with an "
+                "unfinalized map."
+            ),
+        )
+
+    explicit_overrides = payload.model_dump(exclude={"mode"}, exclude_unset=True)
+    explicit_overrides.setdefault("llm_enabled", project.llm_enabled)
+    project_provider_config = dict(project.llm_provider_config_json or {})
+    if project_provider_config:
+        explicit_overrides.setdefault("provider_config", project_provider_config)
+    _coalesce_internal_thought_policy(project=project, explicit_overrides=explicit_overrides)
+    run_config = build_run_config_snapshot(
+        mode=payload.mode,
+        overrides=explicit_overrides,
+    )
+    run_config["emotion_taxonomy"] = str(explicit_overrides.get("emotion_taxonomy", "basic"))
+
+    run_config["ingestion_warnings"] = list((project.ingestion_log_json or {}).get("warnings", []))
+    run_config["normalization_report"] = (
+        project.ingestion_log_json or {}
+    ).get("normalization_report", {})
+    run_config_extra_fields = {
+        key: value
+        for key, value in explicit_overrides.items()
+        if key not in PROFILE_CONFIG_KEYS and key != "allow_unfinalized_character_map"
+    }
+    run_config.update(run_config_extra_fields)
+    if bool(run_config.get("deterministic_mode")):
+        pinned_model = str(run_config.get("deterministic_model_identifier") or "").strip()
+        if not pinned_model:
+            _, pinned_model, _ = get_provider_runtime_settings(
+                settings=get_settings(),
+                provider_name=str(run_config.get("provider_name", "openrouter")),
+            )
+        run_config["deterministic_model_identifier"] = pinned_model
+
+        deterministic_seed = run_config.get("deterministic_seed")
+        if deterministic_seed is None:
+            deterministic_seed = 0
+        deterministic_seed_int = int(deterministic_seed)
+        run_config["deterministic_seed"] = deterministic_seed_int
+
+        resolved_randomization_config = run_config.get("randomization_config")
+        if not isinstance(resolved_randomization_config, dict):
+            resolved_randomization_config = {}
+        resolved_randomization_config = dict(resolved_randomization_config)
+        resolved_randomization_config.setdefault("seed", deterministic_seed_int)
+        resolved_randomization_config.setdefault("strategy", "stable")
+        resolved_randomization_config.setdefault("shuffle_enabled", False)
+        run_config["randomization_config"] = resolved_randomization_config
+    else:
+        run_config.pop("deterministic_model_identifier", None)
+        run_config.pop("deterministic_seed", None)
+        run_config.pop("randomization_config", None)
+
+    idempotency_key = payload.idempotency_key
+    if idempotency_key is not None:
+        idempotency_signature = _build_idempotent_rerun_signature(
+            session=session,
+            project=project,
+            run_config=run_config,
+        )
+        matching_run = _find_matching_idempotent_run(
+            session=session,
+            project_id=project.id,
+            idempotency_key=idempotency_key,
+            idempotency_signature=idempotency_signature,
+        )
+        if matching_run is not None:
+            return _build_run_response_from_existing(session=session, run=matching_run)
+        run_config["idempotency_key"] = idempotency_key
+        run_config["idempotency_signature"] = idempotency_signature
+
+    return _create_and_dispatch_run(
+        session=session,
+        project=project,
+        run_config=run_config,
+        request=request,
+    )
+
+
+def _build_rerun_run_config_from_source(
+    *,
+    project: Project,
+    source_run: Run,
+) -> tuple[dict[str, object], dict[str, object]]:
+    source_snapshot = source_run.run_configuration_snapshot
+    source_snapshot_payload = (
+        dict(source_snapshot.snapshot_json)
+        if source_snapshot is not None and isinstance(source_snapshot.snapshot_json, dict)
+        else {}
+    )
+    source_snapshot_configuration = source_snapshot_payload.get("configuration")
+    if isinstance(source_snapshot_configuration, dict):
+        cloned_config = dict(source_snapshot_configuration)
+    elif isinstance(source_run.config_json, dict):
+        cloned_config = dict(source_run.config_json)
+    else:
+        cloned_config = {}
+
+    for runtime_key in (
+        "correlation_id",
+        "idempotency_key",
+        "idempotency_signature",
+        "configuration_snapshot_id",
+        "configuration_snapshot_version",
+        "character_map_snapshot_id",
+        "character_map_snapshot_version",
+        "pronunciation_dictionary_snapshot_id",
+        "pronunciation_dictionary_snapshot_version",
+        "voice_map_snapshot_id",
+        "voice_map_snapshot_version",
+        "time_series_snapshot_id",
+        "time_series_snapshot_version",
+        "artifact_integrity",
+        _PIPELINE_RECOVERY_CONFIG_KEY,
+    ):
+        cloned_config.pop(runtime_key, None)
+
+    configured_mode = str(cloned_config.get("mode", project.selected_mode or DEFAULT_MODE)).strip().lower()
+    if not configured_mode or not is_valid_mode(configured_mode):
+        fallback_mode = str(project.selected_mode or DEFAULT_MODE).strip().lower()
+        configured_mode = fallback_mode if is_valid_mode(fallback_mode) else DEFAULT_MODE
+    cloned_config["mode"] = configured_mode
+
+    requested_at = datetime.now(timezone.utc).isoformat()
+    rerun_lineage_metadata: dict[str, object] = {
+        "source_run_id": source_run.id,
+        "source_status": str(source_run.status or "").strip().lower() or "unknown",
+        "source_configuration_snapshot_id": source_snapshot.id if source_snapshot is not None else None,
+        "source_configuration_snapshot_version": source_snapshot.version if source_snapshot is not None else None,
+        "lineage_type": "snapshot_clone",
+        "requested_at": requested_at,
+    }
+
+    cloned_config["rerun_source_run_id"] = source_run.id
+    if source_snapshot is not None:
+        cloned_config["rerun_source_configuration_snapshot_id"] = source_snapshot.id
+        cloned_config["rerun_source_configuration_snapshot_version"] = source_snapshot.version
+    cloned_config["rerun_source_status"] = rerun_lineage_metadata["source_status"]
+    cloned_config["rerun_lineage_type"] = "snapshot_clone"
+    cloned_config["rerun_requested_at"] = requested_at
+    return cloned_config, rerun_lineage_metadata
+
+
+@app.post(
+    "/api/projects/{project_id}/runs/{run_id}/rerun",
+    response_model=RunResponse,
+    status_code=status.HTTP_200_OK,
+)
+def rerun_from_snapshot(
+    project_id: int,
+    run_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> RunResponse:
+    project = _get_project_or_404(session, project_id)
+    source_run = _get_run_or_404(session, project_id, run_id)
+    source_status = str(source_run.status or "").strip().lower()
+    if source_status in {RUN_STATUS_QUEUED, RUN_STATUS_RUNNING}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only completed, failed, cancelled, or interrupted runs can be rerun from snapshot.",
+        )
+
+    cloned_run_config, rerun_lineage_metadata = _build_rerun_run_config_from_source(
+        project=project,
+        source_run=source_run,
+    )
+    return _create_and_dispatch_run(
+        session=session,
+        project=project,
+        run_config=cloned_run_config,
+        request=request,
+        rerun_lineage_metadata=rerun_lineage_metadata,
     )
 
 

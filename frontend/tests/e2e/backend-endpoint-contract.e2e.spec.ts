@@ -558,6 +558,20 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       expect.arrayContaining(['run', 'export', 'archive']),
     );
 
+    const rerunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/rerun`);
+    expect(rerunResponse.status()).toBe(200);
+    const rerunPayload = (await rerunResponse.json()) as { run_id: number; project_id: number; status: string };
+    expect(rerunPayload.project_id).toBe(projectId);
+    expect(rerunPayload.run_id).not.toBe(runId);
+    expect(rerunPayload.status).toBe('completed');
+    const rerunDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${rerunPayload.run_id}`);
+    expect(rerunDetailResponse.status()).toBe(200);
+    const rerunDetailPayload = (await rerunDetailResponse.json()) as { config: Record<string, unknown> };
+    expect(rerunDetailPayload.config.rerun_source_run_id).toBe(runId);
+    expect(rerunDetailPayload.config.rerun_source_configuration_snapshot_id).toBeTruthy();
+    expect(rerunDetailPayload.config.rerun_source_configuration_snapshot_version).toBeTruthy();
+    expect(rerunDetailPayload.config.rerun_lineage_type).toBe('snapshot_clone');
+
     const runDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runId}`);
     expect(runDetailResponse.status()).toBe(200);
     const runDetailPayload = (await runDetailResponse.json()) as {
