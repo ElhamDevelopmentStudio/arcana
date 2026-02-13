@@ -1,6 +1,7 @@
-import axios, { AxiosError, type AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 
 import { appEnv } from '@/app/config/env';
+import { normalizeHttpError } from '@/services/api-error';
 import {
   characterImportSchema,
   characterAnalyticsResponseSchema,
@@ -57,39 +58,6 @@ import {
   type TensionGraphResponseDto,
   characterExtractionSchema,
 } from '@/app/schemas/api';
-
-function normalizeHttpError(error: unknown): Error {
-  if (error instanceof AxiosError) {
-    const detail = error.response?.data?.detail;
-    const fieldErrorsRaw = error.response?.data?.field_errors;
-    const fieldErrors = Array.isArray(fieldErrorsRaw)
-      ? fieldErrorsRaw
-          .map((entry) => ({
-            field: typeof entry?.field === 'string' ? entry.field.trim() : '',
-            message: typeof entry?.message === 'string' ? entry.message.trim() : '',
-          }))
-          .filter((entry) => entry.field.length > 0 && entry.message.length > 0)
-      : [];
-    if (fieldErrors.length > 0) {
-      const fieldSummary = fieldErrors
-        .slice(0, 4)
-        .map((entry) => `${entry.field}: ${entry.message}`)
-        .join(' | ');
-      const detailPrefix = typeof detail === 'string' && detail.trim().length > 0 ? detail.trim() : 'Validation failed.';
-      return new Error(`${detailPrefix} ${fieldSummary}`);
-    }
-
-    const message =
-      typeof error.response?.data === 'string'
-        ? error.response.data
-        : (detail as string | undefined) ?? error.message;
-    return new Error(message);
-  }
-  if (error instanceof Error) {
-    return error;
-  }
-  return new Error('Unknown request error');
-}
 
 export class NipeApiClient {
   private readonly client: AxiosInstance;
