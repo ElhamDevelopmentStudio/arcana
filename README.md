@@ -22,6 +22,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Run status lifecycle baseline (`queued` -> `running` -> terminal `completed|failed|cancelled`)
 - Project-level access-control model scaffold (`project_accesses`) with grant endpoints
 - Project setup-status API (`GET /api/projects/{project_id}/setup-status`) exposing per-step readiness and overall setup completion
+- Project workspace summary API (`GET /api/projects/{project_id}/workspace-summary`) exposing project-shell sidebar counts and readiness context
 - Mode catalog endpoint for UI mode selection bootstrap (`GET /api/modes`)
 - Minimal LLM router scaffold + quota tracking
 - React UI with route-based structure (`router/main.tsx`, `router/auth.tsx`, `router/index.tsx`)

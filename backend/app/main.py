@@ -88,6 +88,7 @@ from app.schemas import (
     ProjectMetadataUpdateResponse,
     ProjectAllowedActionsResponse,
     ProjectSetupStatusResponse,
+    ProjectWorkspaceSummaryResponse,
     ProjectActivityTimelineResponse,
     ProjectDetailResponse,
     ProjectLifecycleStateChangeResponse,
@@ -3906,6 +3907,88 @@ def get_project_setup_status(
         session=session,
         project=project,
         next_required_action_resolver=_resolve_project_control_panel_next_required_action,
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/workspace-summary",
+    response_model=ProjectWorkspaceSummaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_workspace_summary(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> ProjectWorkspaceSummaryResponse:
+    project = _get_project_or_404(session, project_id)
+    normalized_lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+    if normalized_lifecycle_state not in set(_CONTROL_PANEL_STATE_ORDER):
+        normalized_lifecycle_state = PROJECT_LIFECYCLE_DRAFT
+
+    normalized_last_run_status = (
+        str(project.last_run_status).strip().lower()
+        if project.last_run_status is not None
+        else None
+    )
+    if normalized_last_run_status == "":
+        normalized_last_run_status = None
+
+    normalized_next_required_action = str(project.next_required_action or "").strip().lower()
+    if normalized_next_required_action not in _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES:
+        normalized_next_required_action = _resolve_project_control_panel_next_required_action(
+            lifecycle_state=normalized_lifecycle_state,
+            last_run_status=normalized_last_run_status,
+        )
+
+    chapters_count = session.query(Chapter.id).filter(Chapter.project_id == project.id).count()
+    characters_count = session.query(Character.id).filter(Character.project_id == project.id).count()
+    voice_mappings_count = session.query(CharacterVoiceMap.id).filter(CharacterVoiceMap.project_id == project.id).count()
+    runs_total_count = session.query(Run.id).filter(Run.project_id == project.id).count()
+    runs_completed_count = (
+        session.query(Run.id)
+        .filter(Run.project_id == project.id, Run.status == RUN_STATUS_COMPLETED)
+        .count()
+    )
+    runs_failed_count = (
+        session.query(Run.id)
+        .filter(Run.project_id == project.id, Run.status == RUN_STATUS_FAILED)
+        .count()
+    )
+
+    ingestion_ready = project.ingestion_timestamp is not None or chapters_count > 0
+    mode_selection_ready = is_valid_mode(str(project.selected_mode or "").strip().lower())
+    initial_run_ready = (
+        runs_total_count > 0
+        or normalized_last_run_status
+        in {
+            RUN_STATUS_QUEUED,
+            RUN_STATUS_RUNNING,
+            RUN_STATUS_COMPLETED,
+            RUN_STATUS_FAILED,
+            RUN_STATUS_CANCELLED,
+            "interrupted",
+        }
+        or normalized_lifecycle_state
+        in {
+            PROJECT_LIFECYCLE_RUNNING,
+            PROJECT_LIFECYCLE_COMPLETED,
+            PROJECT_LIFECYCLE_FAILED,
+        }
+    )
+
+    return ProjectWorkspaceSummaryResponse(
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        project_id=project.id,
+        lifecycle_state=normalized_lifecycle_state,
+        last_run_status=normalized_last_run_status,
+        next_required_action=normalized_next_required_action,
+        is_setup_complete=all([ingestion_ready, mode_selection_ready, initial_run_ready]),
+        chapters_count=chapters_count,
+        characters_count=characters_count,
+        voice_mappings_count=voice_mappings_count,
+        runs_total_count=runs_total_count,
+        runs_completed_count=runs_completed_count,
+        runs_failed_count=runs_failed_count,
+        last_export_at=_serialize_datetime_to_utc_iso(project.last_export_at),
     )
 
 
