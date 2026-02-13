@@ -125,7 +125,7 @@ describe('project new page directory ingestion', () => {
     const user = userEvent.setup();
     renderProjectNewPage();
 
-    const doNotStoreCheckbox = screen.getByRole('checkbox', { name: /do not store source text/i });
+    const doNotStoreCheckbox = screen.getByRole('checkbox', { name: /store only derived metrics/i });
     await user.click(doNotStoreCheckbox);
 
     await user.click(screen.getByTestId('create-project-button'));

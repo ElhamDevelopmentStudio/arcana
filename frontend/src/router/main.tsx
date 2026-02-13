@@ -1,8 +1,10 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import type { RouteObject } from 'react-router-dom';
-import { Navigate } from 'react-router-dom';
 
 import { MainShell } from '@/app/main-shell';
+const DashboardPage = lazy(() =>
+  import('@/pages/dashboard/dashboard-page').then((module) => ({ default: module.DashboardPage })),
+);
 
 const ProjectCharactersPage = lazy(() =>
   import('@/pages/projects/project-characters-page').then((module) => ({ default: module.ProjectCharactersPage })),
@@ -55,8 +57,8 @@ export const mainRouter: RouteObject[] = [
     element: <MainShell />,
     children: [
       {
-        index: true,
-        element: <Navigate to="/projects/new" replace />,
+        path: 'dashboard',
+        element: <SuspendedRoute><DashboardPage /></SuspendedRoute>,
       },
       {
         path: 'projects/new',

@@ -18,6 +18,9 @@ import {
   tensionGraphResponseSchema,
   ingestResponseSchema,
   modeCatalogSchema,
+  healthSchema,
+  projectControlPanelSummaryResponseSchema,
+  projectControlPanelProjectListResponseSchema,
   projectSchema,
   projectLLMSettingsRequestSchema,
   projectLLMSettingsResponseSchema,
@@ -34,6 +37,9 @@ import {
   type RunConfigPresetResponseDto,
   type ProjectLLMSettingsRequestDto,
   type ProjectLLMSettingsResponseDto,
+  type HealthDto,
+  type ProjectControlPanelSummaryResponseDto,
+  type ProjectControlPanelProjectListResponseDto,
   type VoiceConfigDto,
   type CharacterMapDto,
   type CharacterMapUpdateDto,
@@ -108,6 +114,15 @@ export class NipeApiClient {
     }
   }
 
+  async getHealth(): Promise<HealthDto> {
+    try {
+      const response = await this.client.get('/health');
+      return healthSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async createProject(title: string, doNotStoreSourceText: boolean = false) {
     try {
       const response = await this.client.post('/api/projects', {
@@ -115,6 +130,45 @@ export class NipeApiClient {
         do_not_store_source_text: doNotStoreSourceText,
       });
       return projectSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async createProjectDraft(title: string, doNotStoreSourceText: boolean = false) {
+    try {
+      const response = await this.client.post('/api/projects/drafts', {
+        title,
+        do_not_store_source_text: doNotStoreSourceText,
+      });
+      return projectSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getProjectControlPanelSummary(): Promise<ProjectControlPanelSummaryResponseDto> {
+    try {
+      const response = await this.client.get('/api/dashboard/project-control-panel/summary');
+      return projectControlPanelSummaryResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getProjectControlPanelProjectList(params?: {
+    page?: number;
+    page_size?: number;
+    status?: string;
+    selected_mode?: string;
+    last_run_status?: string;
+    next_required_action?: string;
+  }): Promise<ProjectControlPanelProjectListResponseDto> {
+    try {
+      const response = await this.client.get('/api/dashboard/project-control-panel/projects', {
+        params,
+      });
+      return projectControlPanelProjectListResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
