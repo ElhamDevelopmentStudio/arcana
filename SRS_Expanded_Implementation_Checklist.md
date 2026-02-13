@@ -547,6 +547,8 @@ Definition of done for each task:
 - [x] [X-022] Add backend rerun endpoint that clones prior run configuration snapshot and enqueues a new run with lineage metadata.
 - [x] [X-023] Add backend project activity timeline endpoint for project detail views.
 - [x] [X-024] Add regression tests for action gating and rerun permission rules across lifecycle states.
+- [x] [X-025] Add backend project-detail endpoint (`GET /api/projects/{project_id}`) with lifecycle/action projection and management metadata for dashboard detail views.
+- [x] [X-026] Add backend archive/restore endpoints (`POST /api/projects/{project_id}/archive`, `POST /api/projects/{project_id}/restore`) with lifecycle state-change contracts.
 
 ## 13. Frontend Parallel Delivery Track (Ref: SRS.md §§2–11)
 

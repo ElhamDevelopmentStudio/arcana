@@ -1244,6 +1244,54 @@ class ProjectActivityTimelineResponse(BaseModel):
     items: list[ProjectActivityTimelineItem] = Field(default_factory=list)
 
 
+ProjectLifecycleStateChangeAction = Literal["archive", "restore"]
+
+
+class ProjectDetailResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="project_detail_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="CP-005")
+    output_name: str = Field(default="project_detail")
+    generated_at: str = Field(min_length=1)
+    generated_by: str = Field(default="build_project_detail", min_length=1)
+    project_id: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    lifecycle_state: ProjectLifecycleState
+    last_run_status: ProjectActionRunStatus | None = None
+    next_required_action: ProjectControlPanelNextRequiredAction
+    allowed_actions: list[ProjectAllowedAction] = Field(default_factory=list)
+    selected_mode: str = Field(min_length=1, max_length=50)
+    selected_modes: list[str] = Field(default_factory=list)
+    llm_enabled: bool
+    do_not_store_source_text: bool = False
+    character_map_finalized: bool
+    configuration_snapshot_id: str | None = None
+    ingestion_timestamp: str | None = None
+    last_export_at: str | None = None
+    created_at: str = Field(min_length=1)
+    updated_at: str = Field(min_length=1)
+
+
+class ProjectLifecycleStateChangeResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="project_lifecycle_state_change_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="CP-006")
+    output_name: str = Field(default="project_lifecycle_state_change")
+    generated_at: str = Field(min_length=1)
+    generated_by: str = Field(default="build_project_lifecycle_state_change", min_length=1)
+    project_id: int = Field(ge=1)
+    action: ProjectLifecycleStateChangeAction
+    previous_lifecycle_state: ProjectLifecycleState
+    lifecycle_state: ProjectLifecycleState
+    last_run_status: ProjectActionRunStatus | None = None
+    next_required_action: ProjectControlPanelNextRequiredAction
+    allowed_actions: list[ProjectAllowedAction] = Field(default_factory=list)
+
+
 
 class ComparisonWorkspaceCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
