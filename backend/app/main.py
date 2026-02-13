@@ -86,6 +86,7 @@ from app.schemas import (
     ProjectIngestionSourceAttachResponse,
     ProjectMetadataUpdateRequest,
     ProjectMetadataUpdateResponse,
+    ProjectAllowedActionsResponse,
     ProjectControlPanelProjectListResponse,
     ProjectControlPanelSummaryResponse,
     ProjectLLMSettingsRequest,
@@ -229,6 +230,16 @@ _CONTROL_PANEL_STATE_ORDER = (
 )
 _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES = frozenset(
     {"ingest", "select_mode", "configure", "run", "rerun", "export", "review_failure", "archived", "none"}
+)
+_PROJECT_ALLOWED_ACTION_ORDER = (
+    "ingest",
+    "select_mode",
+    "configure",
+    "run",
+    "rerun",
+    "export",
+    "archive",
+    "restore",
 )
 _PROJECT_ACTIVITY_EVENT_TYPES = frozenset(
     {"ingest", "mode_change", "run_start", "run_complete", "export", "manual_edit", "rerun"}
@@ -3669,6 +3680,41 @@ def _resolve_project_control_panel_next_required_action(
     return "configure"
 
 
+def _resolve_allowed_project_actions(
+    *,
+    lifecycle_state: str,
+    last_run_status: str | None,
+) -> list[str]:
+    normalized_lifecycle_state = str(lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+    normalized_last_run_status = str(last_run_status).strip().lower() if last_run_status else None
+
+    if normalized_lifecycle_state == PROJECT_LIFECYCLE_ARCHIVED:
+        return ["restore"]
+
+    if normalized_lifecycle_state == PROJECT_LIFECYCLE_RUNNING:
+        return []
+
+    allowed_actions: set[str] = {"ingest", "select_mode", "configure", "archive"}
+    if normalized_lifecycle_state in {
+        PROJECT_LIFECYCLE_INGESTED,
+        PROJECT_LIFECYCLE_CONFIGURED,
+        PROJECT_LIFECYCLE_COMPLETED,
+        PROJECT_LIFECYCLE_FAILED,
+    }:
+        allowed_actions.add("run")
+
+    if normalized_last_run_status in {RUN_STATUS_FAILED, RUN_STATUS_CANCELLED, "interrupted"}:
+        allowed_actions.add("rerun")
+
+    if (
+        normalized_lifecycle_state == PROJECT_LIFECYCLE_COMPLETED
+        and normalized_last_run_status == RUN_STATUS_COMPLETED
+    ):
+        allowed_actions.add("export")
+
+    return [action for action in _PROJECT_ALLOWED_ACTION_ORDER if action in allowed_actions]
+
+
 def _refresh_project_dashboard_projection(
     *,
     session: Session,
@@ -3700,6 +3746,48 @@ def _refresh_project_dashboard_projection(
         last_run_status=resolved_last_run_status,
     )
     session.add(project)
+
+
+@app.get(
+    "/api/projects/{project_id}/actions",
+    response_model=ProjectAllowedActionsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_allowed_actions(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> ProjectAllowedActionsResponse:
+    project = _get_project_or_404(session, project_id)
+    normalized_lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+    if normalized_lifecycle_state not in set(_CONTROL_PANEL_STATE_ORDER):
+        normalized_lifecycle_state = PROJECT_LIFECYCLE_DRAFT
+
+    normalized_last_run_status = (
+        str(project.last_run_status).strip().lower()
+        if project.last_run_status is not None
+        else None
+    )
+    if normalized_last_run_status == "":
+        normalized_last_run_status = None
+
+    normalized_next_required_action = str(project.next_required_action or "").strip().lower()
+    if normalized_next_required_action not in _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES:
+        normalized_next_required_action = _resolve_project_control_panel_next_required_action(
+            lifecycle_state=normalized_lifecycle_state,
+            last_run_status=normalized_last_run_status,
+        )
+
+    return ProjectAllowedActionsResponse(
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        project_id=project.id,
+        lifecycle_state=normalized_lifecycle_state,
+        last_run_status=normalized_last_run_status,
+        next_required_action=normalized_next_required_action,
+        allowed_actions=_resolve_allowed_project_actions(
+            lifecycle_state=normalized_lifecycle_state,
+            last_run_status=normalized_last_run_status,
+        ),
+    )
 
 
 @app.get(
