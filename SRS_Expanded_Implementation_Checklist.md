@@ -562,7 +562,7 @@ Definition of done for each task:
 - [x] [FE-096] Implement route-level prefetch strategy for critical workflow transitions.
 - [x] [FE-097] Persist route/query/filter/UI state across reloads for dashboard and project-detail flows.
 - [x] [FE-098] Standardize reusable loading/empty/error/retry primitives for API panels.
-- [ ] [FE-099] Add global mutation event bus for success/error notifications and recovery actions.
+- [x] [FE-099] Add global mutation event bus for success/error notifications and recovery actions.
 
 ### 13.2 Entry, Navigation, and Control Panel
 - [x] [FE-100] Build landing route `/` integrating `GET /health`, `GET /api/modes`, and `GET /api/dashboard/project-control-panel/summary`.

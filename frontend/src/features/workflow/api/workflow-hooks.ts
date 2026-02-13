@@ -8,6 +8,7 @@ import type { CharacterMapUpdateDto } from '@/app/schemas/api';
 import type { CharacterScrapeRequestDto } from '@/app/schemas/api';
 import type { CharacterCandidatesMergeRequestDto } from '@/app/schemas/api';
 import type { PronunciationDictionaryPreviewRequestDto } from '@/app/schemas/api';
+import { useMutationEventBus } from '@/features/workflow/events/mutation-event-bus';
 import {
   resolveWorkspaceMutationInvalidationTargets,
   workspaceKeys,
@@ -15,6 +16,10 @@ import {
 } from './workspace-cache';
 
 export { workspaceKeys } from './workspace-cache';
+
+function useMutationEventPublisher() {
+  return useMutationEventBus((state) => state.publish);
+}
 
 function useWorkspaceMutationInvalidator() {
   const { mutate } = useSWRConfig();
@@ -154,10 +159,30 @@ export function useCreateProjectMutation() {
 
 export function useCreateProjectDraftMutation() {
   const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  const publishMutationEvent = useMutationEventPublisher();
   return useSWRMutation(
     ['create-project-draft'],
-    async (_, { arg }: { arg: { title: string; do_not_store_source_text: boolean } }) =>
-      nipeApiClient.createProjectDraft(arg.title, arg.do_not_store_source_text),
+    async (_, { arg }: { arg: { title: string; do_not_store_source_text: boolean } }) => {
+      try {
+        const project = await nipeApiClient.createProjectDraft(arg.title, arg.do_not_store_source_text);
+        publishMutationEvent({
+          level: 'success',
+          title: 'Draft project created',
+          message: `Project #${project.id} is ready for ingestion.`,
+        });
+        return project;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to create draft project.';
+        publishMutationEvent({
+          level: 'error',
+          title: 'Draft project creation failed',
+          message,
+          recoveryLabel: 'Reload app',
+          onRecovery: () => window.location.reload(),
+        });
+        throw error;
+      }
+    },
     {
       onSuccess: async () => {
         await invalidateWorkspaceMutation('create_project_draft');
@@ -374,13 +399,32 @@ export function useRunPipelineMutation(projectId: number | null) {
 
 export function useCancelRunMutation(projectId: number | null, runId: number | null) {
   const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  const publishMutationEvent = useMutationEventPublisher();
   return useSWRMutation(
     projectId !== null && runId !== null ? ['cancel-run', projectId, runId] : null,
     async () => {
       if (projectId === null || runId === null) {
         throw new Error('Project and run are required before cancelling a run.');
       }
-      return nipeApiClient.cancelRun(projectId, runId);
+      try {
+        const run = await nipeApiClient.cancelRun(projectId, runId);
+        publishMutationEvent({
+          level: 'success',
+          title: 'Run cancelled',
+          message: `Run #${run.run_id} was cancelled.`,
+        });
+        return run;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to cancel run.';
+        publishMutationEvent({
+          level: 'error',
+          title: 'Run cancellation failed',
+          message,
+          recoveryLabel: 'Reload app',
+          onRecovery: () => window.location.reload(),
+        });
+        throw error;
+      }
     },
     {
       onSuccess: async () => {
