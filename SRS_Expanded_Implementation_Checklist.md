@@ -549,6 +549,14 @@ Definition of done for each task:
 - [x] [X-024] Add regression tests for action gating and rerun permission rules across lifecycle states.
 - [x] [X-025] Add backend project-detail endpoint (`GET /api/projects/{project_id}`) with lifecycle/action projection and management metadata for dashboard detail views.
 - [x] [X-026] Add backend archive/restore endpoints (`POST /api/projects/{project_id}/archive`, `POST /api/projects/{project_id}/restore`) with lifecycle state-change contracts.
+- [x] [X-027] Add backend endpoint `GET /api/projects/{project_id}/setup-status` returning per-step setup readiness and `is_complete`.
+- [ ] [X-028] Implement backend setup-status computation service from existing project/ingestion/mode/character/voice/run state.
+- [ ] [X-029] Add backend setup-status contract tests for draft, partially configured, fully configured, completed, and archived projects.
+- [ ] [X-030] Add backend endpoint `GET /api/projects/{project_id}/workspace-summary` for project-shell sidebar badges/counts.
+- [ ] [X-031] Add backend workspace-summary contract tests for empty/default and populated projects.
+- [ ] [X-032] Extend `GET /api/projects/{project_id}/actions` payload with optional `blocked_reason` and `required_step` fields for UI gating explanations.
+- [ ] [X-033] Add backend tests for actions payload gating metadata (`blocked_reason`, `required_step`) across lifecycle states.
+- [ ] [X-034] Update API contract changelog/docs with setup-status/workspace-summary/actions-gating response examples.
 
 ## 13. Frontend Parallel Delivery Track (Ref: SRS.md §§2–11)
 
@@ -575,6 +583,22 @@ Definition of done for each task:
 - [ ] [FE-107] Add row-level quick actions driven by `GET /api/projects/{project_id}/actions`.
 - [ ] [FE-108] Add dashboard refresh strategy for active runs and stale row states.
 - [ ] [FE-109] Add recent-failures triage panel from control-panel summary payload.
+
+### 13.2A Project Workspace Shell and Setup-Gated Routing
+- [ ] [FE-181] Build project workspace shell route `/projects/{project_id}` with project-scoped sidebar and nested outlet.
+- [ ] [FE-182] Build setup route `/projects/{project_id}/setup` with backend-driven checklist from `GET /api/projects/{project_id}/setup-status`.
+- [ ] [FE-183] Add setup gate guard: redirect locked project sub-routes to `/projects/{project_id}/setup` when setup is incomplete.
+- [ ] [FE-184] Add post-setup routing rule: redirect from setup to `/projects/{project_id}/overview` when setup becomes complete.
+- [ ] [FE-185] Add setup-step UI for source attach + ingestion initiation, including completion polling from setup-status.
+- [ ] [FE-186] Add setup-step UI for mode selection completion using current project mode endpoints and setup-status refresh.
+- [ ] [FE-187] Add setup-step UI for baseline character/voice readiness checks with explicit next-action CTAs.
+- [ ] [FE-188] Build `/projects/{project_id}/overview` page using project detail plus `GET /api/projects/{project_id}/workspace-summary`.
+- [ ] [FE-189] Add project sidebar groups for overview/setup/characters/voice/runs/exports/settings with stable route mapping.
+- [ ] [FE-190] Add sidebar item lock states and tooltips/messages using `setup-status` and action gating metadata.
+- [ ] [FE-191] Add deep-link guard panel for locked routes with “go to required step” action.
+- [ ] [FE-192] Add integration tests for setup gate redirects, unlock transitions, and deep-link guard behavior.
+- [ ] [PW-033] Add Playwright real-backend E2E: create draft -> setup-gated routing -> setup completion -> project overview access.
+- [ ] [PW-034] Add Playwright real-backend E2E: locked domain route shows guard before setup and unlocks after completion.
 
 ### 13.3 Project Management and Lifecycle
 - [ ] [FE-110] Build `/projects/new` draft creation flow using `POST /api/projects` and `POST /api/projects/drafts`.

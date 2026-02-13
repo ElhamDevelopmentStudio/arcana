@@ -1138,6 +1138,7 @@ ProjectAllowedAction = Literal[
     "restore",
 ]
 ProjectActionRunStatus = Literal["queued", "running", "completed", "failed", "cancelled", "interrupted"]
+ProjectSetupStepId = Literal["ingestion", "mode_selection", "initial_run", "character_mapping", "voice_mapping"]
 ProjectActivityTimelineEventType = Literal[
     "ingest",
     "mode_change",
@@ -1217,6 +1218,28 @@ class ProjectAllowedActionsResponse(BaseModel):
     last_run_status: ProjectActionRunStatus | None = None
     next_required_action: ProjectControlPanelNextRequiredAction
     allowed_actions: list[ProjectAllowedAction] = Field(default_factory=list)
+
+
+class ProjectSetupStepStatus(BaseModel):
+    step_id: ProjectSetupStepId
+    label: str = Field(min_length=1, max_length=80)
+    ready: bool
+    required: bool = True
+
+
+class ProjectSetupStatusResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="project_setup_status_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="CP-007")
+    output_name: str = Field(default="project_setup_status")
+    generated_at: str = Field(min_length=1)
+    generated_by: str = Field(default="build_project_setup_status", min_length=1)
+    project_id: int = Field(ge=1)
+    lifecycle_state: ProjectLifecycleState
+    next_required_action: ProjectControlPanelNextRequiredAction
+    is_complete: bool
+    steps: list[ProjectSetupStepStatus] = Field(default_factory=list)
 
 
 class ProjectActivityTimelineItem(BaseModel):
