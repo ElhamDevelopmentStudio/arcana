@@ -559,7 +559,7 @@ Definition of done for each task:
 - [x] [FE-093] Add Zod request/response guards for every frontend-consumed backend endpoint.
 - [x] [FE-094] Implement SWR key factory and mutation invalidation map for project/run/dashboard data.
 - [x] [FE-095] Add global health dependency handling based on `GET /health`.
-- [ ] [FE-096] Implement route-level prefetch strategy for critical workflow transitions.
+- [x] [FE-096] Implement route-level prefetch strategy for critical workflow transitions.
 - [ ] [FE-097] Persist route/query/filter/UI state across reloads for dashboard and project-detail flows.
 - [ ] [FE-098] Standardize reusable loading/empty/error/retry primitives for API panels.
 - [ ] [FE-099] Add global mutation event bus for success/error notifications and recovery actions.
