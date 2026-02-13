@@ -1,0 +1,56 @@
+# Frontend Endpoint Ownership Matrix
+
+This matrix tracks ownership for every backend endpoint currently consumed by the frontend API client (`frontend/src/services/api-client.ts`).
+
+Scope rules:
+- Route ownership is the primary page path where the endpoint is used.
+- Hook ownership is the SWR query/mutation wrapper in `frontend/src/features/workflow/api/workflow-hooks.ts`.
+- Component ownership is the page/component entry point calling that hook.
+- Test ownership is the current strongest test artifact validating that endpoint path.
+- `unassigned` means the endpoint exists in the frontend client but has no active route/hook/component/test wiring yet.
+
+## Ownership Matrix
+
+| Backend endpoint | Route(s) | Hook/API owner | Component owner(s) | Test owner(s) | Status |
+| --- | --- | --- | --- | --- | --- |
+| `GET /health` | `/` | `useHealthQuery` | `LandingPage` | `frontend/tests/integration/landing-page.integration.test.tsx` | assigned |
+| `GET /api/modes` | `/`, `/projects/:project_id/mode`, `/projects/:project_id/pipeline-setup` | `useModeCatalogQuery` | `LandingPage`, `ProjectModePage`, `ProjectPipelineSetupPage` | `frontend/tests/unit/mode-catalog-schema.unit.test.ts`, `frontend/tests/integration/mode-selection-gating.integration.test.tsx` | assigned |
+| `POST /api/projects` | `/projects/new` | `useCreateProjectMutation` | `ProjectNewPage` | `frontend/tests/integration/project-new-directory-ingestion.integration.test.tsx` | assigned |
+| `POST /api/projects/drafts` | `/` | `useCreateProjectDraftMutation` | `CreateProjectDialog` | `frontend/tests/integration/landing-page.integration.test.tsx` | assigned |
+| `GET /api/dashboard/project-control-panel/summary` | `/`, `/dashboard` | `useProjectControlPanelSummaryQuery` | `LandingPage`, `DashboardPage` | `frontend/tests/integration/landing-page.integration.test.tsx` | assigned |
+| `GET /api/dashboard/project-control-panel/projects` | `/dashboard` | `useProjectControlPanelProjectListQuery` | `DashboardPage` | `missing dedicated dashboard list test` | partial |
+| `GET /api/projects/{project_id}/llm` | `unassigned` | `direct api-client only` | `unassigned` | `unassigned` | unassigned |
+| `PUT /api/projects/{project_id}/llm` | `unassigned` | `direct api-client only` | `unassigned` | `unassigned` | unassigned |
+| `PUT /api/projects/{project_id}/mode` | `/projects/:project_id/mode` | `useSwitchModeMutation` | `ProjectModePage` | `frontend/tests/integration/mode-selection-gating.integration.test.tsx`, `frontend/tests/regression/mode-profile-summary.regression.test.tsx` | assigned |
+| `POST /api/projects/{project_id}/ingest/txt` | `/projects/new` | `useIngestTxtMutation` | `ProjectNewPage` | `frontend/tests/integration/project-new-directory-ingestion.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `POST /api/projects/{project_id}/ingest/chapters-dir` | `/projects/new` | `useIngestChapterDirectoryMutation` | `ProjectNewPage` | `frontend/tests/integration/project-new-directory-ingestion.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `POST /api/projects/{project_id}/ingest/markdown` | `/projects/new` | `useIngestMarkdownMutation` | `ProjectNewPage` | `frontend/tests/integration/project-new-directory-ingestion.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `POST /api/projects/{project_id}/ingest/epub` | `/projects/new` | `useIngestEpubMutation` | `ProjectNewPage` | `frontend/tests/integration/project-new-directory-ingestion.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `POST /api/projects/{project_id}/ingest/append-chapter` | `/projects/new` | `useAppendChapterMutation` | `ProjectNewPage` | `frontend/tests/integration/project-new-directory-ingestion.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `POST /api/projects/{project_id}/characters/import` | `/projects/:project_id/characters` | `useImportCharactersMutation` | `ProjectCharactersPage` | `frontend/tests/integration/project-characters-page.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `GET /api/projects/{project_id}/characters` | `/projects/:project_id/characters`, `/projects/:project_id/pipeline-setup` | `useCharacterMapQuery` | `ProjectCharactersPage`, `ProjectPipelineSetupPage` | `frontend/tests/integration/project-characters-page.integration.test.tsx` | assigned |
+| `PUT /api/projects/{project_id}/characters` | `/projects/:project_id/characters` | `useSaveCharacterMapMutation` | `ProjectCharactersPage` | `frontend/tests/integration/project-characters-page.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `GET /api/projects/{project_id}/characters/gender-comparison` | `/projects/:project_id/characters` | `useCharacterGenderComparisonQuery` | `ProjectCharactersPage` | `frontend/tests/integration/project-characters-page.integration.test.tsx` | assigned |
+| `POST /api/projects/{project_id}/characters/finalize` | `/projects/:project_id/characters` | `useFinalizeCharacterMapMutation` | `ProjectCharactersPage` | `frontend/tests/integration/project-characters-page.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `POST /api/projects/{project_id}/characters/extract` | `/projects/:project_id/characters` | `useAutoExtractCharactersMutation` | `ProjectCharactersPage` | `frontend/tests/integration/project-characters-page.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `POST /api/projects/{project_id}/characters/scrape` | `/projects/:project_id/characters` | `useScrapeCharactersMutation` | `ProjectCharactersPage` | `frontend/tests/integration/project-characters-page.integration.test.tsx` | assigned |
+| `POST /api/projects/{project_id}/characters/merged-candidates` | `/projects/:project_id/characters` | `useMergeCharactersMutation` | `ProjectCharactersPage` | `frontend/tests/integration/project-characters-page.integration.test.tsx` | assigned |
+| `POST /api/projects/{project_id}/pronunciation-dictionary/preview` | `/projects/:project_id/characters` | `usePronunciationPreviewMutation` | `ProjectCharactersPage` | `frontend/tests/integration/project-characters-page.integration.test.tsx` | assigned |
+| `PUT /api/projects/{project_id}/voices` | `/projects/:project_id/pipeline-setup` | `useSaveVoicesMutation` | `ProjectPipelineSetupPage` | `frontend/tests/regression/pipeline-mode-lock.regression.test.tsx` | assigned |
+| `POST /api/projects/{project_id}/runs` | `/projects/:project_id/pipeline-setup` | `useRunPipelineMutation` | `ProjectPipelineSetupPage` | `frontend/tests/unit/run-request-schema.unit.test.ts`, `frontend/tests/regression/pipeline-mode-lock.regression.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `GET /api/projects/{project_id}/runs/{run_id}` | `/projects/:project_id/mode`, `/projects/:project_id/run-monitor` | `useRunDetailQuery` | `ProjectModePage`, `ProjectRunMonitorPage` | `frontend/tests/integration/mode-selection-gating.integration.test.tsx`, `frontend/tests/integration/project-run-monitor-page.integration.test.tsx` | assigned |
+| `POST /api/projects/{project_id}/runs/{run_id}/cancel` | `unassigned` | `useCancelRunMutation` | `unassigned` | `unassigned` | partial |
+| `GET /api/projects/{project_id}/runs/config-diff` | `/projects/:project_id/run-monitor` | `useRunConfigDiffQuery` | `ProjectRunMonitorPage` | `frontend/tests/integration/project-run-monitor-page.integration.test.tsx` | assigned |
+| `GET /api/projects/{project_id}/runs/{run_id}/config-preset` | `/projects/:project_id/run-monitor` | `useRunConfigPresetMutation` | `ProjectRunMonitorPage` | `frontend/tests/integration/project-run-monitor-page.integration.test.tsx` | assigned |
+| `GET /api/projects/{project_id}/exports/{run_id}.json` | `/projects/:project_id/export`, `/projects/:project_id/review/speakers`, `/projects/:project_id/review/emotions`, `/projects/:project_id/review/low-confidence`, `/projects/:project_id/dashboards` | `useExportPayloadQuery` | `ProjectExportPage`, `ProjectSpeakerReviewPage`, `ProjectEmotionReviewPage`, `ProjectLowConfidenceReviewPage`, `ProjectDashboardsPage` | `frontend/tests/integration/project-export-page.integration.test.tsx`, `frontend/tests/integration/project-speaker-review-page.integration.test.tsx`, `frontend/tests/integration/project-emotion-review-page.integration.test.tsx`, `frontend/tests/integration/project-low-confidence-review-page.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `GET /api/projects/{project_id}/runs/{run_id}/tension-graph` | `/projects/:project_id/dashboards` | `useTensionGraphQuery` | `ProjectDashboardsPage` | `frontend/tests/integration/project-dashboards-page.integration.test.tsx` | assigned |
+| `GET /api/projects/{project_id}/runs/{run_id}/character-analytics` | `/projects/:project_id/dashboards` | `useCharacterAnalyticsQuery` | `ProjectDashboardsPage` | `frontend/tests/integration/project-dashboards-page.integration.test.tsx` | assigned |
+| `GET /api/projects/{project_id}/runs/{run_id}/character-cooccurrence-graph` | `/projects/:project_id/dashboards` | `useCharacterCooccurrenceGraphQuery` | `ProjectDashboardsPage` | `frontend/tests/integration/project-dashboards-page.integration.test.tsx` | assigned |
+| `GET /api/projects/{project_id}/runs/{run_id}/audiobook-prep-dashboard` | `/projects/:project_id/dashboards` | `useAudiobookPrepDashboardQuery` | `ProjectDashboardsPage` | `frontend/tests/integration/project-dashboards-page.integration.test.tsx` | assigned |
+| `GET /api/projects/{project_id}/runs/{run_id}/pipeline-stage-durations-dashboard` | `/projects/:project_id/dashboards` | `usePipelineStageDurationsDashboardQuery` | `ProjectDashboardsPage` | `frontend/tests/integration/project-dashboards-page.integration.test.tsx` | assigned |
+
+## Gaps detected by this matrix
+
+- Dashboard project list endpoint has route/hook/component ownership but no dedicated dashboard-page integration test yet.
+- Run cancel endpoint has a hook (`useCancelRunMutation`) but no route/component wiring yet.
+- Project LLM settings endpoints are present in `api-client` but are not wired to hooks/routes/components/tests yet.
