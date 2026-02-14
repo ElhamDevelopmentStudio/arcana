@@ -50,6 +50,8 @@ const nextRequiredActionFilterOptions: NonNullable<ProjectControlPanelProjectLis
     'none',
   ];
 
+const dashboardPageSizeOptions = [10, 20, 50, 100] as const;
+
 function toWorkflowRoute(projectId: number, nextRequiredAction: string) {
   if (nextRequiredAction === 'select_mode') {
     return `/projects/${projectId}/mode`;
@@ -177,6 +179,10 @@ export function DashboardPage() {
   const listErrorMessage =
     listQuery.error instanceof Error ? listQuery.error.message : 'Unable to load control-panel project list.';
   const listItems = listQuery.data?.items ?? [];
+  const hasNextPage = listQuery.data?.has_next_page ?? false;
+  const totalItems = listQuery.data?.total_items ?? 0;
+  const totalPages =
+    totalItems > 0 ? Math.max(1, Math.ceil(totalItems / Math.max(1, effectiveListQuery.page_size))) : null;
 
   const applyDashboardListQuery = (nextQuery: DashboardListQueryState) => {
     setSearchParams(buildDashboardSearchParams(nextQuery), { replace: true });
@@ -364,6 +370,79 @@ export function DashboardPage() {
                 variant="outline"
               >
                 Clear filters
+              </Button>
+            </div>
+          </div>
+
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3" data-testid="dashboard-pagination-controls">
+            <div className="flex items-end gap-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="dashboard-pagination-page-size">Rows per page</Label>
+                <select
+                  className="border-input bg-background/85 h-10 min-w-24 rounded-xl border px-3 text-sm"
+                  data-testid="dashboard-pagination-page-size"
+                  id="dashboard-pagination-page-size"
+                  onChange={(event) => {
+                    const nextPageSize = Number(event.target.value);
+                    if (!Number.isInteger(nextPageSize) || nextPageSize <= 0) {
+                      return;
+                    }
+                    applyDashboardListQuery({
+                      ...effectiveListQuery,
+                      page: 1,
+                      page_size: nextPageSize,
+                    });
+                  }}
+                  value={String(effectiveListQuery.page_size)}
+                >
+                  {dashboardPageSizeOptions.map((pageSizeOption) => (
+                    <option key={pageSizeOption} value={pageSizeOption}>
+                      {pageSizeOption}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-muted-foreground" data-testid="dashboard-pagination-page-label">
+                Page {effectiveListQuery.page}
+                {totalPages !== null ? ` of ${totalPages}` : ''}
+              </p>
+              <Button
+                data-testid="dashboard-pagination-prev"
+                disabled={effectiveListQuery.page <= 1}
+                onClick={() => {
+                  if (effectiveListQuery.page <= 1) {
+                    return;
+                  }
+                  applyDashboardListQuery({
+                    ...effectiveListQuery,
+                    page: effectiveListQuery.page - 1,
+                  });
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Previous
+              </Button>
+              <Button
+                data-testid="dashboard-pagination-next"
+                disabled={!hasNextPage}
+                onClick={() => {
+                  if (!hasNextPage) {
+                    return;
+                  }
+                  applyDashboardListQuery({
+                    ...effectiveListQuery,
+                    page: effectiveListQuery.page + 1,
+                  });
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Next
               </Button>
             </div>
           </div>

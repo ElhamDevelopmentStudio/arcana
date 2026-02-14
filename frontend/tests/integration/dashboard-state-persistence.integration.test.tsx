@@ -177,4 +177,72 @@ describe('dashboard route/query state persistence', () => {
       expect(router.state.location.search).toBe('?page=1&page_size=20');
     });
   });
+
+  it('applies dashboard pagination controls and syncs URL params', async () => {
+    const user = userEvent.setup();
+    useProjectControlPanelProjectListQueryMock.mockImplementation((enabled: boolean, params: DashboardListQueryState) => {
+      if (!enabled) {
+        return { data: undefined };
+      }
+      return {
+        data: {
+          total_items: 45,
+          page: params.page,
+          page_size: params.page_size,
+          has_next_page: params.page < 3,
+          items: [
+            {
+              project_id: 101,
+              status: 'ingested',
+              selected_mode: 'audiobook',
+              last_run_status: null,
+              updated_at: '2026-02-27T00:00:00Z',
+              next_required_action: 'select_mode',
+            },
+          ],
+        },
+      };
+    });
+    const router = renderDashboard();
+
+    await waitFor(() => {
+      expect(useProjectControlPanelProjectListQueryMock).toHaveBeenCalled();
+    });
+
+    await user.selectOptions(screen.getByTestId('dashboard-pagination-page-size'), '50');
+
+    await waitFor(() => {
+      const lastCall = useProjectControlPanelProjectListQueryMock.mock.calls.at(-1);
+      expect(lastCall?.[1]).toMatchObject({
+        page: 1,
+        page_size: 50,
+      });
+      expect(router.state.location.search).toContain('page=1');
+      expect(router.state.location.search).toContain('page_size=50');
+    });
+
+    await user.click(screen.getByTestId('dashboard-pagination-next'));
+
+    await waitFor(() => {
+      const lastCall = useProjectControlPanelProjectListQueryMock.mock.calls.at(-1);
+      expect(lastCall?.[1]).toMatchObject({
+        page: 2,
+        page_size: 50,
+      });
+      expect(router.state.location.search).toContain('page=2');
+      expect(router.state.location.search).toContain('page_size=50');
+    });
+
+    await user.click(screen.getByTestId('dashboard-pagination-prev'));
+
+    await waitFor(() => {
+      const lastCall = useProjectControlPanelProjectListQueryMock.mock.calls.at(-1);
+      expect(lastCall?.[1]).toMatchObject({
+        page: 1,
+        page_size: 50,
+      });
+      expect(router.state.location.search).toContain('page=1');
+      expect(router.state.location.search).toContain('page_size=50');
+    });
+  });
 });
