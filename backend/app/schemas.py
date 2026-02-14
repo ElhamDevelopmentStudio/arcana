@@ -1138,6 +1138,7 @@ ProjectAllowedAction = Literal[
     "restore",
 ]
 ProjectActionRunStatus = Literal["queued", "running", "completed", "failed", "cancelled", "interrupted"]
+ProjectActionRequiredStep = Literal["ingestion", "mode_selection", "initial_run", "restore"]
 ProjectSetupStepId = Literal["ingestion", "mode_selection", "initial_run", "character_mapping", "voice_mapping"]
 ProjectActivityTimelineEventType = Literal[
     "ingest",
@@ -1218,6 +1219,8 @@ class ProjectAllowedActionsResponse(BaseModel):
     last_run_status: ProjectActionRunStatus | None = None
     next_required_action: ProjectControlPanelNextRequiredAction
     allowed_actions: list[ProjectAllowedAction] = Field(default_factory=list)
+    blocked_reason: str | None = Field(default=None, min_length=1, max_length=500)
+    required_step: ProjectActionRequiredStep | None = None
 
 
 class ProjectSetupStepStatus(BaseModel):
