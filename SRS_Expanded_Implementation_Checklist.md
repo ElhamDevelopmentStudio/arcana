@@ -556,7 +556,7 @@ Definition of done for each task:
 - [x] [X-031] Add backend workspace-summary contract tests for empty/default and populated projects.
 - [x] [X-032] Extend `GET /api/projects/{project_id}/actions` payload with optional `blocked_reason` and `required_step` fields for UI gating explanations.
 - [x] [X-033] Add backend tests for actions payload gating metadata (`blocked_reason`, `required_step`) across lifecycle states.
-- [ ] [X-034] Update API contract changelog/docs with setup-status/workspace-summary/actions-gating response examples.
+- [x] [X-034] Update API contract changelog/docs with setup-status/workspace-summary/actions-gating response examples.
 
 ## 13. Frontend Parallel Delivery Track (Ref: SRS.md §§2–11)
 
