@@ -553,7 +553,7 @@ Definition of done for each task:
 - [x] [X-028] Implement backend setup-status computation service from existing project/ingestion/mode/character/voice/run state.
 - [x] [X-029] Add backend setup-status contract tests for draft, partially configured, fully configured, completed, and archived projects.
 - [x] [X-030] Add backend endpoint `GET /api/projects/{project_id}/workspace-summary` for project-shell sidebar badges/counts.
-- [ ] [X-031] Add backend workspace-summary contract tests for empty/default and populated projects.
+- [x] [X-031] Add backend workspace-summary contract tests for empty/default and populated projects.
 - [ ] [X-032] Extend `GET /api/projects/{project_id}/actions` payload with optional `blocked_reason` and `required_step` fields for UI gating explanations.
 - [ ] [X-033] Add backend tests for actions payload gating metadata (`blocked_reason`, `required_step`) across lifecycle states.
 - [ ] [X-034] Update API contract changelog/docs with setup-status/workspace-summary/actions-gating response examples.
