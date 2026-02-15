@@ -585,7 +585,7 @@ Definition of done for each task:
 - [x] [FE-109] Add recent-failures triage panel from control-panel summary payload.
 
 ### 13.2A Project Workspace Shell and Setup-Gated Routing
-- [ ] [FE-181] Build project workspace shell route `/projects/{project_id}` with project-scoped sidebar and nested outlet.
+- [x] [FE-181] Build project workspace shell route `/projects/{project_id}` with project-scoped sidebar and nested outlet.
 - [ ] [FE-182] Build setup route `/projects/{project_id}/setup` with backend-driven checklist from `GET /api/projects/{project_id}/setup-status`.
 - [ ] [FE-183] Add setup gate guard: redirect locked project sub-routes to `/projects/{project_id}/setup` when setup is incomplete.
 - [ ] [FE-184] Add post-setup routing rule: redirect from setup to `/projects/{project_id}/overview` when setup becomes complete.
