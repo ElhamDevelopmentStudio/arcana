@@ -128,4 +128,50 @@ describe('dashboard api panel state primitives', () => {
     expect(screen.getByText('No projects available')).toBeInTheDocument();
     expect(screen.getByText('No projects found.')).toBeInTheDocument();
   });
+
+  it('auto-refreshes summary and list while active runs are present', async () => {
+    vi.useFakeTimers();
+    try {
+      useProjectControlPanelSummaryQueryMock.mockReturnValue({
+        isLoading: false,
+        data: {
+          total_projects: 1,
+          active_run_count: 1,
+          recent_failure_count: 0,
+        },
+        error: undefined,
+        mutate: summaryMutateMock,
+      });
+      useProjectControlPanelProjectListQueryMock.mockReturnValue({
+        isLoading: false,
+        data: {
+          total_items: 1,
+          page: 1,
+          page_size: 20,
+          has_next_page: false,
+          items: [
+            {
+              project_id: 101,
+              status: 'running',
+              selected_mode: 'author',
+              last_run_status: 'running',
+              updated_at: '2026-02-27T00:00:00Z',
+              next_required_action: 'none',
+            },
+          ],
+        },
+        error: undefined,
+        mutate: listMutateMock,
+      });
+
+      renderDashboard();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(summaryMutateMock).toHaveBeenCalled();
+      expect(listMutateMock).toHaveBeenCalled();
+      expect(screen.getByTestId('dashboard-auto-refresh-indicator')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

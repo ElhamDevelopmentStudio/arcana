@@ -54,6 +54,8 @@ const nextRequiredActionFilterOptions: NonNullable<ProjectControlPanelProjectLis
   ];
 
 const dashboardPageSizeOptions = [10, 20, 50, 100] as const;
+const dashboardActiveRefreshIntervalMs = 5000;
+const dashboardStaleActiveRowAgeMs = 60_000;
 
 type DashboardQuickAction = {
   action: ProjectAllowedActionDto;
@@ -273,6 +275,21 @@ export function DashboardPage() {
   const totalItems = listQuery.data?.total_items ?? 0;
   const totalPages =
     totalItems > 0 ? Math.max(1, Math.ceil(totalItems / Math.max(1, effectiveListQuery.page_size))) : null;
+  const activeRunCount = summaryQuery.data?.active_run_count ?? 0;
+  const hasActiveRunRows = listItems.some(
+    (item) => item.status === 'running' || item.last_run_status === 'running' || item.last_run_status === 'queued',
+  );
+  const staleActiveRowsCount = listItems.filter((item) => {
+    if (item.status !== 'running' && item.last_run_status !== 'running' && item.last_run_status !== 'queued') {
+      return false;
+    }
+    const updatedAtTs = Date.parse(item.updated_at);
+    if (Number.isNaN(updatedAtTs)) {
+      return false;
+    }
+    return Date.now() - updatedAtTs > dashboardStaleActiveRowAgeMs;
+  }).length;
+  const shouldAutoRefreshDashboard = activeRunCount > 0 || hasActiveRunRows || staleActiveRowsCount > 0;
 
   const applyDashboardListQuery = (nextQuery: DashboardListQueryState) => {
     setSearchParams(buildDashboardSearchParams(nextQuery), { replace: true });
@@ -289,6 +306,25 @@ export function DashboardPage() {
       page: 1,
     });
   };
+
+  useEffect(() => {
+    const refreshSummary = summaryQuery.mutate;
+    const refreshList = listQuery.mutate;
+    if (
+      !shouldAutoRefreshDashboard ||
+      typeof refreshSummary !== 'function' ||
+      typeof refreshList !== 'function'
+    ) {
+      return undefined;
+    }
+    const intervalId = window.setInterval(() => {
+      void refreshSummary();
+      void refreshList();
+    }, dashboardActiveRefreshIntervalMs);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [listQuery.mutate, shouldAutoRefreshDashboard, summaryQuery.mutate]);
 
   return (
     <WorkflowPageShell
@@ -536,6 +572,12 @@ export function DashboardPage() {
               </Button>
             </div>
           </div>
+          {shouldAutoRefreshDashboard ? (
+            <p className="mb-3 text-xs text-muted-foreground" data-testid="dashboard-auto-refresh-indicator">
+              Auto-refresh active every 5s while runs are active or stale.
+              {staleActiveRowsCount > 0 ? ` Stale active rows: ${staleActiveRowsCount}.` : ''}
+            </p>
+          ) : null}
 
           {listQuery.isLoading && listQuery.data === undefined ? (
             <div data-testid="dashboard-list-loading">
