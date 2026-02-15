@@ -56,6 +56,7 @@ const nextRequiredActionFilterOptions: NonNullable<ProjectControlPanelProjectLis
 const dashboardPageSizeOptions = [10, 20, 50, 100] as const;
 const dashboardActiveRefreshIntervalMs = 5000;
 const dashboardStaleActiveRowAgeMs = 60_000;
+const dashboardRecentFailureMaxVisible = 5;
 
 type DashboardQuickAction = {
   action: ProjectAllowedActionDto;
@@ -99,6 +100,13 @@ function resolveDashboardQuickAction(projectId: number, action: ProjectAllowedAc
     return { action, label: 'Export', route: `/projects/${projectId}/export` };
   }
   return null;
+}
+
+function toFailureTriageRoute(projectId: number, runId: number | null | undefined): string {
+  if (typeof runId === 'number') {
+    return `/projects/${projectId}/run-monitor?run_id=${runId}`;
+  }
+  return `/projects/${projectId}/run-monitor`;
 }
 
 function readDashboardQueryFromSearchParams(
@@ -271,6 +279,7 @@ export function DashboardPage() {
   const listErrorMessage =
     listQuery.error instanceof Error ? listQuery.error.message : 'Unable to load control-panel project list.';
   const listItems = listQuery.data?.items ?? [];
+  const recentFailures = summaryQuery.data?.recent_failures ?? [];
   const hasNextPage = listQuery.data?.has_next_page ?? false;
   const totalItems = listQuery.data?.total_items ?? 0;
   const totalPages =
@@ -382,6 +391,59 @@ export function DashboardPage() {
           </>
         )}
       </div>
+
+      {!summaryQuery.isLoading && !summaryQuery.error ? (
+        <Card data-testid="dashboard-recent-failures-panel">
+          <CardHeader>
+            <CardTitle>Recent failures triage</CardTitle>
+            <CardDescription>Latest failed runs and direct links to run-monitor triage.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recentFailures.length === 0 ? (
+              <ApiPanelEmpty
+                description="No recent run failures were reported."
+                title="No failures to triage"
+              />
+            ) : (
+              <div className="space-y-3">
+                {recentFailures.slice(0, dashboardRecentFailureMaxVisible).map((failure) => (
+                  <div
+                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-panel-border/70 px-4 py-3"
+                    data-testid={`dashboard-recent-failure-${failure.project_id}`}
+                    key={`${failure.project_id}-${failure.run_id ?? 'none'}-${failure.failed_at}`}
+                  >
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        {failure.project_title} ({failure.project_id})
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        failed at {new Date(failure.failed_at).toLocaleString()}
+                      </p>
+                      {failure.error_code ? (
+                        <p className="text-xs text-muted-foreground">error: {failure.error_code}</p>
+                      ) : null}
+                      {failure.error_message ? (
+                        <p className="text-xs text-muted-foreground">{failure.error_message}</p>
+                      ) : null}
+                    </div>
+                    <Button
+                      data-testid={`dashboard-triage-failure-${failure.project_id}`}
+                      onClick={() => {
+                        navigate(toFailureTriageRoute(failure.project_id, failure.run_id));
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="secondary"
+                    >
+                      Triage
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
