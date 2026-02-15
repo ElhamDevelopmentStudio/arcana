@@ -33,6 +33,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Dashboard query state and last-visited project route state now persist across reloads for control-panel workflows
 - Dashboard pagination controls now drive backend `page` and `page_size` query params with URL-synced state
 - Dashboard filter controls now support status/mode/last-run/next-action query filtering with URL-synced state
+- Dashboard project rows now surface quick actions hydrated from `GET /api/projects/{project_id}/actions`
 - Reusable API panel state primitives now standardize loading, empty, and error/retry UX for dashboard-backed panels
 - Global mutation event bus now dispatches centralized success/error notifications with recovery actions for shared mutations
 - Global Tailwind-based design system in `frontend/src/styles/globals.css`
