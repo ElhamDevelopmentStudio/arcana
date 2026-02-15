@@ -38,6 +38,7 @@ const projectAllowedActionSchema = z.enum([
   'restore',
 ]);
 const projectActionRequiredStepSchema = z.enum(['ingestion', 'mode_selection', 'initial_run', 'restore']);
+const projectSetupStepIdSchema = z.enum(['ingestion', 'mode_selection', 'initial_run', 'character_mapping', 'voice_mapping']);
 
 const runExportFormatsSchema = z
   .array(z.string())
@@ -809,6 +810,28 @@ export const projectAllowedActionsResponseSchema = z.object({
   required_step: projectActionRequiredStepSchema.nullable().optional().default(null),
 });
 
+export const projectSetupStepStatusSchema = z.object({
+  step_id: projectSetupStepIdSchema,
+  label: z.string().min(1).max(80),
+  ready: z.boolean(),
+  required: z.boolean(),
+});
+
+export const projectSetupStatusResponseSchema = z.object({
+  schema_version: z.string().min(1),
+  output_schema: z.string().min(1),
+  output_format: z.string().min(1),
+  output_id: z.string().min(1),
+  output_name: z.string().min(1),
+  generated_at: z.string().min(1),
+  generated_by: z.string().min(1),
+  project_id: z.number().int().positive(),
+  lifecycle_state: projectLifecycleStateSchema,
+  next_required_action: projectNextRequiredActionSchema,
+  is_complete: z.boolean(),
+  steps: z.array(projectSetupStepStatusSchema).default([]),
+});
+
 export const characterGenderComparisonRequestSchema = z.object({
   include_only_conflicts: z.boolean().default(false),
 });
@@ -867,6 +890,9 @@ export type ProjectControlPanelProjectListRequestDto = z.infer<typeof projectCon
 export type ProjectAllowedActionDto = z.infer<typeof projectAllowedActionSchema>;
 export type ProjectActionRequiredStepDto = z.infer<typeof projectActionRequiredStepSchema>;
 export type ProjectAllowedActionsResponseDto = z.infer<typeof projectAllowedActionsResponseSchema>;
+export type ProjectSetupStepIdDto = z.infer<typeof projectSetupStepIdSchema>;
+export type ProjectSetupStepStatusDto = z.infer<typeof projectSetupStepStatusSchema>;
+export type ProjectSetupStatusResponseDto = z.infer<typeof projectSetupStatusResponseSchema>;
 export type CharacterGenderComparisonRequestDto = z.infer<typeof characterGenderComparisonRequestSchema>;
 export type CharacterMentionsByChapterItemDto = z.infer<typeof characterMentionsByChapterItemSchema>;
 export type CharacterAnalyticsResponseDto = z.infer<typeof characterAnalyticsResponseSchema>;

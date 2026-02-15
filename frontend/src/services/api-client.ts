@@ -25,6 +25,7 @@ import {
   projectControlPanelProjectListRequestSchema,
   projectControlPanelProjectListResponseSchema,
   projectAllowedActionsResponseSchema,
+  projectSetupStatusResponseSchema,
   projectCreateRequestSchema,
   projectSchema,
   projectLLMSettingsRequestSchema,
@@ -52,6 +53,7 @@ import {
   type ProjectControlPanelProjectListRequestDto,
   type ProjectControlPanelProjectListResponseDto,
   type ProjectAllowedActionsResponseDto,
+  type ProjectSetupStatusResponseDto,
   type VoiceConfigDto,
   type CharacterMapDto,
   type CharacterMapUpdateDto,
@@ -156,6 +158,15 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/actions`);
       return projectAllowedActionsResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getProjectSetupStatus(projectId: number): Promise<ProjectSetupStatusResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/setup-status`);
+      return projectSetupStatusResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

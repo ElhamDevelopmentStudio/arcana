@@ -11,6 +11,7 @@ const loadProjectExportPage = () => import('@/pages/projects/project-export-page
 const loadProjectModePage = () => import('@/pages/projects/project-mode-page');
 const loadProjectNewPage = () => import('@/pages/projects/project-new-page');
 const loadProjectPipelineSetupPage = () => import('@/pages/projects/project-pipeline-setup-page');
+const loadProjectSetupPage = () => import('@/pages/projects/project-setup-page');
 const loadProjectRunMonitorPage = () => import('@/pages/projects/project-run-monitor-page');
 const loadProjectSpeakerReviewPage = () => import('@/pages/projects/project-speaker-review-page');
 const loadProjectEmotionReviewPage = () => import('@/pages/projects/project-emotion-review-page');
@@ -31,6 +32,7 @@ const ProjectNewPage = lazy(() => loadProjectNewPage().then((module) => ({ defau
 const ProjectPipelineSetupPage = lazy(() =>
   loadProjectPipelineSetupPage().then((module) => ({ default: module.ProjectPipelineSetupPage })),
 );
+const ProjectSetupPage = lazy(() => loadProjectSetupPage().then((module) => ({ default: module.ProjectSetupPage })));
 const ProjectRunMonitorPage = lazy(() =>
   loadProjectRunMonitorPage().then((module) => ({ default: module.ProjectRunMonitorPage })),
 );
@@ -60,6 +62,7 @@ const ROUTE_MODULE_PREFETCHERS: Array<{ pattern: RegExp; load: () => Promise<unk
   { pattern: /^\/dashboard$/, load: loadDashboardPage },
   { pattern: /^\/projects\/new$/, load: loadProjectNewPage },
   { pattern: /^\/projects\/[^/]+$/, load: loadProjectWorkspaceHomePage },
+  { pattern: /^\/projects\/[^/]+\/setup$/, load: loadProjectSetupPage },
   { pattern: /^\/projects\/[^/]+\/mode$/, load: loadProjectModePage },
   { pattern: /^\/projects\/[^/]+\/characters$/, load: loadProjectCharactersPage },
   { pattern: /^\/projects\/[^/]+\/pipeline-setup$/, load: loadProjectPipelineSetupPage },
@@ -107,6 +110,10 @@ export const mainRouter: RouteObject[] = [
           {
             index: true,
             element: <SuspendedRoute><ProjectWorkspaceHomePage /></SuspendedRoute>,
+          },
+          {
+            path: 'setup',
+            element: <SuspendedRoute><ProjectSetupPage /></SuspendedRoute>,
           },
           {
             path: 'mode',

@@ -37,6 +37,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Dashboard now auto-refreshes control-panel rows during active runs and stale active-row states
 - Dashboard now includes a recent-failures triage panel sourced from control-panel summary payload (`recent_failures`)
 - Project route `/projects/{project_id}` now resolves to a workspace shell with project-scoped sidebar and nested child workflow routes
+- Project setup route `/projects/{project_id}/setup` now renders backend-driven readiness checklist from `GET /api/projects/{project_id}/setup-status`
 - Reusable API panel state primitives now standardize loading, empty, and error/retry UX for dashboard-backed panels
 - Global mutation event bus now dispatches centralized success/error notifications with recovery actions for shared mutations
 - Global Tailwind-based design system in `frontend/src/styles/globals.css`
