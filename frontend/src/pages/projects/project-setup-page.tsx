@@ -1,13 +1,23 @@
-import { useEffect } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { ApiPanelError, ApiPanelLoading } from '@/components/ui/api-panel-state';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useProjectSetupStatusQuery } from '@/features/workflow/api/workflow-hooks';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  useAttachInitialIngestionSourceMutation,
+  useIngestTxtMutation,
+  useProjectSetupStatusQuery,
+} from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
+
+const setupStatusPollIntervalMs = 3000;
 
 function toStepStatusLabel(ready: boolean, required: boolean) {
   if (ready) {
@@ -16,19 +26,32 @@ function toStepStatusLabel(ready: boolean, required: boolean) {
   return required ? 'Required' : 'Optional';
 }
 
+function isAlreadyAttachedIngestionSourceError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.message.toLowerCase().includes('already attached');
+}
+
 export function ProjectSetupPage() {
   const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
+  const setChapterCount = useWorkspaceStore((state) => state.setChapterCount);
   const projectId = routeProjectId ?? storeProjectId;
+  const [ingestionFile, setIngestionFile] = useState<File | null>(null);
+
   const setupStatusQuery = useProjectSetupStatusQuery(projectId);
+  const attachInitialIngestionSourceMutation = useAttachInitialIngestionSourceMutation(projectId);
+  const ingestTxtMutation = useIngestTxtMutation(projectId);
 
   const setupErrorMessage =
     setupStatusQuery.error instanceof Error
       ? setupStatusQuery.error.message
       : 'Unable to load setup checklist.';
   const setupSteps = setupStatusQuery.data?.steps ?? [];
+  const ingestionBusy = attachInitialIngestionSourceMutation.isMutating || ingestTxtMutation.isMutating;
 
   useEffect(() => {
     if (projectId === null || setupStatusQuery.isLoading || setupStatusQuery.error || setupStatusQuery.data === undefined) {
@@ -45,6 +68,55 @@ export function ProjectSetupPage() {
     setupStatusQuery.error,
     setupStatusQuery.isLoading,
   ]);
+
+  useEffect(() => {
+    if (projectId === null || setupStatusQuery.error || setupStatusQuery.data === undefined) {
+      return;
+    }
+    if (setupStatusQuery.data.is_complete) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      void setupStatusQuery.mutate();
+    }, setupStatusPollIntervalMs);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [projectId, setupStatusQuery.data, setupStatusQuery.error, setupStatusQuery.mutate]);
+
+  async function handleIngestionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    if (!ingestionFile) {
+      toast.error('Choose a TXT file before ingestion.');
+      return;
+    }
+
+    try {
+      try {
+        await attachInitialIngestionSourceMutation.trigger({
+          source: 'txt',
+          source_filename: ingestionFile.name,
+        });
+      } catch (error) {
+        if (!isAlreadyAttachedIngestionSourceError(error)) {
+          throw error;
+        }
+      }
+
+      const response = await ingestTxtMutation.trigger({ file: ingestionFile });
+      setChapterCount(response.chapter_count);
+      toast.success(`Ingestion complete: ${response.chapter_count} chapters detected.`);
+      setIngestionFile(null);
+      await setupStatusQuery.mutate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Setup ingestion failed.');
+    }
+  }
 
   return (
     <WorkflowPageShell
@@ -85,8 +157,45 @@ export function ProjectSetupPage() {
                 </Badge>
                 <Badge variant="outline">Lifecycle: {setupStatusQuery.data?.lifecycle_state ?? 'draft'}</Badge>
                 <Badge variant="outline">Next action: {setupStatusQuery.data?.next_required_action ?? 'none'}</Badge>
+                <Badge data-testid="project-setup-polling-indicator" variant="outline">
+                  Polling every {setupStatusPollIntervalMs / 1000}s
+                </Badge>
               </div>
             </CardHeader>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Source attach + ingestion</CardTitle>
+              <CardDescription>
+                Attach initial source metadata (`POST /api/projects/:project_id/ingest/source`) and ingest TXT now.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="grid gap-3" data-testid="project-setup-ingestion-form" onSubmit={handleIngestionSubmit}>
+                <div className="grid gap-2">
+                  <Label htmlFor="project-setup-ingestion-file">TXT source file</Label>
+                  <Input
+                    accept=".txt,text/plain"
+                    data-testid="project-setup-ingestion-file-input"
+                    id="project-setup-ingestion-file"
+                    onChange={(event) => {
+                      const nextFile = event.target.files?.[0] ?? null;
+                      setIngestionFile(nextFile);
+                    }}
+                    type="file"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    Setup step currently supports TXT ingestion in this route.
+                  </p>
+                  <Button data-testid="project-setup-ingestion-submit" disabled={ingestionBusy} type="submit">
+                    {ingestionBusy ? 'Ingesting...' : 'Attach source and ingest'}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
           </Card>
 
           <Card>

@@ -7,11 +7,18 @@ import { ProjectSetupPage } from '@/pages/projects/project-setup-page';
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useProjectSetupStatusQueryMock = vi.fn();
+const useAttachInitialIngestionSourceMutationMock = vi.fn();
+const useIngestTxtMutationMock = vi.fn();
 const setupStatusMutateMock = vi.fn();
+const attachInitialIngestionSourceTriggerMock = vi.fn();
+const ingestTxtTriggerMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useProjectSetupStatusQuery: (...args: Parameters<typeof useProjectSetupStatusQueryMock>) =>
     useProjectSetupStatusQueryMock(...args),
+  useAttachInitialIngestionSourceMutation: (...args: Parameters<typeof useAttachInitialIngestionSourceMutationMock>) =>
+    useAttachInitialIngestionSourceMutationMock(...args),
+  useIngestTxtMutation: (...args: Parameters<typeof useIngestTxtMutationMock>) => useIngestTxtMutationMock(...args),
 }));
 
 function renderProjectSetupPage() {
@@ -37,7 +44,20 @@ describe('project setup page', () => {
   beforeEach(() => {
     resetWorkspaceStore();
     useProjectSetupStatusQueryMock.mockReset();
+    useAttachInitialIngestionSourceMutationMock.mockReset();
+    useIngestTxtMutationMock.mockReset();
     setupStatusMutateMock.mockReset();
+    attachInitialIngestionSourceTriggerMock.mockReset();
+    ingestTxtTriggerMock.mockReset();
+
+    useAttachInitialIngestionSourceMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: attachInitialIngestionSourceTriggerMock,
+    });
+    useIngestTxtMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: ingestTxtTriggerMock,
+    });
   });
 
   it('renders loading state while setup status is pending', () => {
@@ -97,6 +117,83 @@ describe('project setup page', () => {
     expect(screen.getByTestId('project-setup-step-mode_selection')).toBeInTheDocument();
     expect(screen.getByTestId('project-setup-step-initial_run')).toBeInTheDocument();
     expect(screen.getByText('Mode Selection')).toBeInTheDocument();
+  });
+
+  it('attaches source and ingests txt from setup step form', async () => {
+    const user = userEvent.setup();
+    attachInitialIngestionSourceTriggerMock.mockResolvedValue({
+      project_id: 77,
+      source: 'txt',
+      source_filename: 'novel.txt',
+      attached_at: '2026-02-27T00:00:00Z',
+    });
+    ingestTxtTriggerMock.mockResolvedValue({
+      project_id: 77,
+      chapter_count: 12,
+    });
+    useProjectSetupStatusQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: setupStatusMutateMock,
+      data: {
+        project_id: 77,
+        lifecycle_state: 'draft',
+        next_required_action: 'ingest',
+        is_complete: false,
+        steps: [
+          { step_id: 'ingestion', label: 'Ingestion', ready: false, required: true },
+          { step_id: 'mode_selection', label: 'Mode Selection', ready: false, required: true },
+          { step_id: 'initial_run', label: 'Initial Run', ready: false, required: true },
+          { step_id: 'character_mapping', label: 'Character Mapping', ready: false, required: false },
+          { step_id: 'voice_mapping', label: 'Voice Mapping', ready: false, required: false },
+        ],
+      },
+    });
+
+    renderProjectSetupPage();
+
+    const txtFile = new File(['chapter one'], 'novel.txt', { type: 'text/plain' });
+    const input = screen.getByTestId('project-setup-ingestion-file-input');
+    await user.upload(input, txtFile);
+    await user.click(screen.getByTestId('project-setup-ingestion-submit'));
+
+    expect(attachInitialIngestionSourceTriggerMock).toHaveBeenCalledWith({
+      source: 'txt',
+      source_filename: 'novel.txt',
+    });
+    expect(ingestTxtTriggerMock).toHaveBeenCalledWith({ file: txtFile });
+    expect(setupStatusMutateMock).toHaveBeenCalled();
+  });
+
+  it('polls setup status while setup remains incomplete', async () => {
+    vi.useFakeTimers();
+    try {
+      useProjectSetupStatusQueryMock.mockReturnValue({
+        isLoading: false,
+        error: undefined,
+        mutate: setupStatusMutateMock,
+        data: {
+          project_id: 77,
+          lifecycle_state: 'draft',
+          next_required_action: 'ingest',
+          is_complete: false,
+          steps: [
+            { step_id: 'ingestion', label: 'Ingestion', ready: false, required: true },
+            { step_id: 'mode_selection', label: 'Mode Selection', ready: false, required: true },
+            { step_id: 'initial_run', label: 'Initial Run', ready: false, required: true },
+            { step_id: 'character_mapping', label: 'Character Mapping', ready: false, required: false },
+            { step_id: 'voice_mapping', label: 'Voice Mapping', ready: false, required: false },
+          ],
+        },
+      });
+
+      renderProjectSetupPage();
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      expect(setupStatusMutateMock).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('redirects to project overview when setup is complete', async () => {

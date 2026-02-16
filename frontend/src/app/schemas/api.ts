@@ -153,6 +153,18 @@ export const projectCreateRequestSchema = z.object({
   do_not_store_source_text: z.boolean().default(false),
 });
 
+export const projectIngestionSourceAttachRequestSchema = z.object({
+  source: z.enum(['txt', 'markdown', 'epub', 'chapters-dir']),
+  source_filename: z.string().trim().min(1).max(255).optional(),
+});
+
+export const projectIngestionSourceAttachResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  source: z.enum(['txt', 'markdown', 'epub', 'chapters-dir']),
+  source_filename: z.string().trim().min(1).nullable().optional().default(null),
+  attached_at: z.string().min(1),
+});
+
 export const projectLLMSettingsRequestSchema = z.object({
   llm_enabled: z.boolean(),
 });
@@ -840,6 +852,8 @@ export type ModeCatalogDto = z.infer<typeof modeCatalogSchema>;
 export type HealthDto = z.infer<typeof healthSchema>;
 export type ProjectDto = z.infer<typeof projectSchema>;
 export type ProjectCreateRequestDto = z.infer<typeof projectCreateRequestSchema>;
+export type ProjectIngestionSourceAttachRequestDto = z.infer<typeof projectIngestionSourceAttachRequestSchema>;
+export type ProjectIngestionSourceAttachResponseDto = z.infer<typeof projectIngestionSourceAttachResponseSchema>;
 export type ProjectLLMSettingsRequestDto = z.infer<typeof projectLLMSettingsRequestSchema>;
 export type ProjectLLMSettingsResponseDto = z.infer<typeof projectLLMSettingsResponseSchema>;
 export type ProjectModeSwitchResponseDto = z.infer<typeof projectModeSwitchResponseSchema>;
