@@ -59,6 +59,8 @@ export function ProjectSetupPage() {
       ? setupStatusQuery.error.message
       : 'Unable to load setup checklist.';
   const setupSteps = setupStatusQuery.data?.steps ?? [];
+  const characterMappingStep = setupSteps.find((step) => step.step_id === 'character_mapping');
+  const voiceMappingStep = setupSteps.find((step) => step.step_id === 'voice_mapping');
   const ingestionBusy = attachInitialIngestionSourceMutation.isMutating || ingestTxtMutation.isMutating;
   const modeOptions =
     modeCatalogQuery.data?.modes?.length !== undefined && modeCatalogQuery.data.modes.length > 0
@@ -280,6 +282,66 @@ export function ProjectSetupPage() {
                   </Button>
                 </div>
               </form>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="project-setup-character-voice-readiness">
+            <CardHeader>
+              <CardTitle>Character + voice readiness</CardTitle>
+              <CardDescription>Baseline checks for optional setup readiness before first production run.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-panel-border/70 px-3 py-3"
+                data-testid="project-setup-character-readiness"
+              >
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">Character mapping</p>
+                  <p className="text-xs text-muted-foreground">
+                    Review/extract/import characters and finalize map before long runs.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={characterMappingStep?.ready ? 'default' : 'secondary'}>
+                    {characterMappingStep ? toStepStatusLabel(characterMappingStep.ready, characterMappingStep.required) : 'Optional'}
+                  </Badge>
+                  <Button
+                    data-testid="project-setup-go-characters"
+                    onClick={() => navigate(`/projects/${projectId}/characters`)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Open Characters
+                  </Button>
+                </div>
+              </div>
+
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-panel-border/70 px-3 py-3"
+                data-testid="project-setup-voice-readiness"
+              >
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">Voice mapping</p>
+                  <p className="text-xs text-muted-foreground">
+                    Configure narrator/default voices and review character voice assignments.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={voiceMappingStep?.ready ? 'default' : 'secondary'}>
+                    {voiceMappingStep ? toStepStatusLabel(voiceMappingStep.ready, voiceMappingStep.required) : 'Optional'}
+                  </Badge>
+                  <Button
+                    data-testid="project-setup-go-pipeline-setup"
+                    onClick={() => navigate(`/projects/${projectId}/pipeline-setup`)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Open Pipeline Setup
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
