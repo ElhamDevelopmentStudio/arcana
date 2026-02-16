@@ -1,4 +1,5 @@
-import { useParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
@@ -16,6 +17,7 @@ function toStepStatusLabel(ready: boolean, required: boolean) {
 }
 
 export function ProjectSetupPage() {
+  const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
@@ -27,6 +29,22 @@ export function ProjectSetupPage() {
       ? setupStatusQuery.error.message
       : 'Unable to load setup checklist.';
   const setupSteps = setupStatusQuery.data?.steps ?? [];
+
+  useEffect(() => {
+    if (projectId === null || setupStatusQuery.isLoading || setupStatusQuery.error || setupStatusQuery.data === undefined) {
+      return;
+    }
+    if (!setupStatusQuery.data.is_complete) {
+      return;
+    }
+    navigate(`/projects/${projectId}/overview`, { replace: true });
+  }, [
+    navigate,
+    projectId,
+    setupStatusQuery.data,
+    setupStatusQuery.error,
+    setupStatusQuery.isLoading,
+  ]);
 
   return (
     <WorkflowPageShell
