@@ -10,10 +10,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import {
   useAttachInitialIngestionSourceMutation,
   useIngestTxtMutation,
+  useModeCatalogQuery,
   useProjectSetupStatusQuery,
+  useSwitchModeMutation,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
@@ -38,13 +41,18 @@ export function ProjectSetupPage() {
   const params = useParams<{ project_id: string }>();
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
+  const workspaceSelectedMode = useWorkspaceStore((state) => state.selectedMode);
   const setChapterCount = useWorkspaceStore((state) => state.setChapterCount);
+  const setSelectedMode = useWorkspaceStore((state) => state.setSelectedMode);
   const projectId = routeProjectId ?? storeProjectId;
   const [ingestionFile, setIngestionFile] = useState<File | null>(null);
+  const [setupMode, setSetupMode] = useState<string | null>(workspaceSelectedMode);
 
   const setupStatusQuery = useProjectSetupStatusQuery(projectId);
   const attachInitialIngestionSourceMutation = useAttachInitialIngestionSourceMutation(projectId);
   const ingestTxtMutation = useIngestTxtMutation(projectId);
+  const modeCatalogQuery = useModeCatalogQuery(projectId !== null);
+  const switchModeMutation = useSwitchModeMutation(projectId);
 
   const setupErrorMessage =
     setupStatusQuery.error instanceof Error
@@ -52,6 +60,11 @@ export function ProjectSetupPage() {
       : 'Unable to load setup checklist.';
   const setupSteps = setupStatusQuery.data?.steps ?? [];
   const ingestionBusy = attachInitialIngestionSourceMutation.isMutating || ingestTxtMutation.isMutating;
+  const modeOptions =
+    modeCatalogQuery.data?.modes?.length !== undefined && modeCatalogQuery.data.modes.length > 0
+      ? modeCatalogQuery.data.modes
+      : ['audiobook', 'academic', 'author', 'custom'];
+  const effectiveSetupMode = setupMode ?? workspaceSelectedMode ?? modeCatalogQuery.data?.default_mode ?? modeOptions[0] ?? '';
 
   useEffect(() => {
     if (projectId === null || setupStatusQuery.isLoading || setupStatusQuery.error || setupStatusQuery.data === undefined) {
@@ -84,6 +97,16 @@ export function ProjectSetupPage() {
     };
   }, [projectId, setupStatusQuery.data, setupStatusQuery.error, setupStatusQuery.mutate]);
 
+  useEffect(() => {
+    if (setupMode !== null) {
+      return;
+    }
+    if (!modeCatalogQuery.data?.default_mode) {
+      return;
+    }
+    setSetupMode(modeCatalogQuery.data.default_mode);
+  }, [modeCatalogQuery.data?.default_mode, setupMode]);
+
   async function handleIngestionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -115,6 +138,31 @@ export function ProjectSetupPage() {
       await setupStatusQuery.mutate();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Setup ingestion failed.');
+    }
+  }
+
+  async function handleModeSelectionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    if (!effectiveSetupMode) {
+      toast.error('Select a mode before applying.');
+      return;
+    }
+
+    try {
+      const response = await switchModeMutation.trigger({ mode: effectiveSetupMode });
+      setSelectedMode(response.selected_mode);
+      if (response.stale_runs_marked > 0) {
+        toast.success(`Mode set to ${response.selected_mode}. ${response.stale_runs_marked} previous run(s) marked stale.`);
+      } else {
+        toast.success(`Mode set to ${response.selected_mode}.`);
+      }
+      await setupStatusQuery.mutate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Mode selection failed.');
     }
   }
 
@@ -192,6 +240,43 @@ export function ProjectSetupPage() {
                   </p>
                   <Button data-testid="project-setup-ingestion-submit" disabled={ingestionBusy} type="submit">
                     {ingestionBusy ? 'Ingesting...' : 'Attach source and ingest'}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Mode selection completion</CardTitle>
+              <CardDescription>
+                Select and apply mode using `GET /api/modes` and `PUT /api/projects/:project_id/mode`.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="grid gap-3" data-testid="project-setup-mode-form" onSubmit={handleModeSelectionSubmit}>
+                <div className="grid gap-2">
+                  <Label htmlFor="project-setup-mode-select">Mode</Label>
+                  <NativeSelect
+                    data-testid="project-setup-mode-select"
+                    disabled={modeCatalogQuery.isLoading || switchModeMutation.isMutating}
+                    id="project-setup-mode-select"
+                    onChange={(event) => {
+                      setSetupMode(event.target.value);
+                    }}
+                    value={effectiveSetupMode}
+                  >
+                    {modeOptions.map((modeOption) => (
+                      <option key={modeOption} value={modeOption}>
+                        {modeOption}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">Applying mode refreshes setup status immediately.</p>
+                  <Button data-testid="project-setup-mode-submit" disabled={switchModeMutation.isMutating} type="submit">
+                    {switchModeMutation.isMutating ? 'Applying mode...' : 'Apply mode'}
                   </Button>
                 </div>
               </form>
