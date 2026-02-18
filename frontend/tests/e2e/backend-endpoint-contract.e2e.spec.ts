@@ -1640,6 +1640,47 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(workspaceState?.projectId).toBeGreaterThan(0);
   });
 
+  test('projects/:project_id workspace home renders project detail contract data', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-workspace-home-detail');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}`);
+    await expect(page).toHaveURL(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-workspace-home-ready')).toBeVisible();
+    await expect(page.getByTestId('project-workspace-home-source-contract')).toContainText(
+      'GET /api/projects/{project_id}',
+    );
+    await expect(page.getByTestId('project-workspace-home-title')).toContainText(title);
+    await expect(page.getByTestId('project-workspace-home-id')).toContainText(`Project ID: ${projectId}`);
+  });
+
   test('create draft stays setup-gated until completion, then allows overview access', async ({ page, request }) => {
     const title = uniqueTitle('e2e-draft-setup-gate');
     const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
