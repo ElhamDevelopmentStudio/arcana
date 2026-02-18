@@ -626,7 +626,7 @@ Definition of done for each task:
 - [x] [FE-129A] Add ingestion concurrency safety + UI upload lock state for long-running ingest operations (`409 in_progress` guard, global upload disable while ingest mutation active, extended ingest request timeout).
 
 ### 13.5 LLM, Providers, and Access Controls
-- [ ] [FE-130] Build project LLM settings panel using `GET/PUT /api/projects/{project_id}/llm`.
+- [x] [FE-130] Build project LLM settings panel using `GET/PUT /api/projects/{project_id}/llm`.
 - [ ] [FE-131] Build provider status management panel using `GET /api/llm/providers` and `PUT /api/llm/providers/{provider_name}`.
 - [ ] [FE-132] Build project access listing using `GET /api/projects/{project_id}/access`.
 - [ ] [FE-133] Build project access grant flow using `POST /api/projects/{project_id}/access`.

@@ -1660,6 +1660,81 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('mode-continue-button')).toBeEnabled();
   });
 
+  test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-settings-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+
+    await waitForSetupCompletion(request, projectId);
+
+    const llmSettingsGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/llm`),
+    );
+    const llmSettingsGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/llm`),
+    );
+
+    await page.goto(`/projects/${projectId}/settings`);
+    await expect(page.getByTestId('project-settings-llm-panel')).toBeVisible();
+
+    await llmSettingsGetRequestPromise;
+    const llmSettingsGetResponse = await llmSettingsGetResponsePromise;
+    expect(llmSettingsGetResponse.status()).toBe(200);
+
+    const llmSettingsPutRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/llm`),
+    );
+    const llmSettingsPutResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/llm`),
+    );
+
+    await page.getByTestId('project-settings-llm-toggle').click();
+    await page.getByTestId('project-settings-llm-save').click();
+
+    const llmSettingsPutRequest = await llmSettingsPutRequestPromise;
+    const llmSettingsPutPayload = llmSettingsPutRequest.postDataJSON() as { llm_enabled: boolean };
+    expect(llmSettingsPutPayload.llm_enabled).toBe(true);
+
+    const llmSettingsPutResponse = await llmSettingsPutResponsePromise;
+    expect(llmSettingsPutResponse.status()).toBe(200);
+    await expect(page.getByTestId('project-settings-llm-current')).toContainText('enabled');
+  });
+
   test('projects/new draft creation mode calls draft endpoint and persists workspace project id', async ({ page }) => {
     await page.goto('/projects/new');
     const title = uniqueTitle('e2e-ui-draft-mode');
