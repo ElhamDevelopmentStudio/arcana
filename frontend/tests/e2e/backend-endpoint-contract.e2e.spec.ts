@@ -1926,6 +1926,8 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     );
 
     await page.getByTestId('project-command-panel-archive-button').click();
+    await expect(page.getByTestId('project-archive-confirm-dialog')).toBeVisible();
+    await page.getByTestId('project-archive-confirm-submit').click();
     await archiveRequestPromise;
     const archiveResponse = await archiveResponsePromise;
     expect(archiveResponse.status()).toBe(200);
@@ -1990,6 +1992,8 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     );
 
     await page.getByTestId('project-command-panel-restore-button').click();
+    await expect(page.getByTestId('project-restore-confirm-dialog')).toBeVisible();
+    await page.getByTestId('project-restore-confirm-submit').click();
     await restoreRequestPromise;
     const restoreResponse = await restoreResponsePromise;
     expect(restoreResponse.status()).toBe(200);

@@ -608,7 +608,7 @@ Definition of done for each task:
 - [x] [FE-114] Build activity timeline module using `GET /api/projects/{project_id}/timeline` with pagination.
 - [x] [FE-115] Build archive flow using `POST /api/projects/{project_id}/archive`.
 - [x] [FE-116] Build restore flow using `POST /api/projects/{project_id}/restore`.
-- [ ] [FE-117] Add lifecycle transition confirmations/conflict handling for archive and restore.
+- [x] [FE-117] Add lifecycle transition confirmations/conflict handling for archive and restore.
 - [ ] [FE-118] Add post-mutation project detail refresh and optimistic rollback behavior.
 - [ ] [FE-119] Add next-required-action navigation from project detail to workflow routes.
 
