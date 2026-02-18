@@ -10,6 +10,7 @@ const loadProjectDashboardsPage = () => import('@/pages/projects/project-dashboa
 const loadProjectExportPage = () => import('@/pages/projects/project-export-page');
 const loadProjectModePage = () => import('@/pages/projects/project-mode-page');
 const loadProjectNewPage = () => import('@/pages/projects/project-new-page');
+const loadProjectOverviewPage = () => import('@/pages/projects/project-overview-page');
 const loadProjectPipelineSetupPage = () => import('@/pages/projects/project-pipeline-setup-page');
 const loadProjectSetupPage = () => import('@/pages/projects/project-setup-page');
 const loadProjectRunMonitorPage = () => import('@/pages/projects/project-run-monitor-page');
@@ -29,6 +30,9 @@ const ProjectDashboardsPage = lazy(() =>
 const ProjectExportPage = lazy(() => loadProjectExportPage().then((module) => ({ default: module.ProjectExportPage })));
 const ProjectModePage = lazy(() => loadProjectModePage().then((module) => ({ default: module.ProjectModePage })));
 const ProjectNewPage = lazy(() => loadProjectNewPage().then((module) => ({ default: module.ProjectNewPage })));
+const ProjectOverviewPage = lazy(() =>
+  loadProjectOverviewPage().then((module) => ({ default: module.ProjectOverviewPage })),
+);
 const ProjectPipelineSetupPage = lazy(() =>
   loadProjectPipelineSetupPage().then((module) => ({ default: module.ProjectPipelineSetupPage })),
 );
@@ -62,7 +66,7 @@ const ROUTE_MODULE_PREFETCHERS: Array<{ pattern: RegExp; load: () => Promise<unk
   { pattern: /^\/dashboard$/, load: loadDashboardPage },
   { pattern: /^\/projects\/new$/, load: loadProjectNewPage },
   { pattern: /^\/projects\/[^/]+$/, load: loadProjectWorkspaceHomePage },
-  { pattern: /^\/projects\/[^/]+\/overview$/, load: loadProjectWorkspaceHomePage },
+  { pattern: /^\/projects\/[^/]+\/overview$/, load: loadProjectOverviewPage },
   { pattern: /^\/projects\/[^/]+\/setup$/, load: loadProjectSetupPage },
   { pattern: /^\/projects\/[^/]+\/mode$/, load: loadProjectModePage },
   { pattern: /^\/projects\/[^/]+\/characters$/, load: loadProjectCharactersPage },
@@ -114,7 +118,7 @@ export const mainRouter: RouteObject[] = [
           },
           {
             path: 'overview',
-            element: <SuspendedRoute><ProjectWorkspaceHomePage /></SuspendedRoute>,
+            element: <SuspendedRoute><ProjectOverviewPage /></SuspendedRoute>,
           },
           {
             path: 'setup',

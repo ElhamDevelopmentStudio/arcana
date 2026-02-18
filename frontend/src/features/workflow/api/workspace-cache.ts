@@ -8,6 +8,8 @@ export const workspaceKeys = {
   projectControlPanelSummary: ['project-control-panel-summary'] as const,
   projectControlPanelProjectList: (params: ProjectControlPanelProjectListRequestDto) =>
     ['project-control-panel-project-list', params] as const,
+  projectDetail: (projectId: number) => ['project-detail', projectId] as const,
+  projectWorkspaceSummary: (projectId: number) => ['project-workspace-summary', projectId] as const,
   projectSetupStatus: (projectId: number) => ['project-setup-status', projectId] as const,
   runDetail: (projectId: number, runId: number) => ['run-detail', projectId, runId] as const,
   runConfigPreset: (projectId: number, runId: number) => ['run-config-preset', projectId, runId] as const,

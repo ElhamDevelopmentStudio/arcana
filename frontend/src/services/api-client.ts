@@ -25,7 +25,9 @@ import {
   projectControlPanelProjectListRequestSchema,
   projectControlPanelProjectListResponseSchema,
   projectAllowedActionsResponseSchema,
+  projectDetailResponseSchema,
   projectSetupStatusResponseSchema,
+  projectWorkspaceSummaryResponseSchema,
   projectIngestionSourceAttachRequestSchema,
   projectIngestionSourceAttachResponseSchema,
   projectCreateRequestSchema,
@@ -55,7 +57,9 @@ import {
   type ProjectControlPanelProjectListRequestDto,
   type ProjectControlPanelProjectListResponseDto,
   type ProjectAllowedActionsResponseDto,
+  type ProjectDetailResponseDto,
   type ProjectSetupStatusResponseDto,
+  type ProjectWorkspaceSummaryResponseDto,
   type ProjectIngestionSourceAttachRequestDto,
   type ProjectIngestionSourceAttachResponseDto,
   type VoiceConfigDto,
@@ -162,6 +166,24 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/actions`);
       return projectAllowedActionsResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getProjectDetail(projectId: number): Promise<ProjectDetailResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}`);
+      return projectDetailResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getProjectWorkspaceSummary(projectId: number): Promise<ProjectWorkspaceSummaryResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/workspace-summary`);
+      return projectWorkspaceSummaryResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
