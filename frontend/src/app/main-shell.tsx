@@ -48,9 +48,19 @@ const ROUTE_META: Array<{ pattern: RegExp; title: string; description: string }>
     description: 'Shape voice-ready identity data through import and manual curation.',
   },
   {
+    pattern: /\/projects\/[^/]+\/voice$/,
+    title: 'Voice Mapping',
+    description: 'Configure narrator/default voices and character voice assignment policy.',
+  },
+  {
     pattern: /\/projects\/[^/]+\/pipeline-setup$/,
     title: 'Pipeline Control',
     description: 'Tune runtime behavior and trigger deterministic generation runs.',
+  },
+  {
+    pattern: /\/projects\/[^/]+\/runs$/,
+    title: 'Run Observability',
+    description: 'Track run status, segment counts, and operational details.',
   },
   {
     pattern: /\/projects\/[^/]+\/run-monitor$/,
@@ -81,6 +91,16 @@ const ROUTE_META: Array<{ pattern: RegExp; title: string; description: string }>
     pattern: /\/projects\/[^/]+\/export$/,
     title: 'Export Delivery',
     description: 'Review readiness and package outputs for downstream consumers.',
+  },
+  {
+    pattern: /\/projects\/[^/]+\/exports$/,
+    title: 'Export Delivery',
+    description: 'Review readiness and package outputs for downstream consumers.',
+  },
+  {
+    pattern: /\/projects\/[^/]+\/settings$/,
+    title: 'Project Settings',
+    description: 'Manage project-level controls and preference policies.',
   },
   {
     pattern: /\/projects\/[^/]+\/dashboards$/,
