@@ -12,6 +12,7 @@ from app.database import init_db, reset_engine
 from app.main import app
 from app.services.ingestion_errors import (
     IngestionErrorType,
+    IngestionInProgressError,
     UnsupportedEncodingIngestionError,
     MissingChaptersIngestionError,
     UnsupportedFormatIngestionError,
@@ -72,6 +73,15 @@ def test_unit_missing_chapters_error_is_http_exception_with_header() -> None:
     assert error.detail == "No non-empty chapters found in TXT input"
 
 
+def test_unit_ingestion_in_progress_error_is_http_exception_with_header() -> None:
+    error = IngestionInProgressError(
+        detail="Ingestion is already running for this project. Wait for completion before uploading again.",
+    )
+    assert error.status_code == 409
+    assert error.headers == {"X-NIPE-Error-Type": "in_progress"}
+    assert error.detail == "Ingestion is already running for this project. Wait for completion before uploading again."
+
+
 def test_integration_unsupported_format_sets_error_type_header() -> None:
     with TestClient(app) as client:
         project_id = _create_project(client, "Ingestion Error Type Integration")
@@ -107,3 +117,24 @@ def test_regression_unsupported_encoding_sets_error_type_header() -> None:
         assert response.status_code == 400
         assert response.headers["x-nipe-error-type"] == "unsupported_encoding"
         assert response.json()["detail"] == "Unable to decode TXT content reliably with supported encodings"
+
+
+def test_integration_ingestion_in_progress_sets_error_type_header(monkeypatch) -> None:
+    def _raise_in_progress(*_: object, **__: object) -> None:
+        raise IngestionInProgressError(
+            detail="Ingestion is already running for this project. Wait for completion before uploading again.",
+        )
+
+    monkeypatch.setattr("app.main._lock_project_for_ingestion", _raise_in_progress)
+
+    with TestClient(app) as client:
+        project_id = _create_project(client, "Ingestion In Progress Header Integration")
+        response = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(b"Chapter 1\ntext"), "text/plain")},
+        )
+        assert response.status_code == 409
+        assert response.headers["x-nipe-error-type"] == "in_progress"
+        assert response.json()["detail"] == (
+            "Ingestion is already running for this project. Wait for completion before uploading again."
+        )

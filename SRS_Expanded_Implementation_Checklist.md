@@ -623,6 +623,7 @@ Definition of done for each task:
 - [x] [FE-127] Render ingestion warnings and normalization summaries from ingestion responses.
 - [x] [FE-128] Build mode selection route `/projects/{project_id}/mode` using `GET /api/modes` and `PUT /api/projects/{project_id}/mode`.
 - [x] [FE-129] Add explicit downstream stale-artifact confirmation UX on mode switch.
+- [x] [FE-129A] Add ingestion concurrency safety + UI upload lock state for long-running ingest operations (`409 in_progress` guard, global upload disable while ingest mutation active, extended ingest request timeout).
 
 ### 13.5 LLM, Providers, and Access Controls
 - [ ] [FE-130] Build project LLM settings panel using `GET/PUT /api/projects/{project_id}/llm`.

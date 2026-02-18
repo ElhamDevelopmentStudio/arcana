@@ -92,6 +92,7 @@ import {
 
 export class NipeApiClient {
   private readonly client: AxiosInstance;
+  private static readonly ingestRequestTimeoutMs = 5 * 60_000;
 
   constructor(baseUrl: string = appEnv.apiBaseUrl) {
     this.client = axios.create({
@@ -309,6 +310,7 @@ export class NipeApiClient {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
     } catch (error) {
@@ -327,6 +329,7 @@ export class NipeApiClient {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
     } catch (error) {
@@ -343,6 +346,7 @@ export class NipeApiClient {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
     } catch (error) {
@@ -359,6 +363,7 @@ export class NipeApiClient {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
     } catch (error) {
@@ -375,6 +380,7 @@ export class NipeApiClient {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
     } catch (error) {

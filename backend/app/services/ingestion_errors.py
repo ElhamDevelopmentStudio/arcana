@@ -18,6 +18,7 @@ class IngestionErrorType(StrEnum):
     UNSUPPORTED_FORMAT = "unsupported_format"
     UNSUPPORTED_ENCODING = "unsupported_encoding"
     MISSING_CHAPTERS = "missing_chapters"
+    IN_PROGRESS = "in_progress"
 
 
 class IngestionError(HTTPException):
@@ -60,6 +61,17 @@ class MissingChaptersIngestionError(IngestionError):
         super().__init__(
             status_code=status_code,
             error_type=IngestionErrorType.MISSING_CHAPTERS,
+            detail=detail,
+        )
+
+
+class IngestionInProgressError(IngestionError):
+    """Raised when another ingestion operation is already mutating the same project."""
+
+    def __init__(self, detail: str, status_code: int = status.HTTP_409_CONFLICT):
+        super().__init__(
+            status_code=status_code,
+            error_type=IngestionErrorType.IN_PROGRESS,
             detail=detail,
         )
 

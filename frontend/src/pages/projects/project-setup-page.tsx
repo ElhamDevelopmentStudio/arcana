@@ -37,7 +37,7 @@ import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
 const setupStatusPollIntervalMs = 3000;
 
-type IngestionFailureKind = 'unsupported_file' | 'overlap_conflict' | 'validation_error' | 'unknown';
+type IngestionFailureKind = 'unsupported_file' | 'overlap_conflict' | 'validation_error' | 'in_progress' | 'unknown';
 
 type IngestionFailureState = {
   kind: IngestionFailureKind;
@@ -79,6 +79,9 @@ function classifyIngestionFailure(error: unknown): {
   const message = error instanceof Error ? error.message : 'Ingestion request failed.';
   const normalizedMessage = message.toLowerCase();
 
+  if (normalizedMessage.includes('already running for this project') || normalizedMessage.includes('already in progress')) {
+    return { kind: 'in_progress', message };
+  }
   if (normalizedMessage.includes('overlap')) {
     return { kind: 'overlap_conflict', message };
   }
@@ -103,6 +106,9 @@ function classifyIngestionFailure(error: unknown): {
 }
 
 function toIngestionFailureHint(kind: IngestionFailureKind): string {
+  if (kind === 'in_progress') {
+    return 'An ingestion task is already running for this project. Wait for completion before submitting another upload.';
+  }
   if (kind === 'unsupported_file') {
     return 'Unsupported file type. Use the expected extension and retry.';
   }
@@ -199,13 +205,19 @@ export function ProjectSetupPage() {
   const setupSteps = setupStatusQuery.data?.steps ?? [];
   const characterMappingStep = setupSteps.find((step) => step.step_id === 'character_mapping');
   const voiceMappingStep = setupSteps.find((step) => step.step_id === 'voice_mapping');
-  const ingestionBusy = attachInitialIngestionSourceMutation.isMutating || ingestTxtMutation.isMutating;
-  const markdownIngestionBusy = attachInitialIngestionSourceMutation.isMutating || ingestMarkdownMutation.isMutating;
-  const epubIngestionBusy = attachInitialIngestionSourceMutation.isMutating || ingestEpubMutation.isMutating;
-  const chapterDirectoryIngestionBusy =
-    attachInitialIngestionSourceMutation.isMutating || ingestChapterDirectoryMutation.isMutating;
-  const appendChapterBusy = attachInitialIngestionSourceMutation.isMutating || appendChapterMutation.isMutating;
-  const sourceAttachBusy = attachInitialIngestionSourceMutation.isMutating;
+  const isAnyIngestionMutating =
+    attachInitialIngestionSourceMutation.isMutating ||
+    ingestTxtMutation.isMutating ||
+    ingestMarkdownMutation.isMutating ||
+    ingestEpubMutation.isMutating ||
+    ingestChapterDirectoryMutation.isMutating ||
+    appendChapterMutation.isMutating;
+  const ingestionBusy = isAnyIngestionMutating;
+  const markdownIngestionBusy = isAnyIngestionMutating;
+  const epubIngestionBusy = isAnyIngestionMutating;
+  const chapterDirectoryIngestionBusy = isAnyIngestionMutating;
+  const appendChapterBusy = isAnyIngestionMutating;
+  const sourceAttachBusy = isAnyIngestionMutating;
   const modeOptions =
     modeCatalogQuery.data?.modes?.length !== undefined && modeCatalogQuery.data.modes.length > 0
       ? modeCatalogQuery.data.modes
@@ -689,6 +701,11 @@ export function ProjectSetupPage() {
                   </div>
                 </div>
               ) : null}
+              {isAnyIngestionMutating ? (
+                <p className="mb-4 text-xs text-muted-foreground" data-testid="project-setup-ingestion-running-hint">
+                  Ingestion task running in progress. Additional uploads are disabled until it completes.
+                </p>
+              ) : null}
               <form className="grid gap-3" data-testid="project-setup-source-attach-form" onSubmit={handleAttachSourceSubmit}>
                 <div className="grid gap-2">
                   <Label htmlFor="project-setup-source-type">Source type</Label>
@@ -739,6 +756,7 @@ export function ProjectSetupPage() {
                   <Input
                     accept=".txt,text/plain"
                     data-testid="project-setup-ingestion-file-input"
+                    disabled={ingestionBusy}
                     id="project-setup-ingestion-file"
                     onChange={(event) => {
                       const nextFile = event.target.files?.[0] ?? null;
@@ -767,6 +785,7 @@ export function ProjectSetupPage() {
                   <Input
                     accept=".md,.markdown,text/markdown,text/plain"
                     data-testid="project-setup-markdown-ingestion-file-input"
+                    disabled={markdownIngestionBusy}
                     id="project-setup-markdown-ingestion-file"
                     onChange={(event) => {
                       const nextFile = event.target.files?.[0] ?? null;
@@ -795,6 +814,7 @@ export function ProjectSetupPage() {
                   <Input
                     accept=".epub,application/epub+zip"
                     data-testid="project-setup-epub-ingestion-file-input"
+                    disabled={epubIngestionBusy}
                     id="project-setup-epub-ingestion-file"
                     onChange={(event) => {
                       const nextFile = event.target.files?.[0] ?? null;
@@ -823,6 +843,7 @@ export function ProjectSetupPage() {
                   <Input
                     accept=".txt,text/plain"
                     data-testid="project-setup-chapters-dir-ingestion-files-input"
+                    disabled={chapterDirectoryIngestionBusy}
                     id="project-setup-chapters-dir-ingestion-files"
                     multiple
                     onChange={(event) => {
@@ -855,6 +876,7 @@ export function ProjectSetupPage() {
                   <Input
                     accept=".txt,text/plain"
                     data-testid="project-setup-append-chapter-file-input"
+                    disabled={appendChapterBusy}
                     id="project-setup-append-chapter-file"
                     onChange={(event) => {
                       const nextFile = event.target.files?.[0] ?? null;

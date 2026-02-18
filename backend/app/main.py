@@ -10,6 +10,7 @@ from fastapi.exception_handlers import request_validation_exception_handler as f
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.chart_contracts import build_polarity_graph_contract, build_tension_graph_contract
@@ -133,6 +134,7 @@ from app.services.export import build_run_export_graph_json
 from app.services.export import build_run_export_academic_csv
 from app.services.export import resolve_run_allowed_export_formats
 from app.services.ingestion_errors import (
+    IngestionInProgressError,
     MissingChaptersIngestionError,
     UnsupportedEncodingIngestionError,
     UnsupportedFormatIngestionError,
@@ -1553,6 +1555,49 @@ def _get_next_chapter_index(session: Session, project_id: int) -> int:
     if last_chapter is None:
         return 1
     return int(last_chapter.chapter_index) + 1
+
+
+def _is_ingestion_row_lock_conflict(error: OperationalError) -> bool:
+    original_error = getattr(error, "orig", None)
+    sql_state = getattr(original_error, "sqlstate", None) or getattr(original_error, "pgcode", None)
+    if sql_state == "55P03":
+        return True
+    if original_error is not None and "locknotavailable" in original_error.__class__.__name__.lower():
+        return True
+    return "could not obtain lock on row" in str(original_error).lower()
+
+
+def _lock_project_for_ingestion(session: Session, project_id: int) -> None:
+    try:
+        (
+            session.query(Project)
+            .filter(Project.id == project_id)
+            .with_for_update(nowait=True)
+            .one_or_none()
+        )
+    except OperationalError as error:
+        if _is_ingestion_row_lock_conflict(error):
+            raise IngestionInProgressError(
+                detail="Ingestion is already running for this project. Wait for completion before uploading again.",
+            ) from error
+        raise
+
+
+def _is_project_chapter_uniqueness_conflict(error: IntegrityError) -> bool:
+    error_text = str(getattr(error, "orig", error)).lower()
+    return "uq_project_chapter_index" in error_text or "chapters.project_id, chapters.chapter_index" in error_text
+
+
+def _commit_ingestion_session(session: Session) -> None:
+    try:
+        session.commit()
+    except IntegrityError as error:
+        if _is_project_chapter_uniqueness_conflict(error):
+            session.rollback()
+            raise IngestionInProgressError(
+                detail="Ingestion is already running for this project. Wait for completion before uploading again.",
+            ) from error
+        raise
 
 
 def _persist_raw_corpus_blob(
@@ -4551,6 +4596,7 @@ def ingest_txt(
     session: Session = Depends(get_session),
 ) -> IngestResponse:
     project = _get_project_or_404(session, project_id)
+    _lock_project_for_ingestion(session, project_id)
 
     filename = file.filename or ""
     if not filename.lower().endswith(".txt"):
@@ -4653,9 +4699,14 @@ def ingest_txt(
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
-    session.commit()
+    _commit_ingestion_session(session)
 
-    return IngestResponse(project_id=project_id, chapter_count=len(chapters))
+    return IngestResponse(
+        project_id=project_id,
+        chapter_count=len(chapters),
+        warnings=warnings,
+        normalization_report=normalization_report,
+    )
 
 
 @app.post(
@@ -4669,6 +4720,7 @@ def ingest_markdown(
     session: Session = Depends(get_session),
 ) -> IngestResponse:
     project = _get_project_or_404(session, project_id)
+    _lock_project_for_ingestion(session, project_id)
 
     filename = file.filename or ""
     lower_filename = filename.lower()
@@ -4776,9 +4828,14 @@ def ingest_markdown(
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
-    session.commit()
+    _commit_ingestion_session(session)
 
-    return IngestResponse(project_id=project_id, chapter_count=len(chapters))
+    return IngestResponse(
+        project_id=project_id,
+        chapter_count=len(chapters),
+        warnings=warnings,
+        normalization_report=normalization_report,
+    )
 
 
 @app.post(
@@ -4799,6 +4856,7 @@ def ingest_epub(
         )
 
     project = _get_project_or_404(session, project_id)
+    _lock_project_for_ingestion(session, project_id)
     filename = file.filename or ""
     if not filename.lower().endswith(".epub"):
         raise UnsupportedFormatIngestionError(detail="Only .epub files are supported")
@@ -4899,12 +4957,17 @@ def ingest_epub(
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
-    session.commit()
+    _commit_ingestion_session(session)
 
     chapter_count = session.query(Chapter).filter(Chapter.project_id == project_id).count()
     if chapter_count == 0:
         raise MissingChaptersIngestionError(detail="No non-empty chapter content found in EPUB")
-    return IngestResponse(project_id=project_id, chapter_count=chapter_count)
+    return IngestResponse(
+        project_id=project_id,
+        chapter_count=chapter_count,
+        warnings=warnings,
+        normalization_report=normalization_report,
+    )
 
 
 @app.post(
@@ -4918,6 +4981,7 @@ def ingest_chapters_dir(
     session: Session = Depends(get_session),
 ) -> IngestResponse:
     project = _get_project_or_404(session, project_id)
+    _lock_project_for_ingestion(session, project_id)
     if not files:
         raise MissingChaptersIngestionError(detail="At least one chapter file is required")
 
@@ -5035,9 +5099,14 @@ def ingest_chapters_dir(
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
-    session.commit()
+    _commit_ingestion_session(session)
 
-    return IngestResponse(project_id=project_id, chapter_count=len(chapter_rows))
+    return IngestResponse(
+        project_id=project_id,
+        chapter_count=len(chapter_rows),
+        warnings=warnings,
+        normalization_report=normalization_report,
+    )
 
 
 @app.post(
@@ -5051,6 +5120,7 @@ def append_chapter(
     session: Session = Depends(get_session),
 ) -> IngestResponse:
     project = _get_project_or_404(session, project_id)
+    _lock_project_for_ingestion(session, project_id)
 
     filename = file.filename or ""
     if not filename.lower().endswith(".txt"):
@@ -5157,20 +5227,21 @@ def append_chapter(
         changed_chapter_indices=[next_chapter_index],
         total_chapter_count=len(existing_chapters) + 1,
     )
+    normalization_report = build_normalization_report(
+        source="append-chapter",
+        chapter_count=1,
+        chapter_reports=chapter_normalization_reports,
+        suspected_duplicate_title_count=len(duplicate_title_warnings),
+        suspected_duplicate_content_count=len(suspected_duplicate_content_warnings),
+        encoding_issue_count=len(encoding_warnings),
+    )
     _update_project_ingestion_log(
         project,
         source="append-chapter",
         warnings=warnings,
         dedup_actions=dedup_actions,
         affected_range=affected_range,
-        normalization_report=build_normalization_report(
-            source="append-chapter",
-            chapter_count=1,
-            chapter_reports=chapter_normalization_reports,
-            suspected_duplicate_title_count=len(duplicate_title_warnings),
-            suspected_duplicate_content_count=len(suspected_duplicate_content_warnings),
-            encoding_issue_count=len(encoding_warnings),
-        ),
+        normalization_report=normalization_report,
     )
     if _project_allows_source_text_storage(project):
         _persist_raw_corpus_blob(
@@ -5198,10 +5269,15 @@ def append_chapter(
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
-    session.commit()
+    _commit_ingestion_session(session)
 
     chapter_count = session.query(Chapter).filter(Chapter.project_id == project_id).count()
-    return IngestResponse(project_id=project_id, chapter_count=chapter_count)
+    return IngestResponse(
+        project_id=project_id,
+        chapter_count=chapter_count,
+        warnings=warnings,
+        normalization_report=normalization_report,
+    )
 
 
 @app.post(
