@@ -637,7 +637,7 @@ Definition of done for each task:
 - [x] [FE-136] Build character import flow using `POST /api/projects/{project_id}/characters/import`.
 - [x] [FE-137] Build character extraction flow using `POST /api/projects/{project_id}/characters/extract`.
 - [x] [FE-138] Build scrape-assisted candidate flow using `POST /api/projects/{project_id}/characters/scrape`.
-- [ ] [FE-139] Build merge-candidates flow using `POST /api/projects/{project_id}/characters/merged-candidates`.
+- [x] [FE-139] Build merge-candidates flow using `POST /api/projects/{project_id}/characters/merged-candidates`.
 - [ ] [FE-140] Build gender inference action using `POST /api/projects/{project_id}/characters/infer`.
 - [ ] [FE-141] Build gender comparison review panel using `GET /api/projects/{project_id}/characters/gender-comparison`.
 - [ ] [FE-142] Build alias lookup utility using `POST /api/projects/{project_id}/characters/lookup-alias`.
