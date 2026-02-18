@@ -76,6 +76,16 @@ type ProjectActivityTimelineResponse = {
     event_metadata: Record<string, unknown>;
   }>;
 };
+type ProjectSetupStatusResponse = {
+  is_complete: boolean;
+  lifecycle_state: string;
+  next_required_action: string;
+  steps: Array<{
+    step_id: string;
+    required: boolean;
+    ready: boolean;
+  }>;
+};
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const fixtureNovelPath = path.resolve(currentDir, '../fixtures/minimal-novel.txt');
@@ -102,6 +112,26 @@ async function createProject(request: Parameters<typeof test>[0]['request'], tit
   });
   expect(createResponse.status()).toBe(201);
   return createResponse.json() as Promise<ProjectResponse>;
+}
+
+async function waitForSetupCompletion(
+  request: Parameters<typeof test>[0]['request'],
+  projectId: number,
+  timeoutMs: number = 30_000,
+) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    const setupStatusResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/setup-status`);
+    expect(setupStatusResponse.status()).toBe(200);
+    const setupStatusPayload = (await setupStatusResponse.json()) as ProjectSetupStatusResponse;
+    if (setupStatusPayload.is_complete) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+
+  throw new Error(`Timed out waiting for setup completion for project ${projectId}.`);
 }
 
 test.describe('backend real endpoint contract (frontend-integrated)', () => {
@@ -1575,6 +1605,64 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await page.getByRole('button', { name: 'Continue to Export' }).click();
     await expect(page).toHaveURL(`/projects/${projectId}/export`);
     await expect(page.getByRole('button', { name: /Download JSON/i })).toBeEnabled();
+  });
+
+  test('create draft stays setup-gated until completion, then allows overview access', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-draft-setup-gate');
+    const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
+      data: {
+        title,
+        do_not_store_source_text: false,
+      },
+    });
+    expect(createDraftResponse.status()).toBe(201);
+    const draftPayload = (await createDraftResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    await page.goto(`/projects/${projectId}/overview`);
+    await expect(page).toHaveURL(`/projects/${projectId}/setup`);
+    await expect(page.getByTestId('project-setup-ready')).toBeVisible();
+
+    const attachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+      data: {
+        source: 'txt',
+        source_filename: 'minimal-novel.txt',
+      },
+    });
+    expect(attachSourceResponse.status()).toBe(200);
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+    expect(runPayload.run_id).toBeGreaterThan(0);
+
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}/setup`);
+    await expect(page).toHaveURL(`/projects/${projectId}/overview`);
+    await expect(page.getByTestId('project-overview-ready')).toBeVisible();
   });
 
   test('speaker attribution fields include speaker_id and speaker confidence in exports', async ({ request }) => {
