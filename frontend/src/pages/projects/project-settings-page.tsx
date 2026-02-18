@@ -138,6 +138,13 @@ export function ProjectSettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p
+              className="rounded-md border border-dashed border-panel-border/70 bg-muted/30 px-3 py-2"
+              data-testid="project-settings-access-no-auth-notice"
+            >
+              Authentication is not enabled in this environment. Access grants are configuration metadata only and do
+              not enforce runtime authorization yet.
+            </p>
             {projectAccessListQuery.isLoading ? (
               <p data-testid="project-settings-access-loading">Loading access grants...</p>
             ) : null}

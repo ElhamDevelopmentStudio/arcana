@@ -630,7 +630,7 @@ Definition of done for each task:
 - [x] [FE-131] Build provider status management panel using `GET /api/llm/providers` and `PUT /api/llm/providers/{provider_name}`.
 - [x] [FE-132] Build project access listing using `GET /api/projects/{project_id}/access`.
 - [x] [FE-133] Build project access grant flow using `POST /api/projects/{project_id}/access`.
-- [ ] [FE-134] Add no-auth workspace messaging for access model behavior and scope.
+- [x] [FE-134] Add no-auth workspace messaging for access model behavior and scope.
 
 ### 13.6 Character, Pronunciation, Gender, and Voice Workflows
 - [ ] [FE-135] Build character map editor route `/projects/{project_id}/characters` using `GET/PUT /api/projects/{project_id}/characters`.

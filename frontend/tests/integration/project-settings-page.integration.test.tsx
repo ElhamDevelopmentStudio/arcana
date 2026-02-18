@@ -171,6 +171,9 @@ describe('project settings page', () => {
     renderProjectSettingsPage();
 
     expect(screen.getByTestId('project-settings-access-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('project-settings-access-no-auth-notice')).toHaveTextContent(
+      'Authentication is not enabled in this environment.',
+    );
     expect(screen.getByTestId('project-settings-access-grant-13')).toHaveTextContent('qa-owner');
     expect(screen.getByTestId('project-settings-access-grant-13')).toHaveTextContent('role: owner');
   });
