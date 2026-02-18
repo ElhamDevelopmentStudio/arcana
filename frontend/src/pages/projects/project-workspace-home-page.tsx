@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  useProjectActivityTimelineQuery,
   useProjectAllowedActionsQuery,
   useProjectDetailQuery,
   useUpdateProjectMetadataMutation,
@@ -24,6 +25,12 @@ export function ProjectWorkspaceHomePage() {
   const projectId = routeProjectId ?? storeProjectId;
   const projectDetailQuery = useProjectDetailQuery(projectId);
   const projectAllowedActionsQuery = useProjectAllowedActionsQuery(projectId);
+  const [timelinePage, setTimelinePage] = useState(1);
+  const timelinePageSize = 5;
+  const projectTimelineQuery = useProjectActivityTimelineQuery(projectId, {
+    page: timelinePage,
+    page_size: timelinePageSize,
+  });
   const updateProjectMetadataMutation = useUpdateProjectMetadataMutation(projectId);
   const [metadataTitle, setMetadataTitle] = useState('');
   const [metadataDescription, setMetadataDescription] = useState('');
@@ -280,6 +287,84 @@ export function ProjectWorkspaceHomePage() {
                     Open Settings
                   </span>
                 )}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="mt-4 space-y-3 rounded-lg border border-panel-border/70 p-3" data-testid="project-timeline-panel">
+          <p className="text-xs font-semibold tracking-wide text-foreground">Activity timeline</p>
+          {projectTimelineQuery.isLoading && projectTimelineQuery.data === undefined ? (
+            <div data-testid="project-timeline-loading">
+              <ApiPanelLoading
+                description="Fetching project activity timeline."
+                title="Loading timeline"
+              />
+            </div>
+          ) : projectTimelineQuery.error ? (
+            <div data-testid="project-timeline-error">
+              <ApiPanelError
+                description={
+                  projectTimelineQuery.error instanceof Error
+                    ? projectTimelineQuery.error.message
+                    : 'Unable to load timeline events.'
+                }
+                onRetry={() => {
+                  void projectTimelineQuery.mutate();
+                }}
+                retryLabel="Retry timeline"
+                title="Timeline unavailable"
+              />
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground" data-testid="project-timeline-pagination-state">
+                Page {projectTimelineQuery.data?.page ?? timelinePage} / size {projectTimelineQuery.data?.page_size ?? timelinePageSize} / total{' '}
+                {projectTimelineQuery.data?.total_items ?? 0}
+              </p>
+              <div className="space-y-2">
+                {(projectTimelineQuery.data?.items ?? []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground" data-testid="project-timeline-empty">
+                    No project activity events yet.
+                  </p>
+                ) : (
+                  projectTimelineQuery.data?.items.map((event) => (
+                    <div
+                      className="rounded-md border border-panel-border/70 px-3 py-2 text-xs"
+                      data-testid={`project-timeline-item-${event.event_id}`}
+                      key={event.event_id}
+                    >
+                      <p className="font-medium text-foreground">
+                        {event.event_type} by {event.actor}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {event.created_at}
+                        {event.run_id !== null ? ` • run ${event.run_id}` : ''}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  data-testid="project-timeline-prev-page"
+                  disabled={timelinePage <= 1}
+                  onClick={() => setTimelinePage((currentPage) => Math.max(1, currentPage - 1))}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Previous
+                </Button>
+                <Button
+                  data-testid="project-timeline-next-page"
+                  disabled={!projectTimelineQuery.data?.has_next_page}
+                  onClick={() => setTimelinePage((currentPage) => currentPage + 1)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Next
+                </Button>
               </div>
             </>
           )}

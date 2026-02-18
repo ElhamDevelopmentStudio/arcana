@@ -1803,6 +1803,81 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('project-command-panel-open-exports-disabled')).toBeVisible();
   });
 
+  test('projects/:project_id timeline panel renders paginated activity events', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-workspace-home-timeline');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    for (let index = 0; index < 3; index += 1) {
+      const metadataResponse = await request.patch(`${backendBaseUrl}/api/projects/${projectId}/metadata`, {
+        data: {
+          title: `${title}-v${index + 1}`,
+          description: `Timeline enrichment ${index + 1}`,
+          tags: ['timeline', `v${index + 1}`],
+        },
+      });
+      expect(metadataResponse.status()).toBe(200);
+    }
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+    expect(runPayload.run_id).toBeGreaterThan(0);
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+
+    await waitForSetupCompletion(request, projectId);
+
+    const timelinePageOneRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().includes(`/api/projects/${projectId}/timeline`) &&
+        networkRequest.url().includes('page=1') &&
+        networkRequest.url().includes('page_size=5'),
+    );
+
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-timeline-panel')).toBeVisible();
+    await timelinePageOneRequestPromise;
+    await expect(page.locator('[data-testid^="project-timeline-item-"]')).toHaveCount(5);
+    await expect(page.getByTestId('project-timeline-pagination-state')).toContainText('Page 1 / size 5');
+
+    await expect(page.getByTestId('project-timeline-next-page')).toBeEnabled();
+    const timelinePageTwoRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().includes(`/api/projects/${projectId}/timeline`) &&
+        networkRequest.url().includes('page=2') &&
+        networkRequest.url().includes('page_size=5'),
+    );
+    await page.getByTestId('project-timeline-next-page').click();
+    await timelinePageTwoRequestPromise;
+    await expect(page.getByTestId('project-timeline-pagination-state')).toContainText('Page 2 / size 5');
+    await expect(page.getByTestId('project-timeline-prev-page')).toBeEnabled();
+  });
+
   test('create draft stays setup-gated until completion, then allows overview access', async ({ page, request }) => {
     const title = uniqueTitle('e2e-draft-setup-gate');
     const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
