@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useProjectAllowedActionsQuery, useProjectSetupStatusQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
@@ -49,7 +51,14 @@ const ACTION_GATED_ITEM_IDS_BY_REQUIRED_STEP: Record<string, ReadonlySet<Workspa
   ingestion: new Set<WorkspaceNavItem['id']>(['characters', 'voice', 'runs', 'exports']),
   mode_selection: new Set<WorkspaceNavItem['id']>(['voice', 'runs', 'exports']),
   initial_run: new Set<WorkspaceNavItem['id']>(['exports']),
-  restore: new Set<WorkspaceNavItem['id']>([]),
+  restore: new Set<WorkspaceNavItem['id']>(['characters', 'voice', 'runs', 'exports', 'settings']),
+};
+
+type RequiredStepId = 'ingestion' | 'mode_selection' | 'initial_run' | 'restore';
+type WorkspaceNavLockState = {
+  locked: boolean;
+  reason: string | null;
+  requiredStep: RequiredStepId | null;
 };
 
 function toProjectSetupPath(projectId: number) {
@@ -72,19 +81,19 @@ function resolveStepReady(stepId: string, steps: Array<{ step_id: string; ready:
 function resolveSetupStepLockReason(
   itemId: WorkspaceNavItem['id'],
   steps: Array<{ step_id: string; ready: boolean }> | undefined,
-): string | null {
+): { reason: string; requiredStep: RequiredStepId } | null {
   const ingestionReady = resolveStepReady('ingestion', steps);
   const modeSelectionReady = resolveStepReady('mode_selection', steps);
   const initialRunReady = resolveStepReady('initial_run', steps);
 
   if (itemId === 'characters' && !ingestionReady) {
-    return 'Locked: complete ingestion setup first.';
+    return { reason: 'Locked: complete ingestion setup first.', requiredStep: 'ingestion' };
   }
   if ((itemId === 'voice' || itemId === 'runs') && !modeSelectionReady) {
-    return 'Locked: complete mode selection setup first.';
+    return { reason: 'Locked: complete mode selection setup first.', requiredStep: 'mode_selection' };
   }
   if (itemId === 'exports' && !initialRunReady) {
-    return 'Locked: complete initial run setup first.';
+    return { reason: 'Locked: complete initial run setup first.', requiredStep: 'initial_run' };
   }
   return null;
 }
@@ -93,7 +102,7 @@ function resolveActionGatingLockReason(
   itemId: WorkspaceNavItem['id'],
   requiredStep: string | null | undefined,
   blockedReason: string | null | undefined,
-): string | null {
+): { reason: string; requiredStep: RequiredStepId } | null {
   if (!requiredStep || !blockedReason) {
     return null;
   }
@@ -101,7 +110,79 @@ function resolveActionGatingLockReason(
   if (!affectedItemIds || !affectedItemIds.has(itemId)) {
     return null;
   }
-  return blockedReason;
+  return { reason: blockedReason, requiredStep: requiredStep as RequiredStepId };
+}
+
+function resolveWorkspaceNavLockState(
+  itemId: WorkspaceNavItem['id'],
+  options: {
+    setupSteps: Array<{ step_id: string; ready: boolean }> | undefined;
+    actionRequiredStep: string | null | undefined;
+    actionBlockedReason: string | null | undefined;
+  },
+): WorkspaceNavLockState {
+  const actionGatingLock = resolveActionGatingLockReason(itemId, options.actionRequiredStep, options.actionBlockedReason);
+  if (actionGatingLock) {
+    return {
+      locked: true,
+      reason: actionGatingLock.reason,
+      requiredStep: actionGatingLock.requiredStep,
+    };
+  }
+  const setupLock = resolveSetupStepLockReason(itemId, options.setupSteps);
+  if (setupLock) {
+    return {
+      locked: true,
+      reason: setupLock.reason,
+      requiredStep: setupLock.requiredStep,
+    };
+  }
+  return {
+    locked: false,
+    reason: null,
+    requiredStep: null,
+  };
+}
+
+function resolveCurrentWorkspaceItemId(pathname: string, projectId: number): WorkspaceNavItem['id'] | null {
+  const prefix = `/projects/${projectId}`;
+  if (!pathname.startsWith(prefix)) {
+    return null;
+  }
+  const remainder = pathname.slice(prefix.length).replace(/^\//, '');
+  const firstSegment = remainder.split('/')[0] ?? '';
+  if (firstSegment === '' || firstSegment === 'overview') {
+    return 'overview';
+  }
+  if (firstSegment === 'setup') {
+    return 'setup';
+  }
+  if (firstSegment === 'characters') {
+    return 'characters';
+  }
+  if (firstSegment === 'voice' || firstSegment === 'pipeline-setup') {
+    return 'voice';
+  }
+  if (firstSegment === 'runs' || firstSegment === 'run-monitor') {
+    return 'runs';
+  }
+  if (firstSegment === 'exports' || firstSegment === 'export') {
+    return 'exports';
+  }
+  if (firstSegment === 'settings') {
+    return 'settings';
+  }
+  return null;
+}
+
+function resolveRequiredStepRoute(projectId: number, requiredStep: RequiredStepId | null): string {
+  if (requiredStep === 'initial_run') {
+    return `/projects/${projectId}/runs`;
+  }
+  if (requiredStep === 'restore') {
+    return `/projects/${projectId}/overview`;
+  }
+  return `/projects/${projectId}/setup`;
 }
 
 export function ProjectWorkspaceShell() {
@@ -111,6 +192,16 @@ export function ProjectWorkspaceShell() {
   const projectId = parseProjectIdParam(params.project_id);
   const setupStatusQuery = useProjectSetupStatusQuery(projectId);
   const projectActionsQuery = useProjectAllowedActionsQuery(projectId);
+  const currentWorkspaceItemId =
+    projectId !== null ? resolveCurrentWorkspaceItemId(location.pathname, projectId) : null;
+  const currentRouteLockState =
+    currentWorkspaceItemId !== null
+      ? resolveWorkspaceNavLockState(currentWorkspaceItemId, {
+          setupSteps: setupStatusQuery.data?.steps,
+          actionRequiredStep: projectActionsQuery.data?.required_step,
+          actionBlockedReason: projectActionsQuery.data?.blocked_reason,
+        })
+      : null;
 
   useEffect(() => {
     if (projectId === null || setupStatusQuery.error || setupStatusQuery.isLoading || setupStatusQuery.data === undefined) {
@@ -147,33 +238,30 @@ export function ProjectWorkspaceShell() {
                 {group.items.map((item) => (
                   <li key={item.id}>
                     {(() => {
-                      const setupStepLockReason = resolveSetupStepLockReason(item.id, setupStatusQuery.data?.steps);
-                      const actionGatingLockReason = resolveActionGatingLockReason(
-                        item.id,
-                        projectActionsQuery.data?.required_step,
-                        projectActionsQuery.data?.blocked_reason,
-                      );
-                      const lockReason = actionGatingLockReason ?? setupStepLockReason;
-                      const locked = lockReason !== null;
+                      const lockState = resolveWorkspaceNavLockState(item.id, {
+                        setupSteps: setupStatusQuery.data?.steps,
+                        actionRequiredStep: projectActionsQuery.data?.required_step,
+                        actionBlockedReason: projectActionsQuery.data?.blocked_reason,
+                      });
                       return (
                     <NavLink
                       className={({ isActive }) =>
                         [
                           'flex rounded-lg px-2.5 py-2 text-sm transition',
                           isActive ? 'bg-sidebar-active/12 text-sidebar-active' : 'text-sidebar-foreground hover:bg-background/75',
-                          locked ? 'opacity-55' : '',
+                          lockState.locked ? 'opacity-55' : '',
                         ].join(' ')
                       }
-                      aria-disabled={locked}
+                      aria-disabled={lockState.locked}
                       data-testid={`project-workspace-nav-${item.id}`}
                       end={item.end}
                       onClick={(event) => {
-                        if (!locked) {
+                        if (!lockState.locked) {
                           return;
                         }
                         event.preventDefault();
                       }}
-                      title={lockReason ?? undefined}
+                      title={lockState.reason ?? undefined}
                       to={item.to}
                     >
                       {item.label}
@@ -181,14 +269,12 @@ export function ProjectWorkspaceShell() {
                       );
                     })()}
                     {(() => {
-                      const setupStepLockReason = resolveSetupStepLockReason(item.id, setupStatusQuery.data?.steps);
-                      const actionGatingLockReason = resolveActionGatingLockReason(
-                        item.id,
-                        projectActionsQuery.data?.required_step,
-                        projectActionsQuery.data?.blocked_reason,
-                      );
-                      const lockReason = actionGatingLockReason ?? setupStepLockReason;
-                      if (!lockReason) {
+                      const lockState = resolveWorkspaceNavLockState(item.id, {
+                        setupSteps: setupStatusQuery.data?.steps,
+                        actionRequiredStep: projectActionsQuery.data?.required_step,
+                        actionBlockedReason: projectActionsQuery.data?.blocked_reason,
+                      });
+                      if (!lockState.reason) {
                         return null;
                       }
                       return (
@@ -196,7 +282,7 @@ export function ProjectWorkspaceShell() {
                           className="mt-1 px-2 text-[11px] text-muted-foreground"
                           data-testid={`project-workspace-nav-locked-reason-${item.id}`}
                         >
-                          {lockReason}
+                          {lockState.reason}
                         </p>
                       );
                     })()}
@@ -209,7 +295,28 @@ export function ProjectWorkspaceShell() {
       </aside>
 
       <section className="min-w-0">
-        <Outlet />
+        {projectId !== null && currentRouteLockState?.locked && !isSetupPath(location.pathname, projectId) ? (
+          <Card data-testid="project-workspace-deep-link-guard">
+            <CardHeader>
+              <CardTitle>Route locked</CardTitle>
+              <CardDescription>
+                {currentRouteLockState.reason ?? 'This route is currently locked for this project.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                data-testid="project-workspace-deep-link-guard-action"
+                onClick={() => {
+                  navigate(resolveRequiredStepRoute(projectId, currentRouteLockState.requiredStep));
+                }}
+              >
+                Go to required step
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Outlet />
+        )}
       </section>
     </div>
   );
