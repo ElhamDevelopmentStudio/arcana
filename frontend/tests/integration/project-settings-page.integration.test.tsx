@@ -7,6 +7,7 @@ import { ProjectSettingsPage } from '@/pages/projects/project-settings-page';
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useLLMProvidersQueryMock = vi.fn();
+const useProjectAccessListQueryMock = vi.fn();
 const useProjectLLMSettingsQueryMock = vi.fn();
 const useUpdateLLMProviderStatusMutationMock = vi.fn();
 const useUpdateProjectLLMSettingsMutationMock = vi.fn();
@@ -16,6 +17,8 @@ const updateProjectLLMSettingsTriggerMock = vi.fn();
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useLLMProvidersQuery: (...args: Parameters<typeof useLLMProvidersQueryMock>) =>
     useLLMProvidersQueryMock(...args),
+  useProjectAccessListQuery: (...args: Parameters<typeof useProjectAccessListQueryMock>) =>
+    useProjectAccessListQueryMock(...args),
   useProjectLLMSettingsQuery: (...args: Parameters<typeof useProjectLLMSettingsQueryMock>) =>
     useProjectLLMSettingsQueryMock(...args),
   useUpdateLLMProviderStatusMutation: (...args: Parameters<typeof useUpdateLLMProviderStatusMutationMock>) =>
@@ -42,6 +45,7 @@ describe('project settings page', () => {
   beforeEach(() => {
     resetWorkspaceStore();
     useLLMProvidersQueryMock.mockReset();
+    useProjectAccessListQueryMock.mockReset();
     useProjectLLMSettingsQueryMock.mockReset();
     useUpdateLLMProviderStatusMutationMock.mockReset();
     useUpdateProjectLLMSettingsMutationMock.mockReset();
@@ -56,6 +60,23 @@ describe('project settings page', () => {
           {
             provider: 'openrouter',
             enabled: true,
+          },
+        ],
+      },
+    });
+    useProjectAccessListQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      data: {
+        project_id: 77,
+        grants: [
+          {
+            id: 13,
+            project_id: 77,
+            principal_type: 'user',
+            principal_id: 'qa-owner',
+            role: 'owner',
+            created_at: '2026-02-27T00:00:00Z',
           },
         ],
       },
@@ -134,5 +155,13 @@ describe('project settings page', () => {
       provider_name: 'openrouter',
       enabled: false,
     });
+  });
+
+  it('renders project access grants from access listing query', () => {
+    renderProjectSettingsPage();
+
+    expect(screen.getByTestId('project-settings-access-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('project-settings-access-grant-13')).toHaveTextContent('qa-owner');
+    expect(screen.getByTestId('project-settings-access-grant-13')).toHaveTextContent('role: owner');
   });
 });

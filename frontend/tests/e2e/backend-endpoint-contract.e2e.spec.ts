@@ -1692,6 +1692,16 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     });
     expect(runResponse.status()).toBe(200);
 
+    const accessGrantResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/access`, {
+      data: {
+        principal_id: 'qa-settings-user',
+        principal_type: 'user',
+        role: 'viewer',
+      },
+    });
+    expect(accessGrantResponse.status()).toBe(201);
+    const accessGrantPayload = (await accessGrantResponse.json()) as { id: number };
+
     await waitForSetupCompletion(request, projectId);
 
     const llmSettingsGetRequestPromise = page.waitForRequest(
@@ -1711,10 +1721,21 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       (networkResponse) =>
         networkResponse.request().method() === 'GET' && networkResponse.url().endsWith('/api/llm/providers'),
     );
+    const accessListGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/access`),
+    );
+    const accessListGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/access`),
+    );
 
     await page.goto(`/projects/${projectId}/settings`);
     await expect(page.getByTestId('project-settings-llm-panel')).toBeVisible();
     await expect(page.getByTestId('project-settings-providers-panel')).toBeVisible();
+    await expect(page.getByTestId('project-settings-access-panel')).toBeVisible();
 
     await llmSettingsGetRequestPromise;
     const llmSettingsGetResponse = await llmSettingsGetResponsePromise;
@@ -1722,6 +1743,12 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await providersGetRequestPromise;
     const providersGetResponse = await providersGetResponsePromise;
     expect(providersGetResponse.status()).toBe(200);
+    await accessListGetRequestPromise;
+    const accessListGetResponse = await accessListGetResponsePromise;
+    expect(accessListGetResponse.status()).toBe(200);
+    await expect(page.getByTestId(`project-settings-access-grant-${accessGrantPayload.id}`)).toContainText(
+      'qa-settings-user',
+    );
 
     const llmSettingsPutRequestPromise = page.waitForRequest(
       (networkRequest) =>
