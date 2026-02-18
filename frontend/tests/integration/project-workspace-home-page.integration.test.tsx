@@ -8,13 +8,17 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useProjectDetailQueryMock = vi.fn();
 const useUpdateProjectMetadataMutationMock = vi.fn();
+const useProjectAllowedActionsQueryMock = vi.fn();
 const projectDetailMutateMock = vi.fn();
+const projectAllowedActionsMutateMock = vi.fn();
 const updateProjectMetadataTriggerMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useProjectDetailQuery: (...args: Parameters<typeof useProjectDetailQueryMock>) => useProjectDetailQueryMock(...args),
   useUpdateProjectMetadataMutation: (...args: Parameters<typeof useUpdateProjectMetadataMutationMock>) =>
     useUpdateProjectMetadataMutationMock(...args),
+  useProjectAllowedActionsQuery: (...args: Parameters<typeof useProjectAllowedActionsQueryMock>) =>
+    useProjectAllowedActionsQueryMock(...args),
 }));
 
 function renderProjectWorkspaceHomePage() {
@@ -48,7 +52,9 @@ describe('project workspace home page', () => {
     resetWorkspaceStore();
     useProjectDetailQueryMock.mockReset();
     useUpdateProjectMetadataMutationMock.mockReset();
+    useProjectAllowedActionsQueryMock.mockReset();
     projectDetailMutateMock.mockReset();
+    projectAllowedActionsMutateMock.mockReset();
     updateProjectMetadataTriggerMock.mockReset();
     useUpdateProjectMetadataMutationMock.mockReturnValue({
       isMutating: false,
@@ -60,6 +66,27 @@ describe('project workspace home page', () => {
       description: 'Updated detail',
       tags: ['arc', 'research'],
       updated_at: '2026-02-27T00:15:00Z',
+    });
+    useProjectAllowedActionsQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectAllowedActionsMutateMock,
+      data: {
+        schema_version: '1.0',
+        output_schema: 'project_actions',
+        output_format: 'json',
+        output_id: 'project-actions-77',
+        output_name: 'Project Allowed Actions',
+        generated_at: '2026-02-27T00:15:00Z',
+        generated_by: 'project_actions_endpoint',
+        project_id: 77,
+        lifecycle_state: 'configured',
+        last_run_status: null,
+        next_required_action: 'run',
+        allowed_actions: ['run', 'export', 'configure', 'archive'],
+        blocked_reason: null,
+        required_step: null,
+      },
     });
   });
 
@@ -133,6 +160,70 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-metadata-title-input')).toHaveValue('Shadow Slave Workspace');
     expect(screen.getByTestId('project-metadata-description-input')).toHaveValue('workspace-home detail');
     expect(screen.getByTestId('project-metadata-tags-input')).toHaveValue('poc');
+    expect(screen.getByTestId('project-command-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('project-command-panel-allowed-action-run')).toBeInTheDocument();
+    expect(screen.getByTestId('project-command-panel-allowed-action-export')).toBeInTheDocument();
+    expect(screen.getByTestId('project-command-panel-open-runs')).toHaveAttribute('href', '/projects/77/runs');
+    expect(screen.getByTestId('project-command-panel-open-exports')).toHaveAttribute('href', '/projects/77/exports');
+    expect(screen.getByTestId('project-command-panel-open-settings')).toHaveAttribute('href', '/projects/77/settings');
+  });
+
+  it('renders blocked action state with reason and disabled commands', () => {
+    useProjectAllowedActionsQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectAllowedActionsMutateMock,
+      data: {
+        schema_version: '1.0',
+        output_schema: 'project_actions',
+        output_format: 'json',
+        output_id: 'project-actions-77',
+        output_name: 'Project Allowed Actions',
+        generated_at: '2026-02-27T00:15:00Z',
+        generated_by: 'project_actions_endpoint',
+        project_id: 77,
+        lifecycle_state: 'archived',
+        last_run_status: null,
+        next_required_action: 'archived',
+        allowed_actions: ['restore'],
+        blocked_reason: 'Project is archived. Restore the project to continue workflow actions.',
+        required_step: 'restore',
+      },
+    });
+    useProjectDetailQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectDetailMutateMock,
+      data: {
+        project_id: 77,
+        title: 'Shadow Slave Workspace',
+        description: 'workspace-home detail',
+        tags: ['poc'],
+        lifecycle_state: 'archived',
+        last_run_status: null,
+        next_required_action: 'archived',
+        allowed_actions: ['restore'],
+        selected_mode: 'author',
+        selected_modes: ['author'],
+        llm_enabled: true,
+        do_not_store_source_text: false,
+        character_map_finalized: false,
+        configuration_snapshot_id: null,
+        ingestion_timestamp: null,
+        last_export_at: null,
+        created_at: '2026-02-27T00:00:00Z',
+        updated_at: '2026-02-27T00:10:00Z',
+      },
+    });
+
+    renderProjectWorkspaceHomePage();
+
+    expect(screen.getByTestId('project-command-panel-required-step')).toHaveTextContent('Required step: restore');
+    expect(screen.getByTestId('project-command-panel-blocked-reason')).toHaveTextContent(
+      'Project is archived. Restore the project to continue workflow actions.',
+    );
+    expect(screen.getByTestId('project-command-panel-open-runs-disabled')).toBeInTheDocument();
+    expect(screen.getByTestId('project-command-panel-open-exports-disabled')).toBeInTheDocument();
   });
 
   it('submits metadata edits through patch mutation', async () => {
