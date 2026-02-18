@@ -875,6 +875,15 @@ export const projectAllowedActionsResponseSchema = z.object({
   required_step: projectActionRequiredStepSchema.nullable().optional().default(null),
 });
 
+export const projectLifecycleStateChangeResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  action: z.enum(['archive', 'restore']),
+  previous_lifecycle_state: projectLifecycleStateSchema,
+  lifecycle_state: projectLifecycleStateSchema,
+  next_required_action: projectNextRequiredActionSchema,
+  allowed_actions: z.array(projectAllowedActionSchema).default([]),
+});
+
 export const projectDetailResponseSchema = z.object({
   schema_version: z.string().min(1),
   output_schema: z.string().min(1),
@@ -1012,6 +1021,7 @@ export type ProjectActivityTimelineResponseDto = z.infer<typeof projectActivityT
 export type ProjectAllowedActionDto = z.infer<typeof projectAllowedActionSchema>;
 export type ProjectActionRequiredStepDto = z.infer<typeof projectActionRequiredStepSchema>;
 export type ProjectAllowedActionsResponseDto = z.infer<typeof projectAllowedActionsResponseSchema>;
+export type ProjectLifecycleStateChangeResponseDto = z.infer<typeof projectLifecycleStateChangeResponseSchema>;
 export type ProjectDetailResponseDto = z.infer<typeof projectDetailResponseSchema>;
 export type ProjectSetupStepIdDto = z.infer<typeof projectSetupStepIdSchema>;
 export type ProjectSetupStepStatusDto = z.infer<typeof projectSetupStepStatusSchema>;

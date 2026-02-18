@@ -11,6 +11,7 @@ export const workspaceKeys = {
   projectControlPanelSummary: ['project-control-panel-summary'] as const,
   projectControlPanelProjectList: (params: ProjectControlPanelProjectListRequestDto) =>
     ['project-control-panel-project-list', params] as const,
+  projectAllowedActions: (projectId: number) => ['project-allowed-actions', projectId] as const,
   projectActivityTimeline: (projectId: number, params: ProjectActivityTimelineRequestDto) =>
     ['project-activity-timeline', projectId, params] as const,
   projectDetail: (projectId: number) => ['project-detail', projectId] as const,
@@ -75,6 +76,7 @@ export type WorkspaceMutationName =
   | 'create_project'
   | 'create_project_draft'
   | 'update_project_metadata'
+  | 'archive_project'
   | 'switch_mode'
   | 'run_pipeline'
   | 'cancel_run';
@@ -96,6 +98,20 @@ export const workspaceMutationInvalidationMap: Record<
     return [
       workspaceKeys.projectControlPanelSummary,
       workspaceKeyMatchers.projectControlPanelProjectList,
+      workspaceKeyMatchers.projectActivityTimeline(projectId),
+      workspaceKeys.projectDetail(projectId),
+      workspaceKeys.projectWorkspaceSummary(projectId),
+      workspaceKeys.projectSetupStatus(projectId),
+    ];
+  },
+  archive_project: ({ projectId }) => {
+    if (projectId === null || projectId === undefined) {
+      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
+    }
+    return [
+      workspaceKeys.projectControlPanelSummary,
+      workspaceKeyMatchers.projectControlPanelProjectList,
+      workspaceKeys.projectAllowedActions(projectId),
       workspaceKeyMatchers.projectActivityTimeline(projectId),
       workspaceKeys.projectDetail(projectId),
       workspaceKeys.projectWorkspaceSummary(projectId),

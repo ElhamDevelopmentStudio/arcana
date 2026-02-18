@@ -8,17 +8,21 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useProjectDetailQueryMock = vi.fn();
 const useUpdateProjectMetadataMutationMock = vi.fn();
+const useArchiveProjectMutationMock = vi.fn();
 const useProjectAllowedActionsQueryMock = vi.fn();
 const useProjectActivityTimelineQueryMock = vi.fn();
 const projectDetailMutateMock = vi.fn();
 const projectAllowedActionsMutateMock = vi.fn();
 const projectActivityTimelineMutateMock = vi.fn();
 const updateProjectMetadataTriggerMock = vi.fn();
+const archiveProjectTriggerMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useProjectDetailQuery: (...args: Parameters<typeof useProjectDetailQueryMock>) => useProjectDetailQueryMock(...args),
   useUpdateProjectMetadataMutation: (...args: Parameters<typeof useUpdateProjectMetadataMutationMock>) =>
     useUpdateProjectMetadataMutationMock(...args),
+  useArchiveProjectMutation: (...args: Parameters<typeof useArchiveProjectMutationMock>) =>
+    useArchiveProjectMutationMock(...args),
   useProjectAllowedActionsQuery: (...args: Parameters<typeof useProjectAllowedActionsQueryMock>) =>
     useProjectAllowedActionsQueryMock(...args),
   useProjectActivityTimelineQuery: (...args: Parameters<typeof useProjectActivityTimelineQueryMock>) =>
@@ -56,15 +60,21 @@ describe('project workspace home page', () => {
     resetWorkspaceStore();
     useProjectDetailQueryMock.mockReset();
     useUpdateProjectMetadataMutationMock.mockReset();
+    useArchiveProjectMutationMock.mockReset();
     useProjectAllowedActionsQueryMock.mockReset();
     useProjectActivityTimelineQueryMock.mockReset();
     projectDetailMutateMock.mockReset();
     projectAllowedActionsMutateMock.mockReset();
     projectActivityTimelineMutateMock.mockReset();
     updateProjectMetadataTriggerMock.mockReset();
+    archiveProjectTriggerMock.mockReset();
     useUpdateProjectMetadataMutationMock.mockReturnValue({
       isMutating: false,
       trigger: updateProjectMetadataTriggerMock,
+    });
+    useArchiveProjectMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: archiveProjectTriggerMock,
     });
     updateProjectMetadataTriggerMock.mockResolvedValue({
       project_id: 77,
@@ -209,6 +219,7 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-command-panel-open-runs')).toHaveAttribute('href', '/projects/77/runs');
     expect(screen.getByTestId('project-command-panel-open-exports')).toHaveAttribute('href', '/projects/77/exports');
     expect(screen.getByTestId('project-command-panel-open-settings')).toHaveAttribute('href', '/projects/77/settings');
+    expect(screen.getByTestId('project-command-panel-archive-button')).toBeInTheDocument();
     expect(screen.getByTestId('project-timeline-panel')).toBeInTheDocument();
     expect(screen.getByTestId('project-timeline-pagination-state')).toHaveTextContent('Page 1 / size 5 / total 2');
     expect(screen.getByTestId('project-timeline-item-2')).toHaveTextContent('manual_edit');
@@ -273,6 +284,7 @@ describe('project workspace home page', () => {
     );
     expect(screen.getByTestId('project-command-panel-open-runs-disabled')).toBeInTheDocument();
     expect(screen.getByTestId('project-command-panel-open-exports-disabled')).toBeInTheDocument();
+    expect(screen.getByTestId('project-command-panel-archive-button-disabled')).toBeInTheDocument();
   });
 
   it('submits metadata edits through patch mutation', async () => {
@@ -320,6 +332,52 @@ describe('project workspace home page', () => {
       tags: ['arc', 'research'],
     });
     expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('submits archive command when archive action is allowed', async () => {
+    const user = userEvent.setup();
+    useProjectDetailQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectDetailMutateMock,
+      data: {
+        project_id: 77,
+        title: 'Shadow Slave Workspace',
+        description: 'workspace-home detail',
+        tags: ['poc'],
+        lifecycle_state: 'configured',
+        last_run_status: 'completed',
+        next_required_action: 'export',
+        allowed_actions: ['run', 'export', 'archive'],
+        selected_mode: 'author',
+        selected_modes: ['author'],
+        llm_enabled: true,
+        do_not_store_source_text: false,
+        character_map_finalized: false,
+        configuration_snapshot_id: null,
+        ingestion_timestamp: null,
+        last_export_at: null,
+        created_at: '2026-02-27T00:00:00Z',
+        updated_at: '2026-02-27T00:10:00Z',
+      },
+    });
+    archiveProjectTriggerMock.mockResolvedValue({
+      project_id: 77,
+      action: 'archive',
+      previous_lifecycle_state: 'configured',
+      lifecycle_state: 'archived',
+      next_required_action: 'archived',
+      allowed_actions: ['restore'],
+    });
+
+    renderProjectWorkspaceHomePage();
+
+    await user.click(screen.getByTestId('project-command-panel-archive-button'));
+
+    expect(archiveProjectTriggerMock).toHaveBeenCalledTimes(1);
+    expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(1);
+    expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
+    expect(projectActivityTimelineMutateMock).toHaveBeenCalledTimes(1);
   });
 
   it('requests next timeline page when next pagination action is available', async () => {

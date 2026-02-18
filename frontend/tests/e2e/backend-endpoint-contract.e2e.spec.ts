@@ -1878,6 +1878,67 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('project-timeline-prev-page')).toBeEnabled();
   });
 
+  test('projects/:project_id archive command panel action calls archive endpoint and applies lock state', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-workspace-home-archive-command');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-command-panel-archive-button')).toBeVisible();
+
+    const archiveRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/archive`),
+    );
+    const archiveResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/archive`),
+    );
+
+    await page.getByTestId('project-command-panel-archive-button').click();
+    await archiveRequestPromise;
+    const archiveResponse = await archiveResponsePromise;
+    expect(archiveResponse.status()).toBe(200);
+
+    await expect(page.getByTestId('project-command-panel-required-step')).toContainText('restore');
+    await expect(page.getByTestId('project-command-panel-blocked-reason')).toContainText(
+      'Restore the project to continue workflow actions.',
+    );
+    await expect(page.getByTestId('project-command-panel-archive-button-disabled')).toBeVisible();
+    await expect(page.getByTestId('project-command-panel-open-runs-disabled')).toBeVisible();
+    await expect(page.getByTestId('project-command-panel-open-exports-disabled')).toBeVisible();
+  });
+
   test('create draft stays setup-gated until completion, then allows overview access', async ({ page, request }) => {
     const title = uniqueTitle('e2e-draft-setup-gate');
     const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
