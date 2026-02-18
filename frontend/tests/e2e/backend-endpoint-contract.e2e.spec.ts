@@ -1704,13 +1704,24 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
         networkResponse.request().method() === 'GET' &&
         networkResponse.url().endsWith(`/api/projects/${projectId}/llm`),
     );
+    const providersGetRequestPromise = page.waitForRequest(
+      (networkRequest) => networkRequest.method() === 'GET' && networkRequest.url().endsWith('/api/llm/providers'),
+    );
+    const providersGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' && networkResponse.url().endsWith('/api/llm/providers'),
+    );
 
     await page.goto(`/projects/${projectId}/settings`);
     await expect(page.getByTestId('project-settings-llm-panel')).toBeVisible();
+    await expect(page.getByTestId('project-settings-providers-panel')).toBeVisible();
 
     await llmSettingsGetRequestPromise;
     const llmSettingsGetResponse = await llmSettingsGetResponsePromise;
     expect(llmSettingsGetResponse.status()).toBe(200);
+    await providersGetRequestPromise;
+    const providersGetResponse = await providersGetResponsePromise;
+    expect(providersGetResponse.status()).toBe(200);
 
     const llmSettingsPutRequestPromise = page.waitForRequest(
       (networkRequest) =>
@@ -1733,6 +1744,60 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     const llmSettingsPutResponse = await llmSettingsPutResponsePromise;
     expect(llmSettingsPutResponse.status()).toBe(200);
     await expect(page.getByTestId('project-settings-llm-current')).toContainText('enabled');
+
+    const firstProviderRow = page.locator('[data-testid^="project-settings-provider-row-"]').first();
+    await expect(firstProviderRow).toBeVisible();
+    const firstProviderRowTestId = await firstProviderRow.getAttribute('data-testid');
+    expect(firstProviderRowTestId).toBeTruthy();
+    const providerName = String(firstProviderRowTestId).replace('project-settings-provider-row-', '');
+    const providerCurrentTestId = `project-settings-provider-current-${providerName}`;
+    const providerToggleTestId = `project-settings-provider-toggle-${providerName}`;
+    const providerSaveTestId = `project-settings-provider-save-${providerName}`;
+    const providerCurrentText = await page.getByTestId(providerCurrentTestId).innerText();
+    const providerInitiallyEnabled = providerCurrentText.includes('Current: enabled');
+    const providerNextEnabled = !providerInitiallyEnabled;
+
+    const providerPutRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/llm/providers/${providerName}`),
+    );
+    const providerPutResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/llm/providers/${providerName}`),
+    );
+
+    await page.getByTestId(providerToggleTestId).click();
+    await page.getByTestId(providerSaveTestId).click();
+
+    const providerPutRequest = await providerPutRequestPromise;
+    const providerPutPayload = providerPutRequest.postDataJSON() as { enabled: boolean };
+    expect(providerPutPayload.enabled).toBe(providerNextEnabled);
+
+    const providerPutResponse = await providerPutResponsePromise;
+    expect(providerPutResponse.status()).toBe(200);
+
+    const providerRestoreRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/llm/providers/${providerName}`),
+    );
+    const providerRestoreResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/llm/providers/${providerName}`),
+    );
+
+    await page.getByTestId(providerToggleTestId).click();
+    await page.getByTestId(providerSaveTestId).click();
+
+    const providerRestoreRequest = await providerRestoreRequestPromise;
+    const providerRestorePayload = providerRestoreRequest.postDataJSON() as { enabled: boolean };
+    expect(providerRestorePayload.enabled).toBe(providerInitiallyEnabled);
+
+    const providerRestoreResponse = await providerRestoreResponsePromise;
+    expect(providerRestoreResponse.status()).toBe(200);
   });
 
   test('projects/new draft creation mode calls draft endpoint and persists workspace project id', async ({ page }) => {

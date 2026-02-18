@@ -627,7 +627,7 @@ Definition of done for each task:
 
 ### 13.5 LLM, Providers, and Access Controls
 - [x] [FE-130] Build project LLM settings panel using `GET/PUT /api/projects/{project_id}/llm`.
-- [ ] [FE-131] Build provider status management panel using `GET /api/llm/providers` and `PUT /api/llm/providers/{provider_name}`.
+- [x] [FE-131] Build provider status management panel using `GET /api/llm/providers` and `PUT /api/llm/providers/{provider_name}`.
 - [ ] [FE-132] Build project access listing using `GET /api/projects/{project_id}/access`.
 - [ ] [FE-133] Build project access grant flow using `POST /api/projects/{project_id}/access`.
 - [ ] [FE-134] Add no-auth workspace messaging for access model behavior and scope.

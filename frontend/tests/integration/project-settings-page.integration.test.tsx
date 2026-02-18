@@ -6,13 +6,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectSettingsPage } from '@/pages/projects/project-settings-page';
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
+const useLLMProvidersQueryMock = vi.fn();
 const useProjectLLMSettingsQueryMock = vi.fn();
+const useUpdateLLMProviderStatusMutationMock = vi.fn();
 const useUpdateProjectLLMSettingsMutationMock = vi.fn();
+const updateLLMProviderStatusTriggerMock = vi.fn();
 const updateProjectLLMSettingsTriggerMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
+  useLLMProvidersQuery: (...args: Parameters<typeof useLLMProvidersQueryMock>) =>
+    useLLMProvidersQueryMock(...args),
   useProjectLLMSettingsQuery: (...args: Parameters<typeof useProjectLLMSettingsQueryMock>) =>
     useProjectLLMSettingsQueryMock(...args),
+  useUpdateLLMProviderStatusMutation: (...args: Parameters<typeof useUpdateLLMProviderStatusMutationMock>) =>
+    useUpdateLLMProviderStatusMutationMock(...args),
   useUpdateProjectLLMSettingsMutation: (...args: Parameters<typeof useUpdateProjectLLMSettingsMutationMock>) =>
     useUpdateProjectLLMSettingsMutationMock(...args),
 }));
@@ -34,10 +41,25 @@ function renderProjectSettingsPage() {
 describe('project settings page', () => {
   beforeEach(() => {
     resetWorkspaceStore();
+    useLLMProvidersQueryMock.mockReset();
     useProjectLLMSettingsQueryMock.mockReset();
+    useUpdateLLMProviderStatusMutationMock.mockReset();
     useUpdateProjectLLMSettingsMutationMock.mockReset();
+    updateLLMProviderStatusTriggerMock.mockReset();
     updateProjectLLMSettingsTriggerMock.mockReset();
 
+    useLLMProvidersQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      data: {
+        providers: [
+          {
+            provider: 'openrouter',
+            enabled: true,
+          },
+        ],
+      },
+    });
     useProjectLLMSettingsQueryMock.mockReturnValue({
       isLoading: false,
       error: undefined,
@@ -45,6 +67,10 @@ describe('project settings page', () => {
         project_id: 77,
         llm_enabled: false,
       },
+    });
+    useUpdateLLMProviderStatusMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: updateLLMProviderStatusTriggerMock,
     });
     useUpdateProjectLLMSettingsMutationMock.mockReturnValue({
       isMutating: false,
@@ -83,5 +109,30 @@ describe('project settings page', () => {
 
     await user.click(saveButton);
     expect(updateProjectLLMSettingsTriggerMock).toHaveBeenCalledWith({ llm_enabled: true });
+  });
+
+  it('updates provider status through save action', async () => {
+    const user = userEvent.setup();
+    updateLLMProviderStatusTriggerMock.mockResolvedValue({
+      provider: 'openrouter',
+      enabled: false,
+    });
+
+    renderProjectSettingsPage();
+
+    const saveButton = screen.getByTestId('project-settings-provider-save-openrouter');
+    expect(saveButton).toBeDisabled();
+    expect(screen.getByTestId('project-settings-provider-current-openrouter')).toHaveTextContent('Current: enabled');
+    expect(screen.getByTestId('project-settings-provider-current-openrouter')).toHaveTextContent('Draft: enabled');
+
+    await user.click(screen.getByTestId('project-settings-provider-toggle-openrouter'));
+    expect(screen.getByTestId('project-settings-provider-current-openrouter')).toHaveTextContent('Draft: disabled');
+    expect(saveButton).toBeEnabled();
+
+    await user.click(saveButton);
+    expect(updateLLMProviderStatusTriggerMock).toHaveBeenCalledWith({
+      provider_name: 'openrouter',
+      enabled: false,
+    });
   });
 });

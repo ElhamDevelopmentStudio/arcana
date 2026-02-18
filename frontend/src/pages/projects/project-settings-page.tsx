@@ -10,7 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
+  useLLMProvidersQuery,
   useProjectLLMSettingsQuery,
+  useUpdateLLMProviderStatusMutation,
   useUpdateProjectLLMSettingsMutation,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
@@ -21,8 +23,11 @@ export function ProjectSettingsPage() {
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const projectId = routeProjectId ?? storeProjectId;
   const projectLLMSettingsQuery = useProjectLLMSettingsQuery(projectId);
+  const llmProvidersQuery = useLLMProvidersQuery(projectId !== null);
   const updateProjectLLMSettingsMutation = useUpdateProjectLLMSettingsMutation(projectId);
+  const updateLLMProviderStatusMutation = useUpdateLLMProviderStatusMutation(projectId);
   const [llmEnabledDraft, setLlmEnabledDraft] = useState(false);
+  const [providerEnabledDraftByName, setProviderEnabledDraftByName] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (projectLLMSettingsQuery.data === undefined) {
@@ -30,6 +35,15 @@ export function ProjectSettingsPage() {
     }
     setLlmEnabledDraft(projectLLMSettingsQuery.data.llm_enabled);
   }, [projectLLMSettingsQuery.data]);
+
+  useEffect(() => {
+    if (!llmProvidersQuery.data?.providers) {
+      return;
+    }
+    setProviderEnabledDraftByName(
+      Object.fromEntries(llmProvidersQuery.data.providers.map((provider) => [provider.provider, provider.enabled])),
+    );
+  }, [llmProvidersQuery.data]);
 
   const hasUnsavedChanges =
     projectLLMSettingsQuery.data !== undefined &&
@@ -52,66 +66,154 @@ export function ProjectSettingsPage() {
     }
   }
 
+  async function handleSaveProviderStatus(providerName: string) {
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    const draftEnabled = providerEnabledDraftByName[providerName];
+    if (draftEnabled === undefined) {
+      toast.error('Provider draft state is missing.');
+      return;
+    }
+
+    try {
+      const response = await updateLLMProviderStatusMutation.trigger({
+        provider_name: providerName,
+        enabled: draftEnabled,
+      });
+      setProviderEnabledDraftByName((previous) => ({
+        ...previous,
+        [response.provider]: response.enabled,
+      }));
+      toast.success(`Provider ${response.provider} is now ${response.enabled ? 'enabled' : 'disabled'}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update provider status.');
+    }
+  }
+
   return (
     <WorkflowPageShell
       description="Project-scoped settings and policy controls."
       step="Settings"
       title="Project Settings"
     >
-      <Card data-testid="project-settings-llm-panel">
-        <CardHeader>
-          <CardTitle>LLM Settings</CardTitle>
-          <CardDescription>
-            Toggle project-level LLM execution policy using `GET/PUT /api/projects/:project_id/llm`.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>Project: {projectId ?? 'n/a'}</p>
-          {projectId === null ? <Badge variant="outline">Project required</Badge> : null}
-          {projectLLMSettingsQuery.isLoading ? (
-            <p data-testid="project-settings-llm-loading">Loading LLM settings...</p>
-          ) : null}
-          {projectLLMSettingsQuery.error ? (
-            <p className="text-destructive" data-testid="project-settings-llm-error">
-              {projectLLMSettingsQuery.error.message}
-            </p>
-          ) : null}
-
-          {projectLLMSettingsQuery.data ? (
-            <div className="space-y-3 rounded-xl border border-panel-border/70 bg-muted/35 p-3">
-              <p data-testid="project-settings-llm-current">
-                Current backend value:{' '}
-                <strong className="text-foreground">{projectLLMSettingsQuery.data.llm_enabled ? 'enabled' : 'disabled'}</strong>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card data-testid="project-settings-llm-panel">
+          <CardHeader>
+            <CardTitle>LLM Settings</CardTitle>
+            <CardDescription>
+              Toggle project-level LLM execution policy using `GET/PUT /api/projects/:project_id/llm`.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>Project: {projectId ?? 'n/a'}</p>
+            {projectId === null ? <Badge variant="outline">Project required</Badge> : null}
+            {projectLLMSettingsQuery.isLoading ? (
+              <p data-testid="project-settings-llm-loading">Loading LLM settings...</p>
+            ) : null}
+            {projectLLMSettingsQuery.error ? (
+              <p className="text-destructive" data-testid="project-settings-llm-error">
+                {projectLLMSettingsQuery.error.message}
               </p>
+            ) : null}
 
-              <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="project-settings-llm-toggle">LLM enabled</Label>
-                <Switch
-                  id="project-settings-llm-toggle"
-                  data-testid="project-settings-llm-toggle"
-                  checked={llmEnabledDraft}
-                  disabled={updateProjectLLMSettingsMutation.isMutating}
-                  onCheckedChange={setLlmEnabledDraft}
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <p data-testid="project-settings-llm-draft">
-                  Draft value: <strong className="text-foreground">{llmEnabledDraft ? 'enabled' : 'disabled'}</strong>
+            {projectLLMSettingsQuery.data ? (
+              <div className="space-y-3 rounded-xl border border-panel-border/70 bg-muted/35 p-3">
+                <p data-testid="project-settings-llm-current">
+                  Current backend value:{' '}
+                  <strong className="text-foreground">{projectLLMSettingsQuery.data.llm_enabled ? 'enabled' : 'disabled'}</strong>
                 </p>
-                <Button
-                  data-testid="project-settings-llm-save"
-                  disabled={!hasUnsavedChanges || updateProjectLLMSettingsMutation.isMutating}
-                  onClick={() => void handleSaveProjectLLMSettings()}
-                  type="button"
-                >
-                  {updateProjectLLMSettingsMutation.isMutating ? 'Saving...' : 'Save LLM setting'}
-                </Button>
+
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="project-settings-llm-toggle">LLM enabled</Label>
+                  <Switch
+                    id="project-settings-llm-toggle"
+                    data-testid="project-settings-llm-toggle"
+                    checked={llmEnabledDraft}
+                    disabled={updateProjectLLMSettingsMutation.isMutating}
+                    onCheckedChange={setLlmEnabledDraft}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <p data-testid="project-settings-llm-draft">
+                    Draft value: <strong className="text-foreground">{llmEnabledDraft ? 'enabled' : 'disabled'}</strong>
+                  </p>
+                  <Button
+                    data-testid="project-settings-llm-save"
+                    disabled={!hasUnsavedChanges || updateProjectLLMSettingsMutation.isMutating}
+                    onClick={() => void handleSaveProjectLLMSettings()}
+                    type="button"
+                  >
+                    {updateProjectLLMSettingsMutation.isMutating ? 'Saving...' : 'Save LLM setting'}
+                  </Button>
+                </div>
               </div>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="project-settings-providers-panel">
+          <CardHeader>
+            <CardTitle>Provider Status Management</CardTitle>
+            <CardDescription>
+              Manage global provider availability with `GET /api/llm/providers` and `PUT /api/llm/providers/:provider_name`.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            {llmProvidersQuery.isLoading ? (
+              <p data-testid="project-settings-providers-loading">Loading provider statuses...</p>
+            ) : null}
+            {llmProvidersQuery.error ? (
+              <p className="text-destructive" data-testid="project-settings-providers-error">
+                {llmProvidersQuery.error.message}
+              </p>
+            ) : null}
+
+            {(llmProvidersQuery.data?.providers ?? []).map((provider) => {
+              const draftEnabled = providerEnabledDraftByName[provider.provider] ?? provider.enabled;
+              const hasProviderUnsavedChange = draftEnabled !== provider.enabled;
+              return (
+                <div
+                  key={provider.provider}
+                  className="space-y-2 rounded-xl border border-panel-border/70 bg-muted/35 p-3"
+                  data-testid={`project-settings-provider-row-${provider.provider}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium text-foreground">{provider.provider}</p>
+                    <Switch
+                      checked={draftEnabled}
+                      data-testid={`project-settings-provider-toggle-${provider.provider}`}
+                      disabled={updateLLMProviderStatusMutation.isMutating}
+                      onCheckedChange={(nextEnabled) =>
+                        setProviderEnabledDraftByName((previous) => ({
+                          ...previous,
+                          [provider.provider]: nextEnabled,
+                        }))
+                      }
+                    />
+                  </div>
+                  <p data-testid={`project-settings-provider-current-${provider.provider}`}>
+                    Current: <strong className="text-foreground">{provider.enabled ? 'enabled' : 'disabled'}</strong>{' '}
+                    | Draft: <strong className="text-foreground">{draftEnabled ? 'enabled' : 'disabled'}</strong>
+                  </p>
+                  <Button
+                    data-testid={`project-settings-provider-save-${provider.provider}`}
+                    disabled={!hasProviderUnsavedChange || updateLLMProviderStatusMutation.isMutating}
+                    onClick={() => void handleSaveProviderStatus(provider.provider)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {updateLLMProviderStatusMutation.isMutating ? 'Saving...' : 'Save provider status'}
+                  </Button>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      </div>
     </WorkflowPageShell>
   );
 }
