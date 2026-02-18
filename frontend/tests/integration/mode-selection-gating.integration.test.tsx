@@ -158,6 +158,10 @@ describe('mode selection gating', () => {
     expect(screen.getByTestId('mode-profile-summary')).toHaveTextContent('Default max segment chars: 120');
 
     await user.selectOptions(screen.getByLabelText(/select mode/i), 'author');
+    expect(screen.getByTestId('mode-switch-confirm-dialog')).toBeInTheDocument();
+    expect(switchModeTriggerMock).not.toHaveBeenCalled();
+    await user.click(screen.getByTestId('mode-switch-confirm-submit'));
+
     expect(useModeCatalogQueryMock).toHaveBeenCalledWith(true);
     expect(switchModeTriggerMock).toHaveBeenCalledWith({ mode: 'author' });
     expect(continueButton).toBeEnabled();

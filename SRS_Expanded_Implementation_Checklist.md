@@ -622,7 +622,7 @@ Definition of done for each task:
 - [x] [FE-126] Add ingestion failure/retry UX for unsupported files, overlap conflicts, and validation errors.
 - [x] [FE-127] Render ingestion warnings and normalization summaries from ingestion responses.
 - [x] [FE-128] Build mode selection route `/projects/{project_id}/mode` using `GET /api/modes` and `PUT /api/projects/{project_id}/mode`.
-- [ ] [FE-129] Add explicit downstream stale-artifact confirmation UX on mode switch.
+- [x] [FE-129] Add explicit downstream stale-artifact confirmation UX on mode switch.
 
 ### 13.5 LLM, Providers, and Access Controls
 - [ ] [FE-130] Build project LLM settings panel using `GET/PUT /api/projects/{project_id}/llm`.

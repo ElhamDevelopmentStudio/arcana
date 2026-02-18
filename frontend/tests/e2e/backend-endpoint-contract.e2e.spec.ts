@@ -1568,6 +1568,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page).toHaveURL(`/projects/${projectId}/mode`);
     await expect(page.getByTestId('mode-select')).toHaveValue('audiobook');
     await page.getByTestId('mode-select').selectOption('author');
+    await page.getByTestId('mode-switch-confirm-submit').click();
     await expect(page.getByTestId('mode-required-hint')).not.toBeVisible();
     await page.getByTestId('mode-continue-button').click();
 
@@ -1649,6 +1650,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     );
 
     await page.getByTestId('mode-select').selectOption('author');
+    await page.getByTestId('mode-switch-confirm-submit').click();
     const modeSwitchRequest = await modeSwitchRequestPromise;
     const modeSwitchPayload = modeSwitchRequest.postDataJSON() as { mode: string };
     expect(modeSwitchPayload.mode).toBe('author');
