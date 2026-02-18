@@ -1939,6 +1939,65 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('project-command-panel-open-exports-disabled')).toBeVisible();
   });
 
+  test('projects/:project_id restore command panel action calls restore endpoint and unlocks archived state', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-workspace-home-restore-command');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const archiveResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/archive`);
+    expect(archiveResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-command-panel-restore-button')).toBeVisible();
+
+    const restoreRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/restore`),
+    );
+    const restoreResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/restore`),
+    );
+
+    await page.getByTestId('project-command-panel-restore-button').click();
+    await restoreRequestPromise;
+    const restoreResponse = await restoreResponsePromise;
+    expect(restoreResponse.status()).toBe(200);
+
+    await expect(page.getByTestId('project-command-panel-archive-button')).toBeVisible();
+    await expect(page.getByTestId('project-command-panel-restore-button-disabled')).toBeVisible();
+  });
+
   test('create draft stays setup-gated until completion, then allows overview access', async ({ page, request }) => {
     const title = uniqueTitle('e2e-draft-setup-gate');
     const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {

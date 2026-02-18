@@ -77,6 +77,7 @@ export type WorkspaceMutationName =
   | 'create_project_draft'
   | 'update_project_metadata'
   | 'archive_project'
+  | 'restore_project'
   | 'switch_mode'
   | 'run_pipeline'
   | 'cancel_run';
@@ -105,6 +106,20 @@ export const workspaceMutationInvalidationMap: Record<
     ];
   },
   archive_project: ({ projectId }) => {
+    if (projectId === null || projectId === undefined) {
+      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
+    }
+    return [
+      workspaceKeys.projectControlPanelSummary,
+      workspaceKeyMatchers.projectControlPanelProjectList,
+      workspaceKeys.projectAllowedActions(projectId),
+      workspaceKeyMatchers.projectActivityTimeline(projectId),
+      workspaceKeys.projectDetail(projectId),
+      workspaceKeys.projectWorkspaceSummary(projectId),
+      workspaceKeys.projectSetupStatus(projectId),
+    ];
+  },
+  restore_project: ({ projectId }) => {
     if (projectId === null || projectId === undefined) {
       return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
     }
