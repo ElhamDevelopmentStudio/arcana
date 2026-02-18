@@ -1665,6 +1665,120 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('project-overview-ready')).toBeVisible();
   });
 
+  test('locked domain route shows guard before setup and unlocks after completion', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-locked-domain-route');
+    const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
+      data: {
+        title,
+        do_not_store_source_text: false,
+      },
+    });
+    expect(createDraftResponse.status()).toBe(201);
+    const draftPayload = (await createDraftResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    const attachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+      data: {
+        source: 'txt',
+        source_filename: 'minimal-novel.txt',
+      },
+    });
+    expect(attachSourceResponse.status()).toBe(200);
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+    expect(runPayload.run_id).toBeGreaterThan(0);
+
+    await waitForSetupCompletion(request, projectId);
+
+    const archiveResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/archive`);
+    expect(archiveResponse.status()).toBe(200);
+    const archivePayload = (await archiveResponse.json()) as ProjectLifecycleStateChangeResponse;
+    expect(archivePayload.action).toBe('archive');
+    expect(archivePayload.lifecycle_state).toBe('archived');
+    expect(archivePayload.allowed_actions).toEqual(['restore']);
+
+    await page.goto(`/projects/${projectId}/exports`);
+    await expect(page).toHaveURL(`/projects/${projectId}/exports`);
+    await expect(page.getByTestId('project-workspace-deep-link-guard')).toBeVisible();
+    await expect(page.getByTestId('project-workspace-deep-link-guard-action')).toBeVisible();
+    await page.getByTestId('project-workspace-deep-link-guard-action').click();
+    await expect(page).toHaveURL(`/projects/${projectId}/overview`);
+
+    const restoreResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/restore`);
+    expect(restoreResponse.status()).toBe(200);
+    const restorePayload = (await restoreResponse.json()) as ProjectLifecycleStateChangeResponse;
+    expect(restorePayload.action).toBe('restore');
+
+    const restoredSetupStatusResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/setup-status`);
+    expect(restoredSetupStatusResponse.status()).toBe(200);
+    const restoredSetupStatusPayload = (await restoredSetupStatusResponse.json()) as ProjectSetupStatusResponse;
+
+    if (!restoredSetupStatusPayload.is_complete) {
+      const reattachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+        data: {
+          source: 'txt',
+          source_filename: 'minimal-novel.txt',
+        },
+      });
+      expect([200, 400, 409]).toContain(reattachSourceResponse.status());
+
+      const reingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+        multipart: {
+          file: createReadStream(fixtureNovelPath),
+        },
+      });
+      expect(reingestResponse.status()).toBe(200);
+
+      const remodeResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+        data: { mode: 'author' },
+      });
+      expect(remodeResponse.status()).toBe(200);
+
+      const rerunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+        data: {
+          mode: 'author',
+          max_segment_chars: 140,
+          llm_enabled: false,
+          provider_name: 'openrouter',
+          max_calls_per_day: 25,
+          allow_unfinalized_character_map: true,
+        },
+      });
+      expect(rerunResponse.status()).toBe(200);
+
+      await waitForSetupCompletion(request, projectId);
+    }
+
+    await page.goto(`/projects/${projectId}/exports`);
+    await expect(page).toHaveURL(`/projects/${projectId}/exports`);
+    await expect(page.getByTestId('project-workspace-deep-link-guard')).toHaveCount(0);
+    await expect(page.getByText('Export Package')).toBeVisible();
+  });
+
   test('speaker attribution fields include speaker_id and speaker confidence in exports', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-speaker-attribution'));
     const projectId = project.id;
