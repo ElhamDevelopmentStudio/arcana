@@ -1750,6 +1750,34 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       'qa-settings-user',
     );
 
+    const accessGrantUiRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/access`),
+    );
+    const accessGrantUiResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/access`),
+    );
+    await page.getByTestId('project-settings-access-principal-id').fill('qa-settings-service');
+    await page.getByTestId('project-settings-access-principal-type').selectOption('service');
+    await page.getByTestId('project-settings-access-role').selectOption('editor');
+    await page.getByTestId('project-settings-access-grant-submit').click();
+    const accessGrantUiRequest = await accessGrantUiRequestPromise;
+    const accessGrantUiPayload = accessGrantUiRequest.postDataJSON() as {
+      principal_id: string;
+      principal_type: string;
+      role: string;
+    };
+    expect(accessGrantUiPayload).toEqual({
+      principal_id: 'qa-settings-service',
+      principal_type: 'service',
+      role: 'editor',
+    });
+    const accessGrantUiResponse = await accessGrantUiResponsePromise;
+    expect(accessGrantUiResponse.status()).toBe(201);
+
     const llmSettingsPutRequestPromise = page.waitForRequest(
       (networkRequest) =>
         networkRequest.method() === 'PUT' &&

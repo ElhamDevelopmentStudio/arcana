@@ -64,4 +64,12 @@ describe('workspace mutation invalidation map', () => {
     expect(targets).toContainEqual(workspaceKeys.projectLLMSettings(21));
     expect(targets).toContainEqual(workspaceKeys.projectWorkspaceSummary(21));
   });
+
+  it('invalidates project access list on access grant mutation', () => {
+    const targets = resolveWorkspaceMutationInvalidationTargets('grant_project_access', { projectId: 21 });
+
+    expect(targets).toContainEqual(workspaceKeys.projectAccessList(21));
+    expect(targets).toContainEqual(workspaceKeys.projectDetail(21));
+    expect(targets).toContainEqual(workspaceKeys.projectWorkspaceSummary(21));
+  });
 });

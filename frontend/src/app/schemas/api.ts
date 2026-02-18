@@ -176,6 +176,12 @@ export const projectMetadataUpdateResponseSchema = z.object({
   updated_at: z.string().min(1),
 });
 
+export const projectAccessGrantRequestSchema = z.object({
+  principal_id: z.string().trim().min(1).max(255),
+  principal_type: z.enum(['user', 'service', 'system']).default('user'),
+  role: z.enum(['owner', 'editor', 'viewer']).default('viewer'),
+});
+
 export const projectAccessGrantResponseSchema = z.object({
   id: z.number().int().positive(),
   project_id: z.number().int().positive(),
@@ -996,6 +1002,7 @@ export type ProjectDto = z.infer<typeof projectSchema>;
 export type ProjectCreateRequestDto = z.infer<typeof projectCreateRequestSchema>;
 export type ProjectMetadataUpdateRequestDto = z.infer<typeof projectMetadataUpdateRequestSchema>;
 export type ProjectMetadataUpdateResponseDto = z.infer<typeof projectMetadataUpdateResponseSchema>;
+export type ProjectAccessGrantRequestDto = z.infer<typeof projectAccessGrantRequestSchema>;
 export type ProjectAccessGrantResponseDto = z.infer<typeof projectAccessGrantResponseSchema>;
 export type ProjectAccessListResponseDto = z.infer<typeof projectAccessListResponseSchema>;
 export type ProjectIngestionSourceAttachRequestDto = z.infer<typeof projectIngestionSourceAttachRequestSchema>;

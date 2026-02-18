@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
   useLLMProvidersQuery,
+  useGrantProjectAccessMutation,
   useProjectAccessListQuery,
   useProjectLLMSettingsQuery,
   useUpdateLLMProviderStatusMutation,
@@ -26,10 +27,14 @@ export function ProjectSettingsPage() {
   const projectAccessListQuery = useProjectAccessListQuery(projectId);
   const projectLLMSettingsQuery = useProjectLLMSettingsQuery(projectId);
   const llmProvidersQuery = useLLMProvidersQuery(projectId !== null);
+  const grantProjectAccessMutation = useGrantProjectAccessMutation(projectId);
   const updateProjectLLMSettingsMutation = useUpdateProjectLLMSettingsMutation(projectId);
   const updateLLMProviderStatusMutation = useUpdateLLMProviderStatusMutation(projectId);
   const [llmEnabledDraft, setLlmEnabledDraft] = useState(false);
   const [providerEnabledDraftByName, setProviderEnabledDraftByName] = useState<Record<string, boolean>>({});
+  const [accessPrincipalIdDraft, setAccessPrincipalIdDraft] = useState('');
+  const [accessPrincipalTypeDraft, setAccessPrincipalTypeDraft] = useState<'user' | 'service' | 'system'>('user');
+  const [accessRoleDraft, setAccessRoleDraft] = useState<'owner' | 'editor' | 'viewer'>('viewer');
 
   useEffect(() => {
     if (projectLLMSettingsQuery.data === undefined) {
@@ -94,6 +99,30 @@ export function ProjectSettingsPage() {
     }
   }
 
+  async function handleGrantProjectAccess() {
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    if (accessPrincipalIdDraft.trim().length === 0) {
+      toast.error('Principal ID is required.');
+      return;
+    }
+    try {
+      const response = await grantProjectAccessMutation.trigger({
+        principal_id: accessPrincipalIdDraft.trim(),
+        principal_type: accessPrincipalTypeDraft,
+        role: accessRoleDraft,
+      });
+      setAccessPrincipalIdDraft('');
+      setAccessPrincipalTypeDraft('user');
+      setAccessRoleDraft('viewer');
+      toast.success(`Granted ${response.role} access to ${response.principal_id}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to grant project access.');
+    }
+  }
+
   return (
     <WorkflowPageShell
       description="Project-scoped settings and policy controls."
@@ -132,6 +161,58 @@ export function ProjectSettingsPage() {
                 </p>
               </div>
             ))}
+            <div className="space-y-2 rounded-xl border border-panel-border/70 bg-muted/35 p-3">
+              <Label htmlFor="project-settings-access-principal-id">Principal ID</Label>
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                data-testid="project-settings-access-principal-id"
+                id="project-settings-access-principal-id"
+                onChange={(event) => setAccessPrincipalIdDraft(event.target.value)}
+                placeholder="user@example.com"
+                type="text"
+                value={accessPrincipalIdDraft}
+              />
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="space-y-1 text-xs">
+                  <span>Principal type</span>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                    data-testid="project-settings-access-principal-type"
+                    onChange={(event) =>
+                      setAccessPrincipalTypeDraft(event.target.value as 'user' | 'service' | 'system')
+                    }
+                    value={accessPrincipalTypeDraft}
+                  >
+                    <option value="user">user</option>
+                    <option value="service">service</option>
+                    <option value="system">system</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs">
+                  <span>Role</span>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                    data-testid="project-settings-access-role"
+                    onChange={(event) => setAccessRoleDraft(event.target.value as 'owner' | 'editor' | 'viewer')}
+                    value={accessRoleDraft}
+                  >
+                    <option value="owner">owner</option>
+                    <option value="editor">editor</option>
+                    <option value="viewer">viewer</option>
+                  </select>
+                </label>
+              </div>
+              <Button
+                data-testid="project-settings-access-grant-submit"
+                disabled={grantProjectAccessMutation.isMutating || accessPrincipalIdDraft.trim().length === 0}
+                onClick={() => void handleGrantProjectAccess()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {grantProjectAccessMutation.isMutating ? 'Granting...' : 'Grant access'}
+              </Button>
+            </div>
           </CardContent>
         </Card>
 

@@ -104,6 +104,31 @@ export function useProjectAccessListQuery(projectId: number | null) {
   );
 }
 
+export function useGrantProjectAccessMutation(projectId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  return useSWRMutation(
+    projectId !== null ? ['grant-project-access', projectId] : null,
+    async (
+      _,
+      {
+        arg,
+      }: {
+        arg: { principal_id: string; principal_type: 'user' | 'service' | 'system'; role: 'owner' | 'editor' | 'viewer' };
+      },
+    ) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before granting access.');
+      }
+      return nipeApiClient.grantProjectAccess(projectId, arg);
+    },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('grant_project_access', { projectId });
+      },
+    },
+  );
+}
+
 export function useProjectLLMSettingsQuery(projectId: number | null) {
   return useSWR(
     projectId !== null ? workspaceKeys.projectLLMSettings(projectId) : null,

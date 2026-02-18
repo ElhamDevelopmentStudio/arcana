@@ -7,14 +7,18 @@ import { ProjectSettingsPage } from '@/pages/projects/project-settings-page';
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useLLMProvidersQueryMock = vi.fn();
+const useGrantProjectAccessMutationMock = vi.fn();
 const useProjectAccessListQueryMock = vi.fn();
 const useProjectLLMSettingsQueryMock = vi.fn();
 const useUpdateLLMProviderStatusMutationMock = vi.fn();
 const useUpdateProjectLLMSettingsMutationMock = vi.fn();
+const grantProjectAccessTriggerMock = vi.fn();
 const updateLLMProviderStatusTriggerMock = vi.fn();
 const updateProjectLLMSettingsTriggerMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
+  useGrantProjectAccessMutation: (...args: Parameters<typeof useGrantProjectAccessMutationMock>) =>
+    useGrantProjectAccessMutationMock(...args),
   useLLMProvidersQuery: (...args: Parameters<typeof useLLMProvidersQueryMock>) =>
     useLLMProvidersQueryMock(...args),
   useProjectAccessListQuery: (...args: Parameters<typeof useProjectAccessListQueryMock>) =>
@@ -44,11 +48,13 @@ function renderProjectSettingsPage() {
 describe('project settings page', () => {
   beforeEach(() => {
     resetWorkspaceStore();
+    useGrantProjectAccessMutationMock.mockReset();
     useLLMProvidersQueryMock.mockReset();
     useProjectAccessListQueryMock.mockReset();
     useProjectLLMSettingsQueryMock.mockReset();
     useUpdateLLMProviderStatusMutationMock.mockReset();
     useUpdateProjectLLMSettingsMutationMock.mockReset();
+    grantProjectAccessTriggerMock.mockReset();
     updateLLMProviderStatusTriggerMock.mockReset();
     updateProjectLLMSettingsTriggerMock.mockReset();
 
@@ -92,6 +98,10 @@ describe('project settings page', () => {
     useUpdateLLMProviderStatusMutationMock.mockReturnValue({
       isMutating: false,
       trigger: updateLLMProviderStatusTriggerMock,
+    });
+    useGrantProjectAccessMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: grantProjectAccessTriggerMock,
     });
     useUpdateProjectLLMSettingsMutationMock.mockReturnValue({
       isMutating: false,
@@ -163,5 +173,30 @@ describe('project settings page', () => {
     expect(screen.getByTestId('project-settings-access-panel')).toBeInTheDocument();
     expect(screen.getByTestId('project-settings-access-grant-13')).toHaveTextContent('qa-owner');
     expect(screen.getByTestId('project-settings-access-grant-13')).toHaveTextContent('role: owner');
+  });
+
+  it('submits project access grant through save action', async () => {
+    const user = userEvent.setup();
+    grantProjectAccessTriggerMock.mockResolvedValue({
+      id: 14,
+      project_id: 77,
+      principal_type: 'service',
+      principal_id: 'queue-worker',
+      role: 'editor',
+      created_at: '2026-02-27T00:00:00Z',
+    });
+
+    renderProjectSettingsPage();
+
+    await user.type(screen.getByTestId('project-settings-access-principal-id'), 'queue-worker');
+    await user.selectOptions(screen.getByTestId('project-settings-access-principal-type'), 'service');
+    await user.selectOptions(screen.getByTestId('project-settings-access-role'), 'editor');
+    await user.click(screen.getByTestId('project-settings-access-grant-submit'));
+
+    expect(grantProjectAccessTriggerMock).toHaveBeenCalledWith({
+      principal_id: 'queue-worker',
+      principal_type: 'service',
+      role: 'editor',
+    });
   });
 });
