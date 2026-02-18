@@ -14,6 +14,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   useAppendChapterMutation,
+  useCreateProjectDraftMutation,
   useCreateProjectMutation,
   useIngestChapterDirectoryMutation,
   useIngestEpubMutation,
@@ -23,10 +24,12 @@ import {
 import { projectRoute } from '@/features/workflow/utils/project-route';
 
 type IngestionSource = 'txt' | 'directory' | 'markdown' | 'epub';
+type ProjectCreationMode = 'project' | 'draft';
 
 export function ProjectNewPage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState('Shadow Slave PoC');
+  const [projectCreationMode, setProjectCreationMode] = useState<ProjectCreationMode>('project');
   const [ingestionSource, setIngestionSource] = useState<IngestionSource>('txt');
   const [txtFile, setTxtFile] = useState<File | null>(null);
   const [directoryFiles, setDirectoryFiles] = useState<File[]>([]);
@@ -41,6 +44,7 @@ export function ProjectNewPage() {
   const setChapterCount = useWorkspaceStore((state) => state.setChapterCount);
 
   const createProjectMutation = useCreateProjectMutation();
+  const createProjectDraftMutation = useCreateProjectDraftMutation();
   const ingestTxtMutation = useIngestTxtMutation(projectId);
   const ingestDirectoryMutation = useIngestChapterDirectoryMutation(projectId);
   const ingestMarkdownMutation = useIngestMarkdownMutation(projectId);
@@ -49,6 +53,7 @@ export function ProjectNewPage() {
 
   const isBusy =
     createProjectMutation.isMutating ||
+    createProjectDraftMutation.isMutating ||
     ingestTxtMutation.isMutating ||
     ingestDirectoryMutation.isMutating ||
     ingestMarkdownMutation.isMutating ||
@@ -64,18 +69,28 @@ export function ProjectNewPage() {
     }
 
     try {
-      const project = await createProjectMutation.trigger({
+      const createProjectPayload = {
         title: title.trim(),
         do_not_store_source_text: doNotStoreSourceText,
-      });
+      };
+      const project =
+        projectCreationMode === 'draft'
+          ? await createProjectDraftMutation.trigger(createProjectPayload)
+          : await createProjectMutation.trigger(createProjectPayload);
       setProject({
         projectId: project.id,
         projectTitle: project.title,
         selectedMode: null,
       });
-      toast.success(`Project created: #${project.id}`);
+      toast.success(projectCreationMode === 'draft' ? `Draft project created: #${project.id}` : `Project created: #${project.id}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create project');
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : projectCreationMode === 'draft'
+            ? 'Failed to create draft project'
+            : 'Failed to create project',
+      );
     }
   }
 
@@ -193,10 +208,23 @@ export function ProjectNewPage() {
               <FileText className="size-4 text-primary" />
               Project Setup
             </CardTitle>
-            <CardDescription>Create a project to obtain a project ID.</CardDescription>
+            <CardDescription>Create either a standard project or a draft to obtain a project ID.</CardDescription>
           </CardHeader>
           <CardContent className="flex h-full flex-col">
             <form className="flex h-full flex-col gap-4" onSubmit={handleCreateProject}>
+              <div className="grid gap-2">
+                <Label htmlFor="project-creation-mode">Creation type</Label>
+                <NativeSelect
+                  id="project-creation-mode"
+                  data-testid="project-creation-mode-select"
+                  value={projectCreationMode}
+                  onChange={(event) => setProjectCreationMode(event.target.value as ProjectCreationMode)}
+                >
+                  <option value="project">Project (POST /api/projects)</option>
+                  <option value="draft">Draft (POST /api/projects/drafts)</option>
+                </NativeSelect>
+              </div>
+
               <div className="grid gap-2">
                 <Label htmlFor="project-title">Project title</Label>
                 <Input
@@ -223,14 +251,24 @@ export function ProjectNewPage() {
 
               <div className="mt-auto space-y-2">
                 <Button data-testid="create-project-button" disabled={isBusy} type="submit">
-                  {createProjectMutation.isMutating ? 'Creating...' : 'Create Project'}
+                  {createProjectMutation.isMutating || createProjectDraftMutation.isMutating
+                    ? 'Creating...'
+                    : projectCreationMode === 'draft'
+                      ? 'Create Draft'
+                      : 'Create Project'}
                 </Button>
                 {projectId !== null ? (
                   <p className="text-sm text-muted-foreground" data-testid="project-created-state">
                     Current project ID: <strong>{projectId}</strong>
                   </p>
                 ) : null}
-                <p className="text-sm text-muted-foreground">{projectId !== null ? 'Project created.' : 'Create a project to continue.'}</p>
+                <p className="text-sm text-muted-foreground">
+                  {projectId !== null
+                    ? projectCreationMode === 'draft'
+                      ? 'Draft project created.'
+                      : 'Project created.'
+                    : 'Create a project to continue.'}
+                </p>
               </div>
             </form>
           </CardContent>

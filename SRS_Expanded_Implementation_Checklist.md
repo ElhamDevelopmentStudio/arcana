@@ -601,7 +601,7 @@ Definition of done for each task:
 - [x] [PW-034] Add Playwright real-backend E2E: locked domain route shows guard before setup and unlocks after completion.
 
 ### 13.3 Project Management and Lifecycle
-- [ ] [FE-110] Build `/projects/new` draft creation flow using `POST /api/projects` and `POST /api/projects/drafts`.
+- [x] [FE-110] Build `/projects/new` draft creation flow using `POST /api/projects` and `POST /api/projects/drafts`.
 - [ ] [FE-111] Build `/projects/{project_id}` detail page using `GET /api/projects/{project_id}`.
 - [ ] [FE-112] Build metadata editing flow using `PATCH /api/projects/{project_id}/metadata`.
 - [ ] [FE-113] Build action-gated command panel using `GET /api/projects/{project_id}/actions`.

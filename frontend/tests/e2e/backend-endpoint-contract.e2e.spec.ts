@@ -1607,6 +1607,39 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByRole('button', { name: /Download JSON/i })).toBeEnabled();
   });
 
+  test('projects/new draft creation mode calls draft endpoint and persists workspace project id', async ({ page }) => {
+    await page.goto('/projects/new');
+    const title = uniqueTitle('e2e-ui-draft-mode');
+
+    const draftCreateRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' && networkRequest.url().endsWith('/api/projects/drafts'),
+    );
+    const draftCreateResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' && networkResponse.url().endsWith('/api/projects/drafts'),
+    );
+
+    await page.getByTestId('project-creation-mode-select').selectOption('draft');
+    await page.getByTestId('project-title-input').fill(title);
+    await page.getByTestId('create-project-button').click();
+
+    const draftCreateRequest = await draftCreateRequestPromise;
+    const draftCreateRequestBody = draftCreateRequest.postDataJSON() as {
+      title: string;
+      do_not_store_source_text: boolean;
+    };
+    expect(draftCreateRequestBody.title).toBe(title);
+    expect(draftCreateRequestBody.do_not_store_source_text).toBe(false);
+
+    const draftCreateResponse = await draftCreateResponsePromise;
+    expect(draftCreateResponse.status()).toBe(201);
+
+    await expect(page.getByTestId('project-created-state')).toContainText('Current project ID:');
+    const workspaceState = await readWorkspaceState(page);
+    expect(workspaceState?.projectId).toBeGreaterThan(0);
+  });
+
   test('create draft stays setup-gated until completion, then allows overview access', async ({ page, request }) => {
     const title = uniqueTitle('e2e-draft-setup-gate');
     const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
