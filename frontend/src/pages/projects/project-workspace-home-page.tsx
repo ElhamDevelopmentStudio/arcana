@@ -1,9 +1,15 @@
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { ApiPanelError, ApiPanelLoading } from '@/components/ui/api-panel-state';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useProjectDetailQuery } from '@/features/workflow/api/workflow-hooks';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { useProjectDetailQuery, useUpdateProjectMetadataMutation } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
 export function ProjectWorkspaceHomePage() {
@@ -12,9 +18,22 @@ export function ProjectWorkspaceHomePage() {
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const projectId = routeProjectId ?? storeProjectId;
   const projectDetailQuery = useProjectDetailQuery(projectId);
+  const updateProjectMetadataMutation = useUpdateProjectMetadataMutation(projectId);
+  const [metadataTitle, setMetadataTitle] = useState('');
+  const [metadataDescription, setMetadataDescription] = useState('');
+  const [metadataTagsInput, setMetadataTagsInput] = useState('');
 
   const projectDetailErrorMessage =
     projectDetailQuery.error instanceof Error ? projectDetailQuery.error.message : 'Unable to load project detail.';
+
+  useEffect(() => {
+    if (!projectDetailQuery.data) {
+      return;
+    }
+    setMetadataTitle(projectDetailQuery.data.title ?? '');
+    setMetadataDescription(projectDetailQuery.data.description ?? '');
+    setMetadataTagsInput((projectDetailQuery.data.tags ?? []).join(', '));
+  }, [projectDetailQuery.data]);
 
   if (projectId === null) {
     return (
@@ -50,6 +69,38 @@ export function ProjectWorkspaceHomePage() {
     );
   }
 
+  async function handleMetadataSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+
+    const normalizedTitle = metadataTitle.trim();
+    const normalizedDescription = metadataDescription.trim();
+    const normalizedTags = metadataTagsInput
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+
+    if (!normalizedTitle) {
+      toast.error('Project title is required.');
+      return;
+    }
+
+    try {
+      await updateProjectMetadataMutation.trigger({
+        title: normalizedTitle,
+        description: normalizedDescription.length > 0 ? normalizedDescription : null,
+        tags: normalizedTags,
+      });
+      toast.success('Project metadata updated.');
+      await projectDetailQuery.mutate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update metadata.');
+    }
+  }
+
   return (
     <Card data-testid="project-workspace-home-ready">
       <CardHeader>
@@ -65,6 +116,42 @@ export function ProjectWorkspaceHomePage() {
           Next action: {projectDetailQuery.data?.next_required_action ?? 'none'}
         </p>
         <p data-testid="project-workspace-home-mode">Mode: {projectDetailQuery.data?.selected_mode ?? 'n/a'}</p>
+        <form className="mt-4 space-y-3 rounded-lg border border-panel-border/70 p-3" data-testid="project-metadata-form" onSubmit={handleMetadataSubmit}>
+          <p className="text-xs font-semibold tracking-wide text-foreground">Project metadata</p>
+          <div className="grid gap-2">
+            <Label htmlFor="project-metadata-title">Title</Label>
+            <Input
+              id="project-metadata-title"
+              data-testid="project-metadata-title-input"
+              onChange={(event) => setMetadataTitle(event.target.value)}
+              value={metadataTitle}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="project-metadata-description">Description</Label>
+            <Textarea
+              id="project-metadata-description"
+              data-testid="project-metadata-description-input"
+              onChange={(event) => setMetadataDescription(event.target.value)}
+              value={metadataDescription}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="project-metadata-tags">Tags (comma-separated)</Label>
+            <Input
+              id="project-metadata-tags"
+              data-testid="project-metadata-tags-input"
+              onChange={(event) => setMetadataTagsInput(event.target.value)}
+              placeholder="arc, research"
+              value={metadataTagsInput}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button data-testid="project-metadata-save-button" disabled={updateProjectMetadataMutation.isMutating} type="submit">
+              {updateProjectMetadataMutation.isMutating ? 'Saving...' : 'Save metadata'}
+            </Button>
+          </div>
+        </form>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-foreground hover:bg-background/75"

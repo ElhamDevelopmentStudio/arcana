@@ -1681,6 +1681,81 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('project-workspace-home-id')).toContainText(`Project ID: ${projectId}`);
   });
 
+  test('projects/:project_id metadata form updates project metadata through patch endpoint', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-workspace-home-metadata');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-workspace-home-ready')).toBeVisible();
+
+    const nextTitle = `${title}-updated`;
+    const nextDescription = 'Updated project metadata description from workspace home.';
+    const nextTagsInput = 'Arc, Research, arc';
+
+    const metadataPatchRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PATCH' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/metadata`),
+    );
+    const metadataPatchResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PATCH' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/metadata`),
+    );
+
+    await page.getByTestId('project-metadata-title-input').fill(nextTitle);
+    await page.getByTestId('project-metadata-description-input').fill(nextDescription);
+    await page.getByTestId('project-metadata-tags-input').fill(nextTagsInput);
+    await page.getByTestId('project-metadata-save-button').click();
+
+    const metadataPatchRequest = await metadataPatchRequestPromise;
+    const metadataPatchBody = metadataPatchRequest.postDataJSON() as {
+      title?: string;
+      description?: string | null;
+      tags?: string[];
+    };
+    expect(metadataPatchBody.title).toBe(nextTitle);
+    expect(metadataPatchBody.description).toBe(nextDescription);
+    expect(metadataPatchBody.tags).toEqual(['Arc', 'Research', 'arc']);
+
+    const metadataPatchResponse = await metadataPatchResponsePromise;
+    expect(metadataPatchResponse.status()).toBe(200);
+
+    const projectDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}`);
+    expect(projectDetailResponse.status()).toBe(200);
+    const projectDetailPayload = (await projectDetailResponse.json()) as ProjectDetailResponse;
+    expect(projectDetailPayload.title).toBe(nextTitle);
+    expect(projectDetailPayload.description).toBe(nextDescription);
+    expect(projectDetailPayload.tags).toEqual(['Arc', 'Research']);
+  });
+
   test('create draft stays setup-gated until completion, then allows overview access', async ({ page, request }) => {
     const title = uniqueTitle('e2e-draft-setup-gate');
     const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
