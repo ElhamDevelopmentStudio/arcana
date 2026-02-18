@@ -10,7 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { useModeCatalogQuery, useRunDetailQuery, useSwitchModeMutation } from '@/features/workflow/api/workflow-hooks';
+import {
+  useModeCatalogQuery,
+  useProjectSetupStatusQuery,
+  useRunDetailQuery,
+  useSwitchModeMutation,
+} from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 
 export function ProjectModePage() {
@@ -24,7 +29,10 @@ export function ProjectModePage() {
   const setSelectedMode = useWorkspaceStore((state) => state.setSelectedMode);
 
   const projectId = routeProjectId ?? storeProjectId;
-  const canSelectMode = projectId !== null && chapterCount !== null;
+  const setupStatusQuery = useProjectSetupStatusQuery(projectId);
+  const setupSteps = setupStatusQuery.data?.steps ?? [];
+  const ingestionStepReady = setupSteps.some((step) => step.step_id === 'ingestion' && step.ready);
+  const canSelectMode = projectId !== null && (chapterCount !== null || ingestionStepReady);
   const hasExplicitModeSelection = selectedMode !== null;
   const modeCatalogQuery = useModeCatalogQuery(projectId !== null);
   const runDetailQuery = useRunDetailQuery(projectId, runId);
@@ -106,7 +114,7 @@ export function ProjectModePage() {
           <div className="grid gap-1 text-sm text-muted-foreground">
             <p>Mode selector: {canSelectMode ? 'unlocked' : 'locked until ingestion is complete'}.</p>
             <p>Current selection: {hasExplicitModeSelection ? selectedMode : 'not selected'}.</p>
-            <p>Detected chapters: {chapterCount ?? 'n/a'}.</p>
+            <p>Detected chapters: {chapterCount ?? (ingestionStepReady ? 'ingested (count pending refresh)' : 'n/a')}.</p>
             <p>Last run mode snapshot: {typeof runModeSnapshot === 'string' ? runModeSnapshot : 'none'}.</p>
           </div>
 

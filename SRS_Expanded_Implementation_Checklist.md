@@ -609,19 +609,19 @@ Definition of done for each task:
 - [x] [FE-115] Build archive flow using `POST /api/projects/{project_id}/archive`.
 - [x] [FE-116] Build restore flow using `POST /api/projects/{project_id}/restore`.
 - [x] [FE-117] Add lifecycle transition confirmations/conflict handling for archive and restore.
-- [ ] [FE-118] Add post-mutation project detail refresh and optimistic rollback behavior.
-- [ ] [FE-119] Add next-required-action navigation from project detail to workflow routes.
+- [x] [FE-118] Add post-mutation project detail refresh and optimistic rollback behavior.
+- [x] [FE-119] Add next-required-action navigation from project detail to workflow routes.
 
 ### 13.4 Ingestion and Mode Setup
-- [ ] [FE-120] Build first-source attach flow with `POST /api/projects/{project_id}/ingest/source`.
-- [ ] [FE-121] Build TXT ingestion flow with `POST /api/projects/{project_id}/ingest/txt`.
-- [ ] [FE-122] Build Markdown ingestion flow with `POST /api/projects/{project_id}/ingest/markdown`.
-- [ ] [FE-123] Build EPUB ingestion flow with `POST /api/projects/{project_id}/ingest/epub`.
-- [ ] [FE-124] Build chapter-directory ingestion flow with `POST /api/projects/{project_id}/ingest/chapters-dir`.
-- [ ] [FE-125] Build append-chapter flow with `POST /api/projects/{project_id}/ingest/append-chapter`.
-- [ ] [FE-126] Add ingestion failure/retry UX for unsupported files, overlap conflicts, and validation errors.
-- [ ] [FE-127] Render ingestion warnings and normalization summaries from ingestion responses.
-- [ ] [FE-128] Build mode selection route `/projects/{project_id}/mode` using `GET /api/modes` and `PUT /api/projects/{project_id}/mode`.
+- [x] [FE-120] Build first-source attach flow with `POST /api/projects/{project_id}/ingest/source`.
+- [x] [FE-121] Build TXT ingestion flow with `POST /api/projects/{project_id}/ingest/txt`.
+- [x] [FE-122] Build Markdown ingestion flow with `POST /api/projects/{project_id}/ingest/markdown`.
+- [x] [FE-123] Build EPUB ingestion flow with `POST /api/projects/{project_id}/ingest/epub`.
+- [x] [FE-124] Build chapter-directory ingestion flow with `POST /api/projects/{project_id}/ingest/chapters-dir`.
+- [x] [FE-125] Build append-chapter flow with `POST /api/projects/{project_id}/ingest/append-chapter`.
+- [x] [FE-126] Add ingestion failure/retry UX for unsupported files, overlap conflicts, and validation errors.
+- [x] [FE-127] Render ingestion warnings and normalization summaries from ingestion responses.
+- [x] [FE-128] Build mode selection route `/projects/{project_id}/mode` using `GET /api/modes` and `PUT /api/projects/{project_id}/mode`.
 - [ ] [FE-129] Add explicit downstream stale-artifact confirmation UX on mode switch.
 
 ### 13.5 LLM, Providers, and Access Controls

@@ -70,6 +70,11 @@ function isSetupPath(pathname: string, projectId: number) {
   return pathname === setupPath || pathname.startsWith(`${setupPath}/`);
 }
 
+function isModePath(pathname: string, projectId: number) {
+  const modePath = `/projects/${projectId}/mode`;
+  return pathname === modePath || pathname.startsWith(`${modePath}/`);
+}
+
 function resolveStepReady(stepId: string, steps: Array<{ step_id: string; ready: boolean }> | undefined): boolean {
   if (!steps || steps.length === 0) {
     return false;
@@ -207,7 +212,11 @@ export function ProjectWorkspaceShell() {
     if (projectId === null || setupStatusQuery.error || setupStatusQuery.isLoading || setupStatusQuery.data === undefined) {
       return;
     }
-    if (setupStatusQuery.data.is_complete || isSetupPath(location.pathname, projectId)) {
+    if (
+      setupStatusQuery.data.is_complete ||
+      isSetupPath(location.pathname, projectId) ||
+      isModePath(location.pathname, projectId)
+    ) {
       return;
     }
     navigate(toProjectSetupPath(projectId), { replace: true });
