@@ -223,6 +223,8 @@ export const projectModeSwitchRequestSchema = z.object({
 export const ingestResponseSchema = z.object({
   project_id: z.number().int(),
   chapter_count: z.number().int().nonnegative(),
+  warnings: z.array(z.record(z.string(), z.unknown())).default([]),
+  normalization_report: z.record(z.string(), z.unknown()).default({}),
 });
 
 export const singleFileUploadRequestSchema = z.object({
@@ -456,6 +458,7 @@ export const runResponseSchema = z.object({
 });
 
 const llmCacheMetricsSchema = z.record(
+  z.string(),
   z.object({
     hits: z.number().int().nonnegative(),
     misses: z.number().int().nonnegative(),

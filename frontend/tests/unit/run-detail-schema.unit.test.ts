@@ -3,6 +3,42 @@ import { describe, expect, it } from 'vitest';
 import { runDetailSchema } from '@/app/schemas/api';
 
 describe('runDetailSchema', () => {
+  it('accepts non-empty llm_cache_metrics task records', () => {
+    const parsed = runDetailSchema.parse({
+      run_id: 956,
+      project_id: 691,
+      status: 'completed',
+      config: {
+        mode: 'audiobook',
+        max_segment_chars: 120,
+      },
+      started_at: '2026-02-27T19:41:05Z',
+      finished_at: '2026-02-27T19:41:07Z',
+      segment_count: 53,
+      llm_cache_metrics: {
+        sentiment_probe: {
+          hits: 0,
+          misses: 1,
+        },
+      },
+      llm_calls: [
+        {
+          id: 44,
+          provider: 'openrouter',
+          task_type: 'sentiment_probe',
+          success: true,
+          request_count: 1,
+          is_cache_hit: false,
+          detail: null,
+          created_at: '2026-02-27T19:41:07Z',
+        },
+      ],
+    });
+
+    expect(parsed.llm_cache_metrics.sentiment_probe.hits).toBe(0);
+    expect(parsed.llm_cache_metrics.sentiment_probe.misses).toBe(1);
+  });
+
   it('accepts config payloads that include mode_profile_snapshot', () => {
     const parsed = runDetailSchema.parse({
       run_id: 17,
