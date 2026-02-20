@@ -993,6 +993,33 @@ export function ProjectCharactersPage() {
             <CardDescription>Add, adjust, and remove rows and persist them immediately to this project.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div
+              className="space-y-2 rounded-md border border-panel-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+              data-testid="character-gender-comparison-panel"
+            >
+              <p className="font-medium text-foreground">Gender comparison review</p>
+              <p data-testid="character-gender-comparison-count">
+                {characterGenderComparisonQuery.data?.comparison_count ?? 0} comparison row(s)
+              </p>
+              {(characterGenderComparisonQuery.data?.comparisons ?? []).length === 0 ? (
+                <p data-testid="character-gender-comparison-empty">No comparison rows available.</p>
+              ) : (
+                <ul className="space-y-1" data-testid="character-gender-comparison-list">
+                  {(characterGenderComparisonQuery.data?.comparisons ?? []).slice(0, 6).map((comparison, index) => (
+                    <li
+                      className="rounded border border-panel-border/60 bg-background px-2 py-1"
+                      data-testid={`character-gender-comparison-row-${index}`}
+                      key={`${comparison.name}-${comparison.manual_gender}-${comparison.inferred_gender}-${index}`}
+                    >
+                      <span className="font-medium text-foreground">{comparison.name}</span> · manual=
+                      {normalizeGender(comparison.manual_gender)} · inferred={normalizeGender(comparison.inferred_gender)}
+                      {comparison.is_contradiction ? ' · contradiction' : ''}
+                      {comparison.requires_review ? ' · review required' : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             {genderContradictionRows.length === 0 ? null : (
               <p
                 data-testid="character-gender-contradiction-state"
