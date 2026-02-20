@@ -27,11 +27,13 @@ import {
   useCharacterGenderComparisonQuery,
   useCharacterAliasCollisionsQuery,
   useArtifactPronunciationDictionaryQuery,
+  useInventedPronunciationDictionaryQuery,
   useScrapeCharactersMutation,
   useMergeCharactersMutation,
   useInferCharacterGendersMutation,
   useLookupCharacterAliasMutation,
   useSaveArtifactPronunciationDictionaryMutation,
+  useSaveInventedPronunciationDictionaryMutation,
   useImportCharactersMutation,
   useSaveCharacterMapMutation,
   useFinalizeCharacterMapMutation,
@@ -178,6 +180,8 @@ export function ProjectCharactersPage() {
   const [aliasLookupResult, setAliasLookupResult] = useState<CharacterAliasLookupResponseDto | null>(null);
   const [artifactDictionaryDraft, setArtifactDictionaryDraft] = useState<string>('');
   const [artifactDictionarySavedCount, setArtifactDictionarySavedCount] = useState<number | null>(null);
+  const [inventedDictionaryDraft, setInventedDictionaryDraft] = useState<string>('');
+  const [inventedDictionarySavedCount, setInventedDictionarySavedCount] = useState<number | null>(null);
   const [pronunciationPreviewText, setPronunciationPreviewText] = useState<string>('');
   const [includeGlobalPronunciationScope, setIncludeGlobalPronunciationScope] = useState<boolean>(true);
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
@@ -196,6 +200,7 @@ export function ProjectCharactersPage() {
   const characterGenderComparisonQuery = useCharacterGenderComparisonQuery(projectId);
   const characterAliasCollisionsQuery = useCharacterAliasCollisionsQuery(projectId);
   const artifactPronunciationDictionaryQuery = useArtifactPronunciationDictionaryQuery(projectId);
+  const inventedPronunciationDictionaryQuery = useInventedPronunciationDictionaryQuery(projectId);
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
   const genderComparisonRows = useMemo(() => {
     const mapped: Record<string, string> = {};
@@ -275,6 +280,7 @@ export function ProjectCharactersPage() {
   const inferCharacterGendersMutation = useInferCharacterGendersMutation(projectId);
   const lookupCharacterAliasMutation = useLookupCharacterAliasMutation(projectId);
   const saveArtifactPronunciationDictionaryMutation = useSaveArtifactPronunciationDictionaryMutation(projectId);
+  const saveInventedPronunciationDictionaryMutation = useSaveInventedPronunciationDictionaryMutation(projectId);
   const finalizeCharactersMutation = useFinalizeCharacterMapMutation(projectId);
   const pronunciationPreviewMutation = usePronunciationPreviewMutation(projectId);
   const isCharacterMapFinalized = characterMapQuery.data?.character_map_finalized ?? false;
@@ -304,6 +310,18 @@ export function ProjectCharactersPage() {
     );
     setArtifactDictionarySavedCount(artifactPronunciationDictionaryQuery.data.entries.length);
   }, [artifactPronunciationDictionaryQuery.data]);
+
+  useEffect(() => {
+    if (!inventedPronunciationDictionaryQuery.data) {
+      return;
+    }
+    setInventedDictionaryDraft(
+      inventedPronunciationDictionaryQuery.data.entries
+        .map((entry) => `${entry.term}|${entry.verbalized_form}`)
+        .join('\n'),
+    );
+    setInventedDictionarySavedCount(inventedPronunciationDictionaryQuery.data.entries.length);
+  }, [inventedPronunciationDictionaryQuery.data]);
 
   async function handleImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -618,6 +636,40 @@ export function ProjectCharactersPage() {
       toast.success(`Saved ${response.entries.length} artifact pronunciation entries.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Artifact pronunciation dictionary save failed.');
+    }
+  }
+
+  async function handleSaveInventedPronunciationDictionary(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+
+    try {
+      const lines = inventedDictionaryDraft
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      const entries = lines.map((line) => {
+        const [term, verbalized] = line.split('|').map((value) => value.trim());
+        if (!term || !verbalized) {
+          throw new Error('Each invented entry must follow: term|verbalized_form');
+        }
+        return {
+          term,
+          verbalized_form: verbalized,
+          source: 'user',
+          confidence: 1.0,
+        };
+      });
+      const response = await saveInventedPronunciationDictionaryMutation.trigger({ entries });
+      setInventedDictionaryDraft(response.entries.map((entry) => `${entry.term}|${entry.verbalized_form}`).join('\n'));
+      setInventedDictionarySavedCount(response.entries.length);
+      toast.success(`Saved ${response.entries.length} invented pronunciation entries.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Invented pronunciation dictionary save failed.');
     }
   }
 
@@ -1287,6 +1339,44 @@ export function ProjectCharactersPage() {
                   variant="outline"
                 >
                   {saveArtifactPronunciationDictionaryMutation.isMutating ? 'Saving...' : 'Save artifact scope'}
+                </Button>
+              </div>
+            </form>
+            <form
+              className="space-y-2 rounded-md border border-panel-border/70 bg-muted/30 px-3 py-3"
+              data-testid="pronunciation-invented-panel"
+              onSubmit={handleSaveInventedPronunciationDictionary}
+            >
+              <p className="text-sm font-medium text-foreground">Invented-word pronunciation dictionary scope</p>
+              {inventedPronunciationDictionaryQuery.isLoading ? (
+                <p className="text-xs text-muted-foreground" data-testid="pronunciation-invented-loading">
+                  Loading invented scope entries...
+                </p>
+              ) : null}
+              {inventedPronunciationDictionaryQuery.error ? (
+                <p className="text-xs text-destructive" data-testid="pronunciation-invented-error">
+                  {inventedPronunciationDictionaryQuery.error.message}
+                </p>
+              ) : null}
+              <Textarea
+                data-testid="pronunciation-invented-textarea"
+                onChange={(event) => setInventedDictionaryDraft(event.target.value)}
+                placeholder="One entry per line: term|verbalized_form"
+                rows={4}
+                value={inventedDictionaryDraft}
+              />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground" data-testid="pronunciation-invented-state">
+                  {inventedDictionarySavedCount === null ? 'No invented entries saved yet.' : `Saved entries: ${inventedDictionarySavedCount}`}
+                </p>
+                <Button
+                  data-testid="pronunciation-invented-save-button"
+                  disabled={saveInventedPronunciationDictionaryMutation.isMutating || projectId === null}
+                  size="sm"
+                  type="submit"
+                  variant="outline"
+                >
+                  {saveInventedPronunciationDictionaryMutation.isMutating ? 'Saving...' : 'Save invented scope'}
                 </Button>
               </div>
             </form>

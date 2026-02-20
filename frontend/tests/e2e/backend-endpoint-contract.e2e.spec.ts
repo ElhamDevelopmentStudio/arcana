@@ -2567,6 +2567,88 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('pronunciation-artifacts-state')).toContainText('Saved entries: 1');
   });
 
+  test('projects/:project_id/characters route reads and updates invented pronunciation scope through backend endpoints', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-pronunciation-invented-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const inventedGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/invented`),
+    );
+    const inventedGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/invented`),
+    );
+
+    await page.goto(`/projects/${projectId}/characters`);
+    await inventedGetRequestPromise;
+    const inventedGetResponse = await inventedGetResponsePromise;
+    expect(inventedGetResponse.status()).toBe(200);
+    await expect(page.getByTestId('pronunciation-invented-panel')).toBeVisible();
+
+    const inventedPutRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/invented`),
+    );
+    const inventedPutResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/invented`),
+    );
+
+    await page.getByTestId('pronunciation-invented-textarea').fill('Aethercore|EE-ther-core');
+    await page.getByTestId('pronunciation-invented-save-button').click();
+
+    const inventedPutRequest = await inventedPutRequestPromise;
+    const inventedPutPayload = inventedPutRequest.postDataJSON() as {
+      entries: Array<{ term: string; verbalized_form: string; source: string; confidence: number }>;
+    };
+    expect(inventedPutPayload.entries).toEqual([
+      {
+        term: 'Aethercore',
+        verbalized_form: 'EE-ther-core',
+        source: 'user',
+        confidence: 1,
+      },
+    ]);
+
+    const inventedPutResponse = await inventedPutResponsePromise;
+    expect(inventedPutResponse.status()).toBe(200);
+    await expect(page.getByTestId('pronunciation-invented-state')).toContainText('Saved entries: 1');
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,
