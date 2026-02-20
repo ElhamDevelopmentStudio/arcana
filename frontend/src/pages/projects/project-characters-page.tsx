@@ -26,10 +26,12 @@ import {
   useCharacterMapQuery,
   useCharacterGenderComparisonQuery,
   useCharacterAliasCollisionsQuery,
+  useArtifactPronunciationDictionaryQuery,
   useScrapeCharactersMutation,
   useMergeCharactersMutation,
   useInferCharacterGendersMutation,
   useLookupCharacterAliasMutation,
+  useSaveArtifactPronunciationDictionaryMutation,
   useImportCharactersMutation,
   useSaveCharacterMapMutation,
   useFinalizeCharacterMapMutation,
@@ -174,6 +176,8 @@ export function ProjectCharactersPage() {
   const [mergeScrapeAcknowledged, setMergeScrapeAcknowledged] = useState<boolean>(false);
   const [aliasLookupInput, setAliasLookupInput] = useState<string>('');
   const [aliasLookupResult, setAliasLookupResult] = useState<CharacterAliasLookupResponseDto | null>(null);
+  const [artifactDictionaryDraft, setArtifactDictionaryDraft] = useState<string>('');
+  const [artifactDictionarySavedCount, setArtifactDictionarySavedCount] = useState<number | null>(null);
   const [pronunciationPreviewText, setPronunciationPreviewText] = useState<string>('');
   const [includeGlobalPronunciationScope, setIncludeGlobalPronunciationScope] = useState<boolean>(true);
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
@@ -191,6 +195,7 @@ export function ProjectCharactersPage() {
   const characterMapQuery = useCharacterMapQuery(projectId);
   const characterGenderComparisonQuery = useCharacterGenderComparisonQuery(projectId);
   const characterAliasCollisionsQuery = useCharacterAliasCollisionsQuery(projectId);
+  const artifactPronunciationDictionaryQuery = useArtifactPronunciationDictionaryQuery(projectId);
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
   const genderComparisonRows = useMemo(() => {
     const mapped: Record<string, string> = {};
@@ -269,6 +274,7 @@ export function ProjectCharactersPage() {
   const mergeCharactersMutation = useMergeCharactersMutation(projectId);
   const inferCharacterGendersMutation = useInferCharacterGendersMutation(projectId);
   const lookupCharacterAliasMutation = useLookupCharacterAliasMutation(projectId);
+  const saveArtifactPronunciationDictionaryMutation = useSaveArtifactPronunciationDictionaryMutation(projectId);
   const finalizeCharactersMutation = useFinalizeCharacterMapMutation(projectId);
   const pronunciationPreviewMutation = usePronunciationPreviewMutation(projectId);
   const isCharacterMapFinalized = characterMapQuery.data?.character_map_finalized ?? false;
@@ -286,6 +292,18 @@ export function ProjectCharactersPage() {
       setLastSavedCount(characterMapQuery.data.characters.length);
     }
   }, [characterMapQuery.data, lastSavedCount]);
+
+  useEffect(() => {
+    if (!artifactPronunciationDictionaryQuery.data) {
+      return;
+    }
+    setArtifactDictionaryDraft(
+      artifactPronunciationDictionaryQuery.data.entries
+        .map((entry) => `${entry.term}|${entry.verbalized_form}`)
+        .join('\n'),
+    );
+    setArtifactDictionarySavedCount(artifactPronunciationDictionaryQuery.data.entries.length);
+  }, [artifactPronunciationDictionaryQuery.data]);
 
   async function handleImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -566,6 +584,40 @@ export function ProjectCharactersPage() {
       toast.success('Alias lookup complete.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Alias lookup failed.');
+    }
+  }
+
+  async function handleSaveArtifactPronunciationDictionary(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+
+    try {
+      const lines = artifactDictionaryDraft
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      const entries = lines.map((line) => {
+        const [term, verbalized] = line.split('|').map((value) => value.trim());
+        if (!term || !verbalized) {
+          throw new Error('Each artifact entry must follow: term|verbalized_form');
+        }
+        return {
+          term,
+          verbalized_form: verbalized,
+          source: 'user',
+          confidence: 1.0,
+        };
+      });
+      const response = await saveArtifactPronunciationDictionaryMutation.trigger({ entries });
+      setArtifactDictionaryDraft(response.entries.map((entry) => `${entry.term}|${entry.verbalized_form}`).join('\n'));
+      setArtifactDictionarySavedCount(response.entries.length);
+      toast.success(`Saved ${response.entries.length} artifact pronunciation entries.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Artifact pronunciation dictionary save failed.');
     }
   }
 
@@ -1200,6 +1252,44 @@ export function ProjectCharactersPage() {
             <CardDescription>Check dictionary substitutions before running the pipeline.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <form
+              className="space-y-2 rounded-md border border-panel-border/70 bg-muted/30 px-3 py-3"
+              data-testid="pronunciation-artifacts-panel"
+              onSubmit={handleSaveArtifactPronunciationDictionary}
+            >
+              <p className="text-sm font-medium text-foreground">Artifact pronunciation dictionary scope</p>
+              {artifactPronunciationDictionaryQuery.isLoading ? (
+                <p className="text-xs text-muted-foreground" data-testid="pronunciation-artifacts-loading">
+                  Loading artifact scope entries...
+                </p>
+              ) : null}
+              {artifactPronunciationDictionaryQuery.error ? (
+                <p className="text-xs text-destructive" data-testid="pronunciation-artifacts-error">
+                  {artifactPronunciationDictionaryQuery.error.message}
+                </p>
+              ) : null}
+              <Textarea
+                data-testid="pronunciation-artifacts-textarea"
+                onChange={(event) => setArtifactDictionaryDraft(event.target.value)}
+                placeholder="One entry per line: term|verbalized_form"
+                rows={4}
+                value={artifactDictionaryDraft}
+              />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground" data-testid="pronunciation-artifacts-state">
+                  {artifactDictionarySavedCount === null ? 'No artifact entries saved yet.' : `Saved entries: ${artifactDictionarySavedCount}`}
+                </p>
+                <Button
+                  data-testid="pronunciation-artifacts-save-button"
+                  disabled={saveArtifactPronunciationDictionaryMutation.isMutating || projectId === null}
+                  size="sm"
+                  type="submit"
+                  variant="outline"
+                >
+                  {saveArtifactPronunciationDictionaryMutation.isMutating ? 'Saving...' : 'Save artifact scope'}
+                </Button>
+              </div>
+            </form>
             <form className="grid gap-3" onSubmit={handlePronunciationPreview}>
               <div className="grid gap-2">
                 <Label htmlFor="pronunciation-preview-text">Sample text</Label>

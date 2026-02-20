@@ -14,6 +14,8 @@ import {
   characterAliasLookupRequestSchema,
   characterAliasLookupResponseSchema,
   characterAliasCollisionResponseSchema,
+  pronunciationDictionaryUpdateRequestSchema,
+  pronunciationDictionaryResponseSchema,
   characterScrapeRequestSchema,
   pronunciationDictionaryPreviewRequestSchema,
   pronunciationDictionaryPreviewResponseSchema,
@@ -96,6 +98,8 @@ import {
   type CharacterAliasLookupRequestDto,
   type CharacterAliasLookupResponseDto,
   type CharacterAliasCollisionResponseDto,
+  type PronunciationDictionaryUpdateRequestDto,
+  type PronunciationDictionaryResponseDto,
   type CharacterAnalyticsResponseDto,
   type CharacterCooccurrenceGraphResponseDto,
   type CharacterExtractionDto,
@@ -563,6 +567,31 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/characters/alias-collisions`);
       return characterAliasCollisionResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getArtifactPronunciationDictionary(projectId: number): Promise<PronunciationDictionaryResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/pronunciation-dictionary/artifacts`);
+      return pronunciationDictionaryResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async updateArtifactPronunciationDictionary(
+    projectId: number,
+    payload: PronunciationDictionaryUpdateRequestDto,
+  ): Promise<PronunciationDictionaryResponseDto> {
+    try {
+      const parsedPayload = pronunciationDictionaryUpdateRequestSchema.parse(payload);
+      const response = await this.client.put(
+        `/api/projects/${projectId}/pronunciation-dictionary/artifacts`,
+        parsedPayload,
+      );
+      return pronunciationDictionaryResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
