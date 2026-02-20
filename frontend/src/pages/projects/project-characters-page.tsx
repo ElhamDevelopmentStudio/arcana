@@ -26,6 +26,7 @@ import {
   useCharacterGenderComparisonQuery,
   useScrapeCharactersMutation,
   useMergeCharactersMutation,
+  useInferCharacterGendersMutation,
   useImportCharactersMutation,
   useSaveCharacterMapMutation,
   useFinalizeCharacterMapMutation,
@@ -260,6 +261,7 @@ export function ProjectCharactersPage() {
   const autoExtractCharactersMutation = useAutoExtractCharactersMutation(projectId);
   const scrapeCharactersMutation = useScrapeCharactersMutation(projectId);
   const mergeCharactersMutation = useMergeCharactersMutation(projectId);
+  const inferCharacterGendersMutation = useInferCharacterGendersMutation(projectId);
   const finalizeCharactersMutation = useFinalizeCharacterMapMutation(projectId);
   const pronunciationPreviewMutation = usePronunciationPreviewMutation(projectId);
   const isCharacterMapFinalized = characterMapQuery.data?.character_map_finalized ?? false;
@@ -520,6 +522,23 @@ export function ProjectCharactersPage() {
     }
   }
 
+  async function handleInferCharacterGenders() {
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+
+    try {
+      const inferredMap = await inferCharacterGendersMutation.trigger();
+      setManualRows(toManualRows(inferredMap));
+      setLastSavedCount(inferredMap.characters.length);
+      await characterGenderComparisonQuery.mutate();
+      toast.success('Character genders inferred.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to infer character genders.');
+    }
+  }
+
   async function handlePronunciationPreview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -577,6 +596,15 @@ export function ProjectCharactersPage() {
       action={
         projectId !== null ? (
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={inferCharacterGendersMutation.isMutating || projectId === null}
+              onClick={handleInferCharacterGenders}
+              type="button"
+            >
+              {inferCharacterGendersMutation.isMutating ? 'Inferring genders...' : 'Infer Character Genders'}
+            </Button>
             <Button
               size="sm"
               variant={isCharacterMapFinalized ? 'outline' : 'default'}

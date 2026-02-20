@@ -544,6 +544,18 @@ export function useMergeCharactersMutation(projectId: number | null) {
   );
 }
 
+export function useInferCharacterGendersMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['infer-character-genders', projectId] : null,
+    async () => {
+      if (projectId === null) {
+        throw new Error('Project must exist before inferring character genders.');
+      }
+      return nipeApiClient.inferCharacterGenders(projectId);
+    },
+  );
+}
+
 export function usePronunciationPreviewMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['preview-pronunciation-dictionary', projectId] : null,
