@@ -15,6 +15,7 @@ const inferCharacterGendersMutationTrigger = vi.fn();
 const lookupCharacterAliasMutationTrigger = vi.fn();
 const saveArtifactPronunciationDictionaryMutationTrigger = vi.fn();
 const saveInventedPronunciationDictionaryMutationTrigger = vi.fn();
+const saveGlobalPronunciationDictionaryMutationTrigger = vi.fn();
 const pronunciationPreviewMutationTrigger = vi.fn();
 const finalizeCharactersMutationTrigger = vi.fn();
 const defaultCharacterMapQueryData = {
@@ -127,6 +128,23 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     error: null,
     mutate: vi.fn(),
   }),
+  useGlobalPronunciationDictionaryQuery: () => ({
+    data: {
+      project_id: 101,
+      scope: 'global',
+      entries: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'EE-jis',
+          source: 'user',
+          confidence: 1.0,
+        },
+      ],
+    },
+    isLoading: false,
+    error: null,
+    mutate: vi.fn(),
+  }),
   useSaveCharacterMapMutation: () => ({
     isMutating: false,
     trigger: saveCharactersMutationTrigger,
@@ -158,6 +176,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useSaveInventedPronunciationDictionaryMutation: () => ({
     isMutating: false,
     trigger: saveInventedPronunciationDictionaryMutationTrigger,
+  }),
+  useSaveGlobalPronunciationDictionaryMutation: () => ({
+    isMutating: false,
+    trigger: saveGlobalPronunciationDictionaryMutationTrigger,
   }),
   useFinalizeCharacterMapMutation: () => ({
     isMutating: false,
@@ -199,6 +221,7 @@ describe('project characters page manual editor', () => {
     lookupCharacterAliasMutationTrigger.mockReset();
     saveArtifactPronunciationDictionaryMutationTrigger.mockReset();
     saveInventedPronunciationDictionaryMutationTrigger.mockReset();
+    saveGlobalPronunciationDictionaryMutationTrigger.mockReset();
     pronunciationPreviewMutationTrigger.mockReset();
     finalizeCharactersMutationTrigger.mockReset();
     saveCharactersMutationTrigger.mockResolvedValue({
@@ -277,6 +300,18 @@ describe('project characters page manual editor', () => {
         {
           term: 'Aethercore',
           verbalized_form: 'EE-ther-core',
+          source: 'user',
+          confidence: 1.0,
+        },
+      ],
+    });
+    saveGlobalPronunciationDictionaryMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      scope: 'global',
+      entries: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'EE-jis',
           source: 'user',
           confidence: 1.0,
         },
@@ -399,6 +434,26 @@ describe('project characters page manual editor', () => {
         {
           term: 'Aethercore',
           verbalized_form: 'EE-ther-core',
+          source: 'user',
+          confidence: 1,
+        },
+      ],
+    });
+  });
+
+  it('saves global pronunciation dictionary scope through utility panel', async () => {
+    const user = userEvent.setup();
+    renderCharacterPage();
+
+    await user.clear(screen.getByTestId('pronunciation-global-textarea'));
+    await user.type(screen.getByTestId('pronunciation-global-textarea'), 'Aegis|EE-jis');
+    await user.click(screen.getByTestId('pronunciation-global-save-button'));
+
+    expect(saveGlobalPronunciationDictionaryMutationTrigger).toHaveBeenCalledWith({
+      entries: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'EE-jis',
           source: 'user',
           confidence: 1,
         },
