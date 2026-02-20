@@ -642,7 +642,7 @@ Definition of done for each task:
 - [x] [FE-141] Build gender comparison review panel using `GET /api/projects/{project_id}/characters/gender-comparison`.
 - [x] [FE-142] Build alias lookup utility using `POST /api/projects/{project_id}/characters/lookup-alias`.
 - [x] [FE-143] Build alias-collision inspector using `GET /api/projects/{project_id}/characters/alias-collisions`.
-- [ ] [FE-144] Build finalize character map action using `POST /api/projects/{project_id}/characters/finalize`.
+- [x] [FE-144] Build finalize character map action using `POST /api/projects/{project_id}/characters/finalize`.
 - [ ] [FE-145] Build pronunciation dictionary artifacts scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/artifacts`.
 - [ ] [FE-146] Build pronunciation dictionary invented scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/invented`.
 - [ ] [FE-147] Build pronunciation dictionary global scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/global`.
