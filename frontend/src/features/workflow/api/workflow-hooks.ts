@@ -484,6 +484,13 @@ export function useCharacterGenderComparisonQuery(projectId: number | null) {
   );
 }
 
+export function useCharacterAliasCollisionsQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? ['character-alias-collisions', projectId] : null,
+    async ([, currentProjectId]) => nipeApiClient.getCharacterAliasCollisions(currentProjectId),
+  );
+}
+
 export function useSaveCharacterMapMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['save-characters', projectId] : null,

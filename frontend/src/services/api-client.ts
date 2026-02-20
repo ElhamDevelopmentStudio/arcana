@@ -13,6 +13,7 @@ import {
   characterCandidatesMergeRequestSchema,
   characterAliasLookupRequestSchema,
   characterAliasLookupResponseSchema,
+  characterAliasCollisionResponseSchema,
   characterScrapeRequestSchema,
   pronunciationDictionaryPreviewRequestSchema,
   pronunciationDictionaryPreviewResponseSchema,
@@ -94,6 +95,7 @@ import {
   type CharacterCandidatesMergeRequestDto,
   type CharacterAliasLookupRequestDto,
   type CharacterAliasLookupResponseDto,
+  type CharacterAliasCollisionResponseDto,
   type CharacterAnalyticsResponseDto,
   type CharacterCooccurrenceGraphResponseDto,
   type CharacterExtractionDto,
@@ -552,6 +554,15 @@ export class NipeApiClient {
       const parsedPayload = characterAliasLookupRequestSchema.parse(payload);
       const response = await this.client.post(`/api/projects/${projectId}/characters/lookup-alias`, parsedPayload);
       return characterAliasLookupResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getCharacterAliasCollisions(projectId: number): Promise<CharacterAliasCollisionResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/characters/alias-collisions`);
+      return characterAliasCollisionResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
