@@ -12,6 +12,7 @@ const autoExtractCharactersMutationTrigger = vi.fn();
 const scrapeCharactersMutationTrigger = vi.fn();
 const mergeCharactersMutationTrigger = vi.fn();
 const inferCharacterGendersMutationTrigger = vi.fn();
+const lookupCharacterAliasMutationTrigger = vi.fn();
 const pronunciationPreviewMutationTrigger = vi.fn();
 const finalizeCharactersMutationTrigger = vi.fn();
 const defaultCharacterMapQueryData = {
@@ -95,6 +96,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isMutating: false,
     trigger: inferCharacterGendersMutationTrigger,
   }),
+  useLookupCharacterAliasMutation: () => ({
+    isMutating: false,
+    trigger: lookupCharacterAliasMutationTrigger,
+  }),
   useFinalizeCharacterMapMutation: () => ({
     isMutating: false,
     trigger: finalizeCharactersMutationTrigger,
@@ -132,6 +137,7 @@ describe('project characters page manual editor', () => {
     scrapeCharactersMutationTrigger.mockReset();
     mergeCharactersMutationTrigger.mockReset();
     inferCharacterGendersMutationTrigger.mockReset();
+    lookupCharacterAliasMutationTrigger.mockReset();
     pronunciationPreviewMutationTrigger.mockReset();
     finalizeCharactersMutationTrigger.mockReset();
     saveCharactersMutationTrigger.mockResolvedValue({
@@ -184,6 +190,12 @@ describe('project characters page manual editor', () => {
           confidence: 1.0,
         },
       ],
+    });
+    lookupCharacterAliasMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      alias: 'K',
+      canonical_name: 'Kai',
+      match_source: 'manual_alias',
     });
   });
 
@@ -247,6 +259,17 @@ describe('project characters page manual editor', () => {
     expect(screen.getByTestId('character-gender-comparison-count')).toHaveTextContent('1 comparison row(s)');
     expect(screen.getByTestId('character-gender-comparison-row-0')).toHaveTextContent('Kai');
     expect(screen.getByTestId('character-gender-comparison-row-0')).toHaveTextContent('review required');
+  });
+
+  it('submits alias lookup utility and renders lookup result', async () => {
+    const user = userEvent.setup();
+    renderCharacterPage();
+
+    await user.type(screen.getByTestId('character-alias-lookup-input'), 'K');
+    await user.click(screen.getByTestId('character-alias-lookup-button'));
+
+    expect(lookupCharacterAliasMutationTrigger).toHaveBeenCalledWith({ alias: 'K' });
+    expect(screen.getByTestId('character-alias-lookup-state')).toHaveTextContent('K → Kai (manual_alias)');
   });
 
   it('validates manual editor rows inline before save', async () => {

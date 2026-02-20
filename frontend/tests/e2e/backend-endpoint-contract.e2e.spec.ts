@@ -2252,6 +2252,87 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('character-gender-comparison-count')).toContainText('comparison row(s)');
   });
 
+  test('projects/:project_id/characters route runs alias lookup utility through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-characters-alias-lookup-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}/characters`);
+
+    const aliasLookupRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/characters/lookup-alias`),
+    );
+    const aliasLookupResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters/lookup-alias`),
+    );
+
+    await page.getByTestId('character-alias-lookup-input').fill('K');
+    await page.getByTestId('character-alias-lookup-button').click();
+
+    const aliasLookupRequest = await aliasLookupRequestPromise;
+    const aliasLookupPayload = aliasLookupRequest.postDataJSON() as { alias: string };
+    expect(aliasLookupPayload.alias).toBe('K');
+
+    const aliasLookupResponse = await aliasLookupResponsePromise;
+    expect(aliasLookupResponse.status()).toBe(200);
+    const aliasLookupResponsePayload = (await aliasLookupResponse.json()) as {
+      alias: string;
+      canonical_name: string | null;
+      match_source: string;
+    };
+    expect(aliasLookupResponsePayload.alias).toBe('K');
+    expect(aliasLookupResponsePayload.canonical_name).toBe('Kai');
+    await expect(page.getByTestId('character-alias-lookup-state')).toContainText('K → Kai');
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,

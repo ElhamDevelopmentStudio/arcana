@@ -11,6 +11,8 @@ import {
   characterMapUpdateSchema,
   characterMapFinalizeSchema,
   characterCandidatesMergeRequestSchema,
+  characterAliasLookupRequestSchema,
+  characterAliasLookupResponseSchema,
   characterScrapeRequestSchema,
   pronunciationDictionaryPreviewRequestSchema,
   pronunciationDictionaryPreviewResponseSchema,
@@ -90,6 +92,8 @@ import {
   type CharacterMapFinalizeDto,
   type CharacterScrapeRequestDto,
   type CharacterCandidatesMergeRequestDto,
+  type CharacterAliasLookupRequestDto,
+  type CharacterAliasLookupResponseDto,
   type CharacterAnalyticsResponseDto,
   type CharacterCooccurrenceGraphResponseDto,
   type CharacterExtractionDto,
@@ -535,6 +539,19 @@ export class NipeApiClient {
         parsedPayload,
       );
       return characterExtractionSchema.parse(response.data) as CharacterExtractionDto;
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async lookupCharacterAlias(
+    projectId: number,
+    payload: CharacterAliasLookupRequestDto,
+  ): Promise<CharacterAliasLookupResponseDto> {
+    try {
+      const parsedPayload = characterAliasLookupRequestSchema.parse(payload);
+      const response = await this.client.post(`/api/projects/${projectId}/characters/lookup-alias`, parsedPayload);
+      return characterAliasLookupResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

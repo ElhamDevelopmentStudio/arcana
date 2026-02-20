@@ -640,7 +640,7 @@ Definition of done for each task:
 - [x] [FE-139] Build merge-candidates flow using `POST /api/projects/{project_id}/characters/merged-candidates`.
 - [x] [FE-140] Build gender inference action using `POST /api/projects/{project_id}/characters/infer`.
 - [x] [FE-141] Build gender comparison review panel using `GET /api/projects/{project_id}/characters/gender-comparison`.
-- [ ] [FE-142] Build alias lookup utility using `POST /api/projects/{project_id}/characters/lookup-alias`.
+- [x] [FE-142] Build alias lookup utility using `POST /api/projects/{project_id}/characters/lookup-alias`.
 - [ ] [FE-143] Build alias-collision inspector using `GET /api/projects/{project_id}/characters/alias-collisions`.
 - [ ] [FE-144] Build finalize character map action using `POST /api/projects/{project_id}/characters/finalize`.
 - [ ] [FE-145] Build pronunciation dictionary artifacts scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/artifacts`.
