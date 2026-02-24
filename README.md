@@ -173,6 +173,12 @@ Mode enum contract validation (`MODE-001`, SRS system mode baseline):
 python backend/scripts_validate_mode_enum.py
 ```
 
+Checklist frontend+Playwright coverage validation (parallel delivery guardrail):
+
+```bash
+python backend/scripts_validate_checklist_frontend_coverage.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash
