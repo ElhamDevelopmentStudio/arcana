@@ -11,6 +11,10 @@ from app.api_terms_validation import load_and_parse_api_terms  # noqa: E402
 from app.glossary_terms import GLOSSARY_BY_NAME  # noqa: E402
 
 
+def _is_unit_interval(value: object) -> bool:
+    return isinstance(value, (int, float)) and 0.0 <= float(value) <= 1.0
+
+
 def _validate_novel_example(example: dict) -> bool:
     novel = example.get("novel")
     if not isinstance(novel, dict):
@@ -175,6 +179,91 @@ def _validate_voice_map_example(example: dict) -> bool:
     return all(step in resolution_order for step in required_steps)
 
 
+def _validate_confidence_example(example: dict) -> bool:
+    confidence = example.get("confidence")
+    if not isinstance(confidence, dict):
+        return False
+    if not isinstance(confidence.get("semantic"), str):
+        return False
+    range_obj = confidence.get("range")
+    if not isinstance(range_obj, dict):
+        return False
+    min_value = range_obj.get("min")
+    max_value = range_obj.get("max")
+    if not (_is_unit_interval(min_value) and _is_unit_interval(max_value)):
+        return False
+    if float(min_value) > float(max_value):
+        return False
+    if range_obj.get("inclusive") is not True:
+        return False
+    unknown_policy = confidence.get("unknown_policy")
+    if not isinstance(unknown_policy, dict):
+        return False
+    if not isinstance(unknown_policy.get("label"), str):
+        return False
+    if not _is_unit_interval(unknown_policy.get("default_value")):
+        return False
+    examples = confidence.get("examples")
+    if not isinstance(examples, dict):
+        return False
+    for key in ("speaker", "emotion"):
+        if key not in examples or not _is_unit_interval(examples[key]):
+            return False
+    return True
+
+
+def _validate_evidence_trace_example(example: dict) -> bool:
+    evidence_trace = example.get("evidence_trace")
+    if not isinstance(evidence_trace, dict):
+        return False
+    required = ("trace_id", "target", "target_ref", "signals", "span_pointers", "confidence")
+    if not all(key in evidence_trace for key in required):
+        return False
+    if not isinstance(evidence_trace.get("trace_id"), str):
+        return False
+    if not isinstance(evidence_trace.get("target"), str):
+        return False
+    if not _is_unit_interval(evidence_trace.get("confidence")):
+        return False
+
+    target_ref = evidence_trace.get("target_ref")
+    if not isinstance(target_ref, dict):
+        return False
+    target_ref_required = ("project_id", "chapter_id", "segment_id", "sub_segment_id")
+    if not all(key in target_ref for key in target_ref_required):
+        return False
+
+    signals = evidence_trace.get("signals")
+    if not isinstance(signals, list) or not signals:
+        return False
+    for signal in signals:
+        if not isinstance(signal, dict):
+            return False
+        if not all(key in signal for key in ("type", "value", "weight")):
+            return False
+        if not isinstance(signal["type"], str) or not isinstance(signal["value"], str):
+            return False
+        if not _is_unit_interval(signal["weight"]):
+            return False
+
+    span_pointers = evidence_trace.get("span_pointers")
+    if not isinstance(span_pointers, list) or not span_pointers:
+        return False
+    for pointer in span_pointers:
+        if not isinstance(pointer, dict):
+            return False
+        if not all(key in pointer for key in ("source", "start_char", "end_char")):
+            return False
+        if not isinstance(pointer["source"], str):
+            return False
+        if not isinstance(pointer["start_char"], int) or not isinstance(pointer["end_char"], int):
+            return False
+        if pointer["start_char"] < 0 or pointer["end_char"] < pointer["start_char"]:
+            return False
+
+    return True
+
+
 def main() -> int:
     terms_path = ROOT / "docs" / "api_domain_terms.md"
     parsed = load_and_parse_api_terms(terms_path)
@@ -200,6 +289,12 @@ def main() -> int:
     if parsed["Voice Map"]["definition"] != GLOSSARY_BY_NAME["Voice Map"]:
         print("API terms validation failed: Voice Map definition differs from glossary.")
         return 1
+    if parsed["Confidence"]["definition"] != GLOSSARY_BY_NAME["Confidence"]:
+        print("API terms validation failed: Confidence definition differs from glossary.")
+        return 1
+    if parsed["Evidence Trace"]["definition"] != GLOSSARY_BY_NAME["Evidence Trace"]:
+        print("API terms validation failed: Evidence Trace definition differs from glossary.")
+        return 1
     if not _validate_novel_example(parsed["Novel"]["example"]):
         print("API terms validation failed: Novel JSON example is missing required fields.")
         return 1
@@ -221,9 +316,15 @@ def main() -> int:
     if not _validate_voice_map_example(parsed["Voice Map"]["example"]):
         print("API terms validation failed: Voice Map JSON example is missing schema/fallback behavior fields.")
         return 1
+    if not _validate_confidence_example(parsed["Confidence"]["example"]):
+        print("API terms validation failed: Confidence JSON example is missing semantics/range-check fields.")
+        return 1
+    if not _validate_evidence_trace_example(parsed["Evidence Trace"]["example"]):
+        print("API terms validation failed: Evidence Trace JSON example is missing semantics/range-check fields.")
+        return 1
 
     print(
-        "API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment/Sub-segment/Character Map/Voice Map definitions and examples."
+        "API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment/Sub-segment/Character Map/Voice Map/Confidence/Evidence Trace definitions and examples."
     )
     return 0
 

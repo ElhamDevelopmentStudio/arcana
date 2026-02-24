@@ -156,6 +156,62 @@ EXPECTED_API_TERMS_SNAPSHOT = {
             }
         },
     },
+    "Confidence": {
+        "definition": "A numeric score representing reliability of a label (0.0–1.0).",
+        "example": {
+            "confidence": {
+                "semantic": "Reliability score for inferred or assigned labels.",
+                "range": {
+                    "min": 0.0,
+                    "max": 1.0,
+                    "inclusive": True,
+                },
+                "unknown_policy": {
+                    "label": "unknown/uncertain",
+                    "default_value": 0.0,
+                },
+                "examples": {
+                    "speaker": 0.2,
+                    "emotion": 0.6,
+                },
+            }
+        },
+    },
+    "Evidence Trace": {
+        "definition": "Stored pointers to text spans and feature signals that justified a label.",
+        "example": {
+            "evidence_trace": {
+                "trace_id": "12-004-speaker",
+                "target": "speaker",
+                "target_ref": {
+                    "project_id": 1,
+                    "chapter_id": 12,
+                    "segment_id": "12-004",
+                    "sub_segment_id": "12-004-01",
+                },
+                "signals": [
+                    {
+                        "type": "alias_match",
+                        "value": "Sunny",
+                        "weight": 0.55,
+                    },
+                    {
+                        "type": "attribution_verb",
+                        "value": "said",
+                        "weight": 0.35,
+                    },
+                ],
+                "span_pointers": [
+                    {
+                        "source": "normalized_text",
+                        "start_char": 102,
+                        "end_char": 117,
+                    }
+                ],
+                "confidence": 0.9,
+            }
+        },
+    },
 }
 
 
@@ -180,6 +236,8 @@ def test_integration_api_terms_definitions_match_glossary() -> None:
     assert parsed["Sub-segment"]["definition"] == GLOSSARY_BY_NAME["Sub-segment"]
     assert parsed["Character Map"]["definition"] == GLOSSARY_BY_NAME["Character Map"]
     assert parsed["Voice Map"]["definition"] == GLOSSARY_BY_NAME["Voice Map"]
+    assert parsed["Confidence"]["definition"] == GLOSSARY_BY_NAME["Confidence"]
+    assert parsed["Evidence Trace"]["definition"] == GLOSSARY_BY_NAME["Evidence Trace"]
 
 
 def test_e2e_api_terms_validation_cli_succeeds() -> None:
