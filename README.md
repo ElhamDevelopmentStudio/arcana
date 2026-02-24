@@ -40,6 +40,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/persona_end_to_end_flows.md`: one end-to-end flow per SRS persona
 - `docs/audiobook_ui_api_mapping.md`: USE-002 mapping from audiobook UI steps to concrete API endpoints
 - `docs/academic_outputs_export_mapping.md`: USE-003 mapping from academic flow to outputs and export formats
+- `docs/author_diagnostic_requirements_mapping.md`: USE-004 mapping from author flow to diagnostic report requirements
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
@@ -147,6 +148,12 @@ Academic outputs/export mapping validation (`USE-003` output definitions and for
 
 ```bash
 python backend/scripts_validate_academic_outputs_map.py
+```
+
+Author diagnostics mapping validation (`USE-004` requirement definitions and coverage categories):
+
+```bash
+python backend/scripts_validate_author_diagnostics_map.py
 ```
 
 Frontend build verification:

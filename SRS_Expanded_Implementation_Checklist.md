@@ -46,7 +46,7 @@ Definition of done for each task:
 - [x] [USE-001] Create one end-to-end flow document per persona.
 - [x] [USE-002] Map Audiobook Creator flow to concrete UI steps and API endpoints.
 - [x] [USE-003] Map Academic Researcher flow to outputs and export formats.
-- [ ] [USE-004] Map Author flow to diagnostic report requirements.
+- [x] [USE-004] Map Author flow to diagnostic report requirements.
 - [ ] [USE-005] Add “Community Reader” read-only dashboard flow.
 - [ ] [USE-006] Implement UC-1 traceability test script (Shadow Slave -> Audiobook export).
 - [ ] [USE-007] Implement UC-2 traceability test script (Any novel -> Academic export).

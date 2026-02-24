@@ -110,3 +110,9 @@ Academic outputs/export mapping validation (`USE-003` output definitions and for
 ```bash
 python scripts_validate_academic_outputs_map.py
 ```
+
+Author diagnostics mapping validation (`USE-004` requirement definitions and coverage categories):
+
+```bash
+python scripts_validate_author_diagnostics_map.py
+```
