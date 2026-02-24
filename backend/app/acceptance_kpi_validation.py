@@ -6,11 +6,12 @@ import re
 from app.success_criteria_validation import load_srs_success_criteria
 
 
-KPI_SECTION_HEADING_PATTERN = re.compile(r"(?m)^##\s+KPI-001 Clean Chapterized Corpus Verification\s*$")
+KPI_001_SECTION_HEADING_PATTERN = re.compile(r"(?m)^##\s+KPI-001 Clean Chapterized Corpus Verification\s*$")
+KPI_002_SECTION_HEADING_PATTERN = re.compile(r"(?m)^##\s+KPI-002 Validated Character Map Verification\s*$")
 H2_HEADING_PATTERN = re.compile(r"(?m)^##\s+.+$")
 KEY_VALUE_BULLET_PATTERN = re.compile(r"^\s*-\s+([a-z0-9_]+):\s+(.+?)\s*$")
 
-REQUIRED_KPI_FIELDS = {
+REQUIRED_KPI_001_FIELDS = {
     "linked_success_criterion",
     "srs_success_text",
     "minimum_chapter_count",
@@ -21,13 +22,35 @@ REQUIRED_KPI_FIELDS = {
     "verification_artifacts_required",
 }
 
-EXPECTED_FIXED_VALUES = {
+REQUIRED_KPI_002_FIELDS = {
+    "linked_success_criterion",
+    "srs_success_text",
+    "required_fields_per_character",
+    "required_field_completeness_rate",
+    "duplicate_canonical_name_count",
+    "unresolved_alias_conflict_count",
+    "invalid_gender_value_count",
+    "rerun_character_count_delta_same_input_config",
+    "verification_artifacts_required",
+}
+
+EXPECTED_KPI_001_FIXED_VALUES = {
     "linked_success_criterion": "SC-001",
     "minimum_chapter_count": ">= 1",
     "chapter_index_contiguity_rate": "= 1.00",
     "empty_chapter_count": "= 0",
     "unassigned_text_ratio": "<= 0.01",
     "rerun_chapter_count_delta_same_input_config": "= 0",
+}
+
+EXPECTED_KPI_002_FIXED_VALUES = {
+    "linked_success_criterion": "SC-002",
+    "required_fields_per_character": "name, verbalized_form, gender",
+    "required_field_completeness_rate": "= 1.00",
+    "duplicate_canonical_name_count": "= 0",
+    "unresolved_alias_conflict_count": "= 0",
+    "invalid_gender_value_count": "= 0",
+    "rerun_character_count_delta_same_input_config": "= 0",
 }
 
 
@@ -39,12 +62,10 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.replace("→", "->").split())
 
 
-def extract_kpi_001_section(markdown: str) -> str:
-    heading_match = KPI_SECTION_HEADING_PATTERN.search(markdown)
+def _extract_kpi_section(markdown: str, heading_pattern: re.Pattern[str], section_name: str) -> str:
+    heading_match = heading_pattern.search(markdown)
     if heading_match is None:
-        raise AcceptanceKPIValidationError(
-            "Could not find '## KPI-001 Clean Chapterized Corpus Verification' section in acceptance KPI doc."
-        )
+        raise AcceptanceKPIValidationError(f"Could not find '{section_name}' section in acceptance KPI doc.")
 
     search_tail = markdown[heading_match.end() :]
     next_h2 = H2_HEADING_PATTERN.search(search_tail)
@@ -55,6 +76,14 @@ def extract_kpi_001_section(markdown: str) -> str:
         section_end = heading_match.end() + next_h2.start()
 
     return markdown[heading_match.end() : section_end]
+
+
+def extract_kpi_001_section(markdown: str) -> str:
+    return _extract_kpi_section(markdown, KPI_001_SECTION_HEADING_PATTERN, "KPI-001 Clean Chapterized Corpus Verification")
+
+
+def extract_kpi_002_section(markdown: str) -> str:
+    return _extract_kpi_section(markdown, KPI_002_SECTION_HEADING_PATTERN, "KPI-002 Validated Character Map Verification")
 
 
 def parse_kpi_key_values(section_text: str) -> dict[str, str]:
@@ -81,27 +110,60 @@ def load_kpi_001(path: Path) -> dict[str, str]:
     return parse_kpi_key_values(section)
 
 
-def validate_kpi_001_against_srs(srs_path: Path, kpi_doc_path: Path) -> dict[str, str]:
-    kpi = load_kpi_001(kpi_doc_path)
+def load_kpi_002(path: Path) -> dict[str, str]:
+    markdown = path.read_text(encoding="utf-8")
+    section = extract_kpi_002_section(markdown)
+    return parse_kpi_key_values(section)
 
-    missing_fields = REQUIRED_KPI_FIELDS - set(kpi.keys())
+
+def _validate_required_fields(kpi: dict[str, str], required_fields: set[str], label: str) -> None:
+    missing_fields = required_fields - set(kpi.keys())
     if missing_fields:
         raise AcceptanceKPIValidationError(
-            "KPI-001 section is missing required fields: " + ", ".join(sorted(missing_fields))
+            f"{label} section is missing required fields: " + ", ".join(sorted(missing_fields))
         )
 
-    for key, expected_value in EXPECTED_FIXED_VALUES.items():
+
+def _validate_fixed_values(kpi: dict[str, str], expected_values: dict[str, str], label: str) -> None:
+    for key, expected_value in expected_values.items():
         actual = kpi.get(key)
         if actual != expected_value:
             raise AcceptanceKPIValidationError(
-                f"KPI-001 field '{key}' mismatch. expected='{expected_value}' actual='{actual}'"
+                f"{label} field '{key}' mismatch. expected='{expected_value}' actual='{actual}'"
             )
 
-    expected_srs_text = _normalize_text(load_srs_success_criteria(srs_path)[0])
+
+def _expected_srs_success_text(srs_path: Path, index: int) -> str:
+    return _normalize_text(load_srs_success_criteria(srs_path)[index])
+
+
+def validate_kpi_001_against_srs(srs_path: Path, kpi_doc_path: Path) -> dict[str, str]:
+    kpi = load_kpi_001(kpi_doc_path)
+
+    _validate_required_fields(kpi, REQUIRED_KPI_001_FIELDS, "KPI-001")
+    _validate_fixed_values(kpi, EXPECTED_KPI_001_FIXED_VALUES, "KPI-001")
+
+    expected_srs_text = _expected_srs_success_text(srs_path, 0)
     actual_srs_text = kpi["srs_success_text"]
     if actual_srs_text != expected_srs_text:
         raise AcceptanceKPIValidationError(
             "KPI-001 srs_success_text does not match SRS §1.3 clean chapterized corpus criterion."
+        )
+
+    return kpi
+
+
+def validate_kpi_002_against_srs(srs_path: Path, kpi_doc_path: Path) -> dict[str, str]:
+    kpi = load_kpi_002(kpi_doc_path)
+
+    _validate_required_fields(kpi, REQUIRED_KPI_002_FIELDS, "KPI-002")
+    _validate_fixed_values(kpi, EXPECTED_KPI_002_FIXED_VALUES, "KPI-002")
+
+    expected_srs_text = _expected_srs_success_text(srs_path, 1)
+    actual_srs_text = kpi["srs_success_text"]
+    if actual_srs_text != expected_srs_text:
+        raise AcceptanceKPIValidationError(
+            "KPI-002 srs_success_text does not match SRS §1.3 validated character map criterion."
         )
 
     return kpi

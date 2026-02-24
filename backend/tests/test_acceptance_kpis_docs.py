@@ -4,9 +4,12 @@ from pathlib import Path
 
 from app.acceptance_kpi_validation import (
     extract_kpi_001_section,
+    extract_kpi_002_section,
     load_kpi_001,
+    load_kpi_002,
     parse_kpi_key_values,
     validate_kpi_001_against_srs,
+    validate_kpi_002_against_srs,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,18 +28,36 @@ EXPECTED_KPI_001 = {
     "verification_artifacts_required": "run_summary_json, chapter_index_report, rerun_diff_report",
 }
 
+EXPECTED_KPI_002 = {
+    "linked_success_criterion": "SC-002",
+    "srs_success_text": "a validated character map (name -> verbalized -> gender)",
+    "required_fields_per_character": "name, verbalized_form, gender",
+    "required_field_completeness_rate": "= 1.00",
+    "duplicate_canonical_name_count": "= 0",
+    "unresolved_alias_conflict_count": "= 0",
+    "invalid_gender_value_count": "= 0",
+    "rerun_character_count_delta_same_input_config": "= 0",
+    "verification_artifacts_required": "character_map_export_json, character_validation_report, rerun_diff_report",
+}
+
 
 def test_unit_extract_kpi_section_stops_at_next_h2() -> None:
     sample = """
 # KPIs
 ## KPI-001 Clean Chapterized Corpus Verification
 - linked_success_criterion: SC-001
-## KPI-002 Other
+## KPI-002 Validated Character Map Verification
 - linked_success_criterion: SC-002
+## KPI-003 Other
+- linked_success_criterion: SC-003
 """
-    section = extract_kpi_001_section(sample)
-    assert "linked_success_criterion: SC-001" in section
-    assert "linked_success_criterion: SC-002" not in section
+    section_001 = extract_kpi_001_section(sample)
+    assert "linked_success_criterion: SC-001" in section_001
+    assert "linked_success_criterion: SC-002" not in section_001
+
+    section_002 = extract_kpi_002_section(sample)
+    assert "linked_success_criterion: SC-002" in section_002
+    assert "linked_success_criterion: SC-003" not in section_002
 
 
 def test_unit_parse_kpi_key_values_extracts_all_pairs() -> None:
@@ -52,8 +73,10 @@ def test_unit_parse_kpi_key_values_extracts_all_pairs() -> None:
 
 
 def test_integration_kpi_001_matches_srs_and_required_fields() -> None:
-    parsed = validate_kpi_001_against_srs(SRS_PATH, KPI_DOC_PATH)
-    assert parsed == EXPECTED_KPI_001
+    parsed_001 = validate_kpi_001_against_srs(SRS_PATH, KPI_DOC_PATH)
+    parsed_002 = validate_kpi_002_against_srs(SRS_PATH, KPI_DOC_PATH)
+    assert parsed_001 == EXPECTED_KPI_001
+    assert parsed_002 == EXPECTED_KPI_002
 
 
 def test_e2e_kpi_validation_cli_succeeds() -> None:
@@ -66,8 +89,11 @@ def test_e2e_kpi_validation_cli_succeeds() -> None:
     )
     assert result.returncode == 0
     assert "Acceptance KPI validation succeeded" in result.stdout
+    assert "SC-001 and SC-002" in result.stdout
 
 
 def test_regression_kpi_snapshot() -> None:
-    parsed = load_kpi_001(KPI_DOC_PATH)
-    assert parsed == EXPECTED_KPI_001
+    parsed_001 = load_kpi_001(KPI_DOC_PATH)
+    parsed_002 = load_kpi_002(KPI_DOC_PATH)
+    assert parsed_001 == EXPECTED_KPI_001
+    assert parsed_002 == EXPECTED_KPI_002
