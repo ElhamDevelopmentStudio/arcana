@@ -129,6 +129,33 @@ EXPECTED_API_TERMS_SNAPSHOT = {
             }
         },
     },
+    "Voice Map": {
+        "definition": "Mapping from character (or gender/default) to TTS voice profile identifiers.",
+        "example": {
+            "voice_map": {
+                "narrator_voice": "voice_narrator_default",
+                "defaults": {
+                    "male": "voice_male_default",
+                    "female": "voice_female_default",
+                    "neutral": "voice_neutral_default",
+                    "unknown": "voice_unknown_default",
+                },
+                "character_overrides": {
+                    "Sunny": "voice_male_main_01",
+                    "Nephis": "voice_female_main_01",
+                },
+                "fallback_behavior": {
+                    "resolution_order": [
+                        "character_override",
+                        "narrator_if_narration",
+                        "gender_default",
+                        "unknown_default",
+                    ],
+                    "notes": "If speaker is unresolved or gender is unavailable, use unknown default.",
+                },
+            }
+        },
+    },
 }
 
 
@@ -152,6 +179,7 @@ def test_integration_api_terms_definitions_match_glossary() -> None:
     assert parsed["Segment"]["definition"] == GLOSSARY_BY_NAME["Segment"]
     assert parsed["Sub-segment"]["definition"] == GLOSSARY_BY_NAME["Sub-segment"]
     assert parsed["Character Map"]["definition"] == GLOSSARY_BY_NAME["Character Map"]
+    assert parsed["Voice Map"]["definition"] == GLOSSARY_BY_NAME["Voice Map"]
 
 
 def test_e2e_api_terms_validation_cli_succeeds() -> None:

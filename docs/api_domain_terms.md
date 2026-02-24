@@ -158,3 +158,36 @@ Example (minimum + expanded schema):
   }
 }
 ```
+
+## Voice Map
+
+Definition: Mapping from character (or gender/default) to TTS voice profile identifiers.
+
+Example (schema + fallback behavior):
+
+```json
+{
+  "voice_map": {
+    "narrator_voice": "voice_narrator_default",
+    "defaults": {
+      "male": "voice_male_default",
+      "female": "voice_female_default",
+      "neutral": "voice_neutral_default",
+      "unknown": "voice_unknown_default"
+    },
+    "character_overrides": {
+      "Sunny": "voice_male_main_01",
+      "Nephis": "voice_female_main_01"
+    },
+    "fallback_behavior": {
+      "resolution_order": [
+        "character_override",
+        "narrator_if_narration",
+        "gender_default",
+        "unknown_default"
+      ],
+      "notes": "If speaker is unresolved or gender is unavailable, use unknown default."
+    }
+  }
+}
+```

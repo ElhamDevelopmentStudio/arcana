@@ -138,6 +138,43 @@ def _validate_character_map_example(example: dict) -> bool:
     return isinstance(confidence, (int, float))
 
 
+def _validate_voice_map_example(example: dict) -> bool:
+    voice_map = example.get("voice_map")
+    if not isinstance(voice_map, dict):
+        return False
+
+    narrator_voice = voice_map.get("narrator_voice")
+    if not isinstance(narrator_voice, str) or not narrator_voice.strip():
+        return False
+
+    defaults = voice_map.get("defaults")
+    if not isinstance(defaults, dict):
+        return False
+    required_defaults = ("male", "female", "neutral", "unknown")
+    if not all(key in defaults for key in required_defaults):
+        return False
+    if not all(isinstance(defaults[key], str) and defaults[key].strip() for key in required_defaults):
+        return False
+
+    character_overrides = voice_map.get("character_overrides")
+    if not isinstance(character_overrides, dict):
+        return False
+
+    fallback_behavior = voice_map.get("fallback_behavior")
+    if not isinstance(fallback_behavior, dict):
+        return False
+    resolution_order = fallback_behavior.get("resolution_order")
+    if not isinstance(resolution_order, list):
+        return False
+    required_steps = [
+        "character_override",
+        "narrator_if_narration",
+        "gender_default",
+        "unknown_default",
+    ]
+    return all(step in resolution_order for step in required_steps)
+
+
 def main() -> int:
     terms_path = ROOT / "docs" / "api_domain_terms.md"
     parsed = load_and_parse_api_terms(terms_path)
@@ -160,6 +197,9 @@ def main() -> int:
     if parsed["Character Map"]["definition"] != GLOSSARY_BY_NAME["Character Map"]:
         print("API terms validation failed: Character Map definition differs from glossary.")
         return 1
+    if parsed["Voice Map"]["definition"] != GLOSSARY_BY_NAME["Voice Map"]:
+        print("API terms validation failed: Voice Map definition differs from glossary.")
+        return 1
     if not _validate_novel_example(parsed["Novel"]["example"]):
         print("API terms validation failed: Novel JSON example is missing required fields.")
         return 1
@@ -178,9 +218,12 @@ def main() -> int:
     if not _validate_character_map_example(parsed["Character Map"]["example"]):
         print("API terms validation failed: Character Map JSON example is missing minimum/expanded schema fields.")
         return 1
+    if not _validate_voice_map_example(parsed["Voice Map"]["example"]):
+        print("API terms validation failed: Voice Map JSON example is missing schema/fallback behavior fields.")
+        return 1
 
     print(
-        "API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment/Sub-segment/Character Map definitions and examples."
+        "API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment/Sub-segment/Character Map/Voice Map definitions and examples."
     )
     return 0
 

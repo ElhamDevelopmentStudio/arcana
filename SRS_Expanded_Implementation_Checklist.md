@@ -27,7 +27,7 @@ Definition of done for each task:
 - [x] [GLS-004] Define `Chapter Unit` and `Segment` JSON examples in docs.
 - [x] [GLS-005] Define `Sub-segment` storage representation with parent pointers.
 - [x] [GLS-006] Define `Character Map` schema examples (minimum + expanded).
-- [ ] [GLS-007] Define `Voice Map` schema examples and fallback behavior.
+- [x] [GLS-007] Define `Voice Map` schema examples and fallback behavior.
 - [ ] [GLS-008] Define `Confidence` and `Evidence Trace` semantics and range checks.
 - [ ] [GLS-009] Define `Mode` enum and where it is persisted.
 - [ ] [GLS-010] Add glossary consistency lint/check in docs CI (simple key existence check).
