@@ -21,8 +21,8 @@ Definition of done for each task:
 ---
 
 ## 0. Glossary Alignment (Ref: SRS.md §0)
-- [ ] [GLS-001] Create `docs/glossary.md` mirroring all SRS glossary terms exactly.
-- [ ] [GLS-002] Add each glossary term to a shared constants/types file for developer discoverability.
+- [x] [GLS-001] Create `docs/glossary.md` mirroring all SRS glossary terms exactly.
+- [x] [GLS-002] Add each glossary term to a shared constants/types file for developer discoverability.
 - [ ] [GLS-003] Define `Novel` and `Corpus` terms in API docs with examples.
 - [ ] [GLS-004] Define `Chapter Unit` and `Segment` JSON examples in docs.
 - [ ] [GLS-005] Define `Sub-segment` storage representation with parent pointers.
@@ -528,4 +528,3 @@ Definition of done for each task:
 5. Visualization and persistence: `VR-*`, `DR-*`.
 6. Operational hardening: `NFR*`, `ER-*`, `CFG-*`, `X-*`.
 7. Release gates: `MVP-*`, `ACC-*`.
-

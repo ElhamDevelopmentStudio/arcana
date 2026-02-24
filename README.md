@@ -24,6 +24,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 ## Repository Layout
 
 - `backend/`: FastAPI app, pipeline services, DB models, tests, migrations
+  - `backend/app/glossary_terms.py`: shared glossary constants/types synced to `SRS.md §0`
 - `frontend/`: React + Vite client
 - `PoC.md`: proof-of-concept requirements
 - `SRS.md`: full requirements specification
