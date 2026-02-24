@@ -33,6 +33,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/glossary.md`: canonical glossary synced to `SRS.md §0`
 - `docs/api_domain_terms.md`: API-facing definitions/examples for key domain terms
 - `docs/scope.md`: implementation scope baseline (`SRS.md §1.2` SHALL/SHALL NOT)
+- `docs/non_goals.md`: explicit non-goals list and scope-guardrail rules
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
@@ -98,6 +99,12 @@ Scope consistency validation (`SRS.md §1.2` vs `docs/scope.md`):
 
 ```bash
 python backend/scripts_validate_scope.py
+```
+
+Non-goals consistency validation (`SRS.md §1.2 NIPE SHALL NOT` vs `docs/non_goals.md`):
+
+```bash
+python backend/scripts_validate_non_goals.py
 ```
 
 Frontend build verification:

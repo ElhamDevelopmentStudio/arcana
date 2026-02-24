@@ -68,3 +68,9 @@ Scope validation (`SRS.md §1.2` SHALL/SHALL NOT vs `docs/scope.md`):
 ```bash
 python scripts_validate_scope.py
 ```
+
+Non-goals validation (`SRS.md §1.2 NIPE SHALL NOT` vs `docs/non_goals.md`):
+
+```bash
+python scripts_validate_non_goals.py
+```
