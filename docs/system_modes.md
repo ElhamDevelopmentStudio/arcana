@@ -12,5 +12,6 @@ Purpose:
 
 - allowed_modes: audiobook, academic, author, custom
 - default_mode: audiobook
+- project_mode_path: projects.selected_mode
 - run_config_path: runs.config_json.mode
-- notes: mode enum values are lower-case and shared between API validation and pipeline run configuration.
+- notes: mode enum values are lower-case and persisted at project level with per-run config snapshots.

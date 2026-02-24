@@ -13,8 +13,8 @@ class ProjectMode(StrEnum):
 MODE_VALUES: tuple[str, ...] = tuple(mode.value for mode in ProjectMode)
 DEFAULT_MODE: str = ProjectMode.AUDIOBOOK.value
 
-# Current PoC persistence location for selected mode.
-MODE_PERSISTENCE_PATHS: tuple[str, ...] = ("runs.config_json.mode",)
+# Current persistence locations for selected mode.
+MODE_PERSISTENCE_PATHS: tuple[str, ...] = ("projects.selected_mode", "runs.config_json.mode")
 
 
 def is_valid_mode(value: str) -> bool:

@@ -18,6 +18,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Basic tagging + speaker heuristic
 - Voice resolution
 - JSON export
+- Project-level mode persistence (`projects.selected_mode`) with per-run mode snapshots
 - Minimal LLM router scaffold + quota tracking
 - Minimal React UI for project/run/export flow
 

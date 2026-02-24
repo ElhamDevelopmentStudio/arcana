@@ -13,6 +13,7 @@ class ProjectCreate(BaseModel):
 class ProjectResponse(BaseModel):
     id: int
     title: str
+    selected_mode: str
     created_at: datetime
 
 

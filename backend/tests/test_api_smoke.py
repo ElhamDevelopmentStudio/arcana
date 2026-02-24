@@ -46,6 +46,7 @@ def test_full_poc_api_flow_deterministic_export() -> None:
         project_resp = client.post("/api/projects", json={"title": "Shadow Slave PoC"})
         assert project_resp.status_code == 201
         project_id = project_resp.json()["id"]
+        assert project_resp.json()["selected_mode"] == "audiobook"
 
         ingest_resp = client.post(
             f"/api/projects/{project_id}/ingest/txt",

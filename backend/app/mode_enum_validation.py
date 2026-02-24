@@ -9,7 +9,7 @@ from app.modes import DEFAULT_MODE, MODE_PERSISTENCE_PATHS, MODE_VALUES
 DOC_SECTION_HEADING_PATTERN = re.compile(r"(?m)^##\s+MODE-001 System Mode Enum Contract\s*$")
 FIELD_PATTERN = re.compile(r"(?m)^\s*-\s+([a-z_]+):\s+(.+?)\s*$")
 
-REQUIRED_FIELD_KEYS = {"allowed_modes", "default_mode", "run_config_path"}
+REQUIRED_FIELD_KEYS = {"allowed_modes", "default_mode", "project_mode_path", "run_config_path"}
 
 
 class ModeEnumValidationError(ValueError):
@@ -58,6 +58,12 @@ def validate_mode_001_contract(path: Path) -> dict[str, int]:
     default_mode = fields["default_mode"]
     if default_mode != DEFAULT_MODE:
         raise ModeEnumValidationError(f"default_mode mismatch. expected={DEFAULT_MODE} actual={default_mode}")
+
+    project_mode_path = fields["project_mode_path"]
+    if project_mode_path not in MODE_PERSISTENCE_PATHS:
+        raise ModeEnumValidationError(
+            f"project_mode_path mismatch. expected one of {list(MODE_PERSISTENCE_PATHS)} actual={project_mode_path}"
+        )
 
     run_config_path = fields["run_config_path"]
     if run_config_path not in MODE_PERSISTENCE_PATHS:

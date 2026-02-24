@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_session, init_db
+from app.modes import DEFAULT_MODE
 from app.models import Chapter, Character, LLMCall, Project, Run, Segment
 from app.schemas import (
     CharacterImportResponse,
@@ -68,13 +69,19 @@ def _get_run_or_404(session: Session, project_id: int, run_id: int) -> Run:
 def create_project(payload: ProjectCreate, session: Session = Depends(get_session)) -> ProjectResponse:
     project = Project(
         title=payload.title.strip(),
+        selected_mode=DEFAULT_MODE,
         voice_config_json=dict(DEFAULT_VOICE_CONFIG),
     )
     session.add(project)
     session.commit()
     session.refresh(project)
 
-    return ProjectResponse(id=project.id, title=project.title, created_at=project.created_at)
+    return ProjectResponse(
+        id=project.id,
+        title=project.title,
+        selected_mode=project.selected_mode,
+        created_at=project.created_at,
+    )
 
 
 @app.post(
@@ -186,6 +193,7 @@ def create_run(
     session: Session = Depends(get_session),
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
+    project.selected_mode = payload.mode
 
     config_snapshot = payload.model_dump()
     run = Run(

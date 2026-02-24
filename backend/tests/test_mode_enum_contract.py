@@ -22,11 +22,13 @@ def test_unit_extract_and_parse_mode_contract() -> None:
 ## MODE-001 System Mode Enum Contract
 - allowed_modes: audiobook, academic, author, custom
 - default_mode: audiobook
+- project_mode_path: projects.selected_mode
 - run_config_path: runs.config_json.mode
 """
     section = extract_mode_001_section(sample)
     fields = parse_mode_contract(section)
     assert fields["default_mode"] == "audiobook"
+    assert fields["project_mode_path"] == "projects.selected_mode"
     assert fields["run_config_path"] == "runs.config_json.mode"
 
 

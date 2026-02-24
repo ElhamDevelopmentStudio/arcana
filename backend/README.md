@@ -48,6 +48,10 @@ python scripts_run_migration.py
 - `GET /api/projects/{project_id}/runs/{run_id}`
 - `GET /api/projects/{project_id}/exports/{run_id}.json`
 
+Mode persistence behavior:
+- Project-level selected mode is stored at `projects.selected_mode`.
+- Each run snapshots mode in `runs.config_json.mode`.
+
 ## API Domain Terms
 
 Definitions and examples for API-facing domain terms are documented in:

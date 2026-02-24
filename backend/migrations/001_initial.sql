@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS projects (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
+    selected_mode VARCHAR(50) NOT NULL DEFAULT 'audiobook',
     voice_config_json JSON NOT NULL DEFAULT '{}'::json,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
