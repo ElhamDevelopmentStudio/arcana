@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.modes import DEFAULT_MODE, is_valid_mode
+
 
 class ProjectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
@@ -36,10 +38,21 @@ class VoiceConfigResponse(BaseModel):
 
 
 class RunCreateRequest(BaseModel):
+    mode: str = Field(default=DEFAULT_MODE)
     max_segment_chars: int = Field(default=255, ge=80, le=255)
     llm_enabled: bool = False
     provider_name: str = "openrouter"
     max_calls_per_day: int = Field(default=25, ge=1, le=10000)
+
+    @field_validator("mode")
+    @classmethod
+    def mode_must_be_valid(cls, value: str) -> str:
+        stripped = value.strip().lower()
+        if not stripped:
+            raise ValueError("mode must not be blank")
+        if not is_valid_mode(stripped):
+            raise ValueError("mode must be one of: audiobook, academic, author, custom")
+        return stripped
 
     @field_validator("provider_name")
     @classmethod

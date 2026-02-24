@@ -15,6 +15,7 @@ REQUIRED_TERMS = (
     "Voice Map",
     "Confidence",
     "Evidence Trace",
+    "Mode",
 )
 
 
@@ -24,7 +25,7 @@ class APITermsValidationError(ValueError):
 
 def _split_sections(markdown: str) -> dict[str, str]:
     heading_pattern = re.compile(
-        r"(?m)^##\s+(Novel|Corpus|Chapter Unit|Segment|Sub-segment|Character Map|Voice Map|Confidence|Evidence Trace)\s*$"
+        r"(?m)^##\s+(Novel|Corpus|Chapter Unit|Segment|Sub-segment|Character Map|Voice Map|Confidence|Evidence Trace|Mode)\s*$"
     )
     matches = list(heading_pattern.finditer(markdown))
     if not matches:

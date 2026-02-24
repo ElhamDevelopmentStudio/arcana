@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.api_terms_validation import load_and_parse_api_terms, parse_term_definition, parse_term_json_example
 from app.glossary_terms import GLOSSARY_BY_NAME
+from app.modes import DEFAULT_MODE, MODE_PERSISTENCE_PATHS, MODE_VALUES
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCS_API_TERMS_PATH = ROOT / "docs" / "api_domain_terms.md"
@@ -212,6 +213,17 @@ EXPECTED_API_TERMS_SNAPSHOT = {
             }
         },
     },
+    "Mode": {
+        "definition": "One of the product workflows (Audiobook / Academic / Author / Other).",
+        "example": {
+            "mode": {
+                "enum": ["audiobook", "academic", "author", "custom"],
+                "default": "audiobook",
+                "persisted_in": ["runs.config_json.mode"],
+                "notes": "Current PoC stores selected mode at run level; project-level mode persistence is deferred.",
+            }
+        },
+    },
 }
 
 
@@ -238,6 +250,16 @@ def test_integration_api_terms_definitions_match_glossary() -> None:
     assert parsed["Voice Map"]["definition"] == GLOSSARY_BY_NAME["Voice Map"]
     assert parsed["Confidence"]["definition"] == GLOSSARY_BY_NAME["Confidence"]
     assert parsed["Evidence Trace"]["definition"] == GLOSSARY_BY_NAME["Evidence Trace"]
+    assert parsed["Mode"]["definition"] == GLOSSARY_BY_NAME["Mode"]
+
+
+def test_integration_mode_constants_align_with_api_docs() -> None:
+    parsed = load_and_parse_api_terms(DOCS_API_TERMS_PATH)
+    mode = parsed["Mode"]["example"]["mode"]
+    assert mode["enum"] == list(MODE_VALUES)
+    assert mode["default"] == DEFAULT_MODE
+    for path in MODE_PERSISTENCE_PATHS:
+        assert path in mode["persisted_in"]
 
 
 def test_e2e_api_terms_validation_cli_succeeds() -> None:

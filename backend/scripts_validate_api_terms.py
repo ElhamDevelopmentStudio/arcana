@@ -9,6 +9,7 @@ if str(ROOT / "backend") not in sys.path:
 
 from app.api_terms_validation import load_and_parse_api_terms  # noqa: E402
 from app.glossary_terms import GLOSSARY_BY_NAME  # noqa: E402
+from app.modes import DEFAULT_MODE, MODE_PERSISTENCE_PATHS, MODE_VALUES  # noqa: E402
 
 
 def _is_unit_interval(value: object) -> bool:
@@ -264,6 +265,27 @@ def _validate_evidence_trace_example(example: dict) -> bool:
     return True
 
 
+def _validate_mode_example(example: dict) -> bool:
+    mode = example.get("mode")
+    if not isinstance(mode, dict):
+        return False
+
+    enum_values = mode.get("enum")
+    if not isinstance(enum_values, list):
+        return False
+    if enum_values != list(MODE_VALUES):
+        return False
+
+    default_mode = mode.get("default")
+    if default_mode != DEFAULT_MODE:
+        return False
+
+    persisted_in = mode.get("persisted_in")
+    if not isinstance(persisted_in, list):
+        return False
+    return all(path in persisted_in for path in MODE_PERSISTENCE_PATHS)
+
+
 def main() -> int:
     terms_path = ROOT / "docs" / "api_domain_terms.md"
     parsed = load_and_parse_api_terms(terms_path)
@@ -295,6 +317,9 @@ def main() -> int:
     if parsed["Evidence Trace"]["definition"] != GLOSSARY_BY_NAME["Evidence Trace"]:
         print("API terms validation failed: Evidence Trace definition differs from glossary.")
         return 1
+    if parsed["Mode"]["definition"] != GLOSSARY_BY_NAME["Mode"]:
+        print("API terms validation failed: Mode definition differs from glossary.")
+        return 1
     if not _validate_novel_example(parsed["Novel"]["example"]):
         print("API terms validation failed: Novel JSON example is missing required fields.")
         return 1
@@ -322,9 +347,12 @@ def main() -> int:
     if not _validate_evidence_trace_example(parsed["Evidence Trace"]["example"]):
         print("API terms validation failed: Evidence Trace JSON example is missing semantics/range-check fields.")
         return 1
+    if not _validate_mode_example(parsed["Mode"]["example"]):
+        print("API terms validation failed: Mode JSON example is missing enum/persistence fields.")
+        return 1
 
     print(
-        "API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment/Sub-segment/Character Map/Voice Map/Confidence/Evidence Trace definitions and examples."
+        "API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment/Sub-segment/Character Map/Voice Map/Confidence/Evidence Trace/Mode definitions and examples."
     )
     return 0
 

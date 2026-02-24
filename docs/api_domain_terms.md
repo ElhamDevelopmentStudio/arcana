@@ -259,3 +259,22 @@ Example (semantics + range checks):
   }
 }
 ```
+
+## Mode
+
+Definition: One of the product workflows (Audiobook / Academic / Author / Other).
+
+Example (enum + persistence):
+
+```json
+{
+  "mode": {
+    "enum": ["audiobook", "academic", "author", "custom"],
+    "default": "audiobook",
+    "persisted_in": [
+      "runs.config_json.mode"
+    ],
+    "notes": "Current PoC stores selected mode at run level; project-level mode persistence is deferred."
+  }
+}
+```

@@ -82,6 +82,10 @@ def test_full_poc_api_flow_deterministic_export() -> None:
         assert run_resp_1.status_code == 200
         run_id_1 = run_resp_1.json()["run_id"]
 
+        run_detail_1 = client.get(f"/api/projects/{project_id}/runs/{run_id_1}")
+        assert run_detail_1.status_code == 200
+        assert run_detail_1.json()["config"]["mode"] == "audiobook"
+
         export_1 = client.get(f"/api/projects/{project_id}/exports/{run_id_1}.json")
         assert export_1.status_code == 200
         data_1 = export_1.json()
