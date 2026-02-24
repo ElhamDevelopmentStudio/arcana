@@ -62,3 +62,9 @@ Glossary key existence lint (used in docs CI workflow):
 ```bash
 python scripts_lint_glossary_keys.py
 ```
+
+Scope validation (`SRS.md §1.2` SHALL/SHALL NOT vs `docs/scope.md`):
+
+```bash
+python scripts_validate_scope.py
+```

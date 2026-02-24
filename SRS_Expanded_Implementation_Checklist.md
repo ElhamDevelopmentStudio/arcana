@@ -33,7 +33,7 @@ Definition of done for each task:
 - [x] [GLS-010] Add glossary consistency lint/check in docs CI (simple key existence check).
 
 ## 1. Product Intent Baseline (Ref: SRS.md §1)
-- [ ] [INT-001] Create `docs/scope.md` with SRS “SHALL/SHALL NOT” copied into implementation scope.
+- [x] [INT-001] Create `docs/scope.md` with SRS “SHALL/SHALL NOT” copied into implementation scope.
 - [ ] [INT-002] Add explicit non-goals list to prevent accidental feature creep.
 - [ ] [INT-003] Define success criteria checklist for Shadow Slave end-to-end run.
 - [ ] [INT-004] Add deterministic reproducibility objective to architecture doc.

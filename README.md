@@ -32,6 +32,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `SRS_Expanded_Implementation_Checklist.md`: detailed implementation backlog
 - `docs/glossary.md`: canonical glossary synced to `SRS.md §0`
 - `docs/api_domain_terms.md`: API-facing definitions/examples for key domain terms
+- `docs/scope.md`: implementation scope baseline (`SRS.md §1.2` SHALL/SHALL NOT)
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
@@ -91,6 +92,12 @@ Docs glossary key lint (same check used in CI):
 
 ```bash
 python backend/scripts_lint_glossary_keys.py
+```
+
+Scope consistency validation (`SRS.md §1.2` vs `docs/scope.md`):
+
+```bash
+python backend/scripts_validate_scope.py
 ```
 
 Frontend build verification:
