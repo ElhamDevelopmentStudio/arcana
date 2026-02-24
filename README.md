@@ -41,6 +41,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/audiobook_ui_api_mapping.md`: USE-002 mapping from audiobook UI steps to concrete API endpoints
 - `docs/academic_outputs_export_mapping.md`: USE-003 mapping from academic flow to outputs and export formats
 - `docs/author_diagnostic_requirements_mapping.md`: USE-004 mapping from author flow to diagnostic report requirements
+- `docs/community_reader_readonly_dashboard_flow.md`: USE-005 read-only dashboard flow for community reader
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
@@ -154,6 +155,12 @@ Author diagnostics mapping validation (`USE-004` requirement definitions and cov
 
 ```bash
 python backend/scripts_validate_author_diagnostics_map.py
+```
+
+Community reader flow validation (`USE-005` read-only steps and dashboard coverage):
+
+```bash
+python backend/scripts_validate_community_reader_flow.py
 ```
 
 Frontend build verification:

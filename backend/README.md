@@ -116,3 +116,9 @@ Author diagnostics mapping validation (`USE-004` requirement definitions and cov
 ```bash
 python scripts_validate_author_diagnostics_map.py
 ```
+
+Community reader flow validation (`USE-005` read-only steps and dashboard coverage):
+
+```bash
+python scripts_validate_community_reader_flow.py
+```
