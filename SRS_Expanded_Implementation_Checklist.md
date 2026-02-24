@@ -39,7 +39,7 @@ Definition of done for each task:
 - [x] [INT-004] Add deterministic reproducibility objective to architecture doc.
 - [x] [INT-005] Add acceptance KPI for “clean chapterized corpus” verification.
 - [x] [INT-006] Add acceptance KPI for “validated character map”.
-- [ ] [INT-007] Add acceptance KPI for “TTS-ready tagged export”.
+- [x] [INT-007] Add acceptance KPI for “TTS-ready tagged export”.
 - [ ] [INT-008] Add acceptance KPI for “basic time-series and charts”.
 
 ## 2. Personas and Use Cases (Ref: SRS.md §2)

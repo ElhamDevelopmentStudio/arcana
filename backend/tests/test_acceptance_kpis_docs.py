@@ -5,11 +5,14 @@ from pathlib import Path
 from app.acceptance_kpi_validation import (
     extract_kpi_001_section,
     extract_kpi_002_section,
+    extract_kpi_003_section,
     load_kpi_001,
     load_kpi_002,
+    load_kpi_003,
     parse_kpi_key_values,
     validate_kpi_001_against_srs,
     validate_kpi_002_against_srs,
+    validate_kpi_003_against_srs,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +43,19 @@ EXPECTED_KPI_002 = {
     "verification_artifacts_required": "character_map_export_json, character_validation_report, rerun_diff_report",
 }
 
+EXPECTED_KPI_003 = {
+    "linked_success_criterion": "SC-003",
+    "srs_success_text": "a segmented, phonetic-normalized, tagged export suitable to feed into a TTS pipeline",
+    "max_segment_length_compliance_rate": "= 1.00",
+    "phonetic_text_presence_rate": "= 1.00",
+    "required_tag_fields": "type, speaker, gender, voice_id, emotion_valence, emotion_intensity",
+    "required_tag_fields_presence_rate": "= 1.00",
+    "voice_resolution_presence_rate": "= 1.00",
+    "export_schema_validation_pass_rate": "= 1.00",
+    "rerun_export_segment_delta_same_input_config": "= 0",
+    "verification_artifacts_required": "export_json, export_schema_validation_report, segment_length_report, rerun_diff_report",
+}
+
 
 def test_unit_extract_kpi_section_stops_at_next_h2() -> None:
     sample = """
@@ -48,8 +64,10 @@ def test_unit_extract_kpi_section_stops_at_next_h2() -> None:
 - linked_success_criterion: SC-001
 ## KPI-002 Validated Character Map Verification
 - linked_success_criterion: SC-002
-## KPI-003 Other
+## KPI-003 TTS-Ready Tagged Export Verification
 - linked_success_criterion: SC-003
+## KPI-004 Other
+- linked_success_criterion: SC-004
 """
     section_001 = extract_kpi_001_section(sample)
     assert "linked_success_criterion: SC-001" in section_001
@@ -58,6 +76,10 @@ def test_unit_extract_kpi_section_stops_at_next_h2() -> None:
     section_002 = extract_kpi_002_section(sample)
     assert "linked_success_criterion: SC-002" in section_002
     assert "linked_success_criterion: SC-003" not in section_002
+
+    section_003 = extract_kpi_003_section(sample)
+    assert "linked_success_criterion: SC-003" in section_003
+    assert "linked_success_criterion: SC-004" not in section_003
 
 
 def test_unit_parse_kpi_key_values_extracts_all_pairs() -> None:
@@ -75,8 +97,10 @@ def test_unit_parse_kpi_key_values_extracts_all_pairs() -> None:
 def test_integration_kpi_001_matches_srs_and_required_fields() -> None:
     parsed_001 = validate_kpi_001_against_srs(SRS_PATH, KPI_DOC_PATH)
     parsed_002 = validate_kpi_002_against_srs(SRS_PATH, KPI_DOC_PATH)
+    parsed_003 = validate_kpi_003_against_srs(SRS_PATH, KPI_DOC_PATH)
     assert parsed_001 == EXPECTED_KPI_001
     assert parsed_002 == EXPECTED_KPI_002
+    assert parsed_003 == EXPECTED_KPI_003
 
 
 def test_e2e_kpi_validation_cli_succeeds() -> None:
@@ -89,11 +113,13 @@ def test_e2e_kpi_validation_cli_succeeds() -> None:
     )
     assert result.returncode == 0
     assert "Acceptance KPI validation succeeded" in result.stdout
-    assert "SC-001 and SC-002" in result.stdout
+    assert "SC-001, SC-002, and SC-003" in result.stdout
 
 
 def test_regression_kpi_snapshot() -> None:
     parsed_001 = load_kpi_001(KPI_DOC_PATH)
     parsed_002 = load_kpi_002(KPI_DOC_PATH)
+    parsed_003 = load_kpi_003(KPI_DOC_PATH)
     assert parsed_001 == EXPECTED_KPI_001
     assert parsed_002 == EXPECTED_KPI_002
+    assert parsed_003 == EXPECTED_KPI_003

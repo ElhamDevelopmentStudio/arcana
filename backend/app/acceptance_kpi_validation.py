@@ -8,6 +8,7 @@ from app.success_criteria_validation import load_srs_success_criteria
 
 KPI_001_SECTION_HEADING_PATTERN = re.compile(r"(?m)^##\s+KPI-001 Clean Chapterized Corpus Verification\s*$")
 KPI_002_SECTION_HEADING_PATTERN = re.compile(r"(?m)^##\s+KPI-002 Validated Character Map Verification\s*$")
+KPI_003_SECTION_HEADING_PATTERN = re.compile(r"(?m)^##\s+KPI-003 TTS-Ready Tagged Export Verification\s*$")
 H2_HEADING_PATTERN = re.compile(r"(?m)^##\s+.+$")
 KEY_VALUE_BULLET_PATTERN = re.compile(r"^\s*-\s+([a-z0-9_]+):\s+(.+?)\s*$")
 
@@ -34,6 +35,19 @@ REQUIRED_KPI_002_FIELDS = {
     "verification_artifacts_required",
 }
 
+REQUIRED_KPI_003_FIELDS = {
+    "linked_success_criterion",
+    "srs_success_text",
+    "max_segment_length_compliance_rate",
+    "phonetic_text_presence_rate",
+    "required_tag_fields",
+    "required_tag_fields_presence_rate",
+    "voice_resolution_presence_rate",
+    "export_schema_validation_pass_rate",
+    "rerun_export_segment_delta_same_input_config",
+    "verification_artifacts_required",
+}
+
 EXPECTED_KPI_001_FIXED_VALUES = {
     "linked_success_criterion": "SC-001",
     "minimum_chapter_count": ">= 1",
@@ -51,6 +65,17 @@ EXPECTED_KPI_002_FIXED_VALUES = {
     "unresolved_alias_conflict_count": "= 0",
     "invalid_gender_value_count": "= 0",
     "rerun_character_count_delta_same_input_config": "= 0",
+}
+
+EXPECTED_KPI_003_FIXED_VALUES = {
+    "linked_success_criterion": "SC-003",
+    "max_segment_length_compliance_rate": "= 1.00",
+    "phonetic_text_presence_rate": "= 1.00",
+    "required_tag_fields": "type, speaker, gender, voice_id, emotion_valence, emotion_intensity",
+    "required_tag_fields_presence_rate": "= 1.00",
+    "voice_resolution_presence_rate": "= 1.00",
+    "export_schema_validation_pass_rate": "= 1.00",
+    "rerun_export_segment_delta_same_input_config": "= 0",
 }
 
 
@@ -86,6 +111,10 @@ def extract_kpi_002_section(markdown: str) -> str:
     return _extract_kpi_section(markdown, KPI_002_SECTION_HEADING_PATTERN, "KPI-002 Validated Character Map Verification")
 
 
+def extract_kpi_003_section(markdown: str) -> str:
+    return _extract_kpi_section(markdown, KPI_003_SECTION_HEADING_PATTERN, "KPI-003 TTS-Ready Tagged Export Verification")
+
+
 def parse_kpi_key_values(section_text: str) -> dict[str, str]:
     key_values: dict[str, str] = {}
 
@@ -99,7 +128,7 @@ def parse_kpi_key_values(section_text: str) -> dict[str, str]:
         key_values[key] = value
 
     if not key_values:
-        raise AcceptanceKPIValidationError("No KPI key/value bullet lines found in KPI-001 section.")
+        raise AcceptanceKPIValidationError("No KPI key/value bullet lines found in KPI section.")
 
     return key_values
 
@@ -113,6 +142,12 @@ def load_kpi_001(path: Path) -> dict[str, str]:
 def load_kpi_002(path: Path) -> dict[str, str]:
     markdown = path.read_text(encoding="utf-8")
     section = extract_kpi_002_section(markdown)
+    return parse_kpi_key_values(section)
+
+
+def load_kpi_003(path: Path) -> dict[str, str]:
+    markdown = path.read_text(encoding="utf-8")
+    section = extract_kpi_003_section(markdown)
     return parse_kpi_key_values(section)
 
 
@@ -164,6 +199,22 @@ def validate_kpi_002_against_srs(srs_path: Path, kpi_doc_path: Path) -> dict[str
     if actual_srs_text != expected_srs_text:
         raise AcceptanceKPIValidationError(
             "KPI-002 srs_success_text does not match SRS §1.3 validated character map criterion."
+        )
+
+    return kpi
+
+
+def validate_kpi_003_against_srs(srs_path: Path, kpi_doc_path: Path) -> dict[str, str]:
+    kpi = load_kpi_003(kpi_doc_path)
+
+    _validate_required_fields(kpi, REQUIRED_KPI_003_FIELDS, "KPI-003")
+    _validate_fixed_values(kpi, EXPECTED_KPI_003_FIXED_VALUES, "KPI-003")
+
+    expected_srs_text = _expected_srs_success_text(srs_path, 2)
+    actual_srs_text = kpi["srs_success_text"]
+    if actual_srs_text != expected_srs_text:
+        raise AcceptanceKPIValidationError(
+            "KPI-003 srs_success_text does not match SRS §1.3 TTS-ready tagged export criterion."
         )
 
     return kpi

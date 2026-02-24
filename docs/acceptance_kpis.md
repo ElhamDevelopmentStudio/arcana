@@ -2,7 +2,7 @@
 
 Reference sources:
 - [SRS.md](/Users/elhamdev/work/nipe/SRS.md) section `### 1.3 Success Criteria (Product-Level)`
-- [SRS_Expanded_Implementation_Checklist.md](/Users/elhamdev/work/nipe/SRS_Expanded_Implementation_Checklist.md) items `INT-005`, `INT-006`
+- [SRS_Expanded_Implementation_Checklist.md](/Users/elhamdev/work/nipe/SRS_Expanded_Implementation_Checklist.md) items `INT-005`, `INT-006`, `INT-007`
 
 Purpose:
 - Define concrete acceptance KPIs for product-level success criteria.
@@ -30,3 +30,16 @@ Purpose:
 - invalid_gender_value_count: = 0
 - rerun_character_count_delta_same_input_config: = 0
 - verification_artifacts_required: character_map_export_json, character_validation_report, rerun_diff_report
+
+## KPI-003 TTS-Ready Tagged Export Verification
+
+- linked_success_criterion: SC-003
+- srs_success_text: a segmented, phonetic-normalized, tagged export suitable to feed into a TTS pipeline
+- max_segment_length_compliance_rate: = 1.00
+- phonetic_text_presence_rate: = 1.00
+- required_tag_fields: type, speaker, gender, voice_id, emotion_valence, emotion_intensity
+- required_tag_fields_presence_rate: = 1.00
+- voice_resolution_presence_rate: = 1.00
+- export_schema_validation_pass_rate: = 1.00
+- rerun_export_segment_delta_same_input_config: = 0
+- verification_artifacts_required: export_json, export_schema_validation_report, segment_length_report, rerun_diff_report
