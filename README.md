@@ -163,6 +163,12 @@ Community reader flow validation (`USE-005` read-only steps and dashboard covera
 python backend/scripts_validate_community_reader_flow.py
 ```
 
+UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
+
+```bash
+python backend/scripts_run_uc1_traceability.py
+```
+
 Frontend build verification:
 
 ```bash

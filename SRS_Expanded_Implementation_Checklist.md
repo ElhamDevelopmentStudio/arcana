@@ -48,7 +48,7 @@ Definition of done for each task:
 - [x] [USE-003] Map Academic Researcher flow to outputs and export formats.
 - [x] [USE-004] Map Author flow to diagnostic report requirements.
 - [x] [USE-005] Add “Community Reader” read-only dashboard flow.
-- [ ] [USE-006] Implement UC-1 traceability test script (Shadow Slave -> Audiobook export).
+- [x] [USE-006] Implement UC-1 traceability test script (Shadow Slave -> Audiobook export).
 - [ ] [USE-007] Implement UC-2 traceability test script (Any novel -> Academic export).
 - [ ] [USE-008] Implement UC-3 traceability test script (Draft novel -> Author diagnostics).
 

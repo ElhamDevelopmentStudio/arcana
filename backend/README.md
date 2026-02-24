@@ -122,3 +122,9 @@ Community reader flow validation (`USE-005` read-only steps and dashboard covera
 ```bash
 python scripts_validate_community_reader_flow.py
 ```
+
+UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
+
+```bash
+python scripts_run_uc1_traceability.py
+```
