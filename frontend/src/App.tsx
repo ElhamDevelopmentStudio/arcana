@@ -27,13 +27,42 @@ type ExportPayload = {
   segments: Array<Record<string, unknown>>;
 };
 
+type ModeCatalog = {
+  modes: string[];
+  default_mode: string;
+  persisted_in: string[];
+};
+
+const FALLBACK_MODES = ["audiobook", "academic", "author", "custom"] as const;
+
+export function resolveModeOptions(catalog: ModeCatalog | null): string[] {
+  if (!catalog || !Array.isArray(catalog.modes) || catalog.modes.length === 0) {
+    return [...FALLBACK_MODES];
+  }
+  return catalog.modes;
+}
+
+export function pickModeFromCatalog(catalog: ModeCatalog, preferredMode?: string): string {
+  const options = resolveModeOptions(catalog);
+  if (preferredMode && options.includes(preferredMode)) {
+    return preferredMode;
+  }
+  if (catalog.default_mode && options.includes(catalog.default_mode)) {
+    return catalog.default_mode;
+  }
+  return options[0];
+}
+
 function App() {
   const [apiBase, setApiBase] = useState(import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000");
   const [projectTitle, setProjectTitle] = useState("Shadow Slave PoC");
   const [projectId, setProjectId] = useState<number | null>(null);
+  const [ingestedChapterCount, setIngestedChapterCount] = useState<number | null>(null);
   const [runId, setRunId] = useState<number | null>(null);
   const [txtFile, setTxtFile] = useState<File | null>(null);
   const [charFile, setCharFile] = useState<File | null>(null);
+  const [modeCatalog, setModeCatalog] = useState<ModeCatalog | null>(null);
+  const [selectedMode, setSelectedMode] = useState<string>(FALLBACK_MODES[0]);
 
   const [narratorVoice, setNarratorVoice] = useState("narrator_default");
   const [maleVoice, setMaleVoice] = useState("male_default");
@@ -51,6 +80,11 @@ function App() {
   const [loading, setLoading] = useState(false);
 
   const canRun = useMemo(() => projectId !== null, [projectId]);
+  const canSelectMode = useMemo(
+    () => projectId !== null && ingestedChapterCount !== null,
+    [projectId, ingestedChapterCount]
+  );
+  const modeOptions = useMemo(() => resolveModeOptions(modeCatalog), [modeCatalog]);
 
   async function request(path: string, init?: RequestInit) {
     const response = await fetch(`${apiBase}${path}`, init);
@@ -59,6 +93,13 @@ function App() {
       throw new Error(text || `HTTP ${response.status}`);
     }
     return response;
+  }
+
+  async function loadModeCatalog(preferredMode?: string) {
+    const response = await request("/api/modes");
+    const data = (await response.json()) as ModeCatalog;
+    setModeCatalog(data);
+    setSelectedMode(pickModeFromCatalog(data, preferredMode));
   }
 
   async function createProject(e: FormEvent) {
@@ -74,7 +115,16 @@ function App() {
       });
       const data = await response.json();
       setProjectId(data.id);
+      setIngestedChapterCount(null);
+      setRunId(null);
+      setRunDetail(null);
+      setExportPayload(null);
       setMessage(`Project created: ${data.id}`);
+      try {
+        await loadModeCatalog(data.selected_mode);
+      } catch {
+        setError("Project created, but failed to load available modes.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {
@@ -100,6 +150,14 @@ function App() {
         body: form
       });
       const data = await response.json();
+      setIngestedChapterCount(data.chapter_count);
+      if (!modeCatalog) {
+        try {
+          await loadModeCatalog(selectedMode);
+        } catch {
+          setError("TXT ingested, but failed to load available modes.");
+        }
+      }
       setMessage(`TXT ingested. Chapters detected: ${data.chapter_count}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to ingest TXT");
@@ -177,6 +235,7 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mode: selectedMode,
           max_segment_chars: maxSegmentChars,
           llm_enabled: llmEnabled,
           provider_name: providerName,
@@ -258,7 +317,32 @@ function App() {
       </section>
 
       <section className="card">
-        <h2>2) Character Map Upload</h2>
+        <h2>2) Mode Selection (Post-Ingestion)</h2>
+        <label>
+          Processing mode
+          <select
+            data-testid="mode-select"
+            value={selectedMode}
+            disabled={loading || !canSelectMode}
+            onChange={(e) => setSelectedMode(e.target.value)}
+          >
+            {modeOptions.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!canSelectMode ? (
+          <p>Upload TXT first to unlock mode selection.</p>
+        ) : (
+          <p>Selected mode will be included in the run configuration snapshot.</p>
+        )}
+        {modeCatalog ? <p>Mode persistence: {modeCatalog.persisted_in.join(" | ")}</p> : null}
+      </section>
+
+      <section className="card">
+        <h2>3) Character Map Upload</h2>
         <form onSubmit={uploadCharacters} className="form-row">
           <input
             type="file"
@@ -270,7 +354,7 @@ function App() {
       </section>
 
       <section className="card">
-        <h2>3) Voice Config + Run Pipeline</h2>
+        <h2>4) Voice Config + Run Pipeline</h2>
         <form onSubmit={saveVoices} className="grid-form">
           <label>
             Narrator voice
@@ -320,7 +404,7 @@ function App() {
       </section>
 
       <section className="card">
-        <h2>4) Export + Logs</h2>
+        <h2>5) Export + Logs</h2>
         <p>Run ID: {runId ?? "none"}</p>
         <button disabled={loading || !projectId || !runId} onClick={refreshCurrentRun} type="button">
           Refresh Run Artifacts

@@ -15,3 +15,10 @@ You can override with:
 ```bash
 VITE_API_BASE_URL=http://localhost:8000 npm run dev
 ```
+
+## Test
+
+```bash
+cd frontend
+npm run test:run
+```

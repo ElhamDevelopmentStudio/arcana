@@ -21,7 +21,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Project-level mode persistence (`projects.selected_mode`) with per-run mode snapshots
 - Mode catalog endpoint for UI mode selection bootstrap (`GET /api/modes`)
 - Minimal LLM router scaffold + quota tracking
-- Minimal React UI for project/run/export flow
+- Minimal React UI for project/run/export flow with post-ingestion mode selection
 
 ## Repository Layout
 

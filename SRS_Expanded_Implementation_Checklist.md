@@ -57,7 +57,7 @@ Definition of done for each task:
 - [x] [MODE-001] Define mode enum: `audiobook`, `academic`, `author`, `custom`.
 - [x] [MODE-002] Persist selected mode on project record.
 - [x] [MODE-003] Add API endpoint to fetch available modes.
-- [ ] [MODE-004] Build post-ingestion mode selection UI.
+- [x] [MODE-004] Build post-ingestion mode selection UI.
 - [ ] [MODE-005] Block pipeline run until mode is selected.
 - [ ] [MODE-006] Define default config profile object per mode.
 - [ ] [MODE-007] Implement mode profile loader in backend service.
