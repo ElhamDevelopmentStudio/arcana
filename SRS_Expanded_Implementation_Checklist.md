@@ -25,7 +25,7 @@ Definition of done for each task:
 - [x] [GLS-002] Add each glossary term to a shared constants/types file for developer discoverability.
 - [x] [GLS-003] Define `Novel` and `Corpus` terms in API docs with examples.
 - [x] [GLS-004] Define `Chapter Unit` and `Segment` JSON examples in docs.
-- [ ] [GLS-005] Define `Sub-segment` storage representation with parent pointers.
+- [x] [GLS-005] Define `Sub-segment` storage representation with parent pointers.
 - [ ] [GLS-006] Define `Character Map` schema examples (minimum + expanded).
 - [ ] [GLS-007] Define `Voice Map` schema examples and fallback behavior.
 - [ ] [GLS-008] Define `Confidence` and `Evidence Trace` semantics and range checks.

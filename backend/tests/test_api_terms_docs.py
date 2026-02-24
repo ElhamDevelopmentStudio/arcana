@@ -76,6 +76,37 @@ EXPECTED_API_TERMS_SNAPSHOT = {
             }
         },
     },
+    "Sub-segment": {
+        "definition": "A smaller unit inside a segment representing a detected shift (emotion shift, narration/dialogue shift, thought shift).",
+        "example": {
+            "sub_segment": {
+                "sub_segment_id": "12-004-01",
+                "sub_segment_index": 1,
+                "parent_project_id": 1,
+                "parent_run_id": 7,
+                "parent_chapter_id": 12,
+                "parent_segment_id": "12-004",
+                "parent_pointers": {
+                    "project": "projects.id=1",
+                    "chapter": "chapters.id=12",
+                    "segment": "segments.segment_id=12-004",
+                },
+                "span_start_char": 0,
+                "span_end_char": 24,
+                "text": "\"Ah! So bitter!\"",
+                "shift_type": "emotion_shift",
+                "tags": {
+                    "type": "dialogue",
+                    "speaker": "unknown",
+                    "emotion_primary": "frustration",
+                },
+                "confidence": {
+                    "speaker": 0.2,
+                    "emotion": 0.6,
+                },
+            }
+        },
+    },
 }
 
 
@@ -97,6 +128,7 @@ def test_integration_api_terms_definitions_match_glossary() -> None:
     assert parsed["Corpus"]["definition"] == GLOSSARY_BY_NAME["Corpus"]
     assert parsed["Chapter Unit"]["definition"] == GLOSSARY_BY_NAME["Chapter Unit"]
     assert parsed["Segment"]["definition"] == GLOSSARY_BY_NAME["Segment"]
+    assert parsed["Sub-segment"]["definition"] == GLOSSARY_BY_NAME["Sub-segment"]
 
 
 def test_e2e_api_terms_validation_cli_succeeds() -> None:

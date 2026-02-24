@@ -75,6 +75,38 @@ def _validate_segment_example(example: dict) -> bool:
     return all(key in confidence for key in ("speaker", "emotion"))
 
 
+def _validate_sub_segment_example(example: dict) -> bool:
+    sub_segment = example.get("sub_segment")
+    if not isinstance(sub_segment, dict):
+        return False
+    required = (
+        "sub_segment_id",
+        "sub_segment_index",
+        "parent_project_id",
+        "parent_run_id",
+        "parent_chapter_id",
+        "parent_segment_id",
+        "parent_pointers",
+        "span_start_char",
+        "span_end_char",
+        "text",
+        "shift_type",
+        "tags",
+        "confidence",
+    )
+    if not all(key in sub_segment for key in required):
+        return False
+    parent_pointers = sub_segment.get("parent_pointers")
+    if not isinstance(parent_pointers, dict):
+        return False
+    if not all(key in parent_pointers for key in ("project", "chapter", "segment")):
+        return False
+    confidence = sub_segment.get("confidence")
+    if not isinstance(confidence, dict):
+        return False
+    return all(key in confidence for key in ("speaker", "emotion"))
+
+
 def main() -> int:
     terms_path = ROOT / "docs" / "api_domain_terms.md"
     parsed = load_and_parse_api_terms(terms_path)
@@ -91,6 +123,9 @@ def main() -> int:
     if parsed["Segment"]["definition"] != GLOSSARY_BY_NAME["Segment"]:
         print("API terms validation failed: Segment definition differs from glossary.")
         return 1
+    if parsed["Sub-segment"]["definition"] != GLOSSARY_BY_NAME["Sub-segment"]:
+        print("API terms validation failed: Sub-segment definition differs from glossary.")
+        return 1
     if not _validate_novel_example(parsed["Novel"]["example"]):
         print("API terms validation failed: Novel JSON example is missing required fields.")
         return 1
@@ -103,8 +138,11 @@ def main() -> int:
     if not _validate_segment_example(parsed["Segment"]["example"]):
         print("API terms validation failed: Segment JSON example is missing required fields.")
         return 1
+    if not _validate_sub_segment_example(parsed["Sub-segment"]["example"]):
+        print("API terms validation failed: Sub-segment JSON example is missing required fields.")
+        return 1
 
-    print("API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment definitions and examples.")
+    print("API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment/Sub-segment definitions and examples.")
     return 0
 
 

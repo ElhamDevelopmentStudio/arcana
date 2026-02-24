@@ -93,3 +93,40 @@ Example (API-facing representation):
   }
 }
 ```
+
+## Sub-segment
+
+Definition: A smaller unit inside a segment representing a detected shift (emotion shift, narration/dialogue shift, thought shift).
+
+Example (storage representation with parent pointers):
+
+```json
+{
+  "sub_segment": {
+    "sub_segment_id": "12-004-01",
+    "sub_segment_index": 1,
+    "parent_project_id": 1,
+    "parent_run_id": 7,
+    "parent_chapter_id": 12,
+    "parent_segment_id": "12-004",
+    "parent_pointers": {
+      "project": "projects.id=1",
+      "chapter": "chapters.id=12",
+      "segment": "segments.segment_id=12-004"
+    },
+    "span_start_char": 0,
+    "span_end_char": 24,
+    "text": "\"Ah! So bitter!\"",
+    "shift_type": "emotion_shift",
+    "tags": {
+      "type": "dialogue",
+      "speaker": "unknown",
+      "emotion_primary": "frustration"
+    },
+    "confidence": {
+      "speaker": 0.2,
+      "emotion": 0.6
+    }
+  }
+}
+```

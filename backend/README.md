@@ -53,4 +53,4 @@ python scripts_run_migration.py
 Definitions and examples for API-facing domain terms are documented in:
 
 - [docs/api_domain_terms.md](/Users/elhamdev/work/nipe/docs/api_domain_terms.md)
-  (currently: `Novel`, `Corpus`, `Chapter Unit`, `Segment`)
+  (currently: `Novel`, `Corpus`, `Chapter Unit`, `Segment`, `Sub-segment`)
