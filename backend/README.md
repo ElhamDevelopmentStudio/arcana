@@ -54,3 +54,11 @@ Definitions and examples for API-facing domain terms are documented in:
 
 - [docs/api_domain_terms.md](/Users/elhamdev/work/nipe/docs/api_domain_terms.md)
   (currently: `Novel`, `Corpus`, `Chapter Unit`, `Segment`, `Sub-segment`, `Character Map`, `Voice Map`, `Confidence`, `Evidence Trace`, `Mode`)
+
+## Docs CI Lint
+
+Glossary key existence lint (used in docs CI workflow):
+
+```bash
+python scripts_lint_glossary_keys.py
+```

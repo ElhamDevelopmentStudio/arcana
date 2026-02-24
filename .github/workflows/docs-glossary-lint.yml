@@ -1,0 +1,34 @@
+name: Docs Glossary Lint
+
+on:
+  pull_request:
+    paths:
+      - "docs/glossary.md"
+      - "backend/app/glossary_terms.py"
+      - "backend/app/glossary_key_lint.py"
+      - "backend/scripts_lint_glossary_keys.py"
+      - ".github/workflows/docs-glossary-lint.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/glossary.md"
+      - "backend/app/glossary_terms.py"
+      - "backend/app/glossary_key_lint.py"
+      - "backend/scripts_lint_glossary_keys.py"
+      - ".github/workflows/docs-glossary-lint.yml"
+
+jobs:
+  glossary-key-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Glossary Key Lint
+        run: python backend/scripts_lint_glossary_keys.py

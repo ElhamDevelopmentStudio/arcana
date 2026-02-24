@@ -87,6 +87,12 @@ source .venv311/bin/activate
 pytest -q
 ```
 
+Docs glossary key lint (same check used in CI):
+
+```bash
+python backend/scripts_lint_glossary_keys.py
+```
+
 Frontend build verification:
 
 ```bash

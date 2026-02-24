@@ -30,7 +30,7 @@ Definition of done for each task:
 - [x] [GLS-007] Define `Voice Map` schema examples and fallback behavior.
 - [x] [GLS-008] Define `Confidence` and `Evidence Trace` semantics and range checks.
 - [x] [GLS-009] Define `Mode` enum and where it is persisted.
-- [ ] [GLS-010] Add glossary consistency lint/check in docs CI (simple key existence check).
+- [x] [GLS-010] Add glossary consistency lint/check in docs CI (simple key existence check).
 
 ## 1. Product Intent Baseline (Ref: SRS.md §1)
 - [ ] [INT-001] Create `docs/scope.md` with SRS “SHALL/SHALL NOT” copied into implementation scope.
