@@ -8,7 +8,8 @@ Purpose:
 - Tasks are intentionally granular so a new chat/session can continue with minimal context.
 
 Usage rules:
-- Complete tasks in order unless a dependency explicitly allows parallel work.
+- Execute tasks as small vertical slices: backend + frontend + integration evidence in the same slice when user-visible behavior is affected.
+- Work from the earliest unresolved checklist items first; do not skip ahead unless an item is explicitly marked blocked with reason and follow-up task ID.
 - For each completed task, record PR/commit link and date in your tracker.
 - If a task reveals new subtasks, append them under the same SRS section with the same reference style.
 - Implement backend and frontend in parallel for each feature slice; do not defer all frontend work until backend completion.
@@ -652,10 +653,15 @@ Definition of done for each task:
 ---
 
 ## Suggested Execution Order (for new sessions)
-1. Foundations: `GLS-*`, `INT-*`, `USE-*`, `MODE-*`.
-2. Core pipeline: `ING-*`, `NORM-*`, `CHAR-*`, `GEN-*`, `VERB-*`, `SEG-*`, `TAG-*`, `VOICE-*`.
-3. Mode outputs: `AUD-*`, `ACAD-*`, `AUTH-*`.
-4. LLM platform: `LLM-*`, `CACHE-*`, `DET-*`, `PAL-*`.
-5. Visualization and persistence: `VR-*`, `DR-*`.
-6. Operational hardening: `NFR*`, `ER-*`, `CFG-*`, `X-*`.
-7. Release gates: `MVP-*`, `ACC-*`.
+1. Resume rule first: scan from the top and pick the earliest unresolved task that is not blocked.
+2. If an earlier task is unresolved, complete it (or mark blocked with reason + unblock task ID) before moving to later sections.
+3. For the selected task, deliver a vertical slice: backend behavior, frontend behavior, and test coverage together.
+4. Pair API/data-model work with corresponding FE and Playwright coverage in the same slice whenever UI behavior is impacted.
+5. Apply the sequence bands below while still honoring the “earliest unresolved task first” rule:
+6. Foundations: `GLS-*`, `INT-*`, `USE-*`, `MODE-*`.
+7. Core pipeline: `ING-*`, `NORM-*`, `CHAR-*`, `GEN-*`, `VERB-*`, `SEG-*`, `TAG-*`, `VOICE-*`.
+8. Mode outputs: `AUD-*`, `ACAD-*`, `AUTH-*`.
+9. LLM platform: `LLM-*`, `CACHE-*`, `DET-*`, `PAL-*`.
+10. Visualization and persistence: `VR-*`, `DR-*`.
+11. Operational hardening: `NFR*`, `ER-*`, `CFG-*`, `X-*`.
+12. Release gates: `MVP-*`, `ACC-*`.

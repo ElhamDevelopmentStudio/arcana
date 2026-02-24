@@ -12,6 +12,10 @@ Keep implementation accurate, incremental, testable, and easy to resume from a n
 2. Do not batch unrelated features into a single implementation step.
 3. Prefer narrowly scoped tasks with explicit completion boundaries.
 4. After each completed task, decide whether `README.md` needs an update and apply it when relevant.
+5. Follow vertical slices for user-visible work: backend + frontend + relevant integration evidence in the same task slice.
+6. Always start from the earliest unresolved checklist item in `SRS_Expanded_Implementation_Checklist.md`.
+7. If earlier checklist tasks are still undone, complete those first before advancing to later tasks, unless explicitly marked blocked with reason and follow-up task ID.
+8. For API/data-model changes, implement matching frontend behavior in the same slice or log an explicit deferred FE task ID before moving on.
 
 ## Task Granularity Standard
 
