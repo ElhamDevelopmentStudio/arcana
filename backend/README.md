@@ -47,3 +47,9 @@ python scripts_run_migration.py
 - `POST /api/projects/{project_id}/runs`
 - `GET /api/projects/{project_id}/runs/{run_id}`
 - `GET /api/projects/{project_id}/exports/{run_id}.json`
+
+## API Domain Terms
+
+Definitions and examples for API-facing domain terms are documented in:
+
+- [docs/api_domain_terms.md](/Users/elhamdev/work/nipe/docs/api_domain_terms.md)

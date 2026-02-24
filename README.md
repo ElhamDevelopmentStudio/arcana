@@ -30,6 +30,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `SRS.md`: full requirements specification
 - `SRS_Expanded_Implementation_Checklist.md`: detailed implementation backlog
 - `docs/glossary.md`: canonical glossary synced to `SRS.md §0`
+- `docs/api_domain_terms.md`: API-facing definitions/examples for key domain terms
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
