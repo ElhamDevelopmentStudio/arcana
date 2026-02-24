@@ -98,3 +98,9 @@ Persona flow validation (`SRS.md §2.1` vs `docs/persona_end_to_end_flows.md`):
 ```bash
 python scripts_validate_persona_flows.py
 ```
+
+Audiobook UI/API mapping validation (`USE-002` doc completeness and endpoint sequence):
+
+```bash
+python scripts_validate_audiobook_flow_map.py
+```

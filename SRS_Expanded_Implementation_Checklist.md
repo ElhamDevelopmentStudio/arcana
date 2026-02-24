@@ -44,7 +44,7 @@ Definition of done for each task:
 
 ## 2. Personas and Use Cases (Ref: SRS.md §2)
 - [x] [USE-001] Create one end-to-end flow document per persona.
-- [ ] [USE-002] Map Audiobook Creator flow to concrete UI steps and API endpoints.
+- [x] [USE-002] Map Audiobook Creator flow to concrete UI steps and API endpoints.
 - [ ] [USE-003] Map Academic Researcher flow to outputs and export formats.
 - [ ] [USE-004] Map Author flow to diagnostic report requirements.
 - [ ] [USE-005] Add “Community Reader” read-only dashboard flow.
