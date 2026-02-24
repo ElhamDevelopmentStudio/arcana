@@ -51,6 +51,7 @@ Definition of done for each task:
 - [x] [USE-006] Implement UC-1 traceability test script (Shadow Slave -> Audiobook export).
 - [x] [USE-007] Implement UC-2 traceability test script (Any novel -> Academic export).
 - [x] [USE-008] Implement UC-3 traceability test script (Draft novel -> Author diagnostics).
+- [ ] [USE-009] Add optional slow large-corpus regression suite for UC-1/UC-2/UC-3 using `novels_extra_chapter_0_to_22.txt` (real-data traceability + deterministic rerun checks).
 
 ## 3. System Modes and Selection (Ref: SRS.md §3)
 - [x] [MODE-001] Define mode enum: `audiobook`, `academic`, `author`, `custom`.

@@ -49,6 +49,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
 - `shadow_slave_chapter_1_to_95.txt`: sample source text corpus
+- `novels_extra_chapter_0_to_22.txt`: additional large-corpus fixture reserved for deferred slow regression/traceability suites
 
 ## Prerequisites
 
