@@ -28,6 +28,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `PoC.md`: proof-of-concept requirements
 - `SRS.md`: full requirements specification
 - `SRS_Expanded_Implementation_Checklist.md`: detailed implementation backlog
+- `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
 - `shadow_slave_chapter_1_to_95.txt`: sample source text corpus
 
