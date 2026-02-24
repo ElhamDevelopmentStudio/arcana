@@ -59,3 +59,18 @@ Before moving to the next task:
 2. Defer non-requested expansions to checklist items.
 3. Avoid silent scope creep.
 
+## External Reference Folder Policy
+
+Path: `for_reference_only_not_for_copying/`
+
+1. This folder is **never** a source of truth for this project.
+2. Authoritative order is:
+- `SRS.md`
+- `SRS_Expanded_Implementation_Checklist.md`
+- `PoC.md` (when working in PoC scope)
+- Existing code in this repository
+3. The reference folder may be consulted **only** for implementation inspiration on features explicitly listed in:
+- `docs/reference_feature_overlap.md`
+4. Never copy code verbatim from the reference folder into this repository.
+5. If reference behavior conflicts with SRS/checklist, follow SRS/checklist and ignore the reference behavior.
+6. Any implementation decision inspired by the reference folder must be validated against current project requirements before merge.
