@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 
-REQUIRED_TERMS = ("Novel", "Corpus", "Chapter Unit", "Segment", "Sub-segment")
+REQUIRED_TERMS = ("Novel", "Corpus", "Chapter Unit", "Segment", "Sub-segment", "Character Map")
 
 
 class APITermsValidationError(ValueError):
@@ -13,7 +13,9 @@ class APITermsValidationError(ValueError):
 
 
 def _split_sections(markdown: str) -> dict[str, str]:
-    heading_pattern = re.compile(r"(?m)^##\s+(Novel|Corpus|Chapter Unit|Segment|Sub-segment)\s*$")
+    heading_pattern = re.compile(
+        r"(?m)^##\s+(Novel|Corpus|Chapter Unit|Segment|Sub-segment|Character Map)\s*$"
+    )
     matches = list(heading_pattern.finditer(markdown))
     if not matches:
         raise APITermsValidationError("No API term sections found for required terms.")

@@ -107,6 +107,37 @@ def _validate_sub_segment_example(example: dict) -> bool:
     return all(key in confidence for key in ("speaker", "emotion"))
 
 
+def _validate_character_map_example(example: dict) -> bool:
+    character_map = example.get("character_map")
+    if not isinstance(character_map, dict):
+        return False
+
+    minimum = character_map.get("minimum")
+    expanded = character_map.get("expanded")
+    if not isinstance(minimum, dict) or not isinstance(expanded, dict):
+        return False
+
+    minimum_required = ("name", "verbalized_form", "gender")
+    if not all(key in minimum for key in minimum_required):
+        return False
+
+    expanded_required = (
+        "name",
+        "verbalized_form",
+        "gender",
+        "aliases",
+        "notes",
+        "source",
+        "confidence",
+    )
+    if not all(key in expanded for key in expanded_required):
+        return False
+    if not isinstance(expanded.get("aliases"), list):
+        return False
+    confidence = expanded.get("confidence")
+    return isinstance(confidence, (int, float))
+
+
 def main() -> int:
     terms_path = ROOT / "docs" / "api_domain_terms.md"
     parsed = load_and_parse_api_terms(terms_path)
@@ -126,6 +157,9 @@ def main() -> int:
     if parsed["Sub-segment"]["definition"] != GLOSSARY_BY_NAME["Sub-segment"]:
         print("API terms validation failed: Sub-segment definition differs from glossary.")
         return 1
+    if parsed["Character Map"]["definition"] != GLOSSARY_BY_NAME["Character Map"]:
+        print("API terms validation failed: Character Map definition differs from glossary.")
+        return 1
     if not _validate_novel_example(parsed["Novel"]["example"]):
         print("API terms validation failed: Novel JSON example is missing required fields.")
         return 1
@@ -141,8 +175,13 @@ def main() -> int:
     if not _validate_sub_segment_example(parsed["Sub-segment"]["example"]):
         print("API terms validation failed: Sub-segment JSON example is missing required fields.")
         return 1
+    if not _validate_character_map_example(parsed["Character Map"]["example"]):
+        print("API terms validation failed: Character Map JSON example is missing minimum/expanded schema fields.")
+        return 1
 
-    print("API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment/Sub-segment definitions and examples.")
+    print(
+        "API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment/Sub-segment/Character Map definitions and examples."
+    )
     return 0
 
 

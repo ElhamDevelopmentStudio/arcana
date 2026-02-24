@@ -130,3 +130,31 @@ Example (storage representation with parent pointers):
   }
 }
 ```
+
+## Character Map
+
+Definition: User-editable table mapping `name -> verbalized form -> gender`, plus aliases and metadata.
+
+Example (minimum + expanded schema):
+
+```json
+{
+  "character_map": {
+    "minimum": {
+      "name": "Sunny",
+      "verbalized_form": "SUN-nee",
+      "gender": "male"
+    },
+    "expanded": {
+      "name": "Nephis",
+      "verbalized_form": "NEH-fiss",
+      "gender": "female",
+      "aliases": ["Changing Star", "Lady Nephis"],
+      "notes": "Main cast character",
+      "source": "user_import_csv",
+      "confidence": 0.98,
+      "voice_id": "voice_female_main_01"
+    }
+  }
+}
+```
