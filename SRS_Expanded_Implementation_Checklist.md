@@ -35,7 +35,7 @@ Definition of done for each task:
 ## 1. Product Intent Baseline (Ref: SRS.md §1)
 - [x] [INT-001] Create `docs/scope.md` with SRS “SHALL/SHALL NOT” copied into implementation scope.
 - [x] [INT-002] Add explicit non-goals list to prevent accidental feature creep.
-- [ ] [INT-003] Define success criteria checklist for Shadow Slave end-to-end run.
+- [x] [INT-003] Define success criteria checklist for Shadow Slave end-to-end run.
 - [ ] [INT-004] Add deterministic reproducibility objective to architecture doc.
 - [ ] [INT-005] Add acceptance KPI for “clean chapterized corpus” verification.
 - [ ] [INT-006] Add acceptance KPI for “validated character map”.

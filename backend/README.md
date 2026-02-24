@@ -74,3 +74,9 @@ Non-goals validation (`SRS.md §1.2 NIPE SHALL NOT` vs `docs/non_goals.md`):
 ```bash
 python scripts_validate_non_goals.py
 ```
+
+Shadow Slave success checklist validation (`SRS.md §1.3` vs `docs/shadow_slave_success_checklist.md`):
+
+```bash
+python scripts_validate_shadow_slave_success.py
+```
