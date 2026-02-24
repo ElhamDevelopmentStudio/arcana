@@ -35,6 +35,46 @@ def _validate_corpus_example(example: dict) -> bool:
     return all(key in first for key in required)
 
 
+def _validate_chapter_unit_example(example: dict) -> bool:
+    chapter_unit = example.get("chapter_unit")
+    if not isinstance(chapter_unit, dict):
+        return False
+    required = (
+        "project_id",
+        "chapter_id",
+        "chapter_index",
+        "chapter_title",
+        "raw_text",
+        "normalized_text",
+    )
+    return all(key in chapter_unit for key in required)
+
+
+def _validate_segment_example(example: dict) -> bool:
+    segment = example.get("segment")
+    if not isinstance(segment, dict):
+        return False
+    required = (
+        "chapter_id",
+        "segment_id",
+        "original_text",
+        "phonetic_text",
+        "type",
+        "speaker",
+        "gender",
+        "voice_id",
+        "emotion_valence",
+        "emotion_intensity",
+        "confidence",
+    )
+    if not all(key in segment for key in required):
+        return False
+    confidence = segment.get("confidence")
+    if not isinstance(confidence, dict):
+        return False
+    return all(key in confidence for key in ("speaker", "emotion"))
+
+
 def main() -> int:
     terms_path = ROOT / "docs" / "api_domain_terms.md"
     parsed = load_and_parse_api_terms(terms_path)
@@ -45,14 +85,26 @@ def main() -> int:
     if parsed["Corpus"]["definition"] != GLOSSARY_BY_NAME["Corpus"]:
         print("API terms validation failed: Corpus definition differs from glossary.")
         return 1
+    if parsed["Chapter Unit"]["definition"] != GLOSSARY_BY_NAME["Chapter Unit"]:
+        print("API terms validation failed: Chapter Unit definition differs from glossary.")
+        return 1
+    if parsed["Segment"]["definition"] != GLOSSARY_BY_NAME["Segment"]:
+        print("API terms validation failed: Segment definition differs from glossary.")
+        return 1
     if not _validate_novel_example(parsed["Novel"]["example"]):
         print("API terms validation failed: Novel JSON example is missing required fields.")
         return 1
     if not _validate_corpus_example(parsed["Corpus"]["example"]):
         print("API terms validation failed: Corpus JSON example is missing required fields.")
         return 1
+    if not _validate_chapter_unit_example(parsed["Chapter Unit"]["example"]):
+        print("API terms validation failed: Chapter Unit JSON example is missing required fields.")
+        return 1
+    if not _validate_segment_example(parsed["Segment"]["example"]):
+        print("API terms validation failed: Segment JSON example is missing required fields.")
+        return 1
 
-    print("API terms validation succeeded for Novel/Corpus definitions and examples.")
+    print("API terms validation succeeded for Novel/Corpus/Chapter Unit/Segment definitions and examples.")
     return 0
 
 

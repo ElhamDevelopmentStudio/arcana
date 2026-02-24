@@ -42,6 +42,40 @@ EXPECTED_API_TERMS_SNAPSHOT = {
             }
         },
     },
+    "Chapter Unit": {
+        "definition": "A single chapter (index + title + content).",
+        "example": {
+            "chapter_unit": {
+                "project_id": 1,
+                "chapter_id": 12,
+                "chapter_index": 12,
+                "chapter_title": "Chapter 12",
+                "raw_text": "Original chapter text...",
+                "normalized_text": "Normalized chapter text...",
+            }
+        },
+    },
+    "Segment": {
+        "definition": "A short, digestible chunk of text intended for analysis and TTS feeding (target: ≤ 255 characters for audiobook mode).",
+        "example": {
+            "segment": {
+                "chapter_id": 12,
+                "segment_id": "12-004",
+                "original_text": "\"I should have bought a piece of real meat instead.\"",
+                "phonetic_text": "\"I should have bought a piece of real meat instead.\"",
+                "type": "dialogue",
+                "speaker": "unknown",
+                "gender": "unknown",
+                "voice_id": "narrator_default",
+                "emotion_valence": 0.0,
+                "emotion_intensity": 0.0,
+                "confidence": {
+                    "speaker": 0.2,
+                    "emotion": 0.4,
+                },
+            }
+        },
+    },
 }
 
 
@@ -61,6 +95,8 @@ def test_integration_api_terms_definitions_match_glossary() -> None:
     parsed = load_and_parse_api_terms(DOCS_API_TERMS_PATH)
     assert parsed["Novel"]["definition"] == GLOSSARY_BY_NAME["Novel"]
     assert parsed["Corpus"]["definition"] == GLOSSARY_BY_NAME["Corpus"]
+    assert parsed["Chapter Unit"]["definition"] == GLOSSARY_BY_NAME["Chapter Unit"]
+    assert parsed["Segment"]["definition"] == GLOSSARY_BY_NAME["Segment"]
 
 
 def test_e2e_api_terms_validation_cli_succeeds() -> None:

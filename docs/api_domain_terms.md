@@ -47,3 +47,49 @@ Example (API-facing representation):
   }
 }
 ```
+
+## Chapter Unit
+
+Definition: A single chapter (index + title + content).
+
+Example (API-facing representation):
+
+```json
+{
+  "chapter_unit": {
+    "project_id": 1,
+    "chapter_id": 12,
+    "chapter_index": 12,
+    "chapter_title": "Chapter 12",
+    "raw_text": "Original chapter text...",
+    "normalized_text": "Normalized chapter text..."
+  }
+}
+```
+
+## Segment
+
+Definition: A short, digestible chunk of text intended for analysis and TTS feeding (target: ≤ 255 characters for audiobook mode).
+
+Example (API-facing representation):
+
+```json
+{
+  "segment": {
+    "chapter_id": 12,
+    "segment_id": "12-004",
+    "original_text": "\"I should have bought a piece of real meat instead.\"",
+    "phonetic_text": "\"I should have bought a piece of real meat instead.\"",
+    "type": "dialogue",
+    "speaker": "unknown",
+    "gender": "unknown",
+    "voice_id": "narrator_default",
+    "emotion_valence": 0.0,
+    "emotion_intensity": 0.0,
+    "confidence": {
+      "speaker": 0.2,
+      "emotion": 0.4
+    }
+  }
+}
+```
