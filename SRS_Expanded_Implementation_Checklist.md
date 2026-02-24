@@ -50,7 +50,7 @@ Definition of done for each task:
 - [x] [USE-005] Add “Community Reader” read-only dashboard flow.
 - [x] [USE-006] Implement UC-1 traceability test script (Shadow Slave -> Audiobook export).
 - [x] [USE-007] Implement UC-2 traceability test script (Any novel -> Academic export).
-- [ ] [USE-008] Implement UC-3 traceability test script (Draft novel -> Author diagnostics).
+- [x] [USE-008] Implement UC-3 traceability test script (Draft novel -> Author diagnostics).
 
 ## 3. System Modes and Selection (Ref: SRS.md §3)
 - [ ] [MODE-001] Define mode enum: `audiobook`, `academic`, `author`, `custom`.

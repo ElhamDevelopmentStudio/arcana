@@ -134,3 +134,9 @@ UC-2 traceability execution (`USE-007`, Any novel -> Academic export):
 ```bash
 python scripts_run_uc2_traceability.py
 ```
+
+UC-3 traceability execution (`USE-008`, Draft novel -> Author diagnostics):
+
+```bash
+python scripts_run_uc3_traceability.py
+```
