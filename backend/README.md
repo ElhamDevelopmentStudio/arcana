@@ -86,3 +86,9 @@ Architecture deterministic objective validation (`SRS.md §1.3` vs `docs/archite
 ```bash
 python scripts_validate_architecture.py
 ```
+
+Acceptance KPI validation (`SRS.md §1.3` criterion mapping vs `docs/acceptance_kpis.md`):
+
+```bash
+python scripts_validate_acceptance_kpis.py
+```
