@@ -128,3 +128,9 @@ UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 ```bash
 python scripts_run_uc1_traceability.py
 ```
+
+UC-2 traceability execution (`USE-007`, Any novel -> Academic export):
+
+```bash
+python scripts_run_uc2_traceability.py
+```
