@@ -6,11 +6,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_session, init_db
-from app.modes import DEFAULT_MODE
+from app.modes import DEFAULT_MODE, get_mode_catalog
 from app.models import Chapter, Character, LLMCall, Project, Run, Segment
 from app.schemas import (
     CharacterImportResponse,
     IngestResponse,
+    ModeCatalogResponse,
     ProjectCreate,
     ProjectResponse,
     RunCreateRequest,
@@ -45,6 +46,11 @@ def startup() -> None:
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/modes", response_model=ModeCatalogResponse, status_code=status.HTTP_200_OK)
+def get_modes() -> ModeCatalogResponse:
+    return ModeCatalogResponse(**get_mode_catalog())
 
 
 def _get_project_or_404(session: Session, project_id: int) -> Project:

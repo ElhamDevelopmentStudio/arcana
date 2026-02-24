@@ -40,6 +40,7 @@ python scripts_run_migration.py
 
 ## API Summary
 
+- `GET /api/modes`
 - `POST /api/projects`
 - `POST /api/projects/{project_id}/ingest/txt`
 - `POST /api/projects/{project_id}/characters/import`

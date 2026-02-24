@@ -55,7 +55,7 @@ Definition of done for each task:
 ## 3. System Modes and Selection (Ref: SRS.md §3)
 - [x] [MODE-001] Define mode enum: `audiobook`, `academic`, `author`, `custom`.
 - [x] [MODE-002] Persist selected mode on project record.
-- [ ] [MODE-003] Add API endpoint to fetch available modes.
+- [x] [MODE-003] Add API endpoint to fetch available modes.
 - [ ] [MODE-004] Build post-ingestion mode selection UI.
 - [ ] [MODE-005] Block pipeline run until mode is selected.
 - [ ] [MODE-006] Define default config profile object per mode.

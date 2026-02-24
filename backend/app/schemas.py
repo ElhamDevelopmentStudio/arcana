@@ -17,6 +17,12 @@ class ProjectResponse(BaseModel):
     created_at: datetime
 
 
+class ModeCatalogResponse(BaseModel):
+    modes: list[str]
+    default_mode: str
+    persisted_in: list[str]
+
+
 class IngestResponse(BaseModel):
     project_id: int
     chapter_count: int

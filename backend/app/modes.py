@@ -19,3 +19,11 @@ MODE_PERSISTENCE_PATHS: tuple[str, ...] = ("projects.selected_mode", "runs.confi
 
 def is_valid_mode(value: str) -> bool:
     return value in MODE_VALUES
+
+
+def get_mode_catalog() -> dict[str, object]:
+    return {
+        "modes": list(MODE_VALUES),
+        "default_mode": DEFAULT_MODE,
+        "persisted_in": list(MODE_PERSISTENCE_PATHS),
+    }
