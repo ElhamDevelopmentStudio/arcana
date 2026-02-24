@@ -1,0 +1,49 @@
+# NIPE PoC Backend
+
+## Setup
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+## PostgreSQL
+
+Expected default local DSN:
+
+```text
+postgresql+psycopg://postgres@localhost:5432/nipe_poc
+```
+
+Create database if needed:
+
+```bash
+createdb -U postgres nipe_poc
+```
+
+## Run
+
+```bash
+cd backend
+uvicorn app.main:app --reload --port 8000
+```
+
+## Optional SQL migration script
+
+```bash
+cd backend
+python scripts_run_migration.py
+```
+
+## API Summary
+
+- `POST /api/projects`
+- `POST /api/projects/{project_id}/ingest/txt`
+- `POST /api/projects/{project_id}/characters/import`
+- `PUT /api/projects/{project_id}/voices`
+- `POST /api/projects/{project_id}/runs`
+- `GET /api/projects/{project_id}/runs/{run_id}`
+- `GET /api/projects/{project_id}/exports/{run_id}.json`

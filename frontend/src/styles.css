@@ -1,0 +1,120 @@
+:root {
+  color-scheme: light;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: linear-gradient(140deg, #f7f3e8 0%, #e8f0f5 45%, #f9fbf1 100%);
+  color: #1d2d35;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 14px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(42, 71, 84, 0.14);
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.grid-form {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+}
+
+input,
+button {
+  border: 1px solid #7f969f;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+button {
+  background: #1f5568;
+  color: #f6fdff;
+  border-color: #1f5568;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.panel {
+  background: #f4f8fb;
+  border: 1px solid #d0dce2;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+pre {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.msg {
+  border-radius: 10px;
+  padding: 10px;
+  font-weight: 600;
+}
+
+.msg.ok {
+  background: #dbf5e8;
+  color: #0f5634;
+}
+
+.msg.err {
+  background: #ffe2df;
+  color: #7f1c16;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 12px;
+  }
+
+  .form-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
