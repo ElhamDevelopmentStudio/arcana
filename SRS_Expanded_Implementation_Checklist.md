@@ -53,7 +53,7 @@ Definition of done for each task:
 - [x] [USE-008] Implement UC-3 traceability test script (Draft novel -> Author diagnostics).
 
 ## 3. System Modes and Selection (Ref: SRS.md §3)
-- [ ] [MODE-001] Define mode enum: `audiobook`, `academic`, `author`, `custom`.
+- [x] [MODE-001] Define mode enum: `audiobook`, `academic`, `author`, `custom`.
 - [ ] [MODE-002] Persist selected mode on project record.
 - [ ] [MODE-003] Add API endpoint to fetch available modes.
 - [ ] [MODE-004] Build post-ingestion mode selection UI.

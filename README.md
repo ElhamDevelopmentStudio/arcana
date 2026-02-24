@@ -38,6 +38,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/architecture.md`: architecture baseline including deterministic reproducibility objective
 - `docs/acceptance_kpis.md`: acceptance KPI definitions aligned to SRS success criteria
 - `docs/persona_end_to_end_flows.md`: one end-to-end flow per SRS persona
+- `docs/system_modes.md`: canonical MODE-001 enum contract for SRS section 3 mode values
 - `docs/audiobook_ui_api_mapping.md`: USE-002 mapping from audiobook UI steps to concrete API endpoints
 - `docs/academic_outputs_export_mapping.md`: USE-003 mapping from academic flow to outputs and export formats
 - `docs/author_diagnostic_requirements_mapping.md`: USE-004 mapping from author flow to diagnostic report requirements
@@ -161,6 +162,12 @@ Community reader flow validation (`USE-005` read-only steps and dashboard covera
 
 ```bash
 python backend/scripts_validate_community_reader_flow.py
+```
+
+Mode enum contract validation (`MODE-001`, SRS system mode baseline):
+
+```bash
+python backend/scripts_validate_mode_enum.py
 ```
 
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):

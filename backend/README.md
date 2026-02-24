@@ -123,6 +123,12 @@ Community reader flow validation (`USE-005` read-only steps and dashboard covera
 python scripts_validate_community_reader_flow.py
 ```
 
+Mode enum contract validation (`MODE-001`, SRS system mode baseline):
+
+```bash
+python scripts_validate_mode_enum.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash
