@@ -35,6 +35,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/scope.md`: implementation scope baseline (`SRS.md §1.2` SHALL/SHALL NOT)
 - `docs/non_goals.md`: explicit non-goals list and scope-guardrail rules
 - `docs/shadow_slave_success_checklist.md`: Shadow Slave end-to-end success criteria checklist (`SRS.md §1.3`)
+- `docs/architecture.md`: architecture baseline including deterministic reproducibility objective
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
@@ -112,6 +113,12 @@ Shadow Slave success checklist validation (`SRS.md §1.3` vs `docs/shadow_slave_
 
 ```bash
 python backend/scripts_validate_shadow_slave_success.py
+```
+
+Architecture deterministic objective validation (`SRS.md §1.3` vs `docs/architecture.md`):
+
+```bash
+python backend/scripts_validate_architecture.py
 ```
 
 Frontend build verification:

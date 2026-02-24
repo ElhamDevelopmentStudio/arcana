@@ -80,3 +80,9 @@ Shadow Slave success checklist validation (`SRS.md §1.3` vs `docs/shadow_slave_
 ```bash
 python scripts_validate_shadow_slave_success.py
 ```
+
+Architecture deterministic objective validation (`SRS.md §1.3` vs `docs/architecture.md`):
+
+```bash
+python scripts_validate_architecture.py
+```
