@@ -39,6 +39,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/acceptance_kpis.md`: acceptance KPI definitions aligned to SRS success criteria
 - `docs/persona_end_to_end_flows.md`: one end-to-end flow per SRS persona
 - `docs/audiobook_ui_api_mapping.md`: USE-002 mapping from audiobook UI steps to concrete API endpoints
+- `docs/academic_outputs_export_mapping.md`: USE-003 mapping from academic flow to outputs and export formats
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
@@ -140,6 +141,12 @@ Audiobook UI/API mapping validation (`USE-002` doc completeness and endpoint seq
 
 ```bash
 python backend/scripts_validate_audiobook_flow_map.py
+```
+
+Academic outputs/export mapping validation (`USE-003` output definitions and format coverage):
+
+```bash
+python backend/scripts_validate_academic_outputs_map.py
 ```
 
 Frontend build verification:

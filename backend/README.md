@@ -104,3 +104,9 @@ Audiobook UI/API mapping validation (`USE-002` doc completeness and endpoint seq
 ```bash
 python scripts_validate_audiobook_flow_map.py
 ```
+
+Academic outputs/export mapping validation (`USE-003` output definitions and format coverage):
+
+```bash
+python scripts_validate_academic_outputs_map.py
+```
