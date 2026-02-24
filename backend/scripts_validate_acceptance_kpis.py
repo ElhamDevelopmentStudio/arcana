@@ -12,6 +12,7 @@ from app.acceptance_kpi_validation import (  # noqa: E402
     validate_kpi_001_against_srs,
     validate_kpi_002_against_srs,
     validate_kpi_003_against_srs,
+    validate_kpi_004_against_srs,
 )
 
 
@@ -23,15 +24,16 @@ def main() -> int:
         kpi_001 = validate_kpi_001_against_srs(srs_path, kpi_doc_path)
         kpi_002 = validate_kpi_002_against_srs(srs_path, kpi_doc_path)
         kpi_003 = validate_kpi_003_against_srs(srs_path, kpi_doc_path)
+        kpi_004 = validate_kpi_004_against_srs(srs_path, kpi_doc_path)
     except AcceptanceKPIValidationError as exc:
         print(f"Acceptance KPI validation failed: {exc}")
         return 1
 
     print(
         "Acceptance KPI validation succeeded for "
-        f"{kpi_001['linked_success_criterion']}, {kpi_002['linked_success_criterion']}, and "
-        f"{kpi_003['linked_success_criterion']} with {len(kpi_001)}, {len(kpi_002)}, and "
-        f"{len(kpi_003)} required fields."
+        f"{kpi_001['linked_success_criterion']}, {kpi_002['linked_success_criterion']}, "
+        f"{kpi_003['linked_success_criterion']}, and {kpi_004['linked_success_criterion']} "
+        f"with {len(kpi_001)}, {len(kpi_002)}, {len(kpi_003)}, and {len(kpi_004)} required fields."
     )
     return 0
 

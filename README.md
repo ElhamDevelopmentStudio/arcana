@@ -122,7 +122,7 @@ Architecture deterministic objective validation (`SRS.md §1.3` vs `docs/archite
 python backend/scripts_validate_architecture.py
 ```
 
-Acceptance KPI validation (`SRS.md §1.3` criteria mapping vs `docs/acceptance_kpis.md`, currently SC-001, SC-002, and SC-003):
+Acceptance KPI validation (`SRS.md §1.3` criteria mapping vs `docs/acceptance_kpis.md`, currently SC-001, SC-002, SC-003, and SC-004):
 
 ```bash
 python backend/scripts_validate_acceptance_kpis.py

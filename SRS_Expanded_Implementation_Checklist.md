@@ -40,7 +40,7 @@ Definition of done for each task:
 - [x] [INT-005] Add acceptance KPI for “clean chapterized corpus” verification.
 - [x] [INT-006] Add acceptance KPI for “validated character map”.
 - [x] [INT-007] Add acceptance KPI for “TTS-ready tagged export”.
-- [ ] [INT-008] Add acceptance KPI for “basic time-series and charts”.
+- [x] [INT-008] Add acceptance KPI for “basic time-series and charts”.
 
 ## 2. Personas and Use Cases (Ref: SRS.md §2)
 - [ ] [USE-001] Create one end-to-end flow document per persona.

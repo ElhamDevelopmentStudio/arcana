@@ -6,13 +6,16 @@ from app.acceptance_kpi_validation import (
     extract_kpi_001_section,
     extract_kpi_002_section,
     extract_kpi_003_section,
+    extract_kpi_004_section,
     load_kpi_001,
     load_kpi_002,
     load_kpi_003,
+    load_kpi_004,
     parse_kpi_key_values,
     validate_kpi_001_against_srs,
     validate_kpi_002_against_srs,
     validate_kpi_003_against_srs,
+    validate_kpi_004_against_srs,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +59,19 @@ EXPECTED_KPI_003 = {
     "verification_artifacts_required": "export_json, export_schema_validation_report, segment_length_report, rerun_diff_report",
 }
 
+EXPECTED_KPI_004 = {
+    "linked_success_criterion": "SC-004",
+    "srs_success_text": "basic tension/emotion/dominance time-series and charts",
+    "emotion_series_coverage_rate": "= 1.00",
+    "tension_series_coverage_rate": "= 1.00",
+    "dominance_series_coverage_rate": "= 1.00",
+    "chart_render_success_rate": "= 1.00",
+    "series_ordering_consistency_rate": "= 1.00",
+    "series_export_schema_validation_pass_rate": "= 1.00",
+    "rerun_series_point_delta_same_input_config": "= 0",
+    "verification_artifacts_required": "emotion_series_export_json, tension_series_export_json, dominance_series_export_json, chart_render_report, rerun_diff_report",
+}
+
 
 def test_unit_extract_kpi_section_stops_at_next_h2() -> None:
     sample = """
@@ -66,8 +82,10 @@ def test_unit_extract_kpi_section_stops_at_next_h2() -> None:
 - linked_success_criterion: SC-002
 ## KPI-003 TTS-Ready Tagged Export Verification
 - linked_success_criterion: SC-003
-## KPI-004 Other
+## KPI-004 Basic Time-Series and Charts Verification
 - linked_success_criterion: SC-004
+## KPI-005 Other
+- linked_success_criterion: SC-005
 """
     section_001 = extract_kpi_001_section(sample)
     assert "linked_success_criterion: SC-001" in section_001
@@ -80,6 +98,10 @@ def test_unit_extract_kpi_section_stops_at_next_h2() -> None:
     section_003 = extract_kpi_003_section(sample)
     assert "linked_success_criterion: SC-003" in section_003
     assert "linked_success_criterion: SC-004" not in section_003
+
+    section_004 = extract_kpi_004_section(sample)
+    assert "linked_success_criterion: SC-004" in section_004
+    assert "linked_success_criterion: SC-005" not in section_004
 
 
 def test_unit_parse_kpi_key_values_extracts_all_pairs() -> None:
@@ -98,9 +120,11 @@ def test_integration_kpi_001_matches_srs_and_required_fields() -> None:
     parsed_001 = validate_kpi_001_against_srs(SRS_PATH, KPI_DOC_PATH)
     parsed_002 = validate_kpi_002_against_srs(SRS_PATH, KPI_DOC_PATH)
     parsed_003 = validate_kpi_003_against_srs(SRS_PATH, KPI_DOC_PATH)
+    parsed_004 = validate_kpi_004_against_srs(SRS_PATH, KPI_DOC_PATH)
     assert parsed_001 == EXPECTED_KPI_001
     assert parsed_002 == EXPECTED_KPI_002
     assert parsed_003 == EXPECTED_KPI_003
+    assert parsed_004 == EXPECTED_KPI_004
 
 
 def test_e2e_kpi_validation_cli_succeeds() -> None:
@@ -113,13 +137,15 @@ def test_e2e_kpi_validation_cli_succeeds() -> None:
     )
     assert result.returncode == 0
     assert "Acceptance KPI validation succeeded" in result.stdout
-    assert "SC-001, SC-002, and SC-003" in result.stdout
+    assert "SC-001, SC-002, SC-003, and SC-004" in result.stdout
 
 
 def test_regression_kpi_snapshot() -> None:
     parsed_001 = load_kpi_001(KPI_DOC_PATH)
     parsed_002 = load_kpi_002(KPI_DOC_PATH)
     parsed_003 = load_kpi_003(KPI_DOC_PATH)
+    parsed_004 = load_kpi_004(KPI_DOC_PATH)
     assert parsed_001 == EXPECTED_KPI_001
     assert parsed_002 == EXPECTED_KPI_002
     assert parsed_003 == EXPECTED_KPI_003
+    assert parsed_004 == EXPECTED_KPI_004
