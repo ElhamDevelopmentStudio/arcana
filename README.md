@@ -37,6 +37,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/shadow_slave_success_checklist.md`: Shadow Slave end-to-end success criteria checklist (`SRS.md §1.3`)
 - `docs/architecture.md`: architecture baseline including deterministic reproducibility objective
 - `docs/acceptance_kpis.md`: acceptance KPI definitions aligned to SRS success criteria
+- `docs/persona_end_to_end_flows.md`: one end-to-end flow per SRS persona
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
 - `sample_character_map_shadow_slave.json`: sample character map import file
@@ -126,6 +127,12 @@ Acceptance KPI validation (`SRS.md §1.3` criteria mapping vs `docs/acceptance_k
 
 ```bash
 python backend/scripts_validate_acceptance_kpis.py
+```
+
+Persona flow validation (`SRS.md §2.1` vs `docs/persona_end_to_end_flows.md`):
+
+```bash
+python backend/scripts_validate_persona_flows.py
 ```
 
 Frontend build verification:

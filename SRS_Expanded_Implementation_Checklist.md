@@ -43,7 +43,7 @@ Definition of done for each task:
 - [x] [INT-008] Add acceptance KPI for “basic time-series and charts”.
 
 ## 2. Personas and Use Cases (Ref: SRS.md §2)
-- [ ] [USE-001] Create one end-to-end flow document per persona.
+- [x] [USE-001] Create one end-to-end flow document per persona.
 - [ ] [USE-002] Map Audiobook Creator flow to concrete UI steps and API endpoints.
 - [ ] [USE-003] Map Academic Researcher flow to outputs and export formats.
 - [ ] [USE-004] Map Author flow to diagnostic report requirements.

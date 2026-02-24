@@ -92,3 +92,9 @@ Acceptance KPI validation (`SRS.md §1.3` criteria mapping vs `docs/acceptance_k
 ```bash
 python scripts_validate_acceptance_kpis.py
 ```
+
+Persona flow validation (`SRS.md §2.1` vs `docs/persona_end_to_end_flows.md`):
+
+```bash
+python scripts_validate_persona_flows.py
+```
