@@ -27,7 +27,3 @@ dist/
 
 # Logs
 *.log
-
-# Local backups
-frontend/.git_backup_local/
-
