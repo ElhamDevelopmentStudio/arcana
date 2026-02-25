@@ -78,6 +78,16 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         )
         .all()
     }
+    place_pronunciations = {
+        entry.term.strip(): entry.verbalized_form.strip()
+        for entry in session.query(PronunciationDictionary)
+        .filter(
+            PronunciationDictionary.project_id == project.id,
+            PronunciationDictionary.scope == "place",
+            PronunciationDictionary.character_name == "",
+        )
+        .all()
+    }
     character_scope_entries = session.query(PronunciationDictionary).filter(
         PronunciationDictionary.project_id == project.id,
         PronunciationDictionary.scope == "character",
@@ -90,7 +100,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         character_map = character_pronunciations.setdefault(normalized_name, {})
         character_map[entry.term.strip()] = entry.verbalized_form.strip()
 
-    name_to_verbalized = {**global_pronunciations}
+    name_to_verbalized = {**global_pronunciations, **place_pronunciations}
     for character in characters:
         name_to_verbalized[character.name.strip()] = character.verbalized_form.strip()
     character_lookup = {

@@ -1,11 +1,12 @@
 import csv
 import io
 import json
-from dataclasses import dataclass
 from ast import literal_eval
+from dataclasses import dataclass
 from typing import Any
 
 ALLOWED_GENDER_VALUES = frozenset({"male", "female", "neutral", "unknown", "custom"})
+
 
 @dataclass
 class ParsedCharacter:
@@ -16,6 +17,9 @@ class ParsedCharacter:
     notes: str | None
     source: str
     confidence: float
+    inferred_gender: str
+    inferred_confidence: float
+    inferred_source_trace: list[dict[str, Any]]
 
 
 def _parse_aliases(raw_aliases: Any) -> list[str]:
@@ -46,16 +50,15 @@ def _parse_aliases(raw_aliases: Any) -> list[str]:
     return list(dict.fromkeys(cleaned))
 
 
-def _parse_confidence(row: dict[str, str], row_number: int) -> float:
-    raw_value = row.get("confidence")
+def _parse_confidence(raw_value: Any, row_number: int, *, default: float) -> float:
     if raw_value is None:
-        return 1.0
+        return default
 
     if isinstance(raw_value, (int, float)):
         confidence = float(raw_value)
     else:
         if str(raw_value).strip() == "":
-            return 1.0
+            return default
         try:
             confidence = float(str(raw_value).strip())
         except ValueError as exc:
@@ -90,6 +93,39 @@ def _normalize_gender(row_number: int, raw_value: str) -> str:
     return normalized
 
 
+def _normalize_optional_gender(row_number: int, raw_value: str | None, *, field: str) -> str:
+    normalized = str(raw_value).strip().lower() if raw_value is not None else ""
+    if not normalized:
+        return "unknown"
+    if normalized not in ALLOWED_GENDER_VALUES:
+        raise ValueError(
+            f"Row {row_number} has unsupported {field} '{raw_value}'. "
+            f"Supported values are: male, female, neutral, unknown, custom"
+        )
+    return normalized
+
+
+def _coerce_source_trace(raw_source_trace: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_source_trace, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for trace in raw_source_trace:
+        if not isinstance(trace, dict):
+            continue
+        normalized.append(
+            {
+                "kind": str(trace.get("kind") or ""),
+                "chapter_index": int(trace.get("chapter_index", 0) or 0),
+                "span_start": int(trace.get("span_start", 0) or 0),
+                "span_end": int(trace.get("span_end", 0) or 0),
+                "excerpt": str(trace.get("excerpt") or ""),
+                "weight": float(trace.get("weight", 0.0) or 0.0),
+            }
+        )
+    return normalized
+
+
 def _validate_row(row: dict[str, str], row_number: int) -> ParsedCharacter:
     name = _resolve_field(row, ["name"])
     verbalized_form = _resolve_field(row, ["verbalized_form", "verbalized"])
@@ -112,7 +148,18 @@ def _validate_row(row: dict[str, str], row_number: int) -> ParsedCharacter:
         aliases=_parse_aliases(row.get("aliases")),
         notes=row.get("notes") and str(row["notes"]).strip() or None,
         source=str(row.get("source") or "user_import").strip() or "user_import",
-        confidence=_parse_confidence(row, row_number),
+        confidence=_parse_confidence(row.get("confidence"), row_number, default=1.0),
+        inferred_gender=_normalize_optional_gender(
+            row_number=row_number,
+            raw_value=row.get("inferred_gender"),
+            field="inferred_gender",
+        ),
+        inferred_confidence=_parse_confidence(
+            row.get("inferred_confidence"),
+            row_number,
+            default=0.0,
+        ),
+        inferred_source_trace=_coerce_source_trace(row.get("inferred_source_trace")),
     )
 
 
@@ -135,6 +182,9 @@ def _parse_json(payload: bytes) -> list[ParsedCharacter]:
                         "notes": value.get("notes"),
                         "source": value.get("source"),
                         "confidence": value.get("confidence"),
+                        "inferred_gender": value.get("inferred_gender"),
+                        "inferred_confidence": value.get("inferred_confidence"),
+                        "inferred_source_trace": value.get("inferred_source_trace"),
                     }
                 )
     elif isinstance(data, list):
@@ -151,6 +201,9 @@ def _parse_json(payload: bytes) -> list[ParsedCharacter]:
                         "notes": item.get("notes"),
                         "source": item.get("source"),
                         "confidence": item.get("confidence"),
+                        "inferred_gender": item.get("inferred_gender"),
+                        "inferred_confidence": item.get("inferred_confidence"),
+                        "inferred_source_trace": item.get("inferred_source_trace"),
                     }
                 )
 

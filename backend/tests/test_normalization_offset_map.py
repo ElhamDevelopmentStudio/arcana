@@ -5,7 +5,10 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_norm_offset_map.db"
 
 import pytest
 
-from app.services.normalization import build_original_to_normalized_offset_map
+from app.services.normalization import (
+    build_original_to_normalized_offset_map,
+    build_segment_level_offset_map,
+)
 
 
 def setup_module() -> None:
@@ -88,6 +91,40 @@ def test_unit_build_original_to_normalized_offset_map_tracks_replace_op() -> Non
         "normalized_start": 26,
         "normalized_end": 27,
     }
+
+
+def test_unit_build_segment_level_offset_map_shifts_segment_offsets() -> None:
+    original = "He said “Hello and waited."
+    normalized = 'He said "Hello and waited."'
+    chapter_map = build_original_to_normalized_offset_map(original, normalized)
+    segment_start = 8
+    segment_text = '"Hello and waited."'
+
+    segment_map = build_segment_level_offset_map(chapter_map, segment_start, segment_text)
+
+    assert segment_map == [
+        {
+            "type": "replace",
+            "original_start": 8,
+            "original_end": 9,
+            "normalized_start": 0,
+            "normalized_end": 1,
+        },
+        {
+            "type": "equal",
+            "original_start": 9,
+            "original_end": 26,
+            "normalized_start": 1,
+            "normalized_end": 18,
+        },
+        {
+            "type": "insert",
+            "original_start": -1,
+            "original_end": -1,
+            "normalized_start": 18,
+            "normalized_end": 19,
+        },
+    ]
 
 
 def test_unit_persist_chapter_original_to_normalized_offset_map_in_database() -> None:

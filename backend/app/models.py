@@ -119,7 +119,7 @@ class PronunciationDictionary(Base):
             name="uq_project_scope_character_term",
         ),
         CheckConstraint(
-            "scope IN ('global', 'character')",
+            "scope IN ('global', 'character', 'place')",
             name="ck_pronunciation_dictionary_scope",
         ),
     )

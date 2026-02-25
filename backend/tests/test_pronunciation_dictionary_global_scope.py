@@ -61,6 +61,38 @@ def test_integration_global_pronunciation_dictionary_set_and_list() -> None:
         assert terms == {"Aegis", "Rook"}
 
 
+def test_integration_place_pronunciation_dictionary_set_and_list() -> None:
+    sample_entries = [
+        {
+            "term": "Narnia",
+            "verbalized_form": "Nar-nia",
+            "source": "user",
+            "confidence": 1.0,
+        },
+    ]
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Place Pronunciation Dictionary"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        put_resp = client.put(
+            f"/api/projects/{project_id}/pronunciation-dictionary/places",
+            json={"entries": sample_entries},
+        )
+        assert put_resp.status_code == 200
+        payload = put_resp.json()
+        assert payload["project_id"] == project_id
+        assert payload["scope"] == "place"
+        assert len(payload["entries"]) == 1
+
+        get_resp = client.get(f"/api/projects/{project_id}/pronunciation-dictionary/places")
+        assert get_resp.status_code == 200
+        listed = get_resp.json()
+        assert listed["scope"] == "place"
+        assert listed["entries"][0]["term"] == "Narnia"
+
+
 def test_integration_global_pronunciation_dictionary_applies_to_pipeline() -> None:
     text_payload = b"Chapter 1\nThe Aegis hung in the sky, and the crew praised it."
 
@@ -102,5 +134,45 @@ def test_integration_global_pronunciation_dictionary_applies_to_pipeline() -> No
             segment_payloads = [row.segment_json for row in segment_rows]
             assert any("EE-jis" in payload["phonetic_text"] for payload in segment_payloads)
             assert all("Aegis" in payload["original_text"] for payload in segment_payloads)
+        finally:
+            session.close()
+
+
+def test_integration_place_pronunciation_dictionary_applies_to_pipeline() -> None:
+    text_payload = b"Chapter 1\nWe traveled to Narnia and crossed the moonlit border."
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Place Pronunciation Pipeline"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(text_payload), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        dict_resp = client.put(
+            f"/api/projects/{project_id}/pronunciation-dictionary/places",
+            json={"entries": [{"term": "Narnia", "verbalized_form": "Nar-nia", "confidence": 1.0}]},
+        )
+        assert dict_resp.status_code == 200
+
+        run_payload = {
+            "max_segment_chars": 255,
+            "llm_enabled": False,
+            "provider_name": "openrouter",
+            "max_calls_per_day": 2,
+        }
+        run_resp = client.post(f"/api/projects/{project_id}/runs", json=run_payload)
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        session = get_session_factory()()
+        try:
+            segment_rows = session.query(Segment).filter(Segment.run_id == run_id).all()
+            segment_payloads = [row.segment_json for row in segment_rows]
+            assert any("Nar-nia" in payload["phonetic_text"] for payload in segment_payloads)
+            assert all("Narnia" in payload["original_text"] for payload in segment_payloads)
         finally:
             session.close()
