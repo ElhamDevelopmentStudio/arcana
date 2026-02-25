@@ -89,6 +89,37 @@ def build_character_mentions_per_1000_words(
     }
 
 
+def build_character_dialogue_line_counts(
+    segments: list[dict[str, object]],
+    characters: list[Character],
+) -> dict[str, int]:
+    if not segments or not characters:
+        return {}
+
+    alias_to_canonical = _build_alias_to_canonical_terms(characters)
+    canonical_names = sorted(str(character.name).strip() for character in characters if str(character.name).strip())
+    line_counts: dict[str, int] = {name: 0 for name in canonical_names}
+
+    for segment in segments:
+        if str(segment.get("type", "")).lower() != "dialogue":
+            continue
+        speaker = str(segment.get("speaker", "")).strip()
+        if not speaker or speaker.lower() == "unknown":
+            continue
+
+        normalized_speaker = normalize_candidate_key(speaker)
+        if not normalized_speaker:
+            continue
+        canonical_names_for_speaker = alias_to_canonical.get(normalized_speaker, set())
+        if len(canonical_names_for_speaker) != 1:
+            continue
+
+        canonical_name = next(iter(canonical_names_for_speaker))
+        line_counts[canonical_name] = line_counts.get(canonical_name, 0) + 1
+
+    return line_counts
+
+
 def _normalize_counting_text(raw_text: str) -> str:
     normalized = normalize_candidate_key(raw_text)
     return re.sub(r"\s+", " ", normalized).strip()
