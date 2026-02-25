@@ -11,7 +11,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { useCreateProjectMutation, useIngestChapterDirectoryMutation, useIngestTxtMutation } from '@/features/workflow/api/workflow-hooks';
+import {
+  useCreateProjectMutation,
+  useIngestChapterDirectoryMutation,
+  useIngestMarkdownMutation,
+  useIngestTxtMutation,
+} from '@/features/workflow/api/workflow-hooks';
 import { projectRoute } from '@/features/workflow/utils/project-route';
 
 type IngestionSource = 'txt' | 'directory' | 'markdown' | 'epub';
@@ -22,6 +27,7 @@ export function ProjectNewPage() {
   const [ingestionSource, setIngestionSource] = useState<IngestionSource>('txt');
   const [txtFile, setTxtFile] = useState<File | null>(null);
   const [directoryFiles, setDirectoryFiles] = useState<File[]>([]);
+  const [markdownFile, setMarkdownFile] = useState<File | null>(null);
 
   const projectId = useWorkspaceStore((state) => state.projectId);
   const chapterCount = useWorkspaceStore((state) => state.chapterCount);
@@ -31,8 +37,13 @@ export function ProjectNewPage() {
   const createProjectMutation = useCreateProjectMutation();
   const ingestTxtMutation = useIngestTxtMutation(projectId);
   const ingestDirectoryMutation = useIngestChapterDirectoryMutation(projectId);
+  const ingestMarkdownMutation = useIngestMarkdownMutation(projectId);
 
-  const isBusy = createProjectMutation.isMutating || ingestTxtMutation.isMutating || ingestDirectoryMutation.isMutating;
+  const isBusy =
+    createProjectMutation.isMutating ||
+    ingestTxtMutation.isMutating ||
+    ingestDirectoryMutation.isMutating ||
+    ingestMarkdownMutation.isMutating;
   const canContinue = projectId !== null && chapterCount !== null;
 
   async function handleCreateProject(event: FormEvent<HTMLFormElement>) {
@@ -90,6 +101,22 @@ export function ProjectNewPage() {
         toast.success(`Directory ingestion complete: ${response.chapter_count} chapters detected.`);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Chapter directory ingestion failed.');
+      }
+      return;
+    }
+
+    if (ingestionSource === 'markdown') {
+      if (!markdownFile) {
+        toast.error('Choose a Markdown file before upload.');
+        return;
+      }
+
+      try {
+        const response = await ingestMarkdownMutation.trigger({ file: markdownFile });
+        setChapterCount(response.chapter_count);
+        toast.success(`Markdown ingestion complete: ${response.chapter_count} chapters detected.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Markdown ingestion failed.');
       }
       return;
     }
@@ -167,13 +194,19 @@ export function ProjectNewPage() {
                 >
                   <option value="txt">TXT file</option>
                   <option value="directory">Chapter directory</option>
-                  <option value="markdown">Markdown (pending backend)</option>
+                  <option value="markdown">Markdown</option>
                   <option value="epub">EPUB (pending backend)</option>
                 </NativeSelect>
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="txt-upload">{ingestionSource === 'directory' ? 'Upload chapter TXT files' : 'Upload TXT'}</Label>
+                <Label htmlFor="txt-upload">
+                  {ingestionSource === 'directory'
+                    ? 'Upload chapter TXT files'
+                    : ingestionSource === 'markdown'
+                      ? 'Upload Markdown file'
+                      : 'Upload TXT'}
+                </Label>
                 {ingestionSource === 'directory' ? (
                   <Input
                     id="txt-upload"
@@ -181,6 +214,14 @@ export function ProjectNewPage() {
                     data-testid="directory-upload-input"
                     multiple
                     onChange={(event) => setDirectoryFiles(Array.from(event.target.files ?? []))}
+                    type="file"
+                  />
+                ) : ingestionSource === 'markdown' ? (
+                  <Input
+                    id="txt-upload"
+                    accept=".md,.markdown"
+                    data-testid="markdown-upload-input"
+                    onChange={(event) => setMarkdownFile(event.target.files?.[0] ?? null)}
                     type="file"
                   />
                 ) : (
@@ -197,7 +238,9 @@ export function ProjectNewPage() {
 
               <div className="mt-auto space-y-2">
                 <Button data-testid="upload-txt-button" disabled={isBusy || projectId === null} type="submit">
-                  {ingestTxtMutation.isMutating || ingestDirectoryMutation.isMutating ? 'Uploading...' : 'Upload & Parse'}
+                  {ingestTxtMutation.isMutating || ingestDirectoryMutation.isMutating || ingestMarkdownMutation.isMutating
+                    ? 'Uploading...'
+                    : 'Upload & Parse'}
                 </Button>
                 <p className="text-sm text-muted-foreground" data-testid="chapter-count-state">
                   {chapterCount !== null ? `Detected chapters: ${chapterCount}` : 'Detected chapters: not available yet'}

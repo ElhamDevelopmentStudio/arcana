@@ -2,6 +2,9 @@ import re
 
 CHAPTER_HEADER_RE = re.compile(r"^\s*(chapter\s+[0-9ivxlcdm]+[^\n]*)\s*$", re.IGNORECASE | re.MULTILINE)
 CHAPTER_FILENAME_SPLIT_RE = re.compile(r"(\d+)")
+MARKDOWN_FENCE_RE = re.compile(r"```[\s\S]*?```", re.MULTILINE)
+MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s*", re.MULTILINE)
+MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 MAX_TITLE_CANDIDATE_LENGTH = 120
 DEFAULT_INGESTION_TITLE = "Untitled Novel"
 
@@ -74,3 +77,12 @@ def chapter_title_from_filename(filename: str, chapter_index: int) -> str:
     if not normalized:
         return f"Chapter {chapter_index}"
     return normalized
+
+
+def normalize_markdown_for_ingestion(markdown_text: str) -> str:
+    normalized = markdown_text.replace("\r\n", "\n")
+    normalized = MARKDOWN_FENCE_RE.sub("", normalized)
+    normalized = MARKDOWN_HEADING_RE.sub("", normalized)
+    normalized = MARKDOWN_LINK_RE.sub(r"\1", normalized)
+    normalized = normalized.replace("**", "").replace("__", "").replace("*", "").replace("`", "")
+    return normalized.strip()

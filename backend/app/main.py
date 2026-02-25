@@ -30,6 +30,7 @@ from app.services.ingestion import (
     decode_text,
     detect_chapters,
     detect_title_with_fallback,
+    normalize_markdown_for_ingestion,
 )
 from app.services.mode_profiles import build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_mode_switch
@@ -192,6 +193,51 @@ def ingest_txt(
                 chapter_title=title,
                 raw_text=content,
                 normalized_text=normalized,
+            )
+        )
+
+    if _project_title_needs_fallback(project.title):
+        project.title = detected_title
+    project.ingestion_timestamp = datetime.now(timezone.utc)
+    session.add(project)
+    session.commit()
+
+    return IngestResponse(project_id=project_id, chapter_count=len(chapters))
+
+
+@app.post(
+    "/api/projects/{project_id}/ingest/markdown",
+    response_model=IngestResponse,
+    status_code=status.HTTP_200_OK,
+)
+def ingest_markdown(
+    project_id: int,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+) -> IngestResponse:
+    project = _get_project_or_404(session, project_id)
+
+    filename = file.filename or ""
+    lower_filename = filename.lower()
+    if not (lower_filename.endswith(".md") or lower_filename.endswith(".markdown")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .md or .markdown files are supported")
+
+    payload = file.file.read()
+    markdown_text = decode_text(payload)
+    normalized_source = normalize_markdown_for_ingestion(markdown_text)
+    detected_title = detect_title_with_fallback(normalized_source, filename=filename)
+    chapters = detect_chapters(normalized_source)
+
+    session.query(Chapter).filter(Chapter.project_id == project_id).delete()
+
+    for chapter_index, (chapter_title, chapter_content) in enumerate(chapters, start=1):
+        session.add(
+            Chapter(
+                project_id=project_id,
+                chapter_index=chapter_index,
+                chapter_title=chapter_title,
+                raw_text=chapter_content,
+                normalized_text=normalize_text(chapter_content),
             )
         )
 

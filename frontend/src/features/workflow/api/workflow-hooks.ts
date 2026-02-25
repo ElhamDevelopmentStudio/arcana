@@ -72,6 +72,18 @@ export function useIngestChapterDirectoryMutation(projectId: number | null) {
   );
 }
 
+export function useIngestMarkdownMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['ingest-markdown', projectId] : null,
+    async (_, { arg }: { arg: { file: File } }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before ingestion.');
+      }
+      return nipeApiClient.ingestMarkdown(projectId, arg.file);
+    },
+  );
+}
+
 export function useImportCharactersMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['import-characters', projectId] : null,

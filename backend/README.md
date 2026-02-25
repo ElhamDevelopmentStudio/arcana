@@ -45,6 +45,7 @@ python scripts_run_migration.py
 - `PUT /api/projects/{project_id}/mode`
 - `POST /api/projects/{project_id}/ingest/txt`
 - `POST /api/projects/{project_id}/ingest/chapters-dir`
+- `POST /api/projects/{project_id}/ingest/markdown`
 - `POST /api/projects/{project_id}/characters/import`
 - `PUT /api/projects/{project_id}/voices`
 - `POST /api/projects/{project_id}/runs`
@@ -65,6 +66,7 @@ Ingestion title fallback behavior:
 - If project title is a placeholder (`Untitled Project` / `New Project`), TXT ingestion attempts title detection from source text.
 - If no title is detectable from text, ingestion falls back to filename stem, then `Untitled Novel`.
 - Chapter-directory ingestion accepts multi-file `.txt` uploads and ingests files in natural filename order.
+- Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.
 - Mode catalog includes `mode_profiles` with default run-config values per mode.
 
 ## API Domain Terms

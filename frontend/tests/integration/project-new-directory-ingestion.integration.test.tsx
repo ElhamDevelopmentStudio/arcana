@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const createProjectTrigger = vi.fn();
 const ingestTxtTrigger = vi.fn();
 const ingestDirectoryTrigger = vi.fn();
+const ingestMarkdownTrigger = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useCreateProjectMutation: () => ({
@@ -19,6 +20,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useIngestChapterDirectoryMutation: () => ({
     isMutating: false,
     trigger: ingestDirectoryTrigger,
+  }),
+  useIngestMarkdownMutation: () => ({
+    isMutating: false,
+    trigger: ingestMarkdownTrigger,
   }),
 }));
 
@@ -48,6 +53,7 @@ describe('project new page directory ingestion', () => {
     createProjectTrigger.mockReset();
     ingestTxtTrigger.mockReset();
     ingestDirectoryTrigger.mockReset();
+    ingestMarkdownTrigger.mockReset();
     createProjectTrigger.mockResolvedValue({
       id: 101,
       title: 'Shadow Slave PoC',
@@ -58,6 +64,10 @@ describe('project new page directory ingestion', () => {
       created_at: '2026-02-25T00:00:00Z',
     });
     ingestDirectoryTrigger.mockResolvedValue({
+      project_id: 101,
+      chapter_count: 2,
+    });
+    ingestMarkdownTrigger.mockResolvedValue({
       project_id: 101,
       chapter_count: 2,
     });
@@ -81,6 +91,24 @@ describe('project new page directory ingestion', () => {
     expect(ingestDirectoryTrigger).toHaveBeenCalledWith({
       files: [chapterOne, chapterTwo],
     });
+    expect(screen.getByTestId('chapter-count-state')).toHaveTextContent('Detected chapters: 2');
+  });
+
+  it('uses markdown ingestion mutation when source type is markdown', async () => {
+    const user = userEvent.setup();
+    renderProjectNewPage();
+
+    await user.click(screen.getByTestId('create-project-button'));
+
+    await user.selectOptions(screen.getByTestId('ingestion-source-select'), 'markdown');
+
+    const markdownFile = new File(['# Shadow Slave\n\n## Chapter 1\nSome content'], 'novel.md', { type: 'text/markdown' });
+    await user.upload(screen.getByTestId('markdown-upload-input'), markdownFile);
+
+    await user.click(screen.getByTestId('upload-txt-button'));
+
+    expect(ingestMarkdownTrigger).toHaveBeenCalledTimes(1);
+    expect(ingestMarkdownTrigger).toHaveBeenCalledWith({ file: markdownFile });
     expect(screen.getByTestId('chapter-count-state')).toHaveTextContent('Detected chapters: 2');
   });
 });

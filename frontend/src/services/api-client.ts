@@ -103,6 +103,21 @@ export class NipeApiClient {
     }
   }
 
+  async ingestMarkdown(projectId: number, file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/ingest/markdown`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return ingestResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async importCharacters(projectId: number, file: File) {
     const formData = new FormData();
     formData.append('file', file);
