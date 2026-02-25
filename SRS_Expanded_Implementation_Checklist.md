@@ -124,7 +124,7 @@ Definition of done for each task:
 - [x] [CHAR-009] Create review screen for proposed characters.
 - [x] [CHAR-010] Create approve/reject actions per proposed character.
 - [x] [CHAR-011] Add “Finalize character map” gate action.
-- [ ] [CHAR-012] Prevent downstream runs from using unfinalized proposed set unless override enabled.
+- [x] [CHAR-012] Prevent downstream runs from using unfinalized proposed set unless override enabled.
 - [ ] [CHAR-013] Implement alias list storage per character.
 - [ ] [CHAR-014] Implement alias->canonical lookup service.
 - [ ] [CHAR-015] Add alias collision detector when alias maps to multiple canonicals.

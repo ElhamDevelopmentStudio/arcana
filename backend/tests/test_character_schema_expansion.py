@@ -15,6 +15,14 @@ from app.models import Character
 from app.services.characters import parse_character_file
 
 
+_SAMPLE_TEXT = (
+    "Chapter 1\n"
+    '"Sunny looked around," Sunny said. The cold wind cut through the dark street.\n\n'
+    "Chapter 2\n"
+    "Nephis smiled. Hope rose with the warm light."
+)
+
+
 def setup_module() -> None:
     clear_settings_cache()
     reset_engine()
@@ -294,3 +302,104 @@ def test_integration_character_map_finalize_action_tracks_state() -> None:
         list_after_save_resp = client.get(f"/api/projects/{project_id}/characters")
         assert list_after_save_resp.status_code == 200
         assert list_after_save_resp.json()["character_map_finalized"] is False
+
+
+def test_integration_run_pipeline_is_blocked_with_unfinalized_character_map() -> None:
+    imported_payload = json.dumps({"Kai": {"verbalized_form": "Kai", "gender": "female"}}).encode("utf-8")
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Unfinalized Character Map Run Gate"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_SAMPLE_TEXT.encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 2
+
+        import_resp = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={"file": ("characters.json", io.BytesIO(imported_payload), "application/json")},
+        )
+        assert import_resp.status_code == 200
+
+        run_payload = {
+            "max_segment_chars": 120,
+            "llm_enabled": False,
+            "provider_name": "openrouter",
+            "max_calls_per_day": 2,
+        }
+        run_resp = client.post(f"/api/projects/{project_id}/runs", json=run_payload)
+        assert run_resp.status_code == 409
+        assert "not finalized" in run_resp.json()["detail"]
+
+
+def test_integration_run_pipeline_with_unfinalized_character_map_override() -> None:
+    imported_payload = json.dumps({"Kai": {"verbalized_form": "Kai", "gender": "female"}}).encode("utf-8")
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Unfinalized Character Map Override Run"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_SAMPLE_TEXT.encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 2
+
+        import_resp = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={"file": ("characters.json", io.BytesIO(imported_payload), "application/json")},
+        )
+        assert import_resp.status_code == 200
+
+        run_payload = {
+            "max_segment_chars": 120,
+            "llm_enabled": False,
+            "provider_name": "openrouter",
+            "max_calls_per_day": 2,
+            "allow_unfinalized_character_map": True,
+        }
+        run_resp = client.post(f"/api/projects/{project_id}/runs", json=run_payload)
+        assert run_resp.status_code == 200
+        assert run_resp.json()["run_id"] > 0
+
+
+def test_integration_run_pipeline_after_character_map_finalized() -> None:
+    imported_payload = json.dumps({"Kai": {"verbalized_form": "Kai", "gender": "female"}}).encode("utf-8")
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Finalized Character Map Run Gate"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_SAMPLE_TEXT.encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 2
+
+        import_resp = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={"file": ("characters.json", io.BytesIO(imported_payload), "application/json")},
+        )
+        assert import_resp.status_code == 200
+
+        finalize_resp = client.post(f"/api/projects/{project_id}/characters/finalize")
+        assert finalize_resp.status_code == 200
+        assert finalize_resp.json()["character_map_finalized"] is True
+
+        run_payload = {
+            "max_segment_chars": 120,
+            "llm_enabled": False,
+            "provider_name": "openrouter",
+            "max_calls_per_day": 2,
+        }
+        run_resp = client.post(f"/api/projects/{project_id}/runs", json=run_payload)
+        assert run_resp.status_code == 200
+        assert run_resp.json()["run_id"] > 0

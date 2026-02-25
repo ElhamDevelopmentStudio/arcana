@@ -79,6 +79,7 @@ def test_full_poc_api_flow_deterministic_export() -> None:
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 2,
+            "allow_unfinalized_character_map": True,
         }
 
         run_resp_1 = client.post(f"/api/projects/{project_id}/runs", json=run_payload)

@@ -1194,6 +1194,18 @@ def create_run(
     session: Session = Depends(get_session),
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
+    if (
+        not payload.allow_unfinalized_character_map
+        and not project.character_map_finalized
+        and session.query(Character).filter(Character.project_id == project.id).count() > 0
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Character map is not finalized. Set `allow_unfinalized_character_map` to true to run with an "
+                "unfinalized map."
+            ),
+        )
 
     explicit_overrides = payload.model_dump(exclude={"mode"}, exclude_unset=True)
     config_snapshot = build_run_config_snapshot(mode=payload.mode, overrides=explicit_overrides)

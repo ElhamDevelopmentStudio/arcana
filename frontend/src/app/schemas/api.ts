@@ -129,6 +129,7 @@ export const runRequestSchema = z.object({
   llm_enabled: z.boolean(),
   provider_name: z.string(),
   max_calls_per_day: z.number().int().positive(),
+  allow_unfinalized_character_map: z.boolean().default(false),
 });
 
 export const runResponseSchema = z.object({
