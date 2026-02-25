@@ -17,6 +17,7 @@ class Project(Base):
     selected_modes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     configuration_snapshot_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     voice_config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    default_narrator_voice: Mapped[str] = mapped_column(String(255), default="narrator_default", nullable=False)
     ingestion_log_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     ingestion_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     character_map_finalized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -30,6 +31,11 @@ class Project(Base):
     pronunciation_dictionary_entries: Mapped[list["PronunciationDictionary"]] = relationship(
         "PronunciationDictionary",
         back_populates="project",
+    )
+    voice_map_entries: Mapped[list["CharacterVoiceMap"]] = relationship(
+        "CharacterVoiceMap",
+        back_populates="project",
+        cascade="all, delete-orphan",
     )
 
 
@@ -89,8 +95,33 @@ class Character(Base):
         nullable=False,
     )
     voice_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    voice_map: Mapped["CharacterVoiceMap | None"] = relationship(
+        "CharacterVoiceMap",
+        back_populates="character",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     project: Mapped[Project] = relationship("Project", back_populates="characters")
+
+
+class CharacterVoiceMap(Base):
+    __tablename__ = "character_voice_map"
+    __table_args__ = (
+        UniqueConstraint("project_id", "character_id", name="uq_project_character_voice_map"),
+        UniqueConstraint("character_id", name="uq_character_voice_map_character_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    voice_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="voice_map_entries")
+    character: Mapped[Character] = relationship("Character", back_populates="voice_map")
 
 
 class Run(Base):
