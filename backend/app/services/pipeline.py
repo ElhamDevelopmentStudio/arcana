@@ -78,6 +78,17 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         )
         .all()
     }
+    character_scope_entries = session.query(PronunciationDictionary).filter(
+        PronunciationDictionary.project_id == project.id,
+        PronunciationDictionary.scope == "character",
+    ).all()
+    character_pronunciations = {}
+    for entry in character_scope_entries:
+        normalized_name = entry.character_name.strip().lower()
+        if not normalized_name:
+            continue
+        character_map = character_pronunciations.setdefault(normalized_name, {})
+        character_map[entry.term.strip()] = entry.verbalized_form.strip()
 
     name_to_verbalized = {**global_pronunciations}
     for character in characters:
@@ -103,8 +114,13 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         pieces = segment_text(chapter.normalized_text, max_chars=max_chars)
         chapter_search_cursor = 0
         for segment_index, original_text in enumerate(pieces, start=1):
-            phonetic_text = replace_pronunciations(original_text, name_to_verbalized)
             tags = tag_segment(original_text)
+            speaker = str(tags["speaker"])
+            normalized_speaker = speaker.strip().lower()
+            pronunciation_map = {**name_to_verbalized}
+            if normalized_speaker and normalized_speaker != "unknown":
+                pronunciation_map.update(character_pronunciations.get(normalized_speaker, {}))
+            phonetic_text = replace_pronunciations(original_text, pronunciation_map)
             segment_start = chapter.normalized_text.find(original_text, chapter_search_cursor)
             if segment_start < 0:
                 segment_start = max(chapter_search_cursor, 0)
