@@ -165,6 +165,20 @@ def test_integration_export_segments_include_chapter_id_metadata() -> None:
         assert all(segment.get("chapter_internal_id", "").startswith("ch-") for segment in segments)
         assert all("segment_index" in segment for segment in segments)
         assert all(isinstance(segment["segment_index"], int) for segment in segments)
+        assert all("original_span_pointer" in segment for segment in segments)
+        assert all(
+            isinstance(segment["original_span_pointer"], dict) and
+            isinstance(segment["original_span_pointer"]["original_start_char"], int) and
+            isinstance(segment["original_span_pointer"]["original_end_char"], int) and
+            isinstance(segment["original_span_pointer"]["normalized_start_char"], int) and
+            isinstance(segment["original_span_pointer"]["normalized_end_char"], int)
+            for segment in segments
+        )
+        assert all(
+            segment["original_span_pointer"]["normalized_end_char"]
+            >= segment["original_span_pointer"]["normalized_start_char"]
+            for segment in segments
+        )
 
         for segment in segments:
             chapter_segment_indexes[segment["chapter_id"]].append(segment["segment_index"])
