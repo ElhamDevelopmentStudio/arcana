@@ -33,6 +33,9 @@ _EMOTIONAL_MONOTONY_INTENSITY_TOLERANCE = 0.40
 _CHARACTER_DOMINANCE_OUTLIER_SHARE_THRESHOLD = 0.75
 _CHARACTER_DOMINANCE_OUTLIER_GAP_THRESHOLD = 0.25
 _CHARACTER_DOMINANCE_OUTLIER_MIN_SEGMENTS = 4
+_CHARACTER_DISAPPEARANCE_MIN_TOTAL_SEGMENTS = 6
+_CHARACTER_DISAPPEARANCE_MIN_APPEARED_CHAPTERS = 2
+_CHARACTER_DISAPPEARANCE_MIN_GAP_CHAPTERS = 1
 
 
 def _compute_range(values: list[float]) -> float:
@@ -246,6 +249,97 @@ def _build_character_dominance_findings(
                     "lead_share_gap": round(lead_gap, 4),
                     "share_threshold": _CHARACTER_DOMINANCE_OUTLIER_SHARE_THRESHOLD,
                     "share_gap_threshold": _CHARACTER_DOMINANCE_OUTLIER_GAP_THRESHOLD,
+                },
+            }
+        )
+
+    return findings
+
+
+def _build_disappearing_character_findings(
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not segments:
+        return []
+
+    chapter_speaker_counts: dict[str, set[int]] = {}
+    chapter_segment_counts: dict[str, int] = {}
+    canonical_speaker_labels: dict[str, str] = {}
+    chapter_indices: set[int] = set()
+
+    for segment in segments:
+        chapter_id = segment.get("chapter_id")
+        if not isinstance(chapter_id, int):
+            continue
+        speaker = segment.get("speaker")
+        if not isinstance(speaker, str):
+            continue
+
+        speaker_label = speaker.strip()
+        if not speaker_label or speaker_label.lower() == "unknown":
+            continue
+        speaker_key = speaker_label.lower()
+        if not speaker_key:
+            continue
+
+        chapter_indices.add(chapter_id)
+        chapter_speaker_counts.setdefault(speaker_key, set()).add(chapter_id)
+        chapter_segment_counts[speaker_key] = chapter_segment_counts.get(speaker_key, 0) + 1
+        if speaker_key not in canonical_speaker_labels:
+            canonical_speaker_labels[speaker_key] = speaker_label
+
+    if len(chapter_indices) < 3:
+        return []
+
+    final_chapter = max(chapter_indices)
+    findings: list[dict[str, Any]] = []
+    for speaker_key in sorted(chapter_speaker_counts):
+        speaker_chapters = sorted(chapter_speaker_counts[speaker_key])
+        if len(speaker_chapters) < _CHARACTER_DISAPPEARANCE_MIN_APPEARED_CHAPTERS:
+            continue
+
+        total_segment_mentions = chapter_segment_counts.get(speaker_key, 0)
+        if total_segment_mentions < _CHARACTER_DISAPPEARANCE_MIN_TOTAL_SEGMENTS:
+            continue
+
+        first_seen = speaker_chapters[0]
+        last_seen = speaker_chapters[-1]
+        if last_seen >= final_chapter:
+            continue
+
+        missing_chapter_count = final_chapter - last_seen
+        if missing_chapter_count < _CHARACTER_DISAPPEARANCE_MIN_GAP_CHAPTERS:
+            continue
+
+        start_chapter = last_seen + 1
+        severity = round(
+            min(1.0, 0.55 * min(1.0, total_segment_mentions / 12.0) + 0.30 * min(1.0, missing_chapter_count / 4.0) + 0.15),
+            4,
+        )
+
+        findings.append(
+            {
+                "requirement_id": "ADR-005",
+                "requirement_name": "revision_priority_queue",
+                "location": {
+                    "start_chapter": start_chapter,
+                    "end_chapter": final_chapter,
+                },
+                "trigger_metric": "character_disappearance",
+                "severity": severity,
+                "evidence_trace": {
+                    "speaker": canonical_speaker_labels.get(speaker_key, speaker_key),
+                    "speaker_key": speaker_key,
+                    "first_seen_chapter": first_seen,
+                    "last_seen_chapter": last_seen,
+                    "total_seen_chapters": len(speaker_chapters),
+                    "total_segment_mentions": total_segment_mentions,
+                    "final_chapter": final_chapter,
+                    "missing_chapter_count": missing_chapter_count,
+                    "disappearance_start_chapter": start_chapter,
+                    "disappearance_end_chapter": final_chapter,
+                    "min_total_segments_threshold": _CHARACTER_DISAPPEARANCE_MIN_TOTAL_SEGMENTS,
+                    "min_gap_threshold": _CHARACTER_DISAPPEARANCE_MIN_GAP_CHAPTERS,
                 },
             }
         )
@@ -484,21 +578,25 @@ def _build_author_narrative_health_report(
     monotony_findings: list[dict[str, Any]] | None = None,
     emotional_monotony_findings: list[dict[str, Any]] | None = None,
     character_dominance_findings: list[dict[str, Any]] | None = None,
+    disappearing_character_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     generated_at_iso = generated_at.isoformat()
     resolved_monotony_findings = monotony_findings or []
     resolved_emotional_monotony_findings = emotional_monotony_findings or []
     resolved_character_dominance_findings = character_dominance_findings or []
+    resolved_disappearing_character_findings = disappearing_character_findings or []
     combined_findings = (
         resolved_monotony_findings
         + resolved_emotional_monotony_findings
         + resolved_character_dominance_findings
+        + resolved_disappearing_character_findings
     )
     finding_by_requirement: dict[str, list[dict[str, Any]]] = {
         "ADR-002": resolved_monotony_findings + resolved_emotional_monotony_findings,
         "ADR-003": resolved_character_dominance_findings,
+        "ADR-005": resolved_disappearing_character_findings,
     }
-    implemented_requirements = {"ADR-002", "ADR-003"}
+    implemented_requirements = {"ADR-002", "ADR-003", "ADR-005"}
     requirements = [
         {
             "requirement_id": requirement_id,
@@ -2352,6 +2450,7 @@ def build_run_export(
     character_dominance_findings = _build_character_dominance_findings(
         chapter_level_character_dominance=chapter_level_character_dominance,
     )
+    disappearing_character_findings = _build_disappearing_character_findings(segments=segments)
     character_cooccurrence_graph = _build_character_cooccurrence_graph(segments=segments)
     character_cooccurrence_centrality_table = _build_character_cooccurrence_centrality_table(
         graph_report=character_cooccurrence_graph,
@@ -2425,6 +2524,7 @@ def build_run_export(
             monotony_findings=monotony_findings,
             emotional_monotony_findings=emotional_monotony_findings,
             character_dominance_findings=character_dominance_findings,
+            disappearing_character_findings=disappearing_character_findings,
         ),
         "reports": _build_export_reports(
             project=project,

@@ -5,6 +5,7 @@ from app.schemas import NarrativeHealthReport
 from app.services.export import (
     _build_author_narrative_health_report,
     _build_character_dominance_findings,
+    _build_disappearing_character_findings,
     _build_emotional_monotony_findings,
     _build_chapter_level_character_dominance,
     _build_monotony_risk_findings,
@@ -76,6 +77,22 @@ def _build_segments_for_dominance_test(
     return result
 
 
+def _build_segments_for_disappearance_test(
+    segments: list[tuple[int, str]],
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for chapter_id, speaker in segments:
+        result.append(
+            {
+                "chapter_id": chapter_id,
+                "segment_index": len(result) + 1,
+                "segment_id": f"{chapter_id}-{len(result) + 1}",
+                "speaker": speaker,
+            }
+        )
+    return result
+
+
 def test_unit_build_character_dominance_findings_detects_over_dominant_character() -> None:
     segments = _build_segments_for_dominance_test(
         3,
@@ -132,6 +149,54 @@ def test_unit_build_character_dominance_findings_skips_balanced_dialogue() -> No
     )
     findings = _build_character_dominance_findings(chapter_level_character_dominance)
 
+    assert findings == []
+
+
+def test_unit_build_disappearing_character_findings_detects_late_disappearance() -> None:
+    segments = _build_segments_for_disappearance_test(
+        [
+            (1, "Lena"),
+            (1, "Lena"),
+            (1, "Lena"),
+            (2, "Lena"),
+            (2, "Lena"),
+            (2, "Lena"),
+            (3, "Lena"),
+            (3, "Lena"),
+            (4, "Lena"),
+            (3, "Crow"),
+            (4, "Crow"),
+            (5, "Crow"),
+            (5, "Narrator"),
+            (6, "Narrator"),
+        ]
+    )
+    findings = _build_disappearing_character_findings(segments)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["requirement_id"] == "ADR-005"
+    assert finding["requirement_name"] == "revision_priority_queue"
+    assert finding["trigger_metric"] == "character_disappearance"
+    assert finding["location"]["start_chapter"] == 5
+    assert finding["location"]["end_chapter"] == 6
+    assert finding["evidence_trace"]["speaker"] == "Lena"
+    assert finding["evidence_trace"]["last_seen_chapter"] == 4
+    assert finding["evidence_trace"]["disappearance_end_chapter"] == 6
+    assert finding["evidence_trace"]["missing_chapter_count"] == 2
+    assert finding["severity"] > 0.5
+
+
+def test_unit_build_disappearing_character_findings_skips_characters_without_clear_disappearance() -> None:
+    segments = _build_segments_for_disappearance_test(
+        [
+            (1, "Lena"),
+            (2, "Lena"),
+            (3, "Lena"),
+            (4, "Lena"),
+        ]
+    )
+    findings = _build_disappearing_character_findings(segments)
     assert findings == []
 
 
@@ -270,9 +335,12 @@ def test_unit_narrative_health_report_includes_emotional_monotony_findings() -> 
     requirement_lookup = {entry.requirement_id: entry for entry in parsed_report.requirements}
     assert requirement_lookup["ADR-002"].status == "implemented"
     assert requirement_lookup["ADR-003"].status == "implemented"
+    assert requirement_lookup["ADR-005"].status == "implemented"
     assert requirement_lookup["ADR-003"].finding_count == 0
+    assert requirement_lookup["ADR-005"].finding_count == 0
     assert len(requirement_lookup["ADR-002"].findings) == 2
     assert len(requirement_lookup["ADR-003"].findings) == 0
+    assert len(requirement_lookup["ADR-005"].findings) == 0
     assert len(parsed_report.findings) == 2
     assert parsed_report.findings[0].requirement_id == "ADR-002"
     possible_severities = {monotony_findings[0]["severity"], emotional_findings[0]["severity"]}
