@@ -403,3 +403,34 @@ def test_integration_run_pipeline_after_character_map_finalized() -> None:
         run_resp = client.post(f"/api/projects/{project_id}/runs", json=run_payload)
         assert run_resp.status_code == 200
         assert run_resp.json()["run_id"] > 0
+
+
+def test_integration_character_aliases_are_saved_and_deduplicated() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manual Alias Persistence"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        save_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Kai",
+                        "verbalized_form": "Kai",
+                        "gender": "female",
+                        "aliases": [" Captain ", "C.", "", "Captain", "C."],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    }
+                ]
+            },
+        )
+        assert save_resp.status_code == 200
+        assert save_resp.json()["characters"][0]["aliases"] == ["Captain", "C."]
+
+        list_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert list_resp.status_code == 200
+        assert list_resp.json()["characters"][0]["aliases"] == ["Captain", "C."]

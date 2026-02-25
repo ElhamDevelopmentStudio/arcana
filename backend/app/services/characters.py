@@ -22,7 +22,8 @@ def _parse_aliases(raw_aliases: Any) -> list[str]:
         return []
 
     if isinstance(raw_aliases, list):
-        return [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
+        cleaned = [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
+        return list(dict.fromkeys(cleaned))
 
     if not isinstance(raw_aliases, str):
         return []
@@ -37,9 +38,11 @@ def _parse_aliases(raw_aliases: Any) -> list[str]:
         parsed = None
 
     if isinstance(parsed, list):
-        return [str(alias).strip() for alias in parsed if str(alias).strip()]
+        cleaned = [str(alias).strip() for alias in parsed if str(alias).strip()]
+        return list(dict.fromkeys(cleaned))
 
-    return [piece.strip() for piece in text.split(",") if piece.strip()]
+    cleaned = [piece.strip() for piece in text.split(",") if piece.strip()]
+    return list(dict.fromkeys(cleaned))
 
 
 def _parse_confidence(row: dict[str, str], row_number: int) -> float:
