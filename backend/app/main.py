@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -51,7 +51,7 @@ from app.services.character_merge import build_canonical_name_merge_suggestions,
 from app.services.character_merge import normalize_candidate_key
 from app.services.character_merge import detect_alias_conflicts
 from app.services.character_merge import resolve_alias_to_canonical_name
-from app.services.export import build_run_export
+from app.services.export import build_run_export, build_run_export_csv
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
     build_duplicate_title_dedup_actions,
@@ -2321,3 +2321,40 @@ def get_export_json(project_id: int, run_id: int, session: Session = Depends(get
 
     payload = build_run_export(session, project, run)
     return JSONResponse(content=payload)
+
+
+@app.get("/api/projects/{project_id}/exports/{run_id}.csv", status_code=status.HTTP_200_OK)
+def get_export_csv(project_id: int, run_id: int, session: Session = Depends(get_session)) -> Response:
+    project = _get_project_or_404(session, project_id)
+    run = _get_run_or_404(session, project_id, run_id)
+    settings = get_settings()
+    character_rows = session.query(Character).filter(Character.project_id == project.id).all()
+    requires_review_count = len(
+        [
+            payload
+            for payload in compare_manual_and_inferred_gender_fields(
+                character_rows,
+                contradiction_review_threshold=settings.contradiction_review_threshold,
+            )
+            if payload["requires_review"]
+        ]
+    )
+    if requires_review_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": (
+                    "Export is blocked because one or more gender contradictions require manual review."
+                ),
+                "requires_review_count": requires_review_count,
+                "threshold": settings.contradiction_review_threshold,
+            },
+        )
+
+    csv_data = build_run_export_csv(session, project, run)
+    filename = f"project-{project_id}-run-{run_id}.csv"
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

@@ -1,3 +1,6 @@
+import csv
+import io
+import json
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
@@ -122,6 +125,140 @@ def _build_export_reports(project: Project, run: Run, segment_count: int, ordere
         "mode_profile_snapshot": _to_dict(run_snapshot.get("voice_config")),
         "generated_at": run.finished_at.isoformat() if run.finished_at else run.started_at.isoformat(),
     }
+
+
+def _csv_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _build_segment_csv_row(
+    segment: Mapping[str, Any],
+    project_id: int,
+    run_id: int,
+) -> dict[str, str]:
+    parent_paragraph = _to_dict(segment.get("parent_paragraph_reference"))
+    parent_sentence = _to_dict(segment.get("parent_sentence_reference"))
+    original_span_pointer = _to_dict(segment.get("original_span_pointer"))
+    tag_bundle = _to_dict(segment.get("tag_bundle"))
+    confidence = _to_dict(tag_bundle.get("confidence"))
+    emotion = _to_dict(tag_bundle.get("emotion"))
+    tension = _to_dict(tag_bundle.get("tension"))
+    dominance = _to_dict(tag_bundle.get("dominance"))
+
+    sub_segment_boundaries = segment.get("sub_segment_boundaries", [])
+    sub_segment_count = len(sub_segment_boundaries) if isinstance(sub_segment_boundaries, list) else 0
+
+    return {
+        "project_id": str(project_id),
+        "run_id": str(run_id),
+        "segment_id": _csv_cell(segment.get("segment_id")),
+        "chapter_id": _csv_cell(segment.get("chapter_id")),
+        "chapter_internal_id": _csv_cell(segment.get("chapter_internal_id")),
+        "segment_index": _csv_cell(segment.get("segment_index")),
+        "type": _csv_cell(segment.get("type")),
+        "speaker": _csv_cell(segment.get("speaker")),
+        "speaker_id": _csv_cell(segment.get("speaker_id")),
+        "gender": _csv_cell(segment.get("gender")),
+        "resolved_voice_id": _csv_cell(segment.get("resolved_voice_id")),
+        "voice_id": _csv_cell(segment.get("voice_id")),
+        "original_text": _csv_cell(segment.get("original_text")),
+        "normalized_text": _csv_cell(segment.get("normalized_text")),
+        "phonetic_text": _csv_cell(segment.get("phonetic_text")),
+        "parent_paragraph_index": _csv_cell(parent_paragraph.get("paragraph_index")),
+        "parent_paragraph_id": _csv_cell(parent_paragraph.get("paragraph_id")),
+        "parent_sentence_start_index": _csv_cell(parent_sentence.get("sentence_start_index")),
+        "parent_sentence_end_index": _csv_cell(parent_sentence.get("sentence_end_index")),
+        "type_confidence": _csv_cell(confidence.get("type")),
+        "speaker_confidence": _csv_cell(confidence.get("speaker")),
+        "emotion_confidence": _csv_cell(confidence.get("emotion")),
+        "gender_confidence": _csv_cell(confidence.get("gender")),
+        "emotion_valence": _csv_cell(emotion.get("valence")),
+        "emotion_intensity": _csv_cell(emotion.get("intensity")),
+        "emotion_primary_label": _csv_cell(emotion.get("primary_label")),
+        "emotion_secondary_label": _csv_cell(emotion.get("secondary_label")),
+        "emotion_state": _csv_cell(emotion.get("state")),
+        "emotion_evidence": _csv_cell(emotion.get("evidence")),
+        "tension_contribution": _csv_cell(tension),
+        "dominance_contribution": _csv_cell(dominance),
+        "speaker_evidence": _csv_cell(segment.get("speaker_evidence")),
+        "type_evidence": _csv_cell(segment.get("type_evidence")),
+        "summary_tag": _csv_cell(segment.get("summary_tag")),
+        "original_start_char": _csv_cell(original_span_pointer.get("original_start_char")),
+        "original_end_char": _csv_cell(original_span_pointer.get("original_end_char")),
+        "normalized_start_char": _csv_cell(original_span_pointer.get("normalized_start_char")),
+        "normalized_end_char": _csv_cell(original_span_pointer.get("normalized_end_char")),
+        "original_to_normalized_offset_map": _csv_cell(segment.get("original_to_normalized_offset_map")),
+        "sub_segment_boundary_count": _csv_cell(sub_segment_count),
+        "sub_segment_boundaries": _csv_cell(segment.get("sub_segment_boundaries")),
+    }
+
+
+def build_run_export_csv(session: Session, project: Project, run: Run) -> str:
+    rows = session.execute(
+        select(Segment.segment_json)
+        .join(Chapter, Chapter.id == Segment.chapter_id)
+        .where(Segment.run_id == run.id)
+        .order_by(Chapter.chapter_index.asc(), Segment.segment_index.asc())
+    ).scalars()
+
+    segments = [_normalize_segment_for_export(row) for row in list(rows)]
+    if not segments:
+        return ""
+
+    fieldnames = [
+        "project_id",
+        "run_id",
+        "segment_id",
+        "chapter_id",
+        "chapter_internal_id",
+        "segment_index",
+        "type",
+        "speaker",
+        "speaker_id",
+        "gender",
+        "resolved_voice_id",
+        "voice_id",
+        "original_text",
+        "normalized_text",
+        "phonetic_text",
+        "parent_paragraph_index",
+        "parent_paragraph_id",
+        "parent_sentence_start_index",
+        "parent_sentence_end_index",
+        "type_confidence",
+        "speaker_confidence",
+        "emotion_confidence",
+        "gender_confidence",
+        "emotion_valence",
+        "emotion_intensity",
+        "emotion_primary_label",
+        "emotion_secondary_label",
+        "emotion_state",
+        "emotion_evidence",
+        "tension_contribution",
+        "dominance_contribution",
+        "speaker_evidence",
+        "type_evidence",
+        "summary_tag",
+        "original_start_char",
+        "original_end_char",
+        "normalized_start_char",
+        "normalized_end_char",
+        "original_to_normalized_offset_map",
+        "sub_segment_boundary_count",
+        "sub_segment_boundaries",
+    ]
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for segment in segments:
+        writer.writerow(_build_segment_csv_row(segment, project_id=project.id, run_id=run.id))
+    return output.getvalue()
 
 
 def build_run_export(session: Session, project: Project, run: Run) -> dict:

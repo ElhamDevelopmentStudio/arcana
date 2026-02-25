@@ -238,8 +238,8 @@ Definition of done for each task:
 - [x] [AUD-005] Include per-segment tag bundle and confidence.
 - [x] [AUD-006] Include project config snapshot in export package.
 - [x] [AUD-007] Include logs/reports in export package.
-- [ ] [AUD-008] Implement JSON export writer.
-- [ ] [AUD-009] Implement CSV export writer.
+- [x] [AUD-008] Implement JSON export writer.
+- [x] [AUD-009] Implement CSV export writer.
 - [ ] [AUD-010] Implement time-series export arrays.
 - [ ] [AUD-011] Enforce stable chapter->segment ordering.
 - [ ] [AUD-012] Implement resumable export by chapter/segment cursor.
