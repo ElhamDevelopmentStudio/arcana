@@ -147,7 +147,7 @@ Definition of done for each task:
 - [x] [GEN-008] Add threshold config for contradiction review requirement.
 - [x] [GEN-009] Block final export only when contradiction threshold rule requires review.
 - [x] [GEN-010] Implement unknown/neutral fallback mapping to neutral/unknown voice bucket.
-- [ ] [GEN-011] Ensure unknown gender never hard-fails export.
+- [x] [GEN-011] Ensure unknown gender never hard-fails export.
 - [ ] [GEN-012] Emit low/undefined confidence in export for unknown gender.
 - [ ] [GEN-013] Mark dependent outputs stale when gender is edited.
 - [ ] [GEN-014] Trigger voice preview recomputation after gender edits.
