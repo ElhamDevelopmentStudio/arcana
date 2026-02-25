@@ -50,7 +50,7 @@ from app.services.ingestion import (
 )
 from app.services.mode_profiles import build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_mode_switch
-from app.services.normalization import normalize_text
+from app.services.normalization import normalize_text_with_warnings
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.voice import DEFAULT_VOICE_CONFIG
 
@@ -259,7 +259,8 @@ def ingest_txt(
     for idx, (title, content) in enumerate(chapters, start=1):
         chapter_title = to_internal_utf8(title)
         chapter_content = to_internal_utf8(content)
-        normalized = normalize_text(chapter_content)
+        normalized, quote_warnings = normalize_text_with_warnings(chapter_content, source="txt")
+        warnings.extend(quote_warnings)
         session.add(
             Chapter(
                 project_id=project_id,
@@ -331,6 +332,11 @@ def ingest_markdown(
     for chapter_index, (chapter_title, chapter_content) in enumerate(chapters, start=1):
         stored_chapter_title = to_internal_utf8(chapter_title)
         stored_chapter_content = to_internal_utf8(chapter_content)
+        normalized, quote_warnings = normalize_text_with_warnings(
+            stored_chapter_content,
+            source="markdown",
+        )
+        warnings.extend(quote_warnings)
         session.add(
             Chapter(
                 project_id=project_id,
@@ -338,7 +344,7 @@ def ingest_markdown(
                 chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=stored_chapter_title,
                 raw_text=stored_chapter_content,
-                normalized_text=normalize_text(stored_chapter_content),
+                normalized_text=normalized,
             )
         )
 
@@ -391,6 +397,7 @@ def ingest_epub(
             detail="No chapter content found in EPUB",
         )
 
+    warnings: list[dict[str, object]] = []
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
     for chapter_index, (chapter_title, chapter_content) in enumerate(chapters, start=1):
@@ -398,6 +405,8 @@ def ingest_epub(
         content = to_internal_utf8(chapter_content.strip())
         if not content:
             continue
+        normalized, quote_warnings = normalize_text_with_warnings(content, source="epub")
+        warnings.extend(quote_warnings)
         session.add(
             Chapter(
                 project_id=project_id,
@@ -405,7 +414,7 @@ def ingest_epub(
                 chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=title,
                 raw_text=content,
-                normalized_text=normalize_text(content),
+                normalized_text=normalized,
             )
         )
 
@@ -416,7 +425,7 @@ def ingest_epub(
     _update_project_ingestion_log(
         project,
         source="epub",
-        warnings=build_duplicate_title_warnings("epub", chapters),
+        warnings=warnings + build_duplicate_title_warnings("epub", chapters),
         dedup_actions=build_duplicate_title_dedup_actions("epub", chapters),
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
@@ -498,6 +507,11 @@ def ingest_chapters_dir(
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
     for chapter_index, (chapter_title, chapter_content) in enumerate(chapter_rows, start=1):
+        normalized, quote_warnings = normalize_text_with_warnings(
+            chapter_content,
+            source="chapters-dir",
+        )
+        warnings.extend(quote_warnings)
         session.add(
             Chapter(
                 project_id=project_id,
@@ -505,7 +519,7 @@ def ingest_chapters_dir(
                 chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=chapter_title,
                 raw_text=chapter_content,
-                normalized_text=normalize_text(chapter_content),
+                normalized_text=normalized,
             )
         )
 
@@ -582,6 +596,14 @@ def append_chapter(
             ),
         )
 
+    warning = build_encoding_warning("append-chapter", encoding, confidence)
+    normalized, quote_warnings = normalize_text_with_warnings(chapter_content, source="append-chapter")
+    warnings: list[dict[str, object]] = [warning] if warning is not None else []
+    warnings.extend(quote_warnings)
+    combined_titles = [(row[1], row[2]) for row in existing_chapters] + [(chapter_title, chapter_content)]
+    warnings.extend(build_duplicate_title_warnings("append-chapter", combined_titles))
+    dedup_actions = build_duplicate_title_dedup_actions("append-chapter", combined_titles)
+
     session.add(
         Chapter(
             project_id=project_id,
@@ -589,15 +611,10 @@ def append_chapter(
             chapter_internal_id=build_internal_chapter_id(next_chapter_index),
             chapter_title=chapter_title,
             raw_text=chapter_content,
-            normalized_text=normalize_text(chapter_content),
+            normalized_text=normalized,
         )
     )
 
-    warning = build_encoding_warning("append-chapter", encoding, confidence)
-    warnings: list[dict[str, object]] = [warning] if warning is not None else []
-    combined_titles = [(row[1], row[2]) for row in existing_chapters] + [(chapter_title, chapter_content)]
-    warnings.extend(build_duplicate_title_warnings("append-chapter", combined_titles))
-    dedup_actions = build_duplicate_title_dedup_actions("append-chapter", combined_titles)
     affected_range = calculate_delta_affected_range(
         changed_chapter_indices=[next_chapter_index],
         total_chapter_count=len(existing_chapters) + 1,
