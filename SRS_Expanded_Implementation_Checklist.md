@@ -156,7 +156,7 @@ Definition of done for each task:
 
 ## 4.5 Pronunciation and Verbalization (Ref: SRS.md §4.5)
 - [x] [VERB-001] Enforce canonical name + verbalized form as required fields.
-- [ ] [VERB-002] Add pronunciation dictionary table for non-character terms.
+- [x] [VERB-002] Add pronunciation dictionary table for non-character terms.
 - [ ] [VERB-003] Support global scope term overrides.
 - [ ] [VERB-004] Support per-character scope term overrides.
 - [ ] [VERB-005] Implement before/after substitution preview endpoint.
