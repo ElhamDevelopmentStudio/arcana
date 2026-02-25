@@ -102,7 +102,7 @@ Definition of done for each task:
 - [x] [NORM-010] Normalize ellipsis variants.
 - [x] [NORM-011] Normalize line breaks and paragraph separators.
 - [x] [NORM-012] Remove obvious copy artifacts via configurable pattern set.
-- [ ] [NORM-013] Normalize em-dash dialogue style.
+- [x] [NORM-013] Normalize em-dash dialogue style.
 - [ ] [NORM-014] Implement best-effort quote mismatch repair.
 - [ ] [NORM-015] Emit warning when quote repair confidence is low.
 - [x] [NORM-016] Store original text snapshot per chapter.
