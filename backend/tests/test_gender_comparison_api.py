@@ -284,6 +284,83 @@ def test_integration_export_not_blocked_for_unknown_gender_characters() -> None:
         assert payload["run_id"] == run_id
 
 
+def test_integration_gender_comparison_flags_blocking_and_export_gating() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Gender Flags and Export Gating"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("novel.txt", io.BytesIO(b'Chapter 1\n"Nia said," Nia said.\n"Kai answered," Kai answered.'), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        upsert_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Nia",
+                        "verbalized_form": "Nia",
+                        "gender": "male",
+                        "confidence": 1.0,
+                        "inferred_gender": "female",
+                        "inferred_confidence": 0.94,
+                        "inferred_source_trace": [],
+                    },
+                    {
+                        "name": "Kai",
+                        "verbalized_form": "Kai",
+                        "gender": "female",
+                        "confidence": 1.0,
+                        "inferred_gender": "female",
+                        "inferred_confidence": 0.93,
+                        "inferred_source_trace": [],
+                    },
+                    {
+                        "name": "Mia",
+                        "verbalized_form": "Mia",
+                        "gender": "unknown",
+                        "confidence": 0.5,
+                        "inferred_gender": "male",
+                        "inferred_confidence": 0.92,
+                        "inferred_source_trace": [],
+                    },
+                ]
+            },
+        )
+        assert upsert_resp.status_code == 200
+
+        comparison_resp = client.get(f"/api/projects/{project_id}/characters/gender-comparison")
+        assert comparison_resp.status_code == 200
+        comparison_body = comparison_resp.json()
+        assert comparison_body["comparison_count"] == 3
+        assert comparison_body["contradiction_count"] == 1
+
+        by_name = {entry["name"]: entry for entry in comparison_body["comparisons"]}
+        assert by_name["Nia"]["is_contradiction"] is True
+        assert by_name["Nia"]["requires_review"] is True
+        assert by_name["Nia"]["comparison"] == "conflict"
+        assert by_name["Kai"]["requires_review"] is False
+        assert by_name["Mia"]["is_contradiction"] is False
+        assert by_name["Mia"]["requires_review"] is False
+        assert by_name["Mia"]["comparison"] == "manual_unknown"
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 409
+        detail = export_resp.json()["detail"]
+        assert detail["requires_review_count"] == 1
+        assert detail["threshold"] == 0.75
+
+
 def test_integration_export_prefers_manual_gender_when_inferred_conflicts() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Gender Manual Precedence In Export"})
