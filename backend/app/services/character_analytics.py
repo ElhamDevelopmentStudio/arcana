@@ -57,6 +57,38 @@ def build_character_last_appearance_chapter_indices(
     return last_appearance
 
 
+def build_character_mentions_per_1000_words(
+    chapter_mention_counters: list[ChapterMentionCounter],
+    chapters: list[Chapter],
+) -> dict[str, float]:
+    if not chapter_mention_counters or not chapters:
+        return {}
+
+    canonical_names = sorted(
+        {name for counter in chapter_mention_counters for name in counter.mention_counts}
+    )
+    total_mentions: dict[str, int] = {name: 0 for name in canonical_names}
+    for counter in chapter_mention_counters:
+        for canonical_name, mentions in counter.mention_counts.items():
+            total_mentions[canonical_name] = total_mentions.get(canonical_name, 0) + mentions
+
+    chapter_word_count_by_index: dict[int, int] = {
+        chapter.chapter_index: len(_normalize_counting_text(chapter.normalized_text).split())
+        for chapter in chapters
+    }
+    total_words = sum(
+        chapter_word_count_by_index.get(counter.chapter_index, 0) for counter in chapter_mention_counters
+    )
+
+    if total_words <= 0:
+        return {name: 0.0 for name in canonical_names}
+
+    return {
+        canonical_name: (mentions * 1000.0) / total_words
+        for canonical_name, mentions in total_mentions.items()
+    }
+
+
 def _normalize_counting_text(raw_text: str) -> str:
     normalized = normalize_candidate_key(raw_text)
     return re.sub(r"\s+", " ", normalized).strip()
