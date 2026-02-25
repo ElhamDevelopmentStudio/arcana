@@ -1,62 +1,61 @@
 import { NavLink } from 'react-router-dom';
-import { BookOpenText, ChartColumn, Cpu, FileOutput, ListChecks, PlayCircle, UserRoundSearch, Check } from 'lucide-react';
+import {
+  Analytics01Icon,
+  BookOpen01Icon,
+  CheckListIcon,
+  CpuIcon,
+  Download02Icon,
+  PlayCircleIcon,
+  UserSearch01Icon,
+} from 'hugeicons-react';
 import type { ComponentType } from 'react';
-
-import { Badge } from '@/components/ui/badge';
 
 type ProjectStepNavProps = {
   projectId: string | null;
+  collapsed?: boolean;
 };
 
 type StepConfig = {
   path: string;
   label: string;
-  short: string;
-  icon: ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string; size?: number; strokeWidth?: number }>;
 };
 
 const PROJECT_STEPS: StepConfig[] = [
   {
     path: '/projects/new',
     label: 'Create Project',
-    short: '01',
-    icon: BookOpenText,
+    icon: BookOpen01Icon,
   },
   {
     path: '/projects/:project_id/mode',
     label: 'Mode Selection',
-    short: '02',
-    icon: ListChecks,
+    icon: CheckListIcon,
   },
   {
     path: '/projects/:project_id/characters',
     label: 'Character Map',
-    short: '03',
-    icon: UserRoundSearch,
+    icon: UserSearch01Icon,
   },
   {
     path: '/projects/:project_id/pipeline-setup',
     label: 'Pipeline Setup',
-    short: '04',
-    icon: Cpu,
+    icon: CpuIcon,
   },
   {
     path: '/projects/:project_id/run-monitor',
     label: 'Run Monitor',
-    short: '05',
-    icon: PlayCircle,
+    icon: PlayCircleIcon,
   },
   {
     path: '/projects/:project_id/export',
     label: 'Export',
-    short: '06',
-    icon: FileOutput,
+    icon: Download02Icon,
   },
   {
     path: '/projects/:project_id/dashboards',
     label: 'Dashboards',
-    short: '07',
-    icon: ChartColumn,
+    icon: Analytics01Icon,
   },
 ];
 
@@ -74,12 +73,15 @@ function isProjectStepLocked(path: string, projectId: string | null): boolean {
   return projectId === null;
 }
 
-export function ProjectStepNav({ projectId }: ProjectStepNavProps) {
+export function ProjectStepNav({ projectId, collapsed = false }: ProjectStepNavProps) {
   return (
-    <nav aria-label="Workflow" className="nipe-panel p-3.5">
-      <p className="px-1 text-[11px] font-semibold tracking-[0.15em] text-muted-foreground uppercase">Pipeline Steps</p>
-      <ul className="mt-2 grid gap-1.5">
-        {PROJECT_STEPS.map((step) => {
+    <nav aria-label="Workflow" className="space-y-2">
+      {!collapsed ? (
+        <p className="px-2 text-[11px] font-semibold tracking-[0.15em] text-muted-foreground uppercase">Pipeline Steps</p>
+      ) : null}
+
+      <ul className="grid gap-1.5">
+        {PROJECT_STEPS.map((step, index) => {
           const locked = isProjectStepLocked(step.path, projectId);
           const to = resolvePath(step.path, projectId);
           const Icon = step.icon;
@@ -89,25 +91,26 @@ export function ProjectStepNav({ projectId }: ProjectStepNavProps) {
               <NavLink
                 className={({ isActive }) =>
                   [
-                    'group flex h-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition',
+                    'group flex items-center text-sm transition',
+                    collapsed ? 'mx-auto h-12 w-12 justify-center rounded-2xl' : 'rounded-xl gap-2.5 px-3 py-2.5',
                     isActive
-                      ? 'border-sidebar-active/30 bg-sidebar-active/10 text-sidebar-active shadow-[0_8px_18px_-14px_hsl(var(--primary)/0.8)]'
-                      : 'border-transparent text-sidebar-foreground hover:border-border hover:bg-background/85',
+                      ? 'bg-sidebar-active/12 text-sidebar-active'
+                      : 'text-sidebar-foreground hover:bg-background/75',
                     locked ? 'pointer-events-none opacity-45' : '',
                   ].join(' ')
                 }
+                title={collapsed ? step.label : undefined}
                 to={to}
               >
-                <div className="flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-lg bg-secondary/70 text-muted-foreground">
-                    <Icon className="size-3.5" />
-                  </span>
-                  <Badge variant={locked ? 'outline' : 'secondary'} className="font-mono text-[10px]">
-                    {step.short}
-                  </Badge>
-                </div>
-                <span className="line-clamp-1 flex-1 font-medium tracking-[-0.01em]">{step.label}</span>
-                {!locked ? <Check className="size-3.5 text-chart-3 opacity-0 transition group-hover:opacity-80" /> : null}
+                <span className={collapsed ? 'grid size-5 place-items-center text-muted-foreground' : 'grid size-6 place-items-center rounded-lg bg-secondary/65 text-muted-foreground'}>
+                  <Icon size={16} strokeWidth={1.9} />
+                </span>
+                {!collapsed ? (
+                  <>
+                    <span className="line-clamp-1 flex-1 font-medium tracking-[-0.01em]">{step.label}</span>
+                    <span className="text-[11px] font-semibold text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
+                  </>
+                ) : null}
               </NavLink>
             </li>
           );

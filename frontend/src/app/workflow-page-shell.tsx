@@ -1,7 +1,5 @@
 import type { PropsWithChildren, ReactNode } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-
 type WorkflowPageShellProps = PropsWithChildren<{
   title: string;
   description: string;
@@ -11,12 +9,10 @@ type WorkflowPageShellProps = PropsWithChildren<{
 
 export function WorkflowPageShell({ title, description, step, action, children }: WorkflowPageShellProps) {
   return (
-    <section className="nipe-panel p-5 lg:p-6">
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-panel-border/75 pb-5">
+    <section className="space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Badge variant="secondary" className="mb-3">
-            {step}
-          </Badge>
+          <p className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">{step}</p>
           <h2 className="text-2xl font-semibold tracking-tight text-panel-foreground lg:text-[1.9rem]">{title}</h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">{description}</p>
         </div>

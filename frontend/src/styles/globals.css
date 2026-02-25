@@ -142,6 +142,15 @@
 }
 
 @layer components {
+  .nipe-shell-frame {
+    background: color-mix(in srgb, hsl(var(--panel)) 96%, white);
+    border: 1px solid hsl(var(--panel-border));
+    box-shadow:
+      0 1px 1px hsl(var(--shadow-soft) / 0.08),
+      0 16px 40px -26px hsl(var(--shadow-soft) / 0.34);
+    @apply rounded-[1.7rem];
+  }
+
   .nipe-panel {
     background: linear-gradient(180deg, hsl(var(--panel)) 0%, color-mix(in srgb, hsl(var(--panel)) 90%, white) 100%);
     border: 1px solid hsl(var(--panel-border));
@@ -152,18 +161,18 @@
   }
 
   .nipe-sidebar {
-    background: linear-gradient(180deg, hsl(var(--sidebar)) 0%, color-mix(in srgb, hsl(var(--sidebar)) 94%, white) 100%);
-    border: 1px solid hsl(var(--panel-border));
-    box-shadow:
-      0 1px 1px hsl(var(--shadow-soft) / 0.05),
-      0 12px 30px -18px hsl(var(--shadow-soft) / 0.28);
-    @apply rounded-3xl;
+    background: linear-gradient(180deg, hsl(var(--sidebar)) 0%, color-mix(in srgb, hsl(var(--sidebar)) 95%, white) 100%);
   }
 
-  .nipe-topbar {
-    background: linear-gradient(180deg, hsl(var(--panel)) 0%, color-mix(in srgb, hsl(var(--panel)) 96%, white) 100%);
-    border: 1px solid hsl(var(--panel-border));
-    @apply rounded-2xl;
-    box-shadow: 0 1px 1px hsl(var(--shadow-soft) / 0.06);
+  .nipe-min-header {
+    @apply flex items-center justify-between gap-4 border-b border-panel-border/70 px-5 py-3 lg:px-7;
+  }
+
+  .nipe-search-shell {
+    @apply flex h-10 w-full max-w-[320px] items-center gap-2 rounded-xl border border-panel-border/80 bg-background/72 px-3;
+  }
+
+  .nipe-logo-chip {
+    @apply grid size-10 place-items-center rounded-2xl bg-primary text-primary-foreground;
   }
 }

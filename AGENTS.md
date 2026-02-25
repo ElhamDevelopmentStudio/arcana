@@ -22,6 +22,8 @@ Keep implementation accurate, incremental, testable, and easy to resume from a n
 12. A global design system stylesheet is mandatory at `frontend/src/styles/globals.css` using shared tokens (color, typography, spacing, radius, shadow, motion).
 13. The following frontend libraries are mandatory for implementation: `axios`, `swr`, `date-fns`, `zustand`, `zod`.
 14. Tailwind CSS is the primary frontend styling system; keep bespoke CSS minimal and design-token driven from `globals.css`.
+15. Frontend interfaces must avoid unnecessary visual clutter: use the minimum number of cards, borders, and decorative blocks needed for clarity.
+16. Every page should contain only information and actions that directly improve the current step UX; remove vanity/status content that does not help completion.
 
 ## Frontend Architecture Rules (Mandatory)
 

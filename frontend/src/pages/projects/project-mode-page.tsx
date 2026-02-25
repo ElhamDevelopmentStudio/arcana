@@ -1,9 +1,7 @@
 import { useMemo } from 'react';
-import type { ComponentType } from 'react';
 
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { BookAudio, FlaskConical, PenSquare, SlidersHorizontal } from 'lucide-react';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
@@ -14,29 +12,6 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { useModeCatalogQuery, useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
-
-const MODE_COPY: Record<string, { title: string; description: string; icon: ComponentType<{ className?: string }> }> = {
-  audiobook: {
-    title: 'Audiobook',
-    description: 'Voice-forward segmentation, narration/dialogue polish, and export-first flow.',
-    icon: BookAudio,
-  },
-  academic: {
-    title: 'Academic',
-    description: 'Evidence-rich tagging, stable metadata traces, and analytical output confidence.',
-    icon: FlaskConical,
-  },
-  author: {
-    title: 'Author',
-    description: 'Revision-friendly diagnostics, pacing notes, and character consistency checks.',
-    icon: PenSquare,
-  },
-  custom: {
-    title: 'Custom',
-    description: 'Manual profile where each pipeline behavior is tuned per project requirements.',
-    icon: SlidersHorizontal,
-  },
-};
 
 export function ProjectModePage() {
   const navigate = useNavigate();
@@ -88,41 +63,12 @@ export function ProjectModePage() {
         )
       }
     >
-      <div className="grid gap-4 lg:grid-cols-3">
-        {modeOptions.map((mode) => {
-          const modeMeta = MODE_COPY[mode] ?? MODE_COPY.custom;
-          const Icon = modeMeta.icon;
-          const isSelected = effectiveMode === mode;
-          return (
-            <button
-              key={mode}
-              className={[
-                'group nipe-panel flex flex-col items-start gap-3 p-4 text-left transition duration-200',
-                isSelected ? 'border-primary/40 bg-primary/6' : 'hover:border-primary/30 hover:bg-primary/3',
-                !canSelectMode ? 'pointer-events-none opacity-55' : '',
-              ].join(' ')}
-              onClick={() => handleModeChange(mode)}
-              type="button"
-            >
-              <span className="grid size-10 place-items-center rounded-xl bg-secondary text-primary">
-                <Icon className="size-5" />
-              </span>
-              <div>
-                <h3 className="text-base font-semibold text-panel-foreground">{modeMeta.title}</h3>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{modeMeta.description}</p>
-              </div>
-              <Badge variant={isSelected ? 'default' : 'outline'}>{isSelected ? 'Selected' : 'Choose'}</Badge>
-            </button>
-          );
-        })}
-      </div>
-
       <Card>
         <CardHeader>
           <CardTitle>Mode Control</CardTitle>
-          <CardDescription>Mode control is locked until ingestion succeeds and chapter count is available.</CardDescription>
+          <CardDescription>Select exactly one mode. No other setup belongs on this page.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+        <CardContent className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="mode-select">Select mode</Label>
             <NativeSelect
@@ -140,24 +86,22 @@ export function ProjectModePage() {
             </NativeSelect>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Badge variant={canSelectMode ? 'default' : 'outline'}>{canSelectMode ? 'Unlocked' : 'Locked'}</Badge>
-            <Badge variant={hasExplicitModeSelection ? 'default' : 'secondary'}>
-              Selection: {hasExplicitModeSelection ? 'chosen' : 'required'}
-            </Badge>
-            <Badge variant="outline">Run snapshot: {typeof runModeSnapshot === 'string' ? runModeSnapshot : 'not run yet'}</Badge>
-            <Badge variant="outline">Chapter count: {chapterCount ?? 'n/a'}</Badge>
+          <div className="grid gap-1 text-sm text-muted-foreground">
+            <p>Mode selector: {canSelectMode ? 'unlocked' : 'locked until ingestion is complete'}.</p>
+            <p>Current selection: {hasExplicitModeSelection ? selectedMode : 'not selected'}.</p>
+            <p>Detected chapters: {chapterCount ?? 'n/a'}.</p>
+            <p>Last run mode snapshot: {typeof runModeSnapshot === 'string' ? runModeSnapshot : 'none'}.</p>
           </div>
 
           {!canSelectMode ? (
-            <p className="text-sm text-muted-foreground lg:col-span-2">
+            <p className="text-sm text-muted-foreground">
               Ingest chapters in <strong>/projects/new</strong> before selecting a mode.
             </p>
           ) : null}
 
           {canSelectMode && !hasExplicitModeSelection ? (
-            <p className="text-sm text-muted-foreground lg:col-span-2" data-testid="mode-required-hint">
-              Choose a mode from the selector or a mode card to unlock downstream pipeline execution.
+            <p className="text-sm text-muted-foreground" data-testid="mode-required-hint">
+              Choose a mode from the selector to unlock downstream pipeline execution.
             </p>
           ) : null}
         </CardContent>
