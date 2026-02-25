@@ -41,7 +41,8 @@ def consume_quota(session: Session, provider: str, max_calls_per_day: int) -> tu
 
     if quota.blocked or quota.calls_used >= quota.max_calls_per_day:
         quota.blocked = True
-        _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_QUOTA_REACHED)
+        if not quota.last_rate_limit_status:
+            _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_QUOTA_REACHED)
         session.flush()
         return False, quota.calls_used
 
@@ -69,6 +70,7 @@ def mark_provider_rate_limited(session: Session, provider: str, day_key: str | N
         quota=quota,
         status=_RATE_LIMIT_STATUS_PROVIDER_RATE_LIMITED,
     )
+    quota.blocked = True
     session.flush()
 
 

@@ -554,13 +554,14 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
     if response.success_flag:
         mark_provider_available(session=session, provider=provider)
         mark_provider_successful_call(session=session, provider=provider)
-    elif response.error_code == "rate_limit":
+    elif response.error_code in {"rate_limit", "quota"}:
         mark_provider_rate_limited(session=session, provider=provider)
-        mark_provider_reset_at(
-            session=session,
-            provider=provider,
-            reset_at=response.rate_limit_reset_at,
-        )
+        if response.error_code == "rate_limit":
+            mark_provider_reset_at(
+                session=session,
+                provider=provider,
+                reset_at=response.rate_limit_reset_at,
+            )
 
     session.add(
         LLMCall(
