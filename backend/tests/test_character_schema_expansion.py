@@ -6,6 +6,7 @@ import pytest
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_character_schema.db"
 
@@ -153,6 +154,35 @@ def test_integration_character_map_rejects_invalid_gender_on_save() -> None:
             },
         )
         assert save_resp.status_code == 422
+
+
+def test_unit_character_model_rejects_invalid_gender() -> None:
+    project_resp = None
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Invalid Gender DB Constraint"})
+        assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    session = get_session_factory()()
+    try:
+        session.add(
+            Character(
+                project_id=project_id,
+                name="InvalidGender",
+                verbalized_form="InvalidGender",
+                gender="nonbinary",
+                aliases=[],
+                source="manual",
+                confidence=1.0,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+        session.rollback()
+    finally:
+        session.close()
+
+
 def test_unit_parse_character_file_legacy_csv_uses_verbalized_header() -> None:
     csv_payload = "name,verbalized,gender\nKai,Kai,female\nLio,Lee-o,male\n"
 
