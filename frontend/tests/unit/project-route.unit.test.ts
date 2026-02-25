@@ -21,6 +21,7 @@ describe('project-route utils', () => {
     expect(projectRoute(7, 'pipeline-setup')).toBe('/projects/7/pipeline-setup');
     expect(projectRoute(7, 'dashboards')).toBe('/projects/7/dashboards');
     expect(projectRoute(7, 'review/emotions')).toBe('/projects/7/review/emotions');
+    expect(projectRoute(7, 'review/low-confidence')).toBe('/projects/7/review/low-confidence');
     expect(projectRoute(7, 'review/speakers')).toBe('/projects/7/review/speakers');
   });
 });

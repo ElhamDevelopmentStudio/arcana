@@ -18,6 +18,7 @@ export function projectRoute(
     | 'run-monitor'
     | 'review/speakers'
     | 'review/emotions'
+    | 'review/low-confidence'
     | 'export'
     | 'dashboards',
 ) {
