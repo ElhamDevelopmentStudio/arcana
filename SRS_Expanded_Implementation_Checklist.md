@@ -90,7 +90,7 @@ Definition of done for each task:
 - [x] [ING-016] Add tests for TXT/dir/md/encoding/incremental append paths.
 
 ## 4.2 Deep Normalization (Ref: SRS.md §4.2)
-- [ ] [NORM-001] Implement chapter detection from file boundaries.
+- [x] [NORM-001] Implement chapter detection from file boundaries.
 - [ ] [NORM-002] Implement chapter detection from header patterns.
 - [ ] [NORM-003] Implement fallback chapter heuristics for ambiguous text.
 - [ ] [NORM-004] Add duplicate chapter-title detector.

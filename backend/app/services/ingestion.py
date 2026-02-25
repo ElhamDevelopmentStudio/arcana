@@ -97,6 +97,18 @@ def chapter_title_from_filename(filename: str, chapter_index: int) -> str:
     return normalized
 
 
+def detect_chapters_from_file_boundaries(file_boundaries: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    chapters: list[tuple[str, str]] = []
+    for filename, file_content in file_boundaries:
+        content = file_content.strip()
+        if not content:
+            continue
+        chapter_index = len(chapters) + 1
+        title = chapter_title_from_filename(filename, chapter_index=chapter_index)
+        chapters.append((title, content))
+    return chapters
+
+
 def normalize_markdown_for_ingestion(markdown_text: str) -> str:
     normalized = markdown_text.replace("\r\n", "\n")
     normalized = MARKDOWN_FENCE_RE.sub("", normalized)

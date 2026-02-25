@@ -37,6 +37,7 @@ from app.services.ingestion import (
     decode_text_with_metadata,
     detect_append_overlap_or_duplicate,
     detect_chapters,
+    detect_chapters_from_file_boundaries,
     detect_title_with_fallback,
     detect_text_encoding,
     extract_single_append_chapter,
@@ -432,7 +433,7 @@ def ingest_chapters_dir(
 
     sorted_files = sorted(files, key=lambda upload: chapter_filename_sort_key(upload.filename or ""))
 
-    chapter_rows: list[tuple[str, str]] = []
+    file_boundaries: list[tuple[str, str]] = []
     warnings: list[dict[str, str | float]] = []
     for upload in sorted_files:
         filename = upload.filename or ""
@@ -458,12 +459,12 @@ def ingest_chapters_dir(
         if not content:
             continue
 
-        chapter_rows.append(
-            (
-                to_internal_utf8(chapter_title_from_filename(filename, chapter_index=len(chapter_rows) + 1)),
-                to_internal_utf8(content),
-            )
-        )
+        file_boundaries.append((filename, to_internal_utf8(content)))
+
+    chapter_rows = [
+        (to_internal_utf8(chapter_title), to_internal_utf8(chapter_content))
+        for chapter_title, chapter_content in detect_chapters_from_file_boundaries(file_boundaries)
+    ]
 
     if not chapter_rows:
         raise make_ingestion_http_error(

@@ -68,6 +68,7 @@ Ingestion title fallback behavior:
 - If project title is a placeholder (`Untitled Project` / `New Project`), TXT ingestion attempts title detection from source text.
 - If no title is detectable from text, ingestion falls back to filename stem, then `Untitled Novel`.
 - Chapter-directory ingestion accepts multi-file `.txt` uploads and ingests files in natural filename order.
+- Chapter-directory ingestion treats each non-empty file boundary as one chapter unit (title derived from filename stem).
 - Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.
 - EPUB ingestion is toggle-controlled (`ENABLE_EPUB_INGESTION`) and currently wired to a pluggable parser stub.
 - Incremental append ingestion supports one `.txt` chapter payload at a time (`/ingest/append-chapter`) without replacing existing chapters.
