@@ -68,6 +68,31 @@ def test_unit_gender_comparison_marks_unknown_and_custom_as_not_actionable() -> 
     assert ray["is_contradiction"] is False
 
 
+def test_unit_gender_comparison_requires_review_uses_threshold() -> None:
+    rows = [
+        {
+            "name": "Nia",
+            "gender": "male",
+            "inferred_gender": "female",
+            "confidence": 1.0,
+            "inferred_confidence": 0.91,
+        },
+    ]
+
+    high_threshold_payload = compare_manual_and_inferred_gender_fields(
+        rows,
+        contradiction_review_threshold=0.99,
+    )
+    low_threshold_payload = compare_manual_and_inferred_gender_fields(
+        rows,
+        contradiction_review_threshold=0.5,
+    )
+
+    assert high_threshold_payload[0]["contradiction_severity"] == 0.955
+    assert high_threshold_payload[0]["requires_review"] is False
+    assert low_threshold_payload[0]["requires_review"] is True
+
+
 def test_unit_gender_comparison_include_only_conflicts() -> None:
     payload = compare_manual_and_inferred_gender_fields(
         [

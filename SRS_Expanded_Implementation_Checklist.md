@@ -144,7 +144,7 @@ Definition of done for each task:
 - [x] [GEN-005] Persist inferred gender + confidence + evidence trace.
 - [x] [GEN-006] Add manual/inferred comparison service.
 - [x] [GEN-007] Add contradiction severity score.
-- [ ] [GEN-008] Add threshold config for contradiction review requirement.
+- [x] [GEN-008] Add threshold config for contradiction review requirement.
 - [ ] [GEN-009] Block final export only when contradiction threshold rule requires review.
 - [ ] [GEN-010] Implement unknown/neutral fallback mapping to neutral/unknown voice bucket.
 - [ ] [GEN-011] Ensure unknown gender never hard-fails export.

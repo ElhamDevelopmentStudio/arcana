@@ -27,6 +27,18 @@ def _coerce_confidence(value: Any, default: float) -> float:
     return round(confidence, 4)
 
 
+def _coerce_review_threshold(value: Any, default: float) -> float:
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        return default
+    if threshold < 0.0:
+        return 0.0
+    if threshold > 1.0:
+        return 1.0
+    return round(threshold, 4)
+
+
 def _extract_field(row: Mapping[str, Any] | object, key: str, default: Any) -> Any:
     if isinstance(row, Mapping):
         return row.get(key, default)
@@ -100,7 +112,9 @@ def compare_manual_and_inferred_gender_fields(
     character_rows: Iterable[Mapping[str, Any] | object],
     *,
     include_only_conflicts: bool = False,
+    contradiction_review_threshold: float = 0.75,
 ) -> list[dict[str, Any]]:
+    review_threshold = _coerce_review_threshold(contradiction_review_threshold, default=0.75)
     payloads: list[dict[str, Any]] = []
 
     for row in character_rows:
@@ -132,7 +146,7 @@ def compare_manual_and_inferred_gender_fields(
             comparison=comparison,
             contradiction_severity=contradiction_severity,
             is_contradiction=is_contradiction,
-            requires_review=is_contradiction,
+            requires_review=is_contradiction and contradiction_severity >= review_threshold,
         )
         payload = result.to_payload()
         if include_only_conflicts and not is_contradiction:

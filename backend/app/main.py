@@ -308,6 +308,7 @@ def compare_character_genders(
     session: Session = Depends(get_session),
 ) -> CharacterGenderComparisonResponse:
     _get_project_or_404(session, project_id)
+    settings = get_settings()
 
     character_rows = (
         session.query(Character)
@@ -321,6 +322,7 @@ def compare_character_genders(
         for payload in compare_manual_and_inferred_gender_fields(
             character_rows,
             include_only_conflicts=include_only_conflicts,
+            contradiction_review_threshold=settings.contradiction_review_threshold,
         )
     ]
 
