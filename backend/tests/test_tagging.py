@@ -17,6 +17,25 @@ def test_detect_structure_returns_dialogue_for_dialogue_blocks() -> None:
     assert detect_structure("He shrugged.") == "narration"
 
 
+def test_detect_structure_detects_internal_thought_blocks() -> None:
+    assert detect_structure("She thought he might never return.") == "internal thought"
+
+
+def test_detect_structure_detects_action_blocks() -> None:
+    assert detect_structure("Mira dashed across the hall and slammed the door.") == "action"
+
+
+def test_detect_structure_detects_description_blocks() -> None:
+    assert detect_structure("The moonlight poured through the cracked window and painted silver bars.") == "description"
+
+
+def test_detect_structure_returns_mixed_when_dialogue_and_narration_mix() -> None:
+    assert (
+        detect_structure('"We should leave now," she said. The corridor stayed silent afterward.')
+        == "mixed"
+    )
+
+
 def test_tag_segment_includes_dialogue_blocks_for_traceability() -> None:
     tags = tag_segment('"Wait," she asked.')
     assert tags["type"] == "dialogue"
