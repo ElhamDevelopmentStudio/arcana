@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from app.schemas import NarrativeHealthActionableFinding, NarrativeHealthReport
 from app.services.export import (
     _build_author_narrative_health_report,
+    _build_chapter_type_classification,
     _build_character_dominance_findings,
     _build_disappearing_character_findings,
     _build_dialogue_density_anomaly_findings,
@@ -817,3 +818,108 @@ def test_unit_narrative_health_report_findings_include_evidence() -> None:
         assert finding.evidence is not None
         assert isinstance(finding.evidence, dict)
         assert len(finding.evidence) >= 1
+
+
+def test_unit_chapter_type_classification_for_story_arc() -> None:
+    segments: list[dict[str, object]] = [
+        {"chapter_id": 1, "segment_index": 1, "segment_id": "1-1", "emotion_valence": 0.0, "emotion_intensity": 0.3, "emotion_primary_label": "neutral", "type": "narrative", "tension_contribution": {"value": 0.18}},
+        {"chapter_id": 1, "segment_index": 2, "segment_id": "1-2", "emotion_valence": 0.05, "emotion_intensity": 0.35, "emotion_primary_label": "neutral", "type": "narration", "tension_contribution": {"value": 0.22}},
+        {"chapter_id": 2, "segment_index": 1, "segment_id": "2-1", "emotion_valence": 0.1, "emotion_intensity": 0.45, "emotion_primary_label": "curious", "type": "narrative", "tension_contribution": {"value": 0.32}},
+        {"chapter_id": 2, "segment_index": 2, "segment_id": "2-2", "emotion_valence": 0.12, "emotion_intensity": 0.48, "emotion_primary_label": "curious", "type": "narrative", "tension_contribution": {"value": 0.36}},
+        {"chapter_id": 3, "segment_index": 1, "segment_id": "3-1", "emotion_valence": 0.15, "emotion_intensity": 0.65, "emotion_primary_label": "tense", "type": "dialogue", "tension_contribution": {"value": 0.72}},
+        {"chapter_id": 3, "segment_index": 2, "segment_id": "3-2", "emotion_valence": 0.18, "emotion_intensity": 0.72, "emotion_primary_label": "tense", "type": "dialogue", "tension_contribution": {"value": 0.78}},
+        {"chapter_id": 4, "segment_index": 1, "segment_id": "4-1", "emotion_valence": 0.20, "emotion_intensity": 0.60, "emotion_primary_label": "worried", "type": "dialogue", "tension_contribution": {"value": 0.68}},
+        {"chapter_id": 4, "segment_index": 2, "segment_id": "4-2", "emotion_valence": 0.22, "emotion_intensity": 0.58, "emotion_primary_label": "worried", "type": "dialogue", "tension_contribution": {"value": 0.62}},
+        {"chapter_id": 5, "segment_index": 1, "segment_id": "5-1", "emotion_valence": 0.08, "emotion_intensity": 0.38, "emotion_primary_label": "calm", "type": "narrative", "tension_contribution": {"value": 0.35}},
+        {"chapter_id": 5, "segment_index": 2, "segment_id": "5-2", "emotion_valence": 0.04, "emotion_intensity": 0.34, "emotion_primary_label": "calm", "type": "narrative", "tension_contribution": {"value": 0.28}},
+    ]
+
+    classifications = _build_chapter_type_classification(segments)
+    assert len(classifications) == 5
+
+    assert {classification["chapter_id"] for classification in classifications} == {1, 2, 3, 4, 5}
+    allowed_types = {"setup", "build-up", "confrontation", "resolution", "transitional"}
+    classification_types = {classification["chapter_type"] for classification in classifications}
+    assert classification_types.issubset(allowed_types)
+
+    for classification in classifications:
+        assert 0.0 <= float(classification["confidence"]) <= 1.0
+        assert classification["reasons"]
+        assert len(classification["features"]) >= 3
+
+
+def test_unit_narrative_health_report_includes_chapter_type_classification() -> None:
+    segments, _ = _build_segments_for_test(
+        [
+            (0.42, 0.02, 0.31),
+            (0.44, 0.03, 0.30),
+            (0.43, 0.01, 0.32),
+            (0.41, 0.00, 0.31),
+            (0.42, 0.04, 0.30),
+            (0.43, 0.02, 0.33),
+        ]
+    )
+    monotony_findings = _build_monotony_risk_findings(
+        segments=segments,
+        smoothed_tension_curve=_build_segments_for_test(
+            [
+                (0.42, 0.02, 0.31),
+                (0.44, 0.03, 0.30),
+                (0.43, 0.01, 0.32),
+                (0.41, 0.00, 0.31),
+                (0.42, 0.04, 0.30),
+                (0.43, 0.02, 0.33),
+            ]
+        )[1],
+    )
+    project = SimpleNamespace(id=404, title="Arc Classification Report", selected_mode="author", selected_modes=["author"])
+    run = SimpleNamespace(id=505, status="completed")
+    chapter_classification = _build_chapter_type_classification(
+        [
+            {
+                "chapter_id": 1,
+                "segment_index": 1,
+                "segment_id": "1-1",
+                "emotion_valence": 0.02,
+                "emotion_intensity": 0.31,
+                "emotion_primary_label": "neutral",
+                "type": "narrative",
+                "tension_contribution": {"value": 0.42},
+            },
+            {
+                "chapter_id": 1,
+                "segment_index": 2,
+                "segment_id": "1-2",
+                "emotion_valence": 0.03,
+                "emotion_intensity": 0.30,
+                "emotion_primary_label": "neutral",
+                "type": "narrative",
+                "tension_contribution": {"value": 0.41},
+            },
+            {
+                "chapter_id": 2,
+                "segment_index": 1,
+                "segment_id": "2-1",
+                "emotion_valence": 0.01,
+                "emotion_intensity": 0.32,
+                "emotion_primary_label": "neutral",
+                "type": "dialogue",
+                "tension_contribution": {"value": 0.43},
+            },
+        ]
+    )
+    report = _build_author_narrative_health_report(
+        project=project,
+        run=run,
+        generated_at=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        segment_count=6,
+        monotony_findings=monotony_findings,
+        chapter_type_classification=chapter_classification,
+    )
+    parsed_report = NarrativeHealthReport.model_validate(report)
+
+    assert len(parsed_report.chapter_type_classification) == 2
+    for chapter_type in parsed_report.chapter_type_classification:
+        assert chapter_type.chapter_type in {"setup", "build-up", "confrontation", "resolution", "transitional"}
+        assert 0.0 <= chapter_type.confidence <= 1.0
+        assert chapter_type.features

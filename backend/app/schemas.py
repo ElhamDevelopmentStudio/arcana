@@ -460,6 +460,14 @@ class NarrativeHealthActionableFinding(BaseModel):
     )
 
 
+class NarrativeChapterTypeClassification(BaseModel):
+    chapter_id: int = Field(ge=1)
+    chapter_type: Literal["setup", "build-up", "confrontation", "resolution", "transitional"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    reasons: list[str] = Field(default_factory=list)
+    features: dict[str, Any] = Field(default_factory=dict)
+
+
 class NarrativeHealthRequirementReport(BaseModel):
     requirement_id: str = Field(pattern=r"^ADR-\d{3}$", min_length=1, max_length=20)
     status: Literal["implemented", "partial", "not_implemented", "blocked"]
@@ -476,6 +484,9 @@ class NarrativeHealthReport(BaseModel):
     project_reference: dict[str, Any]
     run_reference: dict[str, Any]
     requirements: list[NarrativeHealthRequirementReport]
+    chapter_type_classification: list[NarrativeChapterTypeClassification] = Field(
+        default_factory=list
+    )
     findings: list[NarrativeHealthActionableFinding] = Field(default_factory=list)
 
 
