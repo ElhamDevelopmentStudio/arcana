@@ -173,7 +173,8 @@ def _repair_straight_quote_type(
 def repair_quote_mismatch_with_metadata(
     text: str,
 ) -> tuple[str, list[dict[str, object]]]:
-    repaired, double_quote_events = _repair_straight_quote_type(text, '"')
+    normalized = _straighten_quotes(text)
+    repaired, double_quote_events = _repair_straight_quote_type(normalized, '"')
     repaired, single_quote_events = _repair_straight_quote_type(repaired, "'")
     return repaired, double_quote_events + single_quote_events
 
