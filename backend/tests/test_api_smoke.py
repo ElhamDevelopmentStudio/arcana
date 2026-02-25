@@ -156,9 +156,18 @@ def test_integration_export_segments_include_chapter_id_metadata() -> None:
         assert segments
 
         chapter_ids = {segment["chapter_id"] for segment in segments}
+        chapter_segment_indexes: dict[int, list[int]] = {chapter_id: [] for chapter_id in chapter_ids}
 
         assert chapter_ids == {1, 2}
         assert all(isinstance(segment["chapter_id"], int) for segment in segments)
         assert all(segment["chapter_id"] in {1, 2} for segment in segments)
         assert all(segment.get("chapter_internal_id") in {"ch-0001", "ch-0002"} for segment in segments)
         assert all(segment.get("chapter_internal_id", "").startswith("ch-") for segment in segments)
+        assert all("segment_index" in segment for segment in segments)
+        assert all(isinstance(segment["segment_index"], int) for segment in segments)
+
+        for segment in segments:
+            chapter_segment_indexes[segment["chapter_id"]].append(segment["segment_index"])
+
+        for _, segment_indexes in chapter_segment_indexes.items():
+            assert segment_indexes == list(range(1, len(segment_indexes) + 1))
