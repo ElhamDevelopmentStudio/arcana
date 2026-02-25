@@ -41,6 +41,7 @@ class Chapter(Base):
     chapter_internal_id: Mapped[str] = mapped_column(String(80), nullable=False)
     chapter_title: Mapped[str] = mapped_column(String(255), nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    original_text_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
 
     project: Mapped[Project] = relationship("Project", back_populates="chapters")
