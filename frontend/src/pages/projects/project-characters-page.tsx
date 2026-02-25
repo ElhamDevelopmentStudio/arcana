@@ -14,7 +14,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { useCharacterMapQuery, useImportCharactersMutation, useSaveCharacterMapMutation } from '@/features/workflow/api/workflow-hooks';
+import {
+  useAutoExtractCharactersMutation,
+  useCharacterMapQuery,
+  useImportCharactersMutation,
+  useSaveCharacterMapMutation,
+} from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 
 type ManualCharacterRow = {
@@ -57,6 +62,7 @@ export function ProjectCharactersPage() {
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [importedCount, setImportedCount] = useState<number | null>(null);
   const [lastSavedCount, setLastSavedCount] = useState<number | null>(null);
+  const [autoExtractedCandidates, setAutoExtractedCandidates] = useState<CharacterMapDto['characters']>([]);
 
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
   const manualPreviewCount = useMemo(
@@ -66,6 +72,7 @@ export function ProjectCharactersPage() {
 
   const characterMapQuery = useCharacterMapQuery(projectId);
   const saveCharactersMutation = useSaveCharacterMapMutation(projectId);
+  const autoExtractCharactersMutation = useAutoExtractCharactersMutation(projectId);
 
   useEffect(() => {
     if (characterMapQuery.data === undefined) {
@@ -133,6 +140,22 @@ export function ProjectCharactersPage() {
     }
   }
 
+  async function handleAutoExtract(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+
+    try {
+      const payload = await autoExtractCharactersMutation.trigger();
+      setAutoExtractedCandidates(payload.candidates);
+      toast.success(`Auto-extracted ${payload.candidate_count} character candidates.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Character auto-extraction failed.');
+    }
+  }
+
   function updateRow(rowId: string, field: keyof ManualCharacterRow, value: string) {
     setManualRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)));
   }
@@ -187,6 +210,29 @@ export function ProjectCharactersPage() {
               </p>
             </form>
 
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <form className="grid gap-2" onSubmit={handleAutoExtract}>
+                <p className="font-medium text-foreground">Auto extraction</p>
+                <Button variant="outline" disabled={autoExtractCharactersMutation.isMutating || projectId === null} type="submit">
+                  {autoExtractCharactersMutation.isMutating ? 'Extracting...' : 'Extract candidate names from text'}
+                </Button>
+                <p data-testid="character-auto-extract-state" className="text-xs">
+                  {autoExtractedCandidates.length === 0
+                    ? 'No candidates extracted yet.'
+                    : `Latest candidates: ${autoExtractedCandidates.length}`}
+                </p>
+              </form>
+              {autoExtractedCandidates.length === 0 ? null : (
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  {autoExtractedCandidates.map((candidate) => (
+                    <li className="flex items-center justify-between gap-2" key={candidate.name}>
+                      <span>{candidate.name}</span>
+                      <span>{Math.round(candidate.confidence * 100)}% confidence</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="flex items-center gap-2 font-medium text-foreground">
                 <WandSparkles className="size-4 text-primary" />

@@ -15,6 +15,7 @@ from app.schemas import (
     CharacterMapResponse,
     CharacterMapUpdateRequest,
     IngestResponse,
+    CharacterExtractionResponse,
     ModeCatalogResponse,
     ProjectCreate,
     ProjectModeSwitchRequest,
@@ -27,6 +28,7 @@ from app.schemas import (
     VoiceConfigResponse,
 )
 from app.services.characters import parse_character_file
+from app.services.character_extraction import extract_character_candidates_from_texts
 from app.services.epub_ingestion import extract_epub_chapters
 from app.services.export import build_run_export
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
@@ -826,6 +828,59 @@ def list_characters(
             )
             for character in character_rows
         ],
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/characters/extract",
+    response_model=CharacterExtractionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def auto_extract_characters(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> CharacterExtractionResponse:
+    _get_project_or_404(session, project_id)
+
+    chapter_rows = (
+        session.query(Chapter.normalized_text)
+        .filter(Chapter.project_id == project_id)
+        .order_by(Chapter.chapter_index.asc())
+        .all()
+    )
+    if not chapter_rows:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No chapters available for character auto-extraction.",
+        )
+
+    existing_names = {
+        row.name.strip().lower()
+        for row in session.query(Character.name).filter(Character.project_id == project_id).all()
+    }
+
+    candidates = extract_character_candidates_from_texts(
+        [row.normalized_text for row in chapter_rows],
+        known_names=existing_names,
+    )
+    mapped_candidates = [
+        CharacterMapItem(
+            name=candidate.name,
+            verbalized_form=candidate.name,
+            gender="unknown",
+            aliases=[],
+            notes=None,
+            source="auto",
+            confidence=candidate.confidence,
+        )
+        for candidate in candidates
+    ]
+
+    return CharacterExtractionResponse(
+        project_id=project_id,
+        status="complete",
+        candidate_count=len(mapped_candidates),
+        candidates=mapped_candidates,
     )
 
 

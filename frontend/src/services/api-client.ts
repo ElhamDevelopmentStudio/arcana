@@ -18,6 +18,8 @@ import {
   type VoiceConfigDto,
   type CharacterMapDto,
   type CharacterMapUpdateDto,
+  type CharacterExtractionDto,
+  characterExtractionSchema,
 } from '@/app/schemas/api';
 
 function normalizeHttpError(error: unknown): Error {
@@ -183,6 +185,15 @@ export class NipeApiClient {
     try {
       const response = await this.client.put(`/api/projects/${projectId}/characters`, parsedPayload);
       return characterMapSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async extractCharacters(projectId: number) {
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/characters/extract`);
+      return characterExtractionSchema.parse(response.data) as CharacterExtractionDto;
     } catch (error) {
       throw normalizeHttpError(error);
     }
