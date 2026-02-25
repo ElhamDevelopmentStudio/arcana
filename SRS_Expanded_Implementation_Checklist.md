@@ -87,7 +87,7 @@ Definition of done for each task:
 - [x] [ING-013] Implement chapter overlap/duplicate detector on append.
 - [x] [ING-014] Add “affected range” calculator for delta reprocessing.
 - [x] [ING-015] Add ingestion error types for unsupported format/encoding/missing chapters.
-- [ ] [ING-016] Add tests for TXT/dir/md/encoding/incremental append paths.
+- [x] [ING-016] Add tests for TXT/dir/md/encoding/incremental append paths.
 
 ## 4.2 Deep Normalization (Ref: SRS.md §4.2)
 - [ ] [NORM-001] Implement chapter detection from file boundaries.

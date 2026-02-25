@@ -195,3 +195,9 @@ Optional slow test execution for USE-009:
 ```bash
 RUN_SLOW_TRACEABILITY=1 pytest tests/test_large_corpus_traceability_regression.py -q
 ```
+
+Ingestion path matrix validation (`ING-016`, TXT/dir/markdown/encoding/append coverage):
+
+```bash
+pytest tests/test_ingestion_path_matrix.py -q
+```
