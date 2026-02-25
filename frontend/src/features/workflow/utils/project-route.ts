@@ -9,6 +9,16 @@ export function parseProjectIdParam(projectParam: string | undefined): number | 
   return parsed;
 }
 
-export function projectRoute(projectId: number, path: 'mode' | 'characters' | 'pipeline-setup' | 'run-monitor' | 'export' | 'dashboards') {
+export function projectRoute(
+  projectId: number,
+  path:
+    | 'mode'
+    | 'characters'
+    | 'pipeline-setup'
+    | 'run-monitor'
+    | 'review/speakers'
+    | 'export'
+    | 'dashboards',
+) {
   return `/projects/${projectId}/${path}`;
 }

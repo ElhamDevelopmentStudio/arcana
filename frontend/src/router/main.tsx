@@ -25,6 +25,9 @@ const ProjectPipelineSetupPage = lazy(() =>
 const ProjectRunMonitorPage = lazy(() =>
   import('@/pages/projects/project-run-monitor-page').then((module) => ({ default: module.ProjectRunMonitorPage })),
 );
+const ProjectSpeakerReviewPage = lazy(() =>
+  import('@/pages/projects/project-speaker-review-page').then((module) => ({ default: module.ProjectSpeakerReviewPage })),
+);
 
 const ROUTE_SUSPENSE_FALLBACK = (
   <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">Loading step...</div>
@@ -61,6 +64,10 @@ export const mainRouter: RouteObject[] = [
       {
         path: 'projects/:project_id/run-monitor',
         element: <SuspendedRoute><ProjectRunMonitorPage /></SuspendedRoute>,
+      },
+      {
+        path: 'projects/:project_id/review/speakers',
+        element: <SuspendedRoute><ProjectSpeakerReviewPage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id/export',
