@@ -215,6 +215,131 @@ def _clamp_confidence(value: float) -> float:
     return max(0.0, min(1.0, round(float(value), 4)))
 
 
+def _term_occurrences(text: str, terms: set[str]) -> list[dict[str, object]]:
+    occurrences: list[dict[str, object]] = []
+    for match in re.finditer(r"[A-Za-z']+", text):
+        normalized = match.group(0).lower()
+        if normalized in terms:
+            occurrences.append(
+                {
+                    "term": normalized,
+                    "start_char": match.start(),
+                    "end_char": match.end(),
+                },
+            )
+    return occurrences
+
+
+def _build_type_evidence(text: str, structure: str) -> dict[str, object]:
+    evidence: dict[str, object] = {
+        "method": "rule_based_structure_detection",
+        "signals": [],
+    }
+    max_signals = 6
+
+    if structure in {STRUCTURAL_TYPE_DIALOGUE, STRUCTURAL_TYPE_MIXED}:
+        for match in DIALOGUE_QUOTE_RE.finditer(text):
+            evidence["signals"].append(
+                {
+                    "type": STRUCTURAL_TYPE_DIALOGUE,
+                    "start_char": match.start(),
+                    "end_char": match.end(),
+                },
+            )
+            if len(evidence["signals"]) >= max_signals:
+                break
+
+    if structure in {STRUCTURAL_TYPE_INTERNAL_THOUGHT, STRUCTURAL_TYPE_MIXED}:
+        for match in INTERNAL_THOUGHT_RE.finditer(text):
+            evidence["signals"].append(
+                {
+                    "type": STRUCTURAL_TYPE_INTERNAL_THOUGHT,
+                    "start_char": match.start(),
+                    "end_char": match.end(),
+                },
+            )
+            if len(evidence["signals"]) >= max_signals:
+                break
+
+    if structure == STRUCTURAL_TYPE_ACTION:
+        for match in ACTION_VERB_RE.finditer(text):
+            evidence["signals"].append(
+                {
+                    "type": STRUCTURAL_TYPE_ACTION,
+                    "start_char": match.start(),
+                    "end_char": match.end(),
+                },
+            )
+            if len(evidence["signals"]) >= max_signals:
+                break
+
+    if structure == STRUCTURAL_TYPE_DESCRIPTION:
+        for match in DESCRIPTION_HINT_RE.finditer(text):
+            evidence["signals"].append(
+                {
+                    "type": STRUCTURAL_TYPE_DESCRIPTION,
+                    "start_char": match.start(),
+                    "end_char": match.end(),
+                },
+            )
+            if len(evidence["signals"]) >= max_signals:
+                break
+
+    if structure == STRUCTURAL_TYPE_NARRATION and not evidence["signals"]:
+        evidence["signals"].append({"type": STRUCTURAL_TYPE_NARRATION, "notes": "fallback_narration_default"})
+
+    return evidence
+
+
+def _build_speaker_evidence(match: re.Match[str] | None, speaker: str) -> dict[str, object]:
+    if match is None:
+        return {
+            "method": "speaker_pattern_lookup",
+            "status": "not_found",
+            "notes": "no explicit dialogue attribution pattern matched",
+        }
+    return {
+        "method": "speaker_pattern_lookup",
+        "status": "found",
+        "speaker_span": {
+            "text": speaker,
+            "start_char": match.start(1),
+            "end_char": match.end(1),
+        },
+    }
+
+
+def _build_emotion_evidence(
+    positive_hits: list[dict[str, object]],
+    negative_hits: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "method": "lexicon_signal_scan",
+        "positive_signals": positive_hits[:4],
+        "negative_signals": negative_hits[:4],
+        "positive_signal_count": len(positive_hits),
+        "negative_signal_count": len(negative_hits),
+        "total_signal_count": len(positive_hits) + len(negative_hits),
+    }
+
+
+def _build_tension_evidence(
+    structure: str,
+    signal_hits: list[dict[str, object]],
+    intensifier_hits: list[dict[str, object]],
+    tension_value: float,
+) -> dict[str, object]:
+    return {
+        "method": "tension_signal_detection",
+        "structure": structure,
+        "signal_hits": signal_hits[:4],
+        "intensifier_hits": intensifier_hits[:4],
+        "signal_count": len(signal_hits),
+        "intensifier_count": len(intensifier_hits),
+        "value": tension_value,
+    }
+
+
 def _compute_type_confidence(structure: str) -> float:
     return {
         STRUCTURAL_TYPE_NARRATION: 0.7,
@@ -1167,7 +1292,19 @@ def compute_dominance_contribution(
         "speaker_resolved": speaker != "unknown",
         "pronoun_reference_count": sum(token in DOMINANCE_PRONOUN_TOKENS for token in tokens),
         "proper_noun_hits": len(proper_noun_hits),
+        "proper_noun_spans": [],
     }
+    for token in proper_noun_hits:
+        match = re.search(re.escape(token), text)
+        if match is not None:
+            evidence["proper_noun_spans"].append(
+                {
+                    "text": token,
+                    "start_char": match.start(),
+                    "end_char": match.end(),
+                },
+            )
+    evidence["proper_noun_spans"] = evidence["proper_noun_spans"][:4]
     return (
         dominance_value,
         _dominance_contribution_level(dominance_value),
@@ -1187,13 +1324,23 @@ def tag_segment(text: str) -> dict[str, object]:
     dialogue_blocks = detect_dialogue_blocks(text)
     narration_blocks = detect_narration_blocks(text)
     structure = detect_structure(text)
-    speaker, speaker_confidence = resolve_speaker(text) if structure == "dialogue" else ("unknown", 0.2)
+    speaker_match = SPEAKER_PATTERN.search(text) if structure == STRUCTURAL_TYPE_DIALOGUE else None
+    if structure == STRUCTURAL_TYPE_DIALOGUE:
+        speaker, speaker_confidence = resolve_speaker(text)
+    else:
+        speaker, speaker_confidence = "unknown", 0.2
+    speaker_evidence = _build_speaker_evidence(speaker_match, speaker)
     type_confidence = _compute_type_confidence(structure)
+    type_evidence = _build_type_evidence(text, structure)
     valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
     emotion_shift = detect_emotion_shift(text)
     narration_internal_thought_shift = detect_narration_internal_thought_shift(text)
     internal_external_speech_shift = detect_internal_external_speech_shift(text)
     tone_reversal = detect_tone_reversal(text)
+    emotion_evidence = _build_emotion_evidence(
+        positive_hits=_term_occurrences(text, POSITIVE_WORDS),
+        negative_hits=_term_occurrences(text, NEGATIVE_WORDS),
+    )
     sub_segment_boundaries = _build_sub_segment_boundaries(
         segment_text=text,
         tag_payloads=[
@@ -1209,11 +1356,13 @@ def tag_segment(text: str) -> dict[str, object]:
         intensity=intensity,
         structure=structure,
     )
+    tension_signal_hits = _term_occurrences(text, TENSION_SIGNAL_WORDS)
+    tension_intensifier_hits = _term_occurrences(text, TENSION_INTENSIFIERS)
     tension_confidence = _compute_tension_confidence(
         value=tension,
         structure=structure,
-        signal_count=sum(1 for token in _tokenize(text) if token in TENSION_SIGNAL_WORDS),
-        intensifier_count=sum(1 for token in _tokenize(text) if token in TENSION_INTENSIFIERS),
+        signal_count=len(tension_signal_hits),
+        intensifier_count=len(tension_intensifier_hits),
     )
     dominance_value, dominance_level, dominant_agent, dominance_evidence = compute_dominance_contribution(
         text=text,
@@ -1250,20 +1399,38 @@ def tag_segment(text: str) -> dict[str, object]:
             if isinstance(tone_reversal, dict)
             else 0.0,
         ),
+        "evidence": {
+            "dominant_from": (
+                "tone_reversal"
+                if isinstance(tone_reversal, dict) and bool(tone_reversal.get("has_tone_reversal", False))
+                else ("emotion_shift" if isinstance(emotion_shift, dict) and bool(emotion_shift.get("has_shift", False))
+                      else "valence")
+            ),
+            "dominant_evidence": (
+                tone_reversal.get("evidence")
+                if isinstance(tone_reversal, dict)
+                else emotion_shift.get("evidence")
+                if isinstance(emotion_shift, dict)
+                else emotion_evidence
+            ),
+        },
     }
 
     return {
         "type": structure,
         "type_confidence": type_confidence,
+        "type_evidence": type_evidence,
         "dialogue_blocks": dialogue_blocks,
         "narration_blocks": narration_blocks,
         "speaker": speaker,
         "speaker_confidence": speaker_confidence,
+        "speaker_evidence": speaker_evidence,
         "emotion_valence": valence,
         "emotion_intensity": intensity,
         "emotion_primary_label": primary_label,
         "emotion_secondary_label": secondary_label,
         "emotion_confidence": emotion_confidence,
+        "emotion_evidence": emotion_evidence,
         "emotion_shift": emotion_shift,
         "narration_internal_thought_shift": narration_internal_thought_shift,
         "internal_external_speech_shift": internal_external_speech_shift,
@@ -1274,6 +1441,12 @@ def tag_segment(text: str) -> dict[str, object]:
             "value": tension,
             "level": _tension_contribution_level(tension),
             "confidence": tension_confidence,
+            "evidence": _build_tension_evidence(
+                structure=structure,
+                signal_hits=tension_signal_hits,
+                intensifier_hits=tension_intensifier_hits,
+                tension_value=tension,
+            ),
         },
         "dominance_contribution": {
             "value": dominance_value,

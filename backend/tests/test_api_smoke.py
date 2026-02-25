@@ -120,12 +120,18 @@ def test_full_poc_api_flow_deterministic_export() -> None:
                     "voice_id",
                     "emotion_valence",
                     "emotion_intensity",
+                    "type_evidence",
+                    "speaker_evidence",
+                    "emotion_evidence",
                     "confidence",
                 ]
             ).issubset(segment.keys())
             assert set(segment["confidence"].keys()).issuperset(
                 {"speaker", "emotion", "gender", "type", "tension", "dominance"}
             )
+            assert isinstance(segment["type_evidence"], dict)
+            assert isinstance(segment["speaker_evidence"], dict)
+            assert isinstance(segment["emotion_evidence"], dict)
 
         run_resp_2 = client.post(f"/api/projects/{project_id}/runs", json=run_payload)
         assert run_resp_2.status_code == 200

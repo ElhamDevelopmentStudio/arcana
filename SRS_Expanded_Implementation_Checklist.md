@@ -207,7 +207,7 @@ Definition of done for each task:
 - [x] [TAG-012] Store sub-segment tags independently.
 - [x] [TAG-013] Store parent segment summary tag (dominant tone/state).
 - [x] [TAG-014] Add confidence field for every tag category.
-- [ ] [TAG-015] Add evidence pointer store for every tag category.
+- [x] [TAG-015] Add evidence pointer store for every tag category.
 - [ ] [TAG-016] Add explicit `unknown/uncertain` states for low confidence.
 - [ ] [TAG-017] Build optional review UI for speaker tags.
 - [ ] [TAG-018] Build optional review UI for emotional peaks/troughs.
