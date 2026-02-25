@@ -533,23 +533,23 @@ Definition of done for each task:
 - [ ] [FE-005] Add “deferred FE task ID required” policy when backend ships without UI.
 
 ### 13.2 App Shell, Routing, and State
-- [ ] [FE-010] Define route map for project setup, mode selection, run monitor, export viewer, dashboards.
-- [ ] [FE-011] Implement centralized API client layer with typed request/response helpers.
-- [ ] [FE-012] Implement shared query/mutation state strategy for project/run lifecycles.
-- [ ] [FE-013] Implement global loading/error toaster with consistent formatting.
-- [ ] [FE-014] Add client-side schema guards for critical API payloads.
-- [ ] [FE-015] Add frontend environment config loader for API base URL and feature flags.
+- [x] [FE-010] Define route map for project setup, mode selection, run monitor, export viewer, dashboards.
+- [x] [FE-011] Implement centralized API client layer with typed request/response helpers.
+- [x] [FE-012] Implement shared query/mutation state strategy for project/run lifecycles.
+- [x] [FE-013] Implement global loading/error toaster with consistent formatting.
+- [x] [FE-014] Add client-side schema guards for critical API payloads.
+- [x] [FE-015] Add frontend environment config loader for API base URL and feature flags.
 - [ ] [FE-016] Add frontend telemetry hooks for key UX actions (create/ingest/run/export).
 - [ ] [FE-017] Add resilient refresh behavior for page reload during active run.
 - [ ] [FE-018] Add stale-state invalidation after run completion.
 - [ ] [FE-019] Add frontend regression tests for route transitions and persisted UI state.
 
 ### 13.3 Mode and Ingestion UX (SRS §3, §4.1, §4.2)
-- [ ] [FE-020] Build mode-selection panel that loads mode catalog from API and displays default.
-- [ ] [FE-021] Lock mode-selection controls until ingestion completes successfully.
-- [ ] [FE-022] Display project-level selected mode and current run-mode snapshot together.
+- [x] [FE-020] Build mode-selection panel that loads mode catalog from API and displays default.
+- [x] [FE-021] Lock mode-selection controls until ingestion completes successfully.
+- [x] [FE-022] Display project-level selected mode and current run-mode snapshot together.
 - [ ] [FE-023] Add mode-switch confirmation modal explaining downstream stale artifacts.
-- [ ] [FE-024] Build ingestion source selector UI for TXT/directory/Markdown/EPUB toggle.
+- [x] [FE-024] Build ingestion source selector UI for TXT/directory/Markdown/EPUB toggle.
 - [ ] [FE-025] Build upload progress and parse summary card with chapter counts.
 - [ ] [FE-026] Display normalization report summary (dedupe/quote-repair/warnings).
 - [ ] [FE-027] Add “append chapters” UI path with overlap warning display.
@@ -557,7 +557,7 @@ Definition of done for each task:
 - [ ] [FE-029] Add ingestion warning drawer with remediation tips.
 
 ### 13.4 Character, Pronunciation, Gender, and Voice UX (SRS §4.3–§4.8)
-- [ ] [FE-030] Build editable character map grid with add/edit/delete actions.
+- [x] [FE-030] Build editable character map grid with add/edit/delete actions.
 - [ ] [FE-031] Build character candidate review queue with approve/reject controls.
 - [ ] [FE-032] Build alias conflict resolution modal with canonical selection.
 - [ ] [FE-033] Build finalize-character-map gate UI and status indicator.
@@ -613,7 +613,7 @@ Definition of done for each task:
 - [ ] [FE-075] Build dashboard snapshot export action.
 - [ ] [FE-076] Build linked-hover interactions between charts and segment inspector.
 - [ ] [FE-077] Build chart legend configuration panel per dashboard.
-- [ ] [FE-078] Build empty-state UI for projects lacking required run artifacts.
+- [x] [FE-078] Build empty-state UI for projects lacking required run artifacts.
 - [ ] [FE-079] Add frontend regression tests for chart payload contract handling.
 
 ### 13.9 Error Handling, Accessibility, and Performance UX (SRS §7–§9)
@@ -621,7 +621,7 @@ Definition of done for each task:
 - [ ] [FE-081] Build remediation panel linking each warning code to “what to do next”.
 - [ ] [FE-082] Add keyboard navigation and focus management for core workflows.
 - [ ] [FE-083] Add WCAG contrast checks and semantic labels for charts/forms.
-- [ ] [FE-084] Add responsive layouts for desktop/tablet/mobile breakpoints.
+- [x] [FE-084] Add responsive layouts for desktop/tablet/mobile breakpoints.
 - [ ] [FE-085] Add skeleton loading states for all major API-driven panels.
 - [ ] [FE-086] Add client-side performance instrumentation (TTI, route latency, render cost).
 - [ ] [FE-087] Add config editor UX for segmentation/emotion/confidence thresholds.
@@ -629,9 +629,9 @@ Definition of done for each task:
 - [ ] [FE-089] Add frontend regression tests for error-state and warning-state rendering.
 
 ### 13.10 Playwright Visual and E2E Suite (Frontend + API Integration)
-- [ ] [PW-001] Set up Playwright test runner and browser project matrix.
+- [x] [PW-001] Set up Playwright test runner and browser project matrix.
 - [ ] [PW-002] Add baseline visual snapshots for project creation and ingestion screens.
-- [ ] [PW-003] Add baseline visual snapshots for post-ingestion mode selection screen.
+- [x] [PW-003] Add baseline visual snapshots for post-ingestion mode selection screen.
 - [ ] [PW-004] Add baseline visual snapshots for character map and voice mapping screens.
 - [ ] [PW-005] Add baseline visual snapshots for run monitor and export panels.
 - [ ] [PW-006] Add baseline visual snapshots for tension/polarity/character dashboards.
@@ -640,7 +640,7 @@ Definition of done for each task:
 - [ ] [PW-009] Add end-to-end Playwright flow for academic dashboard and export retrieval.
 - [ ] [PW-010] Add end-to-end Playwright flow for author diagnostics review and flag inspection.
 - [ ] [PW-011] Add visual diff thresholds and explicit allowlist for intentional UI changes.
-- [ ] [PW-012] Add deterministic test-data fixtures for Playwright runs.
+- [x] [PW-012] Add deterministic test-data fixtures for Playwright runs.
 - [ ] [PW-013] Add Playwright API mocking strategy for isolated frontend contract tests.
 - [ ] [PW-014] Add Playwright “real backend” profile for integrated local E2E checks.
 - [ ] [PW-015] Add flaky-test retry policy and trace/video artifact retention.
