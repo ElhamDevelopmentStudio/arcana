@@ -23,6 +23,14 @@ export const projectSchema = z.object({
   created_at: z.string(),
 });
 
+export const projectModeSwitchResponseSchema = z.object({
+  project_id: z.number().int(),
+  previous_mode: z.string(),
+  selected_mode: z.string(),
+  chapter_count: z.number().int().nonnegative(),
+  reused_ingested_corpus: z.boolean(),
+});
+
 export const ingestResponseSchema = z.object({
   project_id: z.number().int(),
   chapter_count: z.number().int().nonnegative(),
@@ -90,6 +98,7 @@ export const exportSchema = z.object({
 
 export type ModeCatalogDto = z.infer<typeof modeCatalogSchema>;
 export type ProjectDto = z.infer<typeof projectSchema>;
+export type ProjectModeSwitchResponseDto = z.infer<typeof projectModeSwitchResponseSchema>;
 export type IngestResponseDto = z.infer<typeof ingestResponseSchema>;
 export type CharacterImportDto = z.infer<typeof characterImportSchema>;
 export type VoiceConfigDto = z.infer<typeof voiceConfigSchema>;

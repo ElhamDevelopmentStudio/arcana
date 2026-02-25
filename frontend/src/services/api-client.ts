@@ -7,6 +7,7 @@ import {
   ingestResponseSchema,
   modeCatalogSchema,
   projectSchema,
+  projectModeSwitchResponseSchema,
   runDetailSchema,
   runRequestSchema,
   runResponseSchema,
@@ -56,6 +57,15 @@ export class NipeApiClient {
     try {
       const response = await this.client.post('/api/projects', { title });
       return projectSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async switchProjectMode(projectId: number, mode: string) {
+    try {
+      const response = await this.client.put(`/api/projects/${projectId}/mode`, { mode });
+      return projectModeSwitchResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

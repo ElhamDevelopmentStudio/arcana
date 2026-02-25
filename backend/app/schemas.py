@@ -17,6 +17,32 @@ class ProjectResponse(BaseModel):
     created_at: datetime
 
 
+def _normalize_mode_or_raise(value: str) -> str:
+    stripped = value.strip().lower()
+    if not stripped:
+        raise ValueError("mode must not be blank")
+    if not is_valid_mode(stripped):
+        raise ValueError("mode must be one of: audiobook, academic, author, custom")
+    return stripped
+
+
+class ProjectModeSwitchRequest(BaseModel):
+    mode: str = Field(min_length=1)
+
+    @field_validator("mode")
+    @classmethod
+    def mode_must_be_valid(cls, value: str) -> str:
+        return _normalize_mode_or_raise(value)
+
+
+class ProjectModeSwitchResponse(BaseModel):
+    project_id: int
+    previous_mode: str
+    selected_mode: str
+    chapter_count: int
+    reused_ingested_corpus: bool
+
+
 class ModeDefaultProfileResponse(BaseModel):
     max_segment_chars: int = Field(ge=80, le=255)
     llm_enabled: bool
@@ -63,12 +89,7 @@ class RunCreateRequest(BaseModel):
     @field_validator("mode")
     @classmethod
     def mode_must_be_valid(cls, value: str) -> str:
-        stripped = value.strip().lower()
-        if not stripped:
-            raise ValueError("mode must not be blank")
-        if not is_valid_mode(stripped):
-            raise ValueError("mode must be one of: audiobook, academic, author, custom")
-        return stripped
+        return _normalize_mode_or_raise(value)
 
     @field_validator("provider_name")
     @classmethod

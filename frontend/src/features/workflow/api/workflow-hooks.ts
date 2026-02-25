@@ -36,6 +36,18 @@ export function useCreateProjectMutation() {
   );
 }
 
+export function useSwitchModeMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['switch-mode', projectId] : null,
+    async (_, { arg }: { arg: { mode: string } }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before mode switching.');
+      }
+      return nipeApiClient.switchProjectMode(projectId, arg.mode);
+    },
+  );
+}
+
 export function useIngestTxtMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['ingest-txt', projectId] : null,

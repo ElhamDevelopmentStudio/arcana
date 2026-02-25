@@ -47,6 +47,16 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isLoading: false,
     error: null,
   }),
+  useSwitchModeMutation: () => ({
+    isMutating: false,
+    trigger: async ({ mode }: { mode: string }) => ({
+      project_id: 101,
+      previous_mode: 'audiobook',
+      selected_mode: mode,
+      chapter_count: 12,
+      reused_ingested_corpus: true,
+    }),
+  }),
 }));
 
 import { useWorkspaceStore } from '@/app/state/workspace-store';

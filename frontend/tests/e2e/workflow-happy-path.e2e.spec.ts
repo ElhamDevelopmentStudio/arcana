@@ -35,6 +35,25 @@ test.beforeEach(async ({ page }) => {
     });
   });
 
+  await page.route('**/api/projects/101/mode', async (route) => {
+    if (route.request().method() !== 'PUT') {
+      await route.fallback();
+      return;
+    }
+    const payload = route.request().postDataJSON() as { mode?: string };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_id: 101,
+        previous_mode: 'audiobook',
+        selected_mode: payload.mode ?? 'audiobook',
+        chapter_count: 12,
+        reused_ingested_corpus: true,
+      }),
+    });
+  });
+
   await page.route('**/api/modes', async (route) => {
     await route.fulfill({
       status: 200,

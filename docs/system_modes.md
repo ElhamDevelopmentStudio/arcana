@@ -41,3 +41,13 @@ Purpose:
   - effective runtime fields (`max_segment_chars`, `llm_enabled`, `provider_name`, `max_calls_per_day`)
   - `mode_profile_snapshot` (immutable copy of defaults for selected mode at run creation time)
 - override_rule: user-supplied run fields override effective runtime values, but do not mutate `mode_profile_snapshot`.
+
+## MODE-009 Project Mode Switching Endpoint
+
+- endpoint: `PUT /api/projects/{project_id}/mode`
+- request: `{ "mode": "audiobook|academic|author|custom" }`
+- response: `project_id`, `previous_mode`, `selected_mode`, `chapter_count`, `reused_ingested_corpus`
+- behavior:
+  - updates only `projects.selected_mode`
+  - does not re-ingest or alter stored chapters
+  - reports whether existing ingested corpus is being reused (`chapter_count > 0`)

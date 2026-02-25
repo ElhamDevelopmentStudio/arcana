@@ -13,6 +13,8 @@ from app.schemas import (
     IngestResponse,
     ModeCatalogResponse,
     ProjectCreate,
+    ProjectModeSwitchRequest,
+    ProjectModeSwitchResponse,
     ProjectResponse,
     RunCreateRequest,
     RunDetailResponse,
@@ -88,6 +90,34 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         title=project.title,
         selected_mode=project.selected_mode,
         created_at=project.created_at,
+    )
+
+
+@app.put(
+    "/api/projects/{project_id}/mode",
+    response_model=ProjectModeSwitchResponse,
+    status_code=status.HTTP_200_OK,
+)
+def switch_project_mode(
+    project_id: int,
+    payload: ProjectModeSwitchRequest,
+    session: Session = Depends(get_session),
+) -> ProjectModeSwitchResponse:
+    project = _get_project_or_404(session, project_id)
+    previous_mode = project.selected_mode
+
+    chapter_count = session.query(Chapter).filter(Chapter.project_id == project.id).count()
+    project.selected_mode = payload.mode
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+
+    return ProjectModeSwitchResponse(
+        project_id=project.id,
+        previous_mode=previous_mode,
+        selected_mode=project.selected_mode,
+        chapter_count=chapter_count,
+        reused_ingested_corpus=chapter_count > 0,
     )
 
 

@@ -66,7 +66,7 @@ Definition of done for each task:
 - [x] [MODE-006] Define default config profile object per mode.
 - [x] [MODE-007] Implement mode profile loader in backend service.
 - [x] [MODE-008] Store loaded profile snapshot in run config.
-- [ ] [MODE-009] Add mode switching endpoint that reuses ingested corpus.
+- [x] [MODE-009] Add mode switching endpoint that reuses ingested corpus.
 - [ ] [MODE-010] Ensure mode switching does not duplicate raw text rows.
 - [ ] [MODE-011] Mark downstream artifacts stale after mode switch.
 - [ ] [MODE-012] Add integration test: ingest once, run all three modes.

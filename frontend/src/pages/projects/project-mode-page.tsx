@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { useModeCatalogQuery, useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
+import { useModeCatalogQuery, useRunDetailQuery, useSwitchModeMutation } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 
 export function ProjectModePage() {
@@ -28,6 +28,7 @@ export function ProjectModePage() {
   const hasExplicitModeSelection = selectedMode !== null;
   const modeCatalogQuery = useModeCatalogQuery(projectId !== null);
   const runDetailQuery = useRunDetailQuery(projectId, runId);
+  const switchModeMutation = useSwitchModeMutation(projectId);
 
   const modeOptions = useMemo(() => {
     if (modeCatalogQuery.data?.modes?.length) {
@@ -40,9 +41,18 @@ export function ProjectModePage() {
   const runModeSnapshot = runDetailQuery.data?.config?.mode;
   const selectedProfile = modeCatalogQuery.data?.mode_profiles?.[effectiveMode];
 
-  function handleModeChange(nextMode: string) {
-    setSelectedMode(nextMode);
-    toast.success(`Mode set to ${nextMode}.`);
+  async function handleModeChange(nextMode: string) {
+    if (!canSelectMode || projectId === null) {
+      return;
+    }
+
+    try {
+      const response = await switchModeMutation.trigger({ mode: nextMode });
+      setSelectedMode(response.selected_mode);
+      toast.success(`Mode set to ${response.selected_mode}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to switch mode');
+    }
   }
 
   return (
@@ -71,14 +81,14 @@ export function ProjectModePage() {
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-2">
-            <Label htmlFor="mode-select">Select mode</Label>
-            <NativeSelect
-              id="mode-select"
-              data-testid="mode-select"
-              disabled={!canSelectMode || modeCatalogQuery.isLoading}
-              value={effectiveMode}
-              onChange={(event) => handleModeChange(event.target.value)}
-            >
+              <Label htmlFor="mode-select">Select mode</Label>
+              <NativeSelect
+                id="mode-select"
+                data-testid="mode-select"
+                disabled={!canSelectMode || modeCatalogQuery.isLoading || switchModeMutation.isMutating}
+                value={effectiveMode}
+                onChange={(event) => void handleModeChange(event.target.value)}
+              >
               {modeOptions.map((mode) => (
                 <option key={mode} value={mode}>
                   {mode}

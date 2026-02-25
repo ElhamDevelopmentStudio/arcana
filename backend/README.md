@@ -42,6 +42,7 @@ python scripts_run_migration.py
 
 - `GET /api/modes`
 - `POST /api/projects`
+- `PUT /api/projects/{project_id}/mode`
 - `POST /api/projects/{project_id}/ingest/txt`
 - `POST /api/projects/{project_id}/characters/import`
 - `PUT /api/projects/{project_id}/voices`
@@ -51,6 +52,7 @@ python scripts_run_migration.py
 
 Mode persistence behavior:
 - Project-level selected mode is stored at `projects.selected_mode`.
+- Mode changes can be persisted before runs via `PUT /api/projects/{project_id}/mode`.
 - Each run snapshots mode in `runs.config_json.mode`.
 - Each run stores immutable defaults at `runs.config_json.mode_profile_snapshot`.
 - Mode catalog includes `mode_profiles` with default run-config values per mode.
