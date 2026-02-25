@@ -22,6 +22,8 @@ UNICODE_SPACE_TRANSLATION = str.maketrans({
 
 HORIZONTAL_WHITESPACE_RE = re.compile(r"[ \t\f\v]+")
 THREE_OR_MORE_LINE_BREAKS_RE = re.compile(r"\n{3,}")
+ELLIPSIS_UNICODE_RE = re.compile(r"…+")
+ELLIPSIS_DOTTED_RE = re.compile(r"\.\s*\.\s*\.(?:\s*\.)*")
 
 
 def normalize_whitespace(text: str) -> str:
@@ -75,5 +77,14 @@ def normalize_unicode_variants(text: str) -> str:
     return unicodedata.normalize("NFKC", text)
 
 
+def normalize_ellipsis_variants(text: str) -> str:
+    text = ELLIPSIS_UNICODE_RE.sub("...", text)
+    text = ELLIPSIS_DOTTED_RE.sub("...", text)
+    return text
+
+
 def normalize_text(text: str) -> str:
-    return normalize_whitespace(normalize_quotes(normalize_unicode_variants(text)))
+    normalized = normalize_unicode_variants(text)
+    normalized = normalize_quotes(normalized)
+    normalized = normalize_ellipsis_variants(normalized)
+    return normalize_whitespace(normalized)
