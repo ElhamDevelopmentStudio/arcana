@@ -1604,6 +1604,46 @@ def _build_pronunciation_preview_alias_map(
     return alias_map
 
 
+def _normalize_pronunciation_term_key(term: str, case_sensitive: bool) -> str:
+    normalized = term.strip()
+    if case_sensitive:
+        return normalized
+    return normalized.lower()
+
+
+def _build_pronunciation_preview_ambiguity_warnings(
+    candidates: list[tuple[str, str, str]],
+    case_sensitive: bool,
+) -> list[dict[str, object]]:
+    collisions: dict[str, list[tuple[str, str, str]]] = {}
+    for term, verbalized, scope in candidates:
+        key = _normalize_pronunciation_term_key(term, case_sensitive)
+        collisions.setdefault(key, []).append((term.strip(), verbalized.strip(), scope))
+
+    warnings: list[dict[str, object]] = []
+    for values in collisions.values():
+        competing_verbalized = sorted({verbalized for _, verbalized, _ in values})
+        if len(competing_verbalized) <= 1:
+            continue
+
+        normalized_scopes = sorted({scope for _, _, scope in values})
+        canonical_term = values[0][0]
+        warnings.append(
+            {
+                "type": "ambiguous_replacement",
+                "term": canonical_term,
+                "message": (
+                    f"Ambiguous replacement for '{canonical_term}' from scopes: "
+                    f"{', '.join(normalized_scopes)}."
+                ),
+                "scopes": normalized_scopes,
+                "competing_verbalized_forms": competing_verbalized,
+            }
+        )
+
+    return warnings
+
+
 @app.post(
     "/api/projects/{project_id}/pronunciation-dictionary/preview",
     response_model=PronunciationDictionaryPreviewResponse,
@@ -1667,6 +1707,15 @@ def preview_pronunciation_dictionary(
     replacement_map = {**global_map}
     replacement_map.update(character_map)
     replacement_map.update(alias_map)
+    replacement_candidates: list[tuple[str, str, str]] = []
+    replacement_candidates.extend((term, verbalized, "global") for term, verbalized in global_map.items())
+    replacement_candidates.extend((term, verbalized, "character") for term, verbalized in character_map.items())
+    replacement_candidates.extend((term, verbalized, "character") for term, verbalized in alias_map.items())
+
+    warnings = _build_pronunciation_preview_ambiguity_warnings(
+        candidates=replacement_candidates,
+        case_sensitive=payload.case_sensitive,
+    )
 
     after_text, counts = replace_pronunciations_with_counts(
         payload.text,
@@ -1696,6 +1745,7 @@ def preview_pronunciation_dictionary(
         character_name=normalized_character_name,
         replacements=replacement_items,
         included_scopes=included_scopes,
+        warnings=warnings,
     )
 
 

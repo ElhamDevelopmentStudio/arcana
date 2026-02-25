@@ -216,6 +216,14 @@ class PronunciationDictionaryPreviewItem(BaseModel):
     scope: str
 
 
+class PronunciationDictionaryPreviewWarning(BaseModel):
+    type: str = Field(min_length=1, max_length=120)
+    term: str = Field(min_length=1, max_length=255)
+    message: str = Field(min_length=1, max_length=500)
+    scopes: list[str]
+    competing_verbalized_forms: list[str]
+
+
 class PronunciationDictionaryPreviewRequest(BaseModel):
     text: str = Field(min_length=1, max_length=10000)
     character_name: str | None = None
@@ -241,6 +249,7 @@ class PronunciationDictionaryPreviewResponse(BaseModel):
     character_name: str | None
     replacements: list[PronunciationDictionaryPreviewItem]
     included_scopes: list[str]
+    warnings: list[PronunciationDictionaryPreviewWarning] = Field(default_factory=list)
 
 
 class CharacterAliasLookupRequest(BaseModel):

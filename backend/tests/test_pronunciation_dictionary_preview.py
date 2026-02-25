@@ -76,6 +76,52 @@ def test_integration_preview_uses_character_scope_when_present() -> None:
         assert payload["before"] == "Captain saw the Aegis at dawn. Captain then passed the old Aegis signal."
 
 
+def test_integration_preview_flags_ambiguous_replacement_candidates() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Ambiguous Candidates"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        global_resp = client.put(
+            f"/api/projects/{project_id}/pronunciation-dictionary/global",
+            json={"entries": [{"term": "Aegis", "verbalized_form": "EE-jis", "confidence": 1.0}]},
+        )
+        assert global_resp.status_code == 200
+
+        character_resp = client.put(
+            f"/api/projects/{project_id}/pronunciation-dictionary/character/Alice",
+            json={
+                "entries": [
+                    {"term": "Aegis", "verbalized_form": "Ah-jeez", "confidence": 1.0},
+                ]
+            },
+        )
+        assert character_resp.status_code == 200
+
+        preview_resp = client.post(
+            f"/api/projects/{project_id}/pronunciation-dictionary/preview",
+            json={
+                "text": "Aegis sounded at dawn.",
+                "character_name": "Alice",
+                "include_global_scope": True,
+                "include_character_scope": True,
+            },
+        )
+        assert preview_resp.status_code == 200
+
+        payload = preview_resp.json()
+        assert payload["after"] == "Ah-jeez sounded at dawn."
+        assert payload["warnings"] == [
+            {
+                "type": "ambiguous_replacement",
+                "term": "Aegis",
+                "message": "Ambiguous replacement for 'Aegis' from scopes: character, global.",
+                "scopes": ["character", "global"],
+                "competing_verbalized_forms": ["Ah-jeez", "EE-jis"],
+            }
+        ]
+
+
 def test_integration_preview_global_scope_only_when_character_scope_disabled() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Pronunciation Preview Global Only"})
