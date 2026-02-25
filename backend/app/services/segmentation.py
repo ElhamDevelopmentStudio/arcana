@@ -272,3 +272,42 @@ def segment_text(text: str, max_chars: int = 255) -> list[str]:
             segments.append(buffer)
 
     return [segment for segment in segments if segment]
+
+
+def segment_text_with_parent_paragraph(text: str, max_chars: int = 255) -> list[dict[str, object]]:
+    hard_cap = min(int(max_chars), MAX_SEGMENT_CHARS_HARD_CAP)
+    if hard_cap < 1:
+        hard_cap = 1
+
+    paragraphs_and_sentences = split_paragraphs_into_sentences(text)
+    segments: list[dict[str, object]] = []
+
+    for paragraph_index, sentences in enumerate(paragraphs_and_sentences, start=1):
+        buffer = ""
+        for sentence in sentences:
+            sentence_parts = _split_long_sentence(sentence, hard_cap)
+            for part in sentence_parts:
+                candidate = part if not buffer else f"{buffer} {part}"
+                if len(candidate) <= hard_cap:
+                    buffer = candidate
+                    continue
+
+                if buffer:
+                    segments.append(
+                        {
+                            "text": buffer,
+                            "paragraph_index": paragraph_index,
+                        }
+                    )
+                buffer = part
+
+        if buffer:
+            segments.append(
+                {
+                    "text": buffer,
+                    "paragraph_index": paragraph_index,
+                }
+            )
+            buffer = ""
+
+    return [segment for segment in segments if segment.get("text")]

@@ -186,7 +186,7 @@ Definition of done for each task:
 - [x] [SEG-013] Add metadata: original span pointer.
 - [x] [SEG-014] Add metadata: normalized text.
 - [x] [SEG-015] Add metadata: phonetic-ready text.
-- [ ] [SEG-016] Add metadata: parent paragraph reference.
+- [x] [SEG-016] Add metadata: parent paragraph reference.
 - [ ] [SEG-017] Add metadata: parent sentence reference.
 - [ ] [SEG-018] Implement chapter reconstruction from segments.
 - [ ] [SEG-019] Implement corpus reconstruction from chapter artifacts.

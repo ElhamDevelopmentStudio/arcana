@@ -12,7 +12,7 @@ from app.services.character_analytics import (
 )
 from app.services.phonetics import replace_pronunciations
 from app.services.quota import consume_quota
-from app.services.segmentation import segment_text
+from app.services.segmentation import segment_text_with_parent_paragraph
 from app.services.tagging import tag_segment
 from app.services.normalization import build_segment_level_offset_map
 from app.services.voice import resolve_voice
@@ -146,9 +146,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     segment_payloads: list[dict[str, object]] = []
 
     for chapter in chapters:
-        pieces = segment_text(chapter.normalized_text, max_chars=max_chars)
+        pieces = segment_text_with_parent_paragraph(chapter.normalized_text, max_chars=max_chars)
         chapter_search_cursor = 0
-        for segment_index, original_text in enumerate(pieces, start=1):
+        for segment_index, piece in enumerate(pieces, start=1):
+            original_text = str(piece.get("text", ""))
+            parent_paragraph_index = int(piece.get("paragraph_index", 1))
             tags = tag_segment(original_text)
             speaker = str(tags["speaker"])
             normalized_speaker = speaker.strip().lower()
@@ -200,6 +202,10 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "original_text": original_text,
                 "normalized_text": original_text,
                 "phonetic_text": phonetic_text,
+                "parent_paragraph_reference": {
+                    "paragraph_index": parent_paragraph_index,
+                    "paragraph_id": f"{chapter.chapter_index:03d}-p{parent_paragraph_index:03d}",
+                },
                 "type": tags["type"],
                 "speaker": speaker,
                 "gender": gender,

@@ -174,6 +174,13 @@ def test_integration_export_segments_include_chapter_id_metadata() -> None:
             isinstance(segment["original_span_pointer"]["normalized_end_char"], int)
             for segment in segments
         )
+        assert all("parent_paragraph_reference" in segment for segment in segments)
+        assert all(
+            isinstance(segment["parent_paragraph_reference"], dict)
+            and isinstance(segment["parent_paragraph_reference"].get("paragraph_index"), int)
+            and isinstance(segment["parent_paragraph_reference"].get("paragraph_id"), str)
+            for segment in segments
+        )
         assert all("normalized_text" in segment for segment in segments)
         assert all(isinstance(segment["normalized_text"], str) for segment in segments)
         assert all(segment["normalized_text"] == segment["original_text"] for segment in segments)
