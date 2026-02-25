@@ -23,6 +23,12 @@ def test_replace_pronunciation_can_match_substrings_when_disabled() -> None:
     assert replaced == "CaptainEE-jis glimmered near the aegis."
 
 
+def test_replace_pronunciation_avoids_false_positive_substring_matches() -> None:
+    text = "The CaptainAegis and Aegis were present."
+    replaced = replace_pronunciations(text, {"Aegis": "EE-jis"})
+    assert replaced == "The CaptainAegis and EE-jis were present."
+
+
 def test_replace_pronunciation_can_ignore_case_when_disabled() -> None:
     text = "Aegis sailed with aegis and AEGIS in the hold."
     replaced = replace_pronunciations(text, {"Aegis": "EE-jis"}, match_whole_words=True, case_sensitive=False)
