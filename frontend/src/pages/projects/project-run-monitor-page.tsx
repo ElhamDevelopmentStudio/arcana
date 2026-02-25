@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronRight, Waves } from 'lucide-react';
+import { ChevronRight, LineChart, Waves } from 'lucide-react';
 
 export function ProjectRunMonitorPage() {
   const navigate = useNavigate();
@@ -35,6 +35,14 @@ export function ProjectRunMonitorPage() {
               variant="outline"
             >
               Review speaker tags
+            </Button>
+            <Button
+              disabled={runId === null}
+              onClick={() => navigate(projectRoute(projectId, 'review/emotions'))}
+              variant="outline"
+            >
+              <LineChart className="size-4" />
+              Review emotional peaks
             </Button>
             <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>
               Continue to Export <ChevronRight className="size-4" />
