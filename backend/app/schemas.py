@@ -170,6 +170,45 @@ class CharacterMapUpdateRequest(BaseModel):
     characters: list[CharacterMapItem]
 
 
+class PronunciationDictionaryItem(BaseModel):
+    term: str = Field(min_length=1, max_length=255)
+    verbalized_form: str = Field(min_length=1, max_length=255)
+    source: str = Field(default="user", min_length=1, max_length=120)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+    @field_validator("term")
+    @classmethod
+    def normalize_term(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("term must not be blank")
+        return stripped
+
+    @field_validator("verbalized_form")
+    @classmethod
+    def normalize_verbalized_form(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("verbalized_form must not be blank")
+        return stripped
+
+    @field_validator("source")
+    @classmethod
+    def normalize_source(cls, value: str) -> str:
+        stripped = value.strip()
+        return stripped or "user"
+
+
+class PronunciationDictionaryUpdateRequest(BaseModel):
+    entries: list[PronunciationDictionaryItem]
+
+
+class PronunciationDictionaryResponse(BaseModel):
+    project_id: int
+    scope: str
+    entries: list[PronunciationDictionaryItem]
+
+
 class CharacterAliasLookupRequest(BaseModel):
     alias: str = Field(min_length=1, max_length=255)
 

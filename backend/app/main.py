@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_session, init_db
 from app.modes import DEFAULT_MODE, get_mode_catalog
-from app.models import Chapter, Character, LLMCall, Project, Run, Segment
+from app.models import Chapter, Character, LLMCall, Project, PronunciationDictionary, Run, Segment
 from app.schemas import (
     CharacterImportResponse,
     CharacterMapItem,
@@ -19,6 +19,9 @@ from app.schemas import (
     CharacterAliasLookupResponse,
     CharacterAliasCollisionItem,
     CharacterAliasCollisionResponse,
+    PronunciationDictionaryItem,
+    PronunciationDictionaryResponse,
+    PronunciationDictionaryUpdateRequest,
     IngestResponse,
     CharacterExtractionResponse,
     CharacterScrapeRequest,
@@ -212,6 +215,15 @@ def _build_character_map_item_payload_from_row(row: Character) -> CharacterMapIt
         inferred_gender=row.inferred_gender,
         inferred_confidence=row.inferred_confidence,
         inferred_source_trace=row.inferred_source_trace or [],
+    )
+
+
+def _build_pronunciation_dictionary_payload(entry: PronunciationDictionary) -> PronunciationDictionaryItem:
+    return PronunciationDictionaryItem(
+        term=entry.term.strip(),
+        verbalized_form=entry.verbalized_form.strip(),
+        source=entry.source,
+        confidence=entry.confidence,
     )
 
 
@@ -1375,6 +1387,79 @@ def upsert_characters(
             )
             for row in deduped.values()
         ],
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/pronunciation-dictionary/global",
+    response_model=PronunciationDictionaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_global_pronunciation_dictionary(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> PronunciationDictionaryResponse:
+    _get_project_or_404(session, project_id)
+
+    entries = (
+        session.query(PronunciationDictionary)
+        .filter(PronunciationDictionary.project_id == project_id, PronunciationDictionary.scope == "global")
+        .order_by(PronunciationDictionary.term.asc())
+        .all()
+    )
+    return PronunciationDictionaryResponse(
+        project_id=project_id,
+        scope="global",
+        entries=[_build_pronunciation_dictionary_payload(entry) for entry in entries],
+    )
+
+
+@app.put(
+    "/api/projects/{project_id}/pronunciation-dictionary/global",
+    response_model=PronunciationDictionaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def set_global_pronunciation_dictionary(
+    project_id: int,
+    payload: PronunciationDictionaryUpdateRequest,
+    session: Session = Depends(get_session),
+) -> PronunciationDictionaryResponse:
+    project = _get_project_or_404(session, project_id)
+
+    deduped: dict[str, PronunciationDictionaryItem] = {}
+    for row in payload.entries:
+        deduped[row.term.strip().lower()] = row
+
+    session.query(PronunciationDictionary).filter(
+        PronunciationDictionary.project_id == project_id,
+        PronunciationDictionary.scope == "global",
+    ).delete()
+
+    for row in deduped.values():
+        session.add(
+            PronunciationDictionary(
+                project_id=project_id,
+                scope="global",
+                character_name="",
+                term=row.term.strip(),
+                verbalized_form=row.verbalized_form.strip(),
+                source=row.source,
+                confidence=row.confidence,
+            )
+        )
+
+    session.commit()
+    saved_entries = (
+        session.query(PronunciationDictionary)
+        .filter(PronunciationDictionary.project_id == project_id, PronunciationDictionary.scope == "global")
+        .order_by(PronunciationDictionary.term.asc())
+        .all()
+    )
+
+    return PronunciationDictionaryResponse(
+        project_id=project.id,
+        scope="global",
+        entries=[_build_pronunciation_dictionary_payload(entry) for entry in saved_entries],
     )
 
 

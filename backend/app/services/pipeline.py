@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Chapter, Character, LLMCall, Project, Run, Segment
+from app.models import Chapter, Character, LLMCall, Project, PronunciationDictionary, Run, Segment
 from app.services.export import build_run_export
 from app.services.llm_router import LLMRequest, LLMRouter
 from app.services.character_analytics import (
@@ -67,7 +67,21 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         raise PipelineError("No chapters available. Upload and ingest a TXT file first.")
 
     characters = session.query(Character).filter(Character.project_id == project.id).all()
-    name_to_verbalized = {character.name: character.verbalized_form for character in characters}
+
+    global_pronunciations = {
+        entry.term.strip(): entry.verbalized_form.strip()
+        for entry in session.query(PronunciationDictionary)
+        .filter(
+            PronunciationDictionary.project_id == project.id,
+            PronunciationDictionary.scope == "global",
+            PronunciationDictionary.character_name == "",
+        )
+        .all()
+    }
+
+    name_to_verbalized = {**global_pronunciations}
+    for character in characters:
+        name_to_verbalized[character.name.strip()] = character.verbalized_form.strip()
     character_lookup = {
         character.name.lower(): {
             "gender": character.gender,
