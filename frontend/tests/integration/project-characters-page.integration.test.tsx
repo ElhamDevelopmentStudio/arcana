@@ -342,6 +342,8 @@ describe('project characters page manual editor', () => {
       alias_aware: false,
       include_global_scope: true,
       include_character_scope: false,
+      include_place_scope: false,
+      include_artifact_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Captain saw the Aegis at dawn.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('Captain saw the EE-jis at dawn.');
@@ -382,6 +384,7 @@ describe('project characters page manual editor', () => {
       include_global_scope: false,
       include_character_scope: false,
       include_place_scope: true,
+      include_artifact_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('They entered Narnia at dawn.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('They entered Nar-nia at dawn.');
@@ -430,6 +433,8 @@ describe('project characters page manual editor', () => {
       alias_aware: false,
       include_global_scope: true,
       include_character_scope: true,
+      include_place_scope: false,
+      include_artifact_scope: false,
       character_name: 'Kai',
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Aegis sounded.');
@@ -474,6 +479,8 @@ describe('project characters page manual editor', () => {
       alias_aware: false,
       include_global_scope: true,
       include_character_scope: false,
+      include_place_scope: false,
+      include_artifact_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('CaptainAegis and Aegis.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('CaptainEE-jis and EE-jis.');
@@ -510,6 +517,8 @@ describe('project characters page manual editor', () => {
       alias_aware: false,
       include_global_scope: true,
       include_character_scope: false,
+      include_place_scope: false,
+      include_artifact_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Aegis sailed with aegis and AEGIS in the hold.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue(
@@ -551,9 +560,52 @@ describe('project characters page manual editor', () => {
       alias_aware: true,
       include_global_scope: false,
       include_character_scope: true,
+      include_place_scope: false,
+      include_artifact_scope: false,
       character_name: 'Kai',
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Al met Kai.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('A-lise met Kai.');
+  });
+
+  it('runs pronunciation preview with artifact terminology dictionary scope', async () => {
+    const user = userEvent.setup();
+    pronunciationPreviewMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      before: 'The phylactery hummed nearby.',
+      after: 'The artefact-phrase hummed nearby.',
+      character_name: null,
+      included_scopes: ['artifact'],
+      replacements: [
+        {
+          term: 'phylactery',
+          verbalized_form: 'artefact-phrase',
+          count: 1,
+          scope: 'artifact',
+        },
+      ],
+    });
+
+    renderCharacterPage();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Global pronunciation dictionary' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Artifact terminology dictionary' }));
+    await user.type(screen.getByTestId('pronunciation-preview-text'), 'The phylactery hummed nearby.');
+    await user.click(screen.getByTestId('pronunciation-preview-button'));
+
+    expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
+      text: 'The phylactery hummed nearby.',
+      case_sensitive: true,
+      match_whole_words: true,
+      alias_aware: false,
+      include_global_scope: false,
+      include_character_scope: false,
+      include_place_scope: false,
+      include_artifact_scope: true,
+    });
+    expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('The phylactery hummed nearby.');
+    expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('The artefact-phrase hummed nearby.');
+    expect(screen.getByText('Included scopes: artifact')).toBeInTheDocument();
+    expect(screen.getByTestId('pronunciation-preview-replacements')).toHaveTextContent('phylactery → artefact-phrase');
   });
 });

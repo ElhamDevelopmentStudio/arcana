@@ -97,6 +97,7 @@ export function ProjectCharactersPage() {
   const [includeGlobalPronunciationScope, setIncludeGlobalPronunciationScope] = useState<boolean>(true);
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
   const [includePlacePronunciationScope, setIncludePlacePronunciationScope] = useState<boolean>(false);
+  const [includeArtifactPronunciationScope, setIncludeArtifactPronunciationScope] = useState<boolean>(false);
   const [pronunciationMatchWholeWords, setPronunciationMatchWholeWords] = useState<boolean>(true);
   const [pronunciationCaseSensitive, setPronunciationCaseSensitive] = useState<boolean>(true);
   const [pronunciationAliasAware, setPronunciationAliasAware] = useState<boolean>(false);
@@ -349,7 +350,12 @@ export function ProjectCharactersPage() {
       toast.error('Provide sample text for preview.');
       return;
     }
-    if (!includeGlobalPronunciationScope && !includeCharacterPronunciationScope && !includePlacePronunciationScope) {
+    if (
+      !includeGlobalPronunciationScope &&
+      !includeCharacterPronunciationScope &&
+      !includePlacePronunciationScope &&
+      !includeArtifactPronunciationScope
+    ) {
       toast.error('Enable at least one pronunciation scope before previewing.');
       return;
     }
@@ -363,6 +369,7 @@ export function ProjectCharactersPage() {
       include_global_scope: includeGlobalPronunciationScope,
       include_character_scope: includeCharacterPronunciationScope,
       include_place_scope: includePlacePronunciationScope,
+      include_artifact_scope: includeArtifactPronunciationScope,
       match_whole_words: pronunciationMatchWholeWords,
       case_sensitive: pronunciationCaseSensitive,
       alias_aware: pronunciationAliasAware,
@@ -796,6 +803,13 @@ export function ProjectCharactersPage() {
                     />
                     <span>Place-name pronunciation dictionary</span>
                   </label>
+                  <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                    <Checkbox
+                      checked={includeArtifactPronunciationScope}
+                      onCheckedChange={(checked) => setIncludeArtifactPronunciationScope(checked === true)}
+                    />
+                    <span>Artifact terminology dictionary</span>
+                  </label>
                 </div>
               </div>
               <div className="grid gap-2">
@@ -844,7 +858,10 @@ export function ProjectCharactersPage() {
                   pronunciationPreviewMutation.isMutating ||
                   !pronunciationPreviewText.trim() ||
                   projectId === null ||
-                  (!includeGlobalPronunciationScope && !includeCharacterPronunciationScope && !includePlacePronunciationScope) ||
+                  (!includeGlobalPronunciationScope &&
+                    !includeCharacterPronunciationScope &&
+                    !includePlacePronunciationScope &&
+                    !includeArtifactPronunciationScope) ||
                   (includeCharacterPronunciationScope && !pronunciationPreviewCharacterName.trim())
                 }
                 type="submit"

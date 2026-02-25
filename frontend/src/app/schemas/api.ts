@@ -115,6 +115,7 @@ export const pronunciationDictionaryPreviewRequestSchema = z.object({
   include_global_scope: z.boolean().default(true),
   include_character_scope: z.boolean().default(true),
   include_place_scope: z.boolean().default(false),
+  include_artifact_scope: z.boolean().default(false),
   match_whole_words: z.boolean().default(true),
   case_sensitive: z.boolean().default(true),
   alias_aware: z.boolean().default(false),
