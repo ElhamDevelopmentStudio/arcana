@@ -69,6 +69,80 @@ def test_get_provider_runtime_settings_uses_groq_settings() -> None:
     assert api_key == "groq-key"
 
 
+def test_get_provider_priority_order_prefers_configured_provider_order() -> None:
+    settings = SimpleNamespace(
+        llm_provider_priority_order=["groq", "openrouter", "siliconflow"],
+    )
+
+    provider_order = llm_router.get_provider_priority_order(settings=settings)
+
+    assert provider_order == ("groq", "openrouter", "siliconflow")
+
+
+def test_get_provider_priority_order_is_case_and_whitespace_tolerant() -> None:
+    settings = SimpleNamespace(
+        llm_provider_priority_order=["  GROQ  ", " openrouter ", "openrouter", "", "siliconflow", "unknown-provider"],
+    )
+
+    provider_order = llm_router.get_provider_priority_order(settings=settings)
+
+    assert provider_order == ("groq", "openrouter", "siliconflow")
+
+
+def test_get_provider_priority_order_uses_comma_separated_config_fallback_and_defaults() -> None:
+    settings = SimpleNamespace(
+        llm_provider_priority_order="groq, openrouter, siliconflow",
+    )
+
+    provider_order = llm_router.get_provider_priority_order(settings=settings)
+
+    assert provider_order == ("groq", "openrouter", "siliconflow")
+
+
+def test_get_provider_priority_order_falls_back_to_registered_providers_when_unset() -> None:
+    settings = SimpleNamespace()
+
+    provider_order = llm_router.get_provider_priority_order(settings=settings)
+
+    assert provider_order == ("groq", "openrouter", "siliconflow")
+
+
+def test_get_provider_runtime_settings_prefers_multi_key_list() -> None:
+    settings = SimpleNamespace(
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_model="openai/gpt-4o-mini",
+        openrouter_api_key="fallback-key",
+        openrouter_api_keys=["first-openrouter-key", "second-openrouter-key"],
+    )
+
+    base_url, model_identifier, api_key = llm_router.get_provider_runtime_settings(
+        settings=settings,
+        provider_name="openrouter",
+    )
+
+    assert base_url == "https://openrouter.ai/api/v1"
+    assert model_identifier == "openai/gpt-4o-mini"
+    assert api_key == "first-openrouter-key"
+
+
+def test_get_provider_runtime_settings_uses_comma_separated_key_list() -> None:
+    settings = SimpleNamespace(
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_model="openai/gpt-4o-mini",
+        openrouter_api_key="fallback-key",
+        openrouter_api_keys="first-openrouter-key, second-openrouter-key",
+    )
+
+    base_url, model_identifier, api_key = llm_router.get_provider_runtime_settings(
+        settings=settings,
+        provider_name="openrouter",
+    )
+
+    assert base_url == "https://openrouter.ai/api/v1"
+    assert model_identifier == "openai/gpt-4o-mini"
+    assert api_key == "first-openrouter-key"
+
+
 def test_llm_router_call_hits_provider_base_url_and_model(monkeypatch: object) -> None:
     observed = {}
 

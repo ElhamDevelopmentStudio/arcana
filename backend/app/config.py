@@ -12,16 +12,23 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://postgres@localhost:5432/nipe_poc",
         alias="DATABASE_URL",
     )
+    llm_provider_priority_order: list[str] = Field(
+        default=("openrouter", "siliconflow", "groq"),
+        alias="LLM_PROVIDER_PRIORITY_ORDER",
+    )
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
+    openrouter_api_keys: list[str] | None = Field(default=None, alias="OPENROUTER_API_KEYS")
     openrouter_model: str = Field(default="openai/gpt-4o-mini", alias="OPENROUTER_MODEL")
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1",
         alias="OPENROUTER_BASE_URL",
     )
     siliconflow_api_key: str | None = Field(default=None, alias="SILICONFLOW_API_KEY")
+    siliconflow_api_keys: list[str] | None = Field(default=None, alias="SILICONFLOW_API_KEYS")
     siliconflow_model: str = Field(default="deepseek-ai/DeepSeek-V3", alias="SILICONFLOW_MODEL")
     siliconflow_base_url: str = Field(default="https://api.siliconflow.cn/v1", alias="SILICONFLOW_BASE_URL")
     groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
+    groq_api_keys: list[str] | None = Field(default=None, alias="GROQ_API_KEYS")
     groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
     groq_base_url: str = Field(default="https://api.groq.com/openai/v1", alias="GROQ_BASE_URL")
     enable_epub_ingestion: bool = Field(default=False, alias="ENABLE_EPUB_INGESTION")

@@ -15,6 +15,7 @@ class LLMProviderMetadata:
     settings_base_url_key: str
     settings_model_key: str
     settings_key_key: str
+    settings_key_list_key: str | None = None
 
 
 _LLM_PROVIDER_REGISTRY: dict[str, LLMProviderMetadata] = {
@@ -22,16 +23,19 @@ _LLM_PROVIDER_REGISTRY: dict[str, LLMProviderMetadata] = {
         settings_base_url_key="openrouter_base_url",
         settings_model_key="openrouter_model",
         settings_key_key="openrouter_api_key",
+        settings_key_list_key="openrouter_api_keys",
     ),
     "siliconflow": LLMProviderMetadata(
         settings_base_url_key="siliconflow_base_url",
         settings_model_key="siliconflow_model",
         settings_key_key="siliconflow_api_key",
+        settings_key_list_key="siliconflow_api_keys",
     ),
     "groq": LLMProviderMetadata(
         settings_base_url_key="groq_base_url",
         settings_model_key="groq_model",
         settings_key_key="groq_api_key",
+        settings_key_list_key="groq_api_keys",
     ),
 }
 
@@ -283,6 +287,66 @@ def get_supported_providers() -> tuple[str, ...]:
     return tuple(sorted(_LLM_PROVIDER_REGISTRY.keys()))
 
 
+def _coerce_provider_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        candidates = [str(item).strip() for item in value]
+        return [candidate for candidate in candidates if candidate]
+    if isinstance(value, tuple):
+        candidates = [str(item).strip() for item in value]
+        return [candidate for candidate in candidates if candidate]
+    if isinstance(value, str):
+        candidates = [item.strip() for item in value.split(",")]
+        return [candidate for candidate in candidates if candidate]
+    candidate = str(value).strip()
+    return [candidate] if candidate else []
+
+
+def get_provider_priority_order(settings: Any) -> tuple[str, ...]:
+    configured_order = _coerce_provider_list(getattr(settings, "llm_provider_priority_order", None))
+    normalized_order: list[str] = []
+    seen: set[str] = set()
+    for value in configured_order:
+        normalized = _normalize_provider_name(value)
+        if not normalized or normalized not in _LLM_PROVIDER_REGISTRY or normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_order.append(normalized)
+
+    if normalized_order:
+        return tuple(normalized_order)
+
+    return get_supported_providers()
+
+
+def _coerce_api_key_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        candidates = [str(item).strip() for item in value]
+        return [candidate for candidate in candidates if candidate]
+    if isinstance(value, tuple):
+        candidates = [str(item).strip() for item in value]
+        return [candidate for candidate in candidates if candidate]
+    if isinstance(value, str):
+        parts = [item.strip() for item in value.split(",")]
+        return [part for part in parts if part]
+    return [str(value).strip()] if str(value).strip() else []
+
+
+def _resolve_api_key(settings: Any, metadata: LLMProviderMetadata) -> str | None:
+    if metadata.settings_key_list_key is not None:
+        candidate_keys = _coerce_api_key_list(getattr(settings, metadata.settings_key_list_key, None))
+        if candidate_keys:
+            return candidate_keys[0]
+
+    api_key = getattr(settings, metadata.settings_key_key, None)
+    if api_key is not None and str(api_key).strip():
+        return str(api_key).strip()
+    return None
+
+
 def get_provider_runtime_settings(settings: Any, provider_name: str) -> tuple[str, str, str | None]:
     normalized_provider = _normalize_provider_name(provider_name)
     metadata = _LLM_PROVIDER_REGISTRY.get(normalized_provider)
@@ -299,9 +363,10 @@ def get_provider_runtime_settings(settings: Any, provider_name: str) -> tuple[st
         base_url = _SILICONFLOW_BASE_URL_DEFAULT
 
     model_identifier = str(getattr(settings, metadata.settings_model_key))
-    api_key = getattr(settings, metadata.settings_key_key, None)
+    api_key = _resolve_api_key(settings=settings, metadata=metadata)
     if api_key is None:
-        api_key = getattr(settings, "openrouter_api_key", None)
+        fallback = getattr(settings, "openrouter_api_key", None)
+        api_key = str(fallback) if isinstance(fallback, str) else None
 
     return (base_url, model_identifier, api_key)
 

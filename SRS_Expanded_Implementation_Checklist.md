@@ -306,8 +306,8 @@ Definition of done for each task:
 - [x] [LLM-016] Mark provider temporarily unavailable after hard limit events.
 - [x] [LLM-017] Resume provider usage after reset detection or manual enable.
 - [x] [LLM-018] Add explicit guardrails: no bypass/circumvention behaviors.
-- [ ] [LLM-019] Add multiple API key support per provider.
-- [ ] [LLM-020] Add provider priority ordering config.
+- [x] [LLM-019] Add multiple API key support per provider.
+- [x] [LLM-020] Add provider priority ordering config.
 - [ ] [LLM-021] Add manual provider enable/disable toggles.
 - [ ] [LLM-022] Implement failover to next provider when one is unavailable.
 - [ ] [LLM-023] Add deterministic mode logs: provider/model/timestamp/token usage.
