@@ -21,7 +21,10 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Project-level mode persistence (`projects.selected_mode`) with per-run mode snapshots
 - Mode catalog endpoint for UI mode selection bootstrap (`GET /api/modes`)
 - Minimal LLM router scaffold + quota tracking
-- Minimal React UI for project/run/export flow with post-ingestion mode selection
+- React UI with route-based structure (`router/main.tsx`, `router/auth.tsx`, `router/index.tsx`)
+- Global Tailwind-based design system in `frontend/src/styles/globals.css`
+- Frontend API/state foundations using Axios + SWR + Zustand + Zod + date-fns
+- Playwright visual/e2e suite for control-deck regression snapshots
 
 ## Repository Layout
 
@@ -202,6 +205,21 @@ Frontend build verification:
 ```bash
 cd frontend
 npm run build
+```
+
+Frontend unit/integration tests:
+
+```bash
+cd frontend
+npm run test:run
+```
+
+Frontend Playwright visual/e2e tests:
+
+```bash
+cd frontend
+npx playwright install chromium
+npm run test:playwright
 ```
 
 ## Notes

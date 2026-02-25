@@ -1,0 +1,263 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Sora:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-heading: "Fraunces", "Times New Roman", serif;
+  --font-body: "Sora", sans-serif;
+}
+
+@layer base {
+  :root {
+    --bg-page: radial-gradient(circle at 12% 18%, #ffefe1 0%, transparent 35%),
+      radial-gradient(circle at 85% 2%, #cfeef4 0%, transparent 30%),
+      linear-gradient(136deg, #f8f3ea 0%, #eef6fa 52%, #f5f8f1 100%);
+
+    --surface-1: rgba(255, 255, 255, 0.88);
+    --surface-2: rgba(247, 252, 255, 0.94);
+    --surface-3: rgba(242, 248, 251, 0.9);
+    --line-soft: rgba(31, 74, 92, 0.18);
+    --line-strong: rgba(22, 57, 69, 0.36);
+  }
+
+  * {
+    @apply box-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply min-h-full;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg-page);
+    @apply font-[var(--font-body)] text-slate-900 leading-relaxed;
+  }
+
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
+}
+
+@layer components {
+  .app-root {
+    @apply relative min-h-screen overflow-hidden px-5 py-8;
+  }
+
+  .shell-grid {
+    @apply relative z-[1] mx-auto grid max-w-[1160px] gap-5;
+  }
+
+  .page-header {
+    border: 1px solid var(--line-soft);
+    box-shadow: 0 12px 34px rgba(13, 42, 53, 0.1);
+    @apply grid gap-3 rounded-[18px] bg-white/85 p-6 backdrop-blur-sm;
+  }
+
+  .eyebrow {
+    @apply text-xs font-semibold tracking-[0.06em] uppercase text-cyan-700;
+  }
+
+  .page-header h1 {
+    @apply font-[var(--font-heading)] text-[clamp(1.8rem,2.5vw,2.8rem)] leading-[1.05];
+  }
+
+  .page-header p {
+    @apply max-w-[70ch] text-slate-600;
+  }
+
+  .ui-card {
+    border: 1px solid var(--line-soft);
+    box-shadow: 0 12px 34px rgba(13, 42, 53, 0.1);
+    background: var(--surface-1);
+    @apply grid gap-4 rounded-[18px] p-5 backdrop-blur-md;
+  }
+
+  .ui-card__header {
+    @apply flex items-start justify-between gap-4;
+  }
+
+  .ui-card__header h2 {
+    @apply font-[var(--font-heading)] text-[clamp(1.15rem,1.6vw,1.45rem)];
+  }
+
+  .ui-card__subtitle {
+    @apply mt-1 max-w-[76ch] text-slate-600;
+  }
+
+  .ui-card__body {
+    @apply grid gap-4;
+  }
+
+  .ui-form-row {
+    @apply flex flex-wrap items-end gap-3;
+  }
+
+  .ui-grid-2 {
+    @apply grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))];
+  }
+
+  .ui-grid-4 {
+    @apply grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))];
+  }
+
+  .ui-field {
+    @apply grid min-w-[180px] gap-1.5;
+  }
+
+  .ui-field__label {
+    @apply text-sm font-semibold text-slate-600;
+  }
+
+  .ui-field__hint {
+    @apply text-xs text-slate-500;
+  }
+
+  .ui-input {
+    border: 1px solid var(--line-soft);
+    background: var(--surface-2);
+    @apply w-full rounded-[10px] px-3 py-2.5 text-sm text-slate-900;
+  }
+
+  .ui-input:focus-visible {
+    @apply outline-2 outline-offset-1 outline-cyan-700/40;
+  }
+
+  .ui-checkbox {
+    border: 1px solid var(--line-strong);
+    @apply relative size-5 appearance-none rounded-md bg-white;
+  }
+
+  .ui-checkbox:checked {
+    @apply bg-gradient-to-br from-cyan-600 to-cyan-800;
+  }
+
+  .ui-checkbox:checked::after {
+    content: "";
+    @apply absolute ml-[0.35rem] mt-[0.15rem] h-[0.58rem] w-[0.24rem] rotate-[36deg] border-r-2 border-b-2 border-white;
+  }
+
+  .ui-button {
+    @apply rounded-[10px] border border-transparent px-3.5 py-2.5 text-sm font-semibold transition-all duration-150;
+  }
+
+  .ui-button:hover:not(:disabled) {
+    @apply -translate-y-px;
+  }
+
+  .ui-button:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+
+  .ui-button--primary {
+    @apply border-cyan-700 bg-cyan-700 text-cyan-50;
+  }
+
+  .ui-button--primary:hover:not(:disabled) {
+    @apply border-cyan-800 bg-cyan-800;
+  }
+
+  .ui-button--secondary {
+    @apply border-orange-400/40 bg-orange-50 text-orange-900;
+  }
+
+  .ui-button--ghost {
+    @apply border-slate-300 bg-transparent text-slate-600;
+  }
+
+  .status-chip {
+    @apply inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-bold uppercase;
+  }
+
+  .status-chip--neutral {
+    @apply border-slate-300 bg-slate-100 text-slate-700;
+  }
+
+  .status-chip--success {
+    @apply border-emerald-300 bg-emerald-100 text-emerald-800;
+  }
+
+  .status-chip--danger {
+    @apply border-rose-300 bg-rose-100 text-rose-800;
+  }
+
+  .status-chip--accent {
+    @apply border-sky-300 bg-sky-100 text-sky-800;
+  }
+
+  .ui-panel {
+    border: 1px solid var(--line-soft);
+    background: var(--surface-3);
+    @apply grid gap-3 rounded-[14px] p-4;
+  }
+
+  .ui-panel pre {
+    @apply m-0 max-h-[300px] overflow-auto rounded-[10px] border border-slate-300 bg-slate-50 p-3 text-xs;
+  }
+
+  .meta-grid {
+    @apply grid gap-x-3 gap-y-2 text-sm [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))];
+  }
+
+  .toast-stack {
+    @apply fixed right-4 bottom-4 z-10 grid w-[min(390px,calc(100vw-1.5rem))] gap-2;
+  }
+
+  .toast {
+    border: 1px solid var(--line-soft);
+    box-shadow: 0 20px 48px rgba(16, 40, 50, 0.17);
+    @apply grid gap-2 rounded-[14px] bg-white p-3;
+  }
+
+  .toast h3 {
+    @apply text-[0.95rem] font-[var(--font-heading)];
+  }
+
+  .toast p {
+    @apply text-[0.84rem] text-slate-600;
+  }
+
+  .toast--success {
+    @apply bg-emerald-50;
+  }
+
+  .toast--error {
+    @apply bg-rose-50;
+  }
+
+  .toast--info {
+    @apply bg-sky-50;
+  }
+
+  .section-fallback {
+    @apply rounded-[14px] border border-dashed border-slate-400 bg-white/45 p-4 text-slate-600;
+  }
+}
+
+@layer utilities {
+  .bg-orb {
+    @apply pointer-events-none absolute rounded-full blur-[2px];
+  }
+
+  .bg-orb--a {
+    @apply -top-[220px] -right-[120px] h-[480px] w-[480px] bg-[radial-gradient(circle,rgba(230,125,76,0.25)_0%,rgba(230,125,76,0)_66%)];
+  }
+
+  .bg-orb--b {
+    @apply -bottom-[240px] -left-[120px] h-[420px] w-[420px] bg-[radial-gradient(circle,rgba(84,159,183,0.2)_0%,rgba(84,159,183,0)_70%)];
+  }
+}
+
+@media (max-width: 920px) {
+  .app-root {
+    @apply px-3 py-5;
+  }
+
+  .ui-card {
+    @apply p-4;
+  }
+}

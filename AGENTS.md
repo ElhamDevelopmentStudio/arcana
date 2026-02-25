@@ -16,6 +16,12 @@ Keep implementation accurate, incremental, testable, and easy to resume from a n
 6. Always start from the earliest unresolved checklist item in `SRS_Expanded_Implementation_Checklist.md`.
 7. If earlier checklist tasks are still undone, complete those first before advancing to later tasks, unless explicitly marked blocked with reason and follow-up task ID.
 8. For API/data-model changes, implement matching frontend behavior in the same slice or log an explicit deferred FE task ID before moving on.
+9. Frontend quality baseline is mandatory: a polished, aesthetically intentional UI is required, not bare utility screens.
+10. Use reusable components and avoid feature-level duplicated UI primitives.
+11. Maintain a clear frontend folder structure with feature/module boundaries and code splitting for major screens/sections.
+12. A global design system stylesheet is mandatory at `frontend/src/styles/globals.css` using shared tokens (color, typography, spacing, radius, shadow, motion).
+13. The following frontend libraries are mandatory for implementation: `axios`, `swr`, `date-fns`, `zustand`, `zod`.
+14. Tailwind CSS is the primary frontend styling system; keep bespoke CSS minimal and design-token driven from `globals.css`.
 
 ## Task Granularity Standard
 
