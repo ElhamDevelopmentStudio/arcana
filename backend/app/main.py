@@ -1583,6 +1583,29 @@ def get_character_occurrence_analytics(
 def get_export_json(project_id: int, run_id: int, session: Session = Depends(get_session)) -> JSONResponse:
     project = _get_project_or_404(session, project_id)
     run = _get_run_or_404(session, project_id, run_id)
+    settings = get_settings()
+    character_rows = session.query(Character).filter(Character.project_id == project.id).all()
+    requires_review_count = len(
+        [
+            payload
+            for payload in compare_manual_and_inferred_gender_fields(
+                character_rows,
+                contradiction_review_threshold=settings.contradiction_review_threshold,
+            )
+            if payload["requires_review"]
+        ]
+    )
+    if requires_review_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": (
+                    "Export is blocked because one or more gender contradictions require manual review."
+                ),
+                "requires_review_count": requires_review_count,
+                "threshold": settings.contradiction_review_threshold,
+            },
+        )
 
     payload = build_run_export(session, project, run)
     return JSONResponse(content=payload)
