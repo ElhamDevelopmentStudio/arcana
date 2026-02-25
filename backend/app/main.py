@@ -23,6 +23,8 @@ from app.schemas import (
     CharacterExtractionResponse,
     CharacterScrapeRequest,
     CharacterCandidatesMergeRequest,
+    CharacterGenderComparisonItem,
+    CharacterGenderComparisonResponse,
     ModeCatalogResponse,
     ProjectCreate,
     ProjectModeSwitchRequest,
@@ -69,6 +71,8 @@ from app.services.ingestion import (
 from app.services.mode_profiles import build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_mode_switch
 from app.services.character_analytics import build_character_occurrence_analytics
+from app.services.gender_comparison import compare_manual_and_inferred_gender_fields
+from app.services.gender_inference import infer_character_genders
 from app.services.normalization import (
     build_original_to_normalized_offset_map,
     build_normalization_report,
@@ -189,7 +193,145 @@ def _build_character_map_item_payload(
         "source": source,
         "confidence": confidence,
         "source_trace": source_trace or [],
+        "inferred_gender": row.inferred_gender,
+        "inferred_confidence": row.inferred_confidence,
+        "inferred_source_trace": row.inferred_source_trace or [],
     }
+
+
+def _build_character_map_item_payload_from_row(row: Character) -> CharacterMapItem:
+    return CharacterMapItem(
+        name=row.name.strip(),
+        verbalized_form=row.verbalized_form.strip(),
+        gender=row.gender.strip().lower(),
+        aliases=row.aliases or [],
+        notes=row.notes.strip() if row.notes else None,
+        source=row.source,
+        confidence=row.confidence,
+        inferred_gender=row.inferred_gender,
+        inferred_confidence=row.inferred_confidence,
+        inferred_source_trace=row.inferred_source_trace or [],
+    )
+
+
+def _build_inferred_gender_lookup(
+    character_rows: list[Character],
+    chapter_rows: list[tuple[str] | str],
+) -> dict[str, dict[str, object]]:
+    character_names = [row.name for row in character_rows]
+    chapter_texts: list[str] = []
+    for raw_row in chapter_rows:
+        if isinstance(raw_row, tuple):
+            chapter_texts.append(str(raw_row[0] or ""))
+        else:
+            chapter_texts.append(str(raw_row or ""))
+
+    if not character_names:
+        return {}
+
+    results = infer_character_genders(character_names=character_names, chapter_texts=chapter_texts)
+    inferred_lookup: dict[str, dict[str, object]] = {}
+    for result in results:
+        normalized_name = normalize_candidate_key(result["name"])
+        inferred_lookup[normalized_name] = result
+    return inferred_lookup
+
+
+@app.post(
+    "/api/projects/{project_id}/characters/infer",
+    response_model=CharacterMapResponse,
+    status_code=status.HTTP_200_OK,
+)
+def persist_inferred_gender_fields(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> CharacterMapResponse:
+    project = _get_project_or_404(session, project_id)
+
+    character_rows = (
+        session.query(Character)
+        .filter(Character.project_id == project_id)
+        .order_by(Character.name.asc())
+        .all()
+    )
+    if not character_rows:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No character map entries found to infer.",
+        )
+
+    chapter_rows = (
+        session.query(Chapter.normalized_text)
+        .filter(Chapter.project_id == project_id)
+        .order_by(Chapter.chapter_index.asc())
+        .all()
+    )
+    if not chapter_rows:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No chapters available for character gender inference.",
+        )
+
+    inferred_lookup = _build_inferred_gender_lookup(character_rows, [row[0] for row in chapter_rows])
+    for row in character_rows:
+        match = inferred_lookup.get(normalize_candidate_key(row.name))
+        if match is None:
+            row.inferred_gender = "unknown"
+            row.inferred_confidence = 0.0
+            row.inferred_source_trace = []
+            continue
+        row.inferred_gender = str(match["inferred_gender"])
+        row.inferred_confidence = float(match["confidence"])
+        row.inferred_source_trace = match["evidence"]
+
+    session.add_all(character_rows)
+    session.commit()
+
+    return CharacterMapResponse(
+        project_id=project_id,
+        character_map_finalized=project.character_map_finalized,
+        characters=[
+            _build_character_map_item_payload_from_row(row)
+            for row in character_rows
+        ],
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/characters/gender-comparison",
+    response_model=CharacterGenderComparisonResponse,
+    status_code=status.HTTP_200_OK,
+)
+def compare_character_genders(
+    project_id: int,
+    include_only_conflicts: bool = False,
+    session: Session = Depends(get_session),
+) -> CharacterGenderComparisonResponse:
+    _get_project_or_404(session, project_id)
+
+    character_rows = (
+        session.query(Character)
+        .filter(Character.project_id == project_id)
+        .order_by(Character.name.asc())
+        .all()
+    )
+
+    comparison_payloads = [
+        CharacterGenderComparisonItem(**payload)
+        for payload in compare_manual_and_inferred_gender_fields(
+            character_rows,
+            include_only_conflicts=include_only_conflicts,
+        )
+    ]
+
+    contradiction_count = len([payload for payload in comparison_payloads if payload.is_contradiction])
+
+    return CharacterGenderComparisonResponse(
+        project_id=project_id,
+        comparison_count=len(comparison_payloads),
+        contradiction_count=contradiction_count,
+        comparisons=comparison_payloads,
+    )
 
 
 def _build_mergeable_candidates_from_candidates(
@@ -198,6 +340,9 @@ def _build_mergeable_candidates_from_candidates(
 ) -> list[dict[str, object]]:
     payloads: list[dict[str, object]] = []
     for candidate in candidates:
+        source_trace = list(getattr(candidate, "source_trace", []))
+        inferred_gender = str(getattr(candidate, "inferred_gender", "unknown")).strip().lower() or "unknown"
+        inferred_source_trace = list(getattr(candidate, "inferred_source_trace", []))
         payloads.append(
             {
                 "name": candidate.name,
@@ -207,6 +352,8 @@ def _build_mergeable_candidates_from_candidates(
                 "notes": getattr(candidate, "notes", None),
                 "source": source,
                 "confidence": getattr(candidate, "confidence", 1.0),
+                "inferred_gender": inferred_gender,
+                "inferred_confidence": getattr(candidate, "inferred_confidence", 0.0),
                 "source_trace": [
                     {
                         "kind": trace.kind,
@@ -218,6 +365,7 @@ def _build_mergeable_candidates_from_candidates(
                     }
                     for trace in getattr(candidate, "source_trace", [])
                 ],
+                "inferred_source_trace": inferred_source_trace or source_trace,
             }
         )
     return payloads
@@ -922,6 +1070,9 @@ def import_characters(
                 notes=row.notes,
                 source=row.source,
                 confidence=row.confidence,
+                inferred_gender=row.inferred_gender,
+                inferred_confidence=row.inferred_confidence,
+                inferred_source_trace=row.inferred_source_trace,
             )
         )
     project.character_map_finalized = False
@@ -953,15 +1104,7 @@ def list_characters(
         project_id=project_id,
         character_map_finalized=project.character_map_finalized,
         characters=[
-            CharacterMapItem(
-                name=character.name,
-                verbalized_form=character.verbalized_form,
-                gender=character.gender,
-                aliases=character.aliases or [],
-                notes=character.notes,
-                source=character.source,
-                confidence=character.confidence,
-            )
+            _build_character_map_item_payload_from_row(character)
             for character in character_rows
         ],
     )
@@ -1196,6 +1339,9 @@ def upsert_characters(
                 notes=row.notes and row.notes.strip() or None,
                 source=row.source,
                 confidence=row.confidence,
+                inferred_gender=row.inferred_gender,
+                inferred_confidence=row.inferred_confidence,
+                inferred_source_trace=row.inferred_source_trace,
             )
         )
     project.character_map_finalized = False
@@ -1214,6 +1360,9 @@ def upsert_characters(
                 notes=row.notes and row.notes.strip() or None,
                 source=row.source,
                 confidence=row.confidence,
+                inferred_gender=row.inferred_gender,
+                inferred_confidence=row.inferred_confidence,
+                inferred_source_trace=row.inferred_source_trace or [],
             )
             for row in deduped.values()
         ],

@@ -103,6 +103,9 @@ class CharacterMapItem(BaseModel):
     notes: str | None = None
     source: str = Field(default="manual", min_length=1, max_length=120)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    inferred_gender: str = Field(default="unknown", min_length=1, max_length=50)
+    inferred_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    inferred_source_trace: list[CharacterSourceTrace] = Field(default_factory=list)
     source_trace: list[CharacterSourceTrace] = Field(default_factory=list)
 
     @field_validator("gender")
@@ -116,6 +119,11 @@ class CharacterMapItem(BaseModel):
         cleaned = [alias.strip() for alias in values if str(alias).strip()]
         return list(dict.fromkeys(cleaned))
 
+    @field_validator("inferred_gender")
+    @classmethod
+    def inferred_gender_normalized(cls, value: str) -> str:
+        return _normalize_gender_or_raise(value)
+
     @field_validator("source")
     @classmethod
     def source_defaulted(cls, value: str) -> str:
@@ -127,6 +135,34 @@ class CharacterMapResponse(BaseModel):
     project_id: int
     characters: list[CharacterMapItem]
     character_map_finalized: bool
+
+
+class CharacterGenderComparisonItem(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    manual_gender: str = Field(min_length=1, max_length=50)
+    inferred_gender: str = Field(min_length=1, max_length=50)
+    manual_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    inferred_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    comparison: str = Field(min_length=1, max_length=80)
+    is_contradiction: bool
+    requires_review: bool
+
+    @field_validator("manual_gender")
+    @classmethod
+    def manual_gender_normalized(cls, value: str) -> str:
+        return _normalize_gender_or_raise(value)
+
+    @field_validator("inferred_gender")
+    @classmethod
+    def inferred_gender_normalized(cls, value: str) -> str:
+        return _normalize_gender_or_raise(value)
+
+
+class CharacterGenderComparisonResponse(BaseModel):
+    project_id: int
+    comparison_count: int
+    contradiction_count: int
+    comparisons: list[CharacterGenderComparisonItem]
 
 
 class CharacterMapUpdateRequest(BaseModel):

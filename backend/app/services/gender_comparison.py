@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Iterable, Mapping
+
+_STANDARD_GENDERS = frozenset({"male", "female", "neutral"})
+_CUSTOM_GENDER = "custom"
+_UNKNOWN_GENDER = "unknown"
+
+
+def _normalize_gender(value: Any) -> str:
+    text = str(value or _UNKNOWN_GENDER).strip().lower()
+    return text or _UNKNOWN_GENDER
+
+
+def _coerce_confidence(value: Any, default: float) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return default
+    if confidence < 0.0:
+        return 0.0
+    if confidence > 1.0:
+        return 1.0
+    return round(confidence, 4)
+
+
+def _extract_field(row: Mapping[str, Any] | object, key: str, default: Any) -> Any:
+    if isinstance(row, Mapping):
+        return row.get(key, default)
+    return getattr(row, key, default)
+
+
+def _is_standard_gender(value: str) -> bool:
+    return value in _STANDARD_GENDERS
+
+
+def _build_comparison_state(manual_gender: str, inferred_gender: str) -> tuple[str, bool]:
+    if _is_standard_gender(manual_gender) and _is_standard_gender(inferred_gender):
+        if manual_gender == inferred_gender:
+            return "match", False
+        return "conflict", True
+    if manual_gender == _CUSTOM_GENDER:
+        return "manual_custom", False
+    if manual_gender == _UNKNOWN_GENDER:
+        return "manual_unknown", False
+    if inferred_gender == _UNKNOWN_GENDER:
+        return "inferred_unknown", False
+    return "incomparable", False
+
+
+@dataclass(frozen=True)
+class GenderComparisonResult:
+    name: str
+    manual_gender: str
+    inferred_gender: str
+    manual_confidence: float
+    inferred_confidence: float
+    comparison: str
+    is_contradiction: bool
+    requires_review: bool
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "manual_gender": self.manual_gender,
+            "inferred_gender": self.inferred_gender,
+            "manual_confidence": self.manual_confidence,
+            "inferred_confidence": self.inferred_confidence,
+            "comparison": self.comparison,
+            "is_contradiction": self.is_contradiction,
+            "requires_review": self.requires_review,
+        }
+
+
+def compare_manual_and_inferred_gender_fields(
+    character_rows: Iterable[Mapping[str, Any] | object],
+    *,
+    include_only_conflicts: bool = False,
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+
+    for row in character_rows:
+        name = str(_extract_field(row, "name", "")).strip()
+        if not name:
+            continue
+
+        manual_gender = _normalize_gender(_extract_field(row, "gender", _UNKNOWN_GENDER))
+        inferred_gender = _normalize_gender(_extract_field(row, "inferred_gender", _UNKNOWN_GENDER))
+        manual_confidence = _coerce_confidence(_extract_field(row, "confidence", 1.0), default=1.0)
+        inferred_confidence = _coerce_confidence(
+            _extract_field(row, "inferred_confidence", 0.0),
+            default=0.0,
+        )
+        comparison, is_contradiction = _build_comparison_state(manual_gender, inferred_gender)
+        result = GenderComparisonResult(
+            name=name,
+            manual_gender=manual_gender,
+            inferred_gender=inferred_gender,
+            manual_confidence=manual_confidence,
+            inferred_confidence=inferred_confidence,
+            comparison=comparison,
+            is_contradiction=is_contradiction,
+            requires_review=is_contradiction,
+        )
+        payload = result.to_payload()
+        if include_only_conflicts and not is_contradiction:
+            continue
+        payloads.append(payload)
+
+    payloads.sort(key=lambda value: value["name"].casefold())
+    return payloads
