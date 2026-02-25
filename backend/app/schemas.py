@@ -126,6 +126,20 @@ class CharacterScrapeRequest(BaseModel):
     acknowledge_source_risk: bool
 
 
+class CharacterCandidatesMergeRequest(BaseModel):
+    include_auto: bool = True
+    source_url: str | None = Field(default=None, max_length=2048)
+    acknowledge_source_risk: bool = False
+
+    @field_validator("source_url")
+    @classmethod
+    def strip_source_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
 class CharacterExtractionResponse(BaseModel):
     project_id: int
     status: str

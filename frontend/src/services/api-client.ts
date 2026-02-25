@@ -5,6 +5,7 @@ import {
   characterImportSchema,
   characterMapSchema,
   characterMapUpdateSchema,
+  characterCandidatesMergeRequestSchema,
   characterScrapeRequestSchema,
   exportSchema,
   ingestResponseSchema,
@@ -20,6 +21,7 @@ import {
   type CharacterMapDto,
   type CharacterMapUpdateDto,
   type CharacterScrapeRequestDto,
+  type CharacterCandidatesMergeRequestDto,
   type CharacterExtractionDto,
   characterExtractionSchema,
 } from '@/app/schemas/api';
@@ -205,6 +207,19 @@ export class NipeApiClient {
     try {
       const parsedPayload = characterScrapeRequestSchema.parse(payload);
       const response = await this.client.post(`/api/projects/${projectId}/characters/scrape`, parsedPayload);
+      return characterExtractionSchema.parse(response.data) as CharacterExtractionDto;
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async mergeCharacters(projectId: number, payload: CharacterCandidatesMergeRequestDto) {
+    try {
+      const parsedPayload = characterCandidatesMergeRequestSchema.parse(payload);
+      const response = await this.client.post(
+        `/api/projects/${projectId}/characters/merged-candidates`,
+        parsedPayload,
+      );
       return characterExtractionSchema.parse(response.data) as CharacterExtractionDto;
     } catch (error) {
       throw normalizeHttpError(error);

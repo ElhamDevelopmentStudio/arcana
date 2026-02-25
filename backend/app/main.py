@@ -17,6 +17,7 @@ from app.schemas import (
     IngestResponse,
     CharacterExtractionResponse,
     CharacterScrapeRequest,
+    CharacterCandidatesMergeRequest,
     ModeCatalogResponse,
     ProjectCreate,
     ProjectModeSwitchRequest,
@@ -32,6 +33,7 @@ from app.services.characters import parse_character_file
 from app.services.character_extraction import extract_character_candidates_from_texts
 from app.services.character_scrape import extract_character_candidates_from_scrape_url
 from app.services.epub_ingestion import extract_epub_chapters
+from app.services.character_merge import merge_character_candidates
 from app.services.export import build_run_export
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
@@ -160,6 +162,55 @@ def _get_next_chapter_index(session: Session, project_id: int) -> int:
     if last_chapter is None:
         return 1
     return int(last_chapter.chapter_index) + 1
+
+
+def _build_character_map_item_payload(
+    row: Character,
+    source: str,
+    confidence: float,
+    source_trace: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    return {
+        "name": row.name.strip(),
+        "verbalized_form": row.verbalized_form.strip(),
+        "gender": row.gender.strip().lower(),
+        "aliases": row.aliases or [],
+        "notes": row.notes.strip() if row.notes else None,
+        "source": source,
+        "confidence": confidence,
+        "source_trace": source_trace or [],
+    }
+
+
+def _build_mergeable_candidates_from_candidates(
+    candidates: list[object],
+    source: str,
+) -> list[dict[str, object]]:
+    payloads: list[dict[str, object]] = []
+    for candidate in candidates:
+        payloads.append(
+            {
+                "name": candidate.name,
+                "verbalized_form": getattr(candidate, "verbalized_form", candidate.name),
+                "gender": getattr(candidate, "gender", "unknown"),
+                "aliases": getattr(candidate, "aliases", []),
+                "notes": getattr(candidate, "notes", None),
+                "source": source,
+                "confidence": getattr(candidate, "confidence", 1.0),
+                "source_trace": [
+                    {
+                        "kind": trace.kind,
+                        "chapter_index": trace.chapter_index,
+                        "span_start": trace.span_start,
+                        "span_end": trace.span_end,
+                        "excerpt": trace.excerpt,
+                        "weight": trace.weight,
+                    }
+                    for trace in getattr(candidate, "source_trace", [])
+                ],
+            }
+        )
+    return payloads
 
 
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -866,27 +917,11 @@ def auto_extract_characters(
         known_names=existing_names,
     )
     mapped_candidates = [
-        CharacterMapItem(
-            name=candidate.name,
-            verbalized_form=candidate.name,
-            gender="unknown",
-            aliases=[],
-            notes=None,
+        CharacterMapItem(**candidate_payload)
+        for candidate_payload in _build_mergeable_candidates_from_candidates(
+            candidates,
             source="auto",
-            confidence=candidate.confidence,
-            source_trace=[
-                {
-                    "kind": trace.kind,
-                    "chapter_index": trace.chapter_index,
-                    "span_start": trace.span_start,
-                    "span_end": trace.span_end,
-                    "excerpt": trace.excerpt,
-                    "weight": trace.weight,
-                }
-                for trace in candidate.source_trace
-            ],
         )
-        for candidate in candidates
     ]
 
     return CharacterExtractionResponse(
@@ -929,27 +964,11 @@ def scrape_characters(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     mapped_candidates = [
-        CharacterMapItem(
-            name=candidate.name,
-            verbalized_form=candidate.name,
-            gender="unknown",
-            aliases=[],
-            notes=None,
+        CharacterMapItem(**candidate_payload)
+        for candidate_payload in _build_mergeable_candidates_from_candidates(
+            candidates,
             source="scrape",
-            confidence=candidate.confidence,
-            source_trace=[
-                {
-                    "kind": trace.kind,
-                    "chapter_index": trace.chapter_index,
-                    "span_start": trace.span_start,
-                    "span_end": trace.span_end,
-                    "excerpt": trace.excerpt,
-                    "weight": trace.weight,
-                }
-                for trace in candidate.source_trace
-            ],
         )
-        for candidate in candidates
     ]
 
     return CharacterExtractionResponse(
@@ -957,6 +976,79 @@ def scrape_characters(
         status="complete",
         candidate_count=len(mapped_candidates),
         candidates=mapped_candidates,
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/characters/merged-candidates",
+    response_model=CharacterExtractionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def merged_candidate_characters(
+    project_id: int,
+    payload: CharacterCandidatesMergeRequest,
+    session: Session = Depends(get_session),
+) -> CharacterExtractionResponse:
+    _get_project_or_404(session, project_id)
+
+    merged_payloads: list[dict[str, object]] = []
+
+    merged_payloads.extend(
+        [
+            _build_character_map_item_payload(
+                row=row,
+                source=row.source,
+                confidence=row.confidence,
+                source_trace=[],
+            )
+            for row in session.query(Character)
+            .filter(Character.project_id == project_id)
+            .order_by(Character.name.asc())
+            .all()
+        ]
+    )
+
+    if payload.include_auto:
+        chapter_rows = (
+            session.query(Chapter.normalized_text)
+            .filter(Chapter.project_id == project_id)
+            .order_by(Chapter.chapter_index.asc())
+            .all()
+        )
+        if chapter_rows:
+            auto_candidates = extract_character_candidates_from_texts([row.normalized_text for row in chapter_rows])
+            merged_payloads.extend(
+                _build_mergeable_candidates_from_candidates(
+                    candidates=auto_candidates,
+                    source="auto",
+                )
+            )
+
+    if payload.source_url is not None:
+        if not payload.acknowledge_source_risk:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You must acknowledge scrape risk before proceeding.",
+            )
+        try:
+            scrape_candidates = extract_character_candidates_from_scrape_url(payload.source_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        merged_payloads.extend(
+            _build_mergeable_candidates_from_candidates(
+                candidates=scrape_candidates,
+                source="scrape",
+            )
+        )
+
+    merged_candidates = [CharacterMapItem(**payload) for payload in merge_character_candidates(merged_payloads)]
+
+    return CharacterExtractionResponse(
+        project_id=project_id,
+        status="complete",
+        candidate_count=len(merged_candidates),
+        candidates=merged_candidates,
     )
 
 
