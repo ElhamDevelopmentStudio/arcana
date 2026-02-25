@@ -147,6 +147,38 @@ class Segment(Base):
     segment_json: Mapped[dict] = mapped_column(JSON, nullable=False)
 
 
+class SubSegmentTag(Base):
+    __tablename__ = "sub_segment_tags"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "segment_id",
+            "sub_segment_index",
+            name="uq_run_segment_sub_segment_index",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    chapter_id: Mapped[int] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
+    segment_id: Mapped[int] = mapped_column(ForeignKey("segments.id", ondelete="CASCADE"), nullable=False)
+    sub_segment_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    sub_segment_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    shift_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    boundary_start_char: Mapped[int] = mapped_column(Integer, nullable=False)
+    boundary_end_char: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_label: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    to_label: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    from_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    to_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    tags: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    evidence: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
 class LLMCall(Base):
     __tablename__ = "llm_calls"
 

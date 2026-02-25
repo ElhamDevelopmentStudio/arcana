@@ -4,7 +4,16 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Chapter, Character, LLMCall, Project, PronunciationDictionary, Run, Segment
+from app.models import (
+    Chapter,
+    Character,
+    LLMCall,
+    Project,
+    PronunciationDictionary,
+    Run,
+    Segment,
+    SubSegmentTag,
+)
 from app.services.export import build_run_export
 from app.services.llm_router import LLMRequest, LLMRouter
 from app.services.character_merge import normalize_candidate_key
@@ -189,6 +198,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
 
     session.query(Segment).filter(Segment.run_id == run.id).delete()
     session.query(LLMCall).filter(LLMCall.run_id == run.id).delete()
+    session.query(SubSegmentTag).filter(SubSegmentTag.run_id == run.id).delete()
 
     max_chars = int(run_config.get("max_segment_chars", 255))
     first_segment_text: str | None = None
@@ -286,6 +296,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "narration_internal_thought_shift": tags["narration_internal_thought_shift"],
                 "internal_external_speech_shift": tags["internal_external_speech_shift"],
                 "tone_reversal": tags["tone_reversal"],
+                "sub_segment_boundaries": tags["sub_segment_boundaries"],
                 "tension_contribution": tags["tension_contribution"],
                 "dominance_contribution": tags["dominance_contribution"],
                 "confidence": {
@@ -303,14 +314,38 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             }
             segment_payloads.append(segment_payload)
 
-            session.add(
-                Segment(
-                    run_id=run.id,
-                    chapter_id=chapter.id,
-                    segment_index=segment_index,
-                    segment_json=segment_payload,
-                )
+            segment = Segment(
+                run_id=run.id,
+                chapter_id=chapter.id,
+                segment_index=segment_index,
+                segment_json=segment_payload,
             )
+            session.add(segment)
+            session.flush()
+
+            for boundary_index, boundary in enumerate(tags["sub_segment_boundaries"], start=1):
+                if not isinstance(boundary, dict):
+                    continue
+                segment_payload_id = str(segment_payload["segment_id"])
+                session.add(
+                    SubSegmentTag(
+                        run_id=run.id,
+                        chapter_id=chapter.id,
+                        segment_id=segment.id,
+                        sub_segment_id=f"{segment_payload_id}-{boundary_index:02d}",
+                        sub_segment_index=boundary_index,
+                        shift_type=str(boundary.get("shift_type")),
+                        boundary_start_char=int(boundary.get("boundary_start_char", 0)),
+                        boundary_end_char=int(boundary.get("boundary_end_char", 0)),
+                        from_label=(None if boundary.get("from_label") is None else str(boundary.get("from_label"))),
+                        to_label=(None if boundary.get("to_label") is None else str(boundary.get("to_label"))),
+                        from_text=(None if boundary.get("from_text") is None else str(boundary.get("from_text"))),
+                        to_text=(None if boundary.get("to_text") is None else str(boundary.get("to_text"))),
+                        confidence=float(boundary.get("confidence", 0.0)),
+                        tags={"shift_type": boundary.get("shift_type"), "payload": dict(boundary)},
+                        evidence=boundary.get("evidence", {}),
+                    )
+                )
 
             if first_segment_text is None:
                 first_segment_text = original_text
