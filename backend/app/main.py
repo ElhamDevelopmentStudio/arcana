@@ -1387,6 +1387,8 @@ def update_voice_config(
         "narrator_voice": payload.narrator_voice,
         "male_default_voice": payload.male_default_voice,
         "female_default_voice": payload.female_default_voice,
+        "neutral_default_voice": payload.neutral_default_voice,
+        "unknown_default_voice": payload.unknown_default_voice,
     }
     session.add(project)
     session.commit()
