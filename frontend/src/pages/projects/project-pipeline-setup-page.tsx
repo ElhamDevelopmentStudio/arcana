@@ -21,6 +21,8 @@ import {
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 
 export function ProjectPipelineSetupPage() {
+  type InternalThoughtVoicePolicy = 'character' | 'narrator' | 'thought_voice';
+
   const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
   const routeProjectId = parseProjectIdParam(params.project_id);
@@ -35,7 +37,7 @@ export function ProjectPipelineSetupPage() {
   const [femaleVoice, setFemaleVoice] = useState('female_default');
   const [neutralVoice, setNeutralVoice] = useState('neutral_default');
   const [unknownVoice, setUnknownVoice] = useState('unknown_default');
-  const [internalThoughtVoicePolicy, setInternalThoughtVoicePolicy] = useState('character');
+  const [internalThoughtVoicePolicy, setInternalThoughtVoicePolicy] = useState<InternalThoughtVoicePolicy>('character');
   const [internalThoughtVoice, setInternalThoughtVoice] = useState('');
   const [maxSegmentChars, setMaxSegmentChars] = useState(255);
   const [llmEnabled, setLlmEnabled] = useState(false);
@@ -176,7 +178,11 @@ export function ProjectPipelineSetupPage() {
                 <NativeSelect
                   id="internal-thought-policy"
                   value={internalThoughtVoicePolicy}
-                  onChange={(event) => setInternalThoughtVoicePolicy(event.target.value)}
+                  onChange={(event) =>
+                    setInternalThoughtVoicePolicy(
+                      event.target.value as InternalThoughtVoicePolicy,
+                    )
+                  }
                 >
                   <option value="character">Use character voice</option>
                   <option value="narrator">Use narrator voice</option>
