@@ -273,7 +273,7 @@ Definition of done for each task:
 ## 4.11 Author Outputs (Ref: SRS.md §4.11)
 - [x] [AUTH-001] Define narrative health report schema.
 - [x] [AUTH-002] Implement tension flatline detector.
-- [ ] [AUTH-003] Implement emotional monotony detector.
+- [x] [AUTH-003] Implement emotional monotony detector.
 - [ ] [AUTH-004] Implement over-dominant character warning detector.
 - [ ] [AUTH-005] Implement disappearing character warning detector.
 - [ ] [AUTH-006] Implement dialogue density anomaly detector.

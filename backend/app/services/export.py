@@ -26,6 +26,10 @@ _MONOTONY_WINDOW_SIZE = 6
 _MONOTONY_TENSION_TOLERANCE = 0.06
 _MONOTONY_EMOTION_TOLERANCE = 0.25
 _MONOTONY_INTENSITY_TOLERANCE = 0.28
+_EMOTIONAL_MONOTONY_WINDOW_SIZE = 6
+_EMOTIONAL_MONOTONY_REPEAT_RATIO = 0.85
+_EMOTIONAL_MONOTONY_VALENCE_TOLERANCE = 0.30
+_EMOTIONAL_MONOTONY_INTENSITY_TOLERANCE = 0.40
 
 
 def _compute_range(values: list[float]) -> float:
@@ -40,6 +44,127 @@ def _compute_variance(values: list[float]) -> float:
         return 0.0
     mean = sum(values) / count
     return sum((value - mean) ** 2 for value in values) / count
+
+
+def _build_emotional_monotony_findings(
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if len(segments) < _EMOTIONAL_MONOTONY_WINDOW_SIZE:
+        return []
+
+    valence_values: list[float] = []
+    intensity_values: list[float] = []
+    labels: list[str | None] = []
+    for segment in segments:
+        valence_values.append(_to_number(segment.get("emotion_valence")) or 0.0)
+        intensity_values.append(_to_number(segment.get("emotion_intensity")) or 0.0)
+        label = segment.get("emotion_primary_label")
+        labels.append(label.strip().lower() if isinstance(label, str) else None)
+
+    def is_low_variation_and_repetitive(start_index: int, end_index: int) -> bool:
+        valence_slice = valence_values[start_index : end_index + 1]
+        intensity_slice = intensity_values[start_index : end_index + 1]
+        label_slice = labels[start_index : end_index + 1]
+        if len(valence_slice) != (end_index - start_index + 1) or len(intensity_slice) != (end_index - start_index + 1):
+            return False
+        if _compute_range(valence_slice) > _EMOTIONAL_MONOTONY_VALENCE_TOLERANCE:
+            return False
+        if _compute_range(intensity_slice) > _EMOTIONAL_MONOTONY_INTENSITY_TOLERANCE:
+            return False
+
+        valid_labels = [label for label in label_slice if isinstance(label, str)]
+        if len(valid_labels) == 0:
+            return False
+
+        mode_counts: dict[str, int] = {}
+        for label in valid_labels:
+            mode_counts[label] = mode_counts.get(label, 0) + 1
+        dominant_label_count = max(mode_counts.values())
+        label_count = len(valid_labels)
+        if label_count == 0:
+            return False
+        repeat_ratio = dominant_label_count / label_count
+        return repeat_ratio >= _EMOTIONAL_MONOTONY_REPEAT_RATIO
+
+    findings: list[dict[str, Any]] = []
+    start_index = 0
+    while start_index <= len(segments) - _EMOTIONAL_MONOTONY_WINDOW_SIZE:
+        end_index = start_index + _EMOTIONAL_MONOTONY_WINDOW_SIZE - 1
+        if not is_low_variation_and_repetitive(start_index, end_index):
+            start_index += 1
+            continue
+
+        while end_index + 1 < len(segments) and is_low_variation_and_repetitive(
+            start_index, end_index + 1
+        ):
+            end_index += 1
+
+        valence_slice = valence_values[start_index : end_index + 1]
+        intensity_slice = intensity_values[start_index : end_index + 1]
+        label_slice = labels[start_index : end_index + 1]
+        segment_slice = segments[start_index : end_index + 1]
+        valid_labels = [label for label in label_slice if isinstance(label, str)]
+        mode_counts: dict[str, int] = {}
+        for label in valid_labels:
+            mode_counts[label] = mode_counts.get(label, 0) + 1
+        dominant_label, dominant_count = sorted(mode_counts.items(), key=lambda item: item[1], reverse=True)[0]
+        repeat_ratio = dominant_count / len(valid_labels) if valid_labels else 0.0
+
+        valence_score = 1.0 - (_compute_range(valence_slice) / _EMOTIONAL_MONOTONY_VALENCE_TOLERANCE)
+        intensity_score = 1.0 - (_compute_range(intensity_slice) / _EMOTIONAL_MONOTONY_INTENSITY_TOLERANCE)
+        repetition_score = repeat_ratio
+        severity = round(
+            (0.55 * repetition_score + 0.25 * max(0.0, valence_score) + 0.20 * max(0.0, intensity_score))
+            * min(1.0, len(valence_slice) / 10.0),
+            4,
+        )
+
+        first_segment = segment_slice[0]
+        last_segment = segment_slice[-1]
+        start_chapter = first_segment.get("chapter_id")
+        end_chapter = last_segment.get("chapter_id")
+        start_segment = first_segment.get("segment_index")
+        end_segment = last_segment.get("segment_index")
+        if not isinstance(start_chapter, int):
+            start_chapter = None
+        if not isinstance(end_chapter, int):
+            end_chapter = None
+        if not isinstance(start_segment, int):
+            start_segment = None
+        if not isinstance(end_segment, int):
+            end_segment = None
+
+        findings.append(
+            {
+                "requirement_id": "ADR-002",
+                "requirement_name": "monotony_risk_detector",
+                "location": {
+                    "start_chapter": start_chapter,
+                    "end_chapter": end_chapter,
+                    "start_segment": start_segment,
+                    "end_segment": end_segment,
+                },
+                "trigger_metric": "repeated_tone_pattern",
+                "severity": severity,
+                "evidence_trace": {
+                    "window_start_position": start_index + 1,
+                    "window_end_position": end_index + 1,
+                    "window_length": len(valence_slice),
+                    "dominant_tone": dominant_label,
+                    "dominant_tone_ratio": round(repeat_ratio, 4),
+                    "valence_range": round(_compute_range(valence_slice), 4),
+                    "valence_variance": round(_compute_variance(valence_slice), 6),
+                    "intensity_range": round(_compute_range(intensity_slice), 4),
+                    "intensity_variance": round(_compute_variance(intensity_slice), 6),
+                    "tone_counts": sorted(mode_counts.items(), key=lambda item: item[1], reverse=True),
+                    "start_segment_id": first_segment.get("segment_id"),
+                    "end_segment_id": last_segment.get("segment_id"),
+                },
+            }
+        )
+        start_index = end_index + 1
+
+    return findings
 
 
 def _build_monotony_risk_findings(
@@ -271,11 +396,14 @@ def _build_author_narrative_health_report(
     generated_at: datetime,
     segment_count: int,
     monotony_findings: list[dict[str, Any]] | None = None,
+    emotional_monotony_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     generated_at_iso = generated_at.isoformat()
     resolved_monotony_findings = monotony_findings or []
+    resolved_emotional_monotony_findings = emotional_monotony_findings or []
+    combined_findings = resolved_monotony_findings + resolved_emotional_monotony_findings
     finding_by_requirement: dict[str, list[dict[str, Any]]] = {
-        "ADR-002": resolved_monotony_findings,
+        "ADR-002": combined_findings,
     }
     requirements = [
         {
@@ -306,7 +434,7 @@ def _build_author_narrative_health_report(
             "ordered_by": ["chapter_index", "segment_index"],
         },
         "requirements": requirements,
-        "findings": resolved_monotony_findings,
+        "findings": combined_findings,
     }
 
 
@@ -2122,6 +2250,7 @@ def build_run_export(
         segments=segments,
         smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
     )
+    emotional_monotony_findings = _build_emotional_monotony_findings(segments=segments)
     character_cooccurrence_graph = _build_character_cooccurrence_graph(segments=segments)
     character_cooccurrence_centrality_table = _build_character_cooccurrence_centrality_table(
         graph_report=character_cooccurrence_graph,
@@ -2196,6 +2325,7 @@ def build_run_export(
             generated_at=generated_at,
             segment_count=len(segments),
             monotony_findings=monotony_findings,
+            emotional_monotony_findings=emotional_monotony_findings,
         ),
         "reports": _build_export_reports(
             project=project,
