@@ -165,7 +165,7 @@ export const voiceConfigResponseSchema = z.object({
 
 export const runRequestSchema = z.object({
   mode: z.string(),
-  max_segment_chars: z.number().int().positive(),
+  max_segment_chars: z.number().int().min(80).max(255),
   llm_enabled: z.boolean(),
   provider_name: z.string(),
   max_calls_per_day: z.number().int().positive(),
