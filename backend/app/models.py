@@ -30,11 +30,15 @@ class Project(Base):
 
 class Chapter(Base):
     __tablename__ = "chapters"
-    __table_args__ = (UniqueConstraint("project_id", "chapter_index", name="uq_project_chapter_index"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "chapter_index", name="uq_project_chapter_index"),
+        UniqueConstraint("project_id", "chapter_internal_id", name="uq_project_chapter_internal_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     chapter_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    chapter_internal_id: Mapped[str] = mapped_column(String(80), nullable=False)
     chapter_title: Mapped[str] = mapped_column(String(255), nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_text: Mapped[str] = mapped_column(Text, nullable=False)

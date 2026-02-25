@@ -72,6 +72,7 @@ Ingestion title fallback behavior:
 - Chapter-directory ingestion accepts multi-file `.txt` uploads and ingests files in natural filename order.
 - Chapter-directory ingestion treats each non-empty file boundary as one chapter unit (title derived from filename stem).
 - Duplicate chapter titles are detected during ingestion and recorded as normalization warnings in `projects.ingestion_log_json.warnings`.
+- Each chapter also receives a unique internal ID (`chapter_internal_id`, e.g. `ch-0001`) independent from the human chapter title.
 - Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.
 - EPUB ingestion is toggle-controlled (`ENABLE_EPUB_INGESTION`) and currently wired to a pluggable parser stub.
 - Incremental append ingestion supports one `.txt` chapter payload at a time (`/ingest/append-chapter`) without replacing existing chapters.

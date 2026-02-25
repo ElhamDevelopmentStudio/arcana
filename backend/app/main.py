@@ -30,6 +30,7 @@ from app.services.ingestion_errors import IngestionErrorType, make_ingestion_htt
 from app.services.ingestion import (
     build_duplicate_title_warnings,
     build_encoding_warning,
+    build_internal_chapter_id,
     calculate_delta_affected_range,
     chapter_filename_sort_key,
     chapter_title_from_filename,
@@ -256,6 +257,7 @@ def ingest_txt(
             Chapter(
                 project_id=project_id,
                 chapter_index=idx,
+                chapter_internal_id=build_internal_chapter_id(idx),
                 chapter_title=chapter_title,
                 raw_text=chapter_content,
                 normalized_text=normalized,
@@ -325,6 +327,7 @@ def ingest_markdown(
             Chapter(
                 project_id=project_id,
                 chapter_index=chapter_index,
+                chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=stored_chapter_title,
                 raw_text=stored_chapter_content,
                 normalized_text=normalize_text(stored_chapter_content),
@@ -391,6 +394,7 @@ def ingest_epub(
             Chapter(
                 project_id=project_id,
                 chapter_index=chapter_index,
+                chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=title,
                 raw_text=content,
                 normalized_text=normalize_text(content),
@@ -488,6 +492,7 @@ def ingest_chapters_dir(
             Chapter(
                 project_id=project_id,
                 chapter_index=chapter_index,
+                chapter_internal_id=build_internal_chapter_id(chapter_index),
                 chapter_title=chapter_title,
                 raw_text=chapter_content,
                 normalized_text=normalize_text(chapter_content),
@@ -571,6 +576,7 @@ def append_chapter(
         Chapter(
             project_id=project_id,
             chapter_index=next_chapter_index,
+            chapter_internal_id=build_internal_chapter_id(next_chapter_index),
             chapter_title=chapter_title,
             raw_text=chapter_content,
             normalized_text=normalize_text(chapter_content),

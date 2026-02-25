@@ -138,6 +138,10 @@ def detect_chapters_from_file_boundaries(file_boundaries: list[tuple[str, str]])
     return chapters
 
 
+def build_internal_chapter_id(chapter_index: int) -> str:
+    return f"ch-{chapter_index:04d}"
+
+
 def normalize_markdown_for_ingestion(markdown_text: str) -> str:
     normalized = markdown_text.replace("\r\n", "\n")
     normalized = MARKDOWN_FENCE_RE.sub("", normalized)
