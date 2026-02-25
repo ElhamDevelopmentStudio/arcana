@@ -1,8 +1,10 @@
 import type { RouteObject } from 'react-router-dom';
 
+import { AuthPlaceholderPage } from '@/pages/auth/auth-placeholder-page';
+
 export const authRouter: RouteObject[] = [
   {
     index: true,
-    element: <div>Hello from the auth router.</div>,
+    element: <AuthPlaceholderPage />,
   },
 ];

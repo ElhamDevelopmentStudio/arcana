@@ -24,7 +24,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - React UI with route-based structure (`router/main.tsx`, `router/auth.tsx`, `router/index.tsx`)
 - Global Tailwind-based design system in `frontend/src/styles/globals.css`
 - Frontend API/state foundations using Axios + SWR + Zustand + Zod + date-fns
-- Playwright visual/e2e suite for control-deck regression snapshots
+- Frontend test stack with centralized Vitest + Playwright suites (unit, integration, regression, e2e, visual)
 
 ## Repository Layout
 
@@ -211,7 +211,7 @@ Frontend unit/integration tests:
 
 ```bash
 cd frontend
-npm run test:run
+npm run test:vitest
 ```
 
 Frontend Playwright visual/e2e tests:
@@ -219,7 +219,8 @@ Frontend Playwright visual/e2e tests:
 ```bash
 cd frontend
 npx playwright install chromium
-npm run test:playwright
+npm run test:e2e
+npm run test:visual
 ```
 
 ## Notes
