@@ -30,6 +30,9 @@ _EMOTIONAL_MONOTONY_WINDOW_SIZE = 6
 _EMOTIONAL_MONOTONY_REPEAT_RATIO = 0.85
 _EMOTIONAL_MONOTONY_VALENCE_TOLERANCE = 0.30
 _EMOTIONAL_MONOTONY_INTENSITY_TOLERANCE = 0.40
+_CHARACTER_DOMINANCE_OUTLIER_SHARE_THRESHOLD = 0.75
+_CHARACTER_DOMINANCE_OUTLIER_GAP_THRESHOLD = 0.25
+_CHARACTER_DOMINANCE_OUTLIER_MIN_SEGMENTS = 4
 
 
 def _compute_range(values: list[float]) -> float:
@@ -163,6 +166,89 @@ def _build_emotional_monotony_findings(
             }
         )
         start_index = end_index + 1
+
+    return findings
+
+
+def _build_character_dominance_findings(
+    chapter_level_character_dominance: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    for chapter_summary in chapter_level_character_dominance:
+        chapter_id = chapter_summary.get("chapter_id")
+        if not isinstance(chapter_id, int):
+            continue
+
+        chapter_segment_count = chapter_summary.get("chapter_segment_count")
+        if (
+            not isinstance(chapter_segment_count, int)
+            or chapter_segment_count < _CHARACTER_DOMINANCE_OUTLIER_MIN_SEGMENTS
+        ):
+            continue
+
+        distribution = chapter_summary.get("character_dominance_distribution")
+        if not isinstance(distribution, list) or len(distribution) < 2:
+            continue
+
+        top_character = distribution[0]
+        second_character = distribution[1]
+        top_share = _to_number(top_character.get("dominance_share"))
+        second_share = _to_number(second_character.get("dominance_share"))
+        if top_share is None or second_share is None:
+            continue
+
+        lead_gap = top_share - second_share
+        if (
+            top_share < _CHARACTER_DOMINANCE_OUTLIER_SHARE_THRESHOLD
+            or lead_gap < _CHARACTER_DOMINANCE_OUTLIER_GAP_THRESHOLD
+        ):
+            continue
+
+        dominance_share_score = min(
+            1.0,
+            max(
+                0.0,
+                (top_share - _CHARACTER_DOMINANCE_OUTLIER_SHARE_THRESHOLD)
+                / (1 - _CHARACTER_DOMINANCE_OUTLIER_SHARE_THRESHOLD),
+            ),
+        )
+        gap_score = min(
+            1.0,
+            lead_gap / _CHARACTER_DOMINANCE_OUTLIER_GAP_THRESHOLD,
+        )
+        segment_score = min(1.0, chapter_segment_count / 20.0)
+        severity = round(
+            0.55 * dominance_share_score
+            + 0.30 * gap_score
+            + 0.15 * segment_score,
+            4,
+        )
+
+        findings.append(
+            {
+                "requirement_id": "ADR-003",
+                "requirement_name": "character_imbalance_alerts",
+                "location": {
+                    "start_chapter": chapter_id,
+                    "end_chapter": chapter_id,
+                },
+                "trigger_metric": "character_dominance_outlier",
+                "severity": min(1.0, severity),
+                "evidence_trace": {
+                    "chapter_id": chapter_id,
+                    "chapter_segment_count": chapter_segment_count,
+                    "top_character": top_character.get("speaker"),
+                    "top_character_id": top_character.get("speaker_id"),
+                    "top_character_share": round(top_share, 4),
+                    "next_character": second_character.get("speaker"),
+                    "next_character_id": second_character.get("speaker_id"),
+                    "next_character_share": round(second_share, 4),
+                    "lead_share_gap": round(lead_gap, 4),
+                    "share_threshold": _CHARACTER_DOMINANCE_OUTLIER_SHARE_THRESHOLD,
+                    "share_gap_threshold": _CHARACTER_DOMINANCE_OUTLIER_GAP_THRESHOLD,
+                },
+            }
+        )
 
     return findings
 
@@ -397,19 +483,27 @@ def _build_author_narrative_health_report(
     segment_count: int,
     monotony_findings: list[dict[str, Any]] | None = None,
     emotional_monotony_findings: list[dict[str, Any]] | None = None,
+    character_dominance_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     generated_at_iso = generated_at.isoformat()
     resolved_monotony_findings = monotony_findings or []
     resolved_emotional_monotony_findings = emotional_monotony_findings or []
-    combined_findings = resolved_monotony_findings + resolved_emotional_monotony_findings
+    resolved_character_dominance_findings = character_dominance_findings or []
+    combined_findings = (
+        resolved_monotony_findings
+        + resolved_emotional_monotony_findings
+        + resolved_character_dominance_findings
+    )
     finding_by_requirement: dict[str, list[dict[str, Any]]] = {
-        "ADR-002": combined_findings,
+        "ADR-002": resolved_monotony_findings + resolved_emotional_monotony_findings,
+        "ADR-003": resolved_character_dominance_findings,
     }
+    implemented_requirements = {"ADR-002", "ADR-003"}
     requirements = [
         {
             "requirement_id": requirement_id,
             "requirement_name": requirement_name,
-            "status": "implemented" if requirement_id == "ADR-002" else "not_implemented",
+            "status": "implemented" if requirement_id in implemented_requirements else "not_implemented",
             "finding_count": len(finding_by_requirement.get(requirement_id, [])),
             "findings": list(finding_by_requirement.get(requirement_id, [])),
         }
@@ -2251,6 +2345,13 @@ def build_run_export(
         smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
     )
     emotional_monotony_findings = _build_emotional_monotony_findings(segments=segments)
+    chapter_level_character_dominance = _build_chapter_level_character_dominance(
+        segments=segments,
+        top_characters_limit=3,
+    )
+    character_dominance_findings = _build_character_dominance_findings(
+        chapter_level_character_dominance=chapter_level_character_dominance,
+    )
     character_cooccurrence_graph = _build_character_cooccurrence_graph(segments=segments)
     character_cooccurrence_centrality_table = _build_character_cooccurrence_centrality_table(
         graph_report=character_cooccurrence_graph,
@@ -2271,10 +2372,7 @@ def build_run_export(
             segments=segments,
             volatility_markers=time_series["volatility_markers"],
         ),
-        "chapter_level_character_dominance": _build_chapter_level_character_dominance(
-            segments=segments,
-            top_characters_limit=3,
-        ),
+        "chapter_level_character_dominance": chapter_level_character_dominance,
         "normalized_pacing_signature": _build_normalized_pacing_signature(segments=segments),
         "character_cooccurrence_graph": character_cooccurrence_graph,
         "character_cooccurrence_centrality_table": character_cooccurrence_centrality_table,
@@ -2326,6 +2424,7 @@ def build_run_export(
             segment_count=len(segments),
             monotony_findings=monotony_findings,
             emotional_monotony_findings=emotional_monotony_findings,
+            character_dominance_findings=character_dominance_findings,
         ),
         "reports": _build_export_reports(
             project=project,

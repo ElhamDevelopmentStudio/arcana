@@ -4,7 +4,9 @@ from types import SimpleNamespace
 from app.schemas import NarrativeHealthReport
 from app.services.export import (
     _build_author_narrative_health_report,
+    _build_character_dominance_findings,
     _build_emotional_monotony_findings,
+    _build_chapter_level_character_dominance,
     _build_monotony_risk_findings,
 )
 
@@ -53,6 +55,84 @@ def _build_segments_for_labels_test(
             }
         )
     return segments
+
+
+def _build_segments_for_dominance_test(
+    chapter_id: int,
+    segments: list[tuple[str, float | None]],
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for index, (speaker, dominance) in enumerate(segments, start=1):
+        result.append(
+            {
+                "chapter_id": chapter_id,
+                "segment_index": index,
+                "segment_id": f"{chapter_id}-{index}",
+                "speaker": speaker,
+                "speaker_id": index,
+                "dominance_contribution": {"value": dominance},
+            }
+        )
+    return result
+
+
+def test_unit_build_character_dominance_findings_detects_over_dominant_character() -> None:
+    segments = _build_segments_for_dominance_test(
+        3,
+        [
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Narrator", 0.1),
+            ("Hero", 1.0),
+            ("Sidekick", 0.2),
+            ("Narrator", 0.1),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+        ],
+    )
+    chapter_level_character_dominance = _build_chapter_level_character_dominance(
+        segments=segments,
+        top_characters_limit=3,
+    )
+    findings = _build_character_dominance_findings(chapter_level_character_dominance)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["requirement_id"] == "ADR-003"
+    assert finding["requirement_name"] == "character_imbalance_alerts"
+    assert finding["location"]["start_chapter"] == 3
+    assert finding["location"]["end_chapter"] == 3
+    assert finding["trigger_metric"] == "character_dominance_outlier"
+    assert finding["evidence_trace"]["top_character"] == "Hero"
+    assert finding["evidence_trace"]["lead_share_gap"] > 0.4
+    assert finding["severity"] > 0.7
+
+
+def test_unit_build_character_dominance_findings_skips_balanced_dialogue() -> None:
+    segments = _build_segments_for_dominance_test(
+        3,
+        [
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Sidekick", 1.0),
+            ("Sidekick", 1.0),
+            ("Hero", 1.0),
+            ("Sidekick", 1.0),
+            ("Narrator", 0.8),
+            ("Narrator", 0.8),
+        ],
+    )
+    chapter_level_character_dominance = _build_chapter_level_character_dominance(
+        segments=segments,
+        top_characters_limit=3,
+    )
+    findings = _build_character_dominance_findings(chapter_level_character_dominance)
+
+    assert findings == []
 
 
 def test_unit_build_monotony_risk_findings_detects_flatline_region() -> None:
@@ -189,7 +269,10 @@ def test_unit_narrative_health_report_includes_emotional_monotony_findings() -> 
 
     requirement_lookup = {entry.requirement_id: entry for entry in parsed_report.requirements}
     assert requirement_lookup["ADR-002"].status == "implemented"
+    assert requirement_lookup["ADR-003"].status == "implemented"
+    assert requirement_lookup["ADR-003"].finding_count == 0
     assert len(requirement_lookup["ADR-002"].findings) == 2
+    assert len(requirement_lookup["ADR-003"].findings) == 0
     assert len(parsed_report.findings) == 2
     assert parsed_report.findings[0].requirement_id == "ADR-002"
     possible_severities = {monotony_findings[0]["severity"], emotional_findings[0]["severity"]}
