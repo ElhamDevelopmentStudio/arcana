@@ -121,6 +121,43 @@ def build_canonical_name_merge_suggestions(
     return suggestions
 
 
+def resolve_alias_to_canonical_name(
+    alias_text: str,
+    canonical_rows: list[dict[str, Any]],
+) -> tuple[str | None, str]:
+    normalized_alias = normalize_candidate_key(alias_text)
+    if not normalized_alias:
+        return None, "none"
+
+    canonical_matches: tuple[str, str] | None = None
+    for row in canonical_rows:
+        canonical_name = str(row.get("name") or "").strip()
+        if not canonical_name:
+            continue
+
+        if normalize_candidate_key(canonical_name) == normalized_alias:
+            canonical_matches = (canonical_name, "canonical")
+            break
+
+    if canonical_matches is not None:
+        return canonical_matches
+
+    for row in canonical_rows:
+        canonical_name = str(row.get("name") or "").strip()
+        if not canonical_name:
+            continue
+
+        aliases = row.get("aliases") or []
+        for alias in aliases:
+            alias_name = str(alias).strip()
+            if not alias_name:
+                continue
+            if normalize_candidate_key(alias_name) == normalized_alias:
+                return canonical_name, "alias"
+
+    return None, "none"
+
+
 def _coerce_confidence(value: Any) -> float:
     try:
         confidence = float(value)

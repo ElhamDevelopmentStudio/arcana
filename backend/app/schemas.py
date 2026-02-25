@@ -124,6 +124,22 @@ class CharacterMapUpdateRequest(BaseModel):
     characters: list[CharacterMapItem]
 
 
+class CharacterAliasLookupRequest(BaseModel):
+    alias: str = Field(min_length=1, max_length=255)
+
+    @field_validator("alias")
+    @classmethod
+    def alias_normalized(cls, value: str) -> str:
+        return value.strip()
+
+
+class CharacterAliasLookupResponse(BaseModel):
+    project_id: int
+    alias: str = Field(min_length=1, max_length=255)
+    canonical_name: str | None
+    match_source: str = Field(default="none", min_length=1, max_length=20)
+
+
 class CharacterMapFinalizeResponse(BaseModel):
     project_id: int
     character_map_finalized: bool
