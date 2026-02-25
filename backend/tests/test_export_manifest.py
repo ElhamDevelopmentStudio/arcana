@@ -873,6 +873,165 @@ def test_export_json_includes_tension_plateau_regions() -> None:
             assert expected_region == actual_region
 
 
+def test_export_json_includes_chapter_level_character_dominance() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-009 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        characters_payload = {
+            "characters": [
+                {
+                    "name": "Alice",
+                    "verbalized_form": "Alice",
+                    "gender": "female",
+                    "aliases": ["A"],
+                    "source": "manual",
+                    "confidence": 1.0,
+                },
+                {
+                    "name": "Bob",
+                    "verbalized_form": "Bob",
+                    "gender": "male",
+                    "aliases": ["B"],
+                    "source": "manual",
+                    "confidence": 1.0,
+                },
+            ]
+        }
+        assert client.put(f"/api/projects/{project_id}/characters", json=characters_payload).status_code == 200
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                        "sample.txt",
+                        io.BytesIO(
+                            (
+                                "Chapter 1\n"
+                                "\"Hello,\" Alice said.\n"
+                                "\"No,\" Bob said, \"stay with me.\"\n"
+                                "\"Listen,\" Alice said.\n"
+                                "Alice whispered as the door closed.\n\n"
+                                "Chapter 2\n"
+                                "\"Meet me at dawn,\" Alice said.\n"
+                                "\"I will,\" Bob said now.\n"
+                                "Together they packed the last things in silence.\n"
+                            ).encode("utf-8")
+                        ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 90, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        dominance_report = academic_reports.get("chapter_level_character_dominance")
+        assert isinstance(dominance_report, list)
+        assert dominance_report, "Expected at least one chapter-level character dominance entry"
+
+        by_chapter: dict[int, dict[str, dict[str, Any]]] = {}
+        for segment in export_payload["segments"]:
+            chapter_id = segment.get("chapter_id")
+            if not isinstance(chapter_id, int):
+                continue
+            speaker = segment.get("speaker")
+            if not isinstance(speaker, str):
+                continue
+            normalized_speaker = speaker.strip()
+            if not normalized_speaker or normalized_speaker.lower() == "unknown":
+                continue
+            dominance_data = segment.get("dominance_contribution")
+            if not isinstance(dominance_data, dict):
+                dominance_data = segment.get("tag_bundle", {}).get("dominance", {})
+            if not isinstance(dominance_data, dict):
+                continue
+            dominance_value = dominance_data.get("value")
+            if not isinstance(dominance_value, (int, float)):
+                continue
+            key = normalized_speaker.lower()
+            by_chapter.setdefault(chapter_id, {})
+            speaker_bucket = by_chapter[chapter_id].setdefault(
+                key,
+                {
+                    "speaker": normalized_speaker,
+                    "speaker_id": segment.get("speaker_id"),
+                    "segment_count": 0,
+                    "total_dominance": 0.0,
+                },
+            )
+            speaker_bucket["segment_count"] = int(speaker_bucket["segment_count"]) + 1
+            speaker_bucket["total_dominance"] = float(speaker_bucket["total_dominance"]) + float(dominance_value)
+
+        assert dominance_report
+        for chapter_report in dominance_report:
+            assert isinstance(chapter_report, dict)
+            assert set(chapter_report.keys()) >= {
+                "chapter_id",
+                "chapter_segment_count",
+                "dominance_total",
+                "character_dominance_distribution",
+                "key_characters",
+            }
+
+            chapter_id = chapter_report["chapter_id"]
+            assert isinstance(chapter_id, int)
+            assert chapter_report["chapter_segment_count"] >= 0
+            assert isinstance(chapter_report["character_dominance_distribution"], list)
+            assert isinstance(chapter_report["key_characters"], list)
+            assert len(chapter_report["key_characters"]) <= 3
+
+            if chapter_id not in by_chapter:
+                expected_distribution = []
+            else:
+                expected_distribution = []
+                total_dominance = sum(
+                    char_bucket["total_dominance"] for char_bucket in by_chapter[chapter_id].values()
+                )
+                for char_bucket in by_chapter[chapter_id].values():
+                    total = float(char_bucket["total_dominance"])
+                    seg_count = int(char_bucket["segment_count"])
+                    expected_distribution.append(
+                        {
+                            "speaker": char_bucket["speaker"],
+                            "speaker_id": char_bucket["speaker_id"]
+                            if isinstance(char_bucket["speaker_id"], int)
+                            else None,
+                            "segment_count": seg_count,
+                            "total_dominance": round(total, 4),
+                            "average_dominance": round(total / seg_count, 4),
+                            "dominance_share": round(total / total_dominance, 4) if total_dominance > 0 else 0.0,
+                        }
+                    )
+                expected_distribution.sort(
+                    key=lambda item: (
+                        -item["total_dominance"],
+                        -item["segment_count"],
+                        str(item["speaker"]).lower(),
+                    )
+                )
+
+            assert chapter_report["dominance_total"] == round(
+                sum(char_bucket["total_dominance"] for char_bucket in by_chapter.get(chapter_id, {}).values()),
+                4,
+            )
+            assert chapter_report["character_dominance_distribution"] == expected_distribution
+            assert chapter_report["key_characters"] == expected_distribution[:3]
+
+
 def test_export_json_includes_warning_report_summary() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})

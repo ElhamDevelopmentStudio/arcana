@@ -702,6 +702,117 @@ def _build_smoothed_tension_curve(
     }
 
 
+def _build_chapter_level_character_dominance(
+    segments: list[dict[str, Any]],
+    top_characters_limit: int = 3,
+) -> list[dict[str, Any]]:
+    if top_characters_limit < 1:
+        top_characters_limit = 1
+
+    per_chapter: dict[int, dict[str, dict[str, Any]]] = {}
+    chapter_segment_counts: dict[int, int] = {}
+    chapters_with_segments: list[int] = []
+
+    for segment in segments:
+        chapter_id = segment.get("chapter_id")
+        if not isinstance(chapter_id, int):
+            continue
+        if chapter_id not in chapters_with_segments:
+            chapters_with_segments.append(chapter_id)
+
+        speaker = segment.get("speaker")
+        if not isinstance(speaker, str):
+            continue
+        normalized_speaker = speaker.strip()
+        if not normalized_speaker or normalized_speaker.lower() == "unknown":
+            continue
+
+        speaker_id = segment.get("speaker_id")
+        normalized_key = normalized_speaker.lower()
+        dominance_payload = _to_dict(segment.get("dominance_contribution"))
+        if not dominance_payload:
+            dominance_payload = _to_dict(segment.get("tag_bundle")).get("dominance", {})
+        dominance_value = _to_number(dominance_payload.get("value"))
+        if dominance_value is None:
+            continue
+
+        per_chapter.setdefault(chapter_id, {})
+        chapter_payload = per_chapter[chapter_id]
+        if normalized_key not in chapter_payload:
+            chapter_payload[normalized_key] = {
+                "speaker": normalized_speaker,
+                "speaker_id": speaker_id if isinstance(speaker_id, int) else None,
+                "segment_count": 0,
+                "total_dominance": 0.0,
+            }
+        speaker_payload = chapter_payload[normalized_key]
+        speaker_payload["segment_count"] = int(speaker_payload["segment_count"]) + 1
+        speaker_payload["total_dominance"] = float(speaker_payload["total_dominance"]) + dominance_value
+        if isinstance(speaker_id, int) and not isinstance(
+            speaker_payload.get("speaker_id"), int
+        ):
+            speaker_payload["speaker_id"] = speaker_id
+        chapter_segment_counts[chapter_id] = chapter_segment_counts.get(chapter_id, 0) + 1
+
+    chapter_level_character_dominance = []
+    for chapter_id in chapters_with_segments:
+        speaker_payloads = per_chapter.get(chapter_id, {})
+        if not speaker_payloads:
+            chapter_level_character_dominance.append(
+                {
+                    "chapter_id": chapter_id,
+                    "chapter_segment_count": chapter_segment_counts.get(chapter_id, 0),
+                    "dominance_total": 0.0,
+                    "character_dominance_distribution": [],
+                    "key_characters": [],
+                }
+            )
+            continue
+
+        character_dominance_distribution: list[dict[str, Any]] = []
+        total_dominance = 0.0
+        for payload in speaker_payloads.values():
+            total = float(payload["total_dominance"])
+            total_dominance += total
+        for payload in speaker_payloads.values():
+            total = float(payload["total_dominance"])
+            segment_count = int(payload["segment_count"])
+            character_dominance_distribution.append(
+                {
+                    "speaker": payload["speaker"],
+                    "speaker_id": payload["speaker_id"],
+                    "segment_count": segment_count,
+                    "total_dominance": round(total, 4),
+                    "average_dominance": round(total / segment_count, 4)
+                    if segment_count > 0
+                    else 0.0,
+                    "dominance_share": round(total / total_dominance, 4)
+                    if total_dominance > 0
+                    else 0.0,
+                }
+            )
+
+        character_dominance_distribution.sort(
+            key=lambda item: (
+                -item["total_dominance"],
+                -item["segment_count"],
+                str(item["speaker"]).lower(),
+            )
+        )
+
+        chapter_level_character_dominance.append(
+            {
+                "chapter_id": chapter_id,
+                "chapter_segment_count": chapter_segment_counts.get(chapter_id, 0),
+                "dominance_total": round(total_dominance, 4),
+                "character_dominance_distribution": character_dominance_distribution,
+                "key_characters": character_dominance_distribution[:top_characters_limit],
+            }
+        )
+
+    return chapter_level_character_dominance
+
+
 def _build_tension_peak_markers(
     smoothed_tension_curve: list[dict[str, Any]],
     major_prominence_threshold: float = 0.18,
@@ -1066,6 +1177,10 @@ def build_run_export(
             "chapter_level_emotional_volatility_index": _build_chapter_level_emotional_volatility_index(
                 segments=segments,
                 volatility_markers=time_series["volatility_markers"],
+            ),
+            "chapter_level_character_dominance": _build_chapter_level_character_dominance(
+                segments=segments,
+                top_characters_limit=3,
             ),
             "chapter_level_raw_tension": _build_chapter_level_raw_tension(segments),
             "smoothed_tension_curve": smoothed_tension_curve,
