@@ -89,6 +89,42 @@ def test_e2e_run_detail_carries_project_ingestion_warnings() -> None:
         assert any(str(item["source"]).startswith("chapters-dir:") for item in warnings)
 
 
+def test_e2e_run_detail_carries_normalization_report() -> None:
+    text = (
+        "Chapter 1\n"
+        "First chapter with “quoted text\n\n"
+        "Chapter 2\n"
+        "Second chapter with no oddity.\n"
+    )
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Normalization Report E2E"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("source.txt", io.BytesIO(text.encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "audiobook", "llm_enabled": False},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+        assert detail_resp.status_code == 200
+        normalization_report = detail_resp.json()["config"]["normalization_report"]
+        assert normalization_report["source"] == "txt"
+        counts = normalization_report["counts"]
+        assert counts["chapters_detected"] == 2
+        assert counts["suspected_duplicates"] == 0
+        assert counts["quote_repair_count"] >= 1
+        assert isinstance(normalization_report["lossy_transform_flags"], dict)
+
+
 def test_regression_utf8_ingestion_keeps_warning_list_empty() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Encoding Warning Regression"})
