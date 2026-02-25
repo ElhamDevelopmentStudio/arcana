@@ -232,6 +232,82 @@ def test_export_json_includes_narrative_health_report_schema() -> None:
             }
 
 
+def test_export_json_supports_author_output_schema() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Author Output Schema Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        b"Chapter 1\nA cold wind pushed through the hall and the lamp light flickered.\n\n"
+                        b"Chapter 2\nFootsteps in the corridor grew louder as the truth emerged."
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 2
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "author", "max_segment_chars": 80},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        report_resp = client.get(
+            f"/api/projects/{project_id}/exports/{run_id}.json",
+            params={"output_schema": "author"},
+        )
+        assert report_resp.status_code == 200
+
+        payload = report_resp.json()
+        parsed_report = NarrativeHealthReport.model_validate(payload)
+        assert parsed_report.output_schema == "author_narrative_health_json"
+        assert parsed_report.generated_by == "build_run_export"
+        assert parsed_report.project_reference["project_id"] == project_id
+        assert parsed_report.run_reference["run_id"] == run_id
+        assert isinstance(parsed_report.chapter_type_classification, list)
+
+
+def test_export_json_rejects_unknown_output_schema() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Unknown Output Schema Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        b"Chapter 1\nA quick sample line to bootstrap exports."
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(f"/api/projects/{project_id}/runs", json={"max_segment_chars": 80})
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        report_resp = client.get(
+            f"/api/projects/{project_id}/exports/{run_id}.json",
+            params={"output_schema": "unsupported"},
+        )
+        assert report_resp.status_code == 400
+        assert report_resp.json()["detail"].startswith("Unsupported output_schema")
+
+
 def test_export_json_includes_chapter_level_valence_means() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-001 Project"})
