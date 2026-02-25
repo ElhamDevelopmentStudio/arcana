@@ -15,7 +15,7 @@ from app.models import (
     SubSegmentTag,
 )
 from app.services.export import build_run_export
-from app.services.llm_router import LLMRequest, LLMRouter
+from app.services.llm_router import LLMRequest, LLMRouter, get_provider_runtime_settings
 from app.services.character_merge import normalize_candidate_key
 from app.services.character_analytics import (
     build_character_occurrence_analytics,
@@ -521,7 +521,11 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         return
 
     settings = get_settings()
-    router = LLMRouter(openrouter_base_url=settings.openrouter_base_url)
+    runtime_base_url, runtime_model_identifier, runtime_api_key = get_provider_runtime_settings(
+        settings=settings,
+        provider_name=provider,
+    )
+    router = LLMRouter(openrouter_base_url=runtime_base_url)
     request = LLMRequest(
         request_id=str(uuid4()),
         project_id=project.id,
@@ -534,8 +538,8 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
     response = router.call(
         request=request,
         provider_name=provider,
-        model_identifier=settings.openrouter_model,
-        api_key=settings.openrouter_api_key,
+        model_identifier=runtime_model_identifier,
+        api_key=runtime_api_key,
     )
 
     detail = response.raw_output if response.success_flag else response.error_code

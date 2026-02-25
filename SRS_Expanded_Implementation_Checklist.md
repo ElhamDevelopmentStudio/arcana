@@ -294,7 +294,7 @@ Definition of done for each task:
 - [X] [LLM-004] Add confidence-threshold trigger for escalation.
 - [X] [LLM-005] Add ambiguity-flag trigger for escalation.
 - [X] [LLM-006] Add user “deep semantic refinement” opt-in trigger.
-- [ ] [LLM-007] Add provider registry entries for SiliconFlow.
+- [x] [LLM-007] Add provider registry entries for SiliconFlow.
 - [ ] [LLM-008] Add provider registry entries for Groq.
 - [ ] [LLM-009] Add provider registry entries for OpenRouter.
 - [ ] [LLM-010] Add per-provider request count tracking.

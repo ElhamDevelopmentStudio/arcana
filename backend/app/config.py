@@ -18,6 +18,9 @@ class Settings(BaseSettings):
         default="https://openrouter.ai/api/v1",
         alias="OPENROUTER_BASE_URL",
     )
+    siliconflow_api_key: str | None = Field(default=None, alias="SILICONFLOW_API_KEY")
+    siliconflow_model: str = Field(default="deepseek-ai/DeepSeek-V3", alias="SILICONFLOW_MODEL")
+    siliconflow_base_url: str = Field(default="https://api.siliconflow.cn/v1", alias="SILICONFLOW_BASE_URL")
     enable_epub_ingestion: bool = Field(default=False, alias="ENABLE_EPUB_INGESTION")
     normalize_quote_style: Literal["straight", "curly"] = Field(default="straight", alias="NORMALIZE_QUOTE_STYLE")
     contradiction_review_threshold: float = Field(
