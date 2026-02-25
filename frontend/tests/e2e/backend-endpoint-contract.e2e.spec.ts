@@ -348,6 +348,14 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
           Object.hasOwn((segment as Record<string, unknown>).confidence as Record<string, unknown>, 'speaker'),
       ),
     ).toBe(true);
+    expect(
+      exportPayload.segments.every(
+        (segment) =>
+          Object.hasOwn(segment as Record<string, unknown>, 'emotion_primary_label') &&
+          Object.hasOwn(segment as Record<string, unknown>, 'emotion_secondary_label') &&
+          Object.hasOwn((segment as Record<string, unknown>).confidence as Record<string, unknown>, 'emotion'),
+      ),
+    ).toBe(true);
 
     const pronunciationScopes: Array<[string, string, string, string]> = [
       ['global', 'global', 'Nimble', 'Nim-ble'],
@@ -614,5 +622,55 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(resolvedSegment?.speaker_id).toBeGreaterThan(0);
     expect(typeof resolvedSegment?.confidence.speaker).toBe('number');
     expect(resolvedSegment?.confidence.speaker).toBeGreaterThan(0.0);
+  });
+
+  test('export includes emotion labels and valence-intensity details for real run', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-emotion-tags'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'emotion-tags.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('Chapter 1\nCold rain fell on a ruined gate.'),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+    expect(exportResponse.status()).toBe(200);
+    const exportPayload = (await exportResponse.json()) as {
+      segments: Array<{
+        emotion_valence: number;
+        emotion_intensity: number;
+        emotion_primary_label: string;
+        emotion_secondary_label: string;
+        confidence: { emotion?: number };
+      }>;
+    };
+
+    expect(exportPayload.segments.length).toBeGreaterThan(0);
+    const segment = exportPayload.segments[0];
+    expect(typeof segment.emotion_valence).toBe('number');
+    expect(typeof segment.emotion_intensity).toBe('number');
+    expect(Math.abs(segment.emotion_intensity)).toBeGreaterThanOrEqual(0);
+    expect(segment.emotion_primary_label).toMatch(/(positive|negative|neutral)/);
+    expect(segment.emotion_secondary_label).toBeTruthy();
+    expect(typeof segment.confidence.emotion).toBe('number');
   });
 });

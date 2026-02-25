@@ -280,6 +280,8 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "voice_id": voice_id,
                 "emotion_valence": tags["emotion_valence"],
                 "emotion_intensity": tags["emotion_intensity"],
+                "emotion_primary_label": tags["emotion_primary_label"],
+                "emotion_secondary_label": tags["emotion_secondary_label"],
                 "confidence": {
                     "speaker": tags["speaker_confidence"],
                     "emotion": tags["emotion_confidence"],
