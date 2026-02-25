@@ -285,7 +285,7 @@ Definition of done for each task:
 - [x] [AUTH-012] Output confidence for chapter type classification.
 - [x] [AUTH-013] Output reasons/features used for each chapter type.
 - [x] [AUTH-014] Build author-mode report export endpoint.
-- [ ] [AUTH-015] Add test fixtures for each warning type.
+- [x] [AUTH-015] Add test fixtures for each warning type.
 
 ## 4.12 LLM Routing and Quota (Ref: SRS.md §4.12)
 - [ ] [LLM-001] Add LLM usage feature flag per project.
