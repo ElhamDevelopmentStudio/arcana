@@ -17,6 +17,7 @@ class Project(Base):
     selected_modes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     configuration_snapshot_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     voice_config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    ingestion_log_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     ingestion_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

@@ -71,6 +71,7 @@ Ingestion title fallback behavior:
 - EPUB ingestion is toggle-controlled (`ENABLE_EPUB_INGESTION`) and currently wired to a pluggable parser stub.
 - Text ingestion performs encoding detection before decode (BOM + UTF-8/UTF-16 heuristics + cp1252 fallback).
 - All ingestion inputs are normalized to UTF-8-safe internal strings before chapter persistence (`chapter_title`, `raw_text`).
+- Encoding anomalies are persisted in `projects.ingestion_log_json.warnings` and copied into `runs.config_json.ingestion_warnings`.
 - Mode catalog includes `mode_profiles` with default run-config values per mode.
 
 ## API Domain Terms

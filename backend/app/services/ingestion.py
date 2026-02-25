@@ -18,8 +18,13 @@ ENCODING_BOM_MAP: tuple[tuple[bytes, str, float], ...] = (
 
 
 def decode_text(raw_bytes: bytes) -> str:
+    decoded_text, _encoding, _confidence = decode_text_with_metadata(raw_bytes)
+    return decoded_text
+
+
+def decode_text_with_metadata(raw_bytes: bytes) -> tuple[str, str, float]:
     encoding, _confidence = detect_text_encoding(raw_bytes)
-    return to_internal_utf8(raw_bytes.decode(encoding, errors="replace"))
+    return (to_internal_utf8(raw_bytes.decode(encoding, errors="replace")), encoding, _confidence)
 
 
 def detect_chapters(raw_text: str) -> list[tuple[str, str]]:
@@ -116,3 +121,21 @@ def detect_text_encoding(raw_bytes: bytes) -> tuple[str, float]:
 
 def to_internal_utf8(value: str) -> str:
     return value.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+
+
+def build_encoding_warning(source: str, encoding: str, confidence: float) -> dict[str, str | float] | None:
+    normalized_encoding = encoding.strip().lower()
+    if normalized_encoding in {"utf-8", "utf-8-sig"} and confidence >= 0.9:
+        return None
+
+    message = (
+        f"Decoded {source} using {normalized_encoding} "
+        f"(confidence {confidence:.2f}); normalized to UTF-8 internal form."
+    )
+    return {
+        "source": source,
+        "encoding": normalized_encoding,
+        "confidence": round(confidence, 4),
+        "level": "warning",
+        "message": message,
+    }

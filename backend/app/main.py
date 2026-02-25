@@ -27,11 +27,14 @@ from app.services.characters import parse_character_file
 from app.services.epub_ingestion import extract_epub_chapters
 from app.services.export import build_run_export
 from app.services.ingestion import (
+    build_encoding_warning,
     chapter_filename_sort_key,
     chapter_title_from_filename,
     decode_text,
+    decode_text_with_metadata,
     detect_chapters,
     detect_title_with_fallback,
+    detect_text_encoding,
     normalize_markdown_for_ingestion,
     to_internal_utf8,
 )
@@ -99,6 +102,20 @@ def _build_initial_configuration_snapshot_id(project_id: int) -> str:
 def _project_title_needs_fallback(title: str) -> bool:
     normalized = title.strip().lower()
     return normalized in {"", "untitled", "untitled project", "new project"}
+
+
+def _update_project_ingestion_log(
+    project: Project,
+    source: str,
+    warnings: list[dict[str, str | float]],
+) -> None:
+    log_json = dict(project.ingestion_log_json or {})
+    existing_warnings = list(log_json.get("warnings", []))
+    existing_warnings.extend(warnings)
+    log_json["warnings"] = existing_warnings
+    log_json["source"] = source
+    log_json["updated_at"] = datetime.now(timezone.utc).isoformat()
+    project.ingestion_log_json = log_json
 
 
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -181,9 +198,13 @@ def ingest_txt(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .txt files are supported")
 
     payload = file.file.read()
-    raw_text = decode_text(payload)
+    raw_text, encoding, confidence = decode_text_with_metadata(payload)
     detected_title = detect_title_with_fallback(raw_text, filename=filename)
     chapters = detect_chapters(raw_text)
+    warnings: list[dict[str, str | float]] = []
+    txt_warning = build_encoding_warning("txt", encoding, confidence)
+    if txt_warning is not None:
+        warnings.append(txt_warning)
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -203,6 +224,7 @@ def ingest_txt(
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
+    _update_project_ingestion_log(project, source="txt", warnings=warnings)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -228,10 +250,14 @@ def ingest_markdown(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .md or .markdown files are supported")
 
     payload = file.file.read()
-    markdown_text = decode_text(payload)
+    markdown_text, encoding, confidence = decode_text_with_metadata(payload)
     normalized_source = normalize_markdown_for_ingestion(markdown_text)
     detected_title = detect_title_with_fallback(normalized_source, filename=filename)
     chapters = detect_chapters(normalized_source)
+    warnings: list[dict[str, str | float]] = []
+    markdown_warning = build_encoding_warning("markdown", encoding, confidence)
+    if markdown_warning is not None:
+        warnings.append(markdown_warning)
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -250,6 +276,7 @@ def ingest_markdown(
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
+    _update_project_ingestion_log(project, source="markdown", warnings=warnings)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -309,6 +336,7 @@ def ingest_epub(
         project.title = to_internal_utf8(
             chapters[0][0].strip() or detect_title_with_fallback("", filename=filename)
         )
+    _update_project_ingestion_log(project, source="epub", warnings=[])
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -334,12 +362,18 @@ def ingest_chapters_dir(
     sorted_files = sorted(files, key=lambda upload: chapter_filename_sort_key(upload.filename or ""))
 
     chapter_rows: list[tuple[str, str]] = []
+    warnings: list[dict[str, str | float]] = []
     for upload in sorted_files:
         filename = upload.filename or ""
         if not filename.lower().endswith(".txt"):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chapter directory only supports .txt files")
 
-        content = decode_text(upload.file.read()).strip()
+        payload = upload.file.read()
+        content = decode_text(payload).strip()
+        encoding, confidence = detect_text_encoding(payload)
+        directory_warning = build_encoding_warning(f"chapters-dir:{filename}", encoding, confidence)
+        if directory_warning is not None:
+            warnings.append(directory_warning)
         if not content:
             continue
 
@@ -368,6 +402,7 @@ def ingest_chapters_dir(
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(chapter_rows[0][0])
+    _update_project_ingestion_log(project, source="chapters-dir", warnings=warnings)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -448,6 +483,7 @@ def create_run(
 
     explicit_overrides = payload.model_dump(exclude={"mode"}, exclude_unset=True)
     config_snapshot = build_run_config_snapshot(mode=payload.mode, overrides=explicit_overrides)
+    config_snapshot["ingestion_warnings"] = list((project.ingestion_log_json or {}).get("warnings", []))
 
     project.selected_mode = str(config_snapshot["mode"])
     project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)
