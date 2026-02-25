@@ -282,7 +282,7 @@ Definition of done for each task:
 - [x] [AUTH-009] Implement severity scoring for each flag.
 - [x] [AUTH-010] Attach evidence trace to each flag.
 - [x] [AUTH-011] Implement chapter type classifier (`setup/build-up/confrontation/resolution/transitional`).
-- [ ] [AUTH-012] Output confidence for chapter type classification.
+- [x] [AUTH-012] Output confidence for chapter type classification.
 - [ ] [AUTH-013] Output reasons/features used for each chapter type.
 - [ ] [AUTH-014] Build author-mode report export endpoint.
 - [ ] [AUTH-015] Add test fixtures for each warning type.
