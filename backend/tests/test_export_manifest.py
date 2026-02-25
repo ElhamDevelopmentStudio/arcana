@@ -1032,6 +1032,263 @@ def test_export_json_includes_chapter_level_character_dominance() -> None:
             assert chapter_report["key_characters"] == expected_distribution[:3]
 
 
+def test_export_json_includes_character_cooccurrence_graph() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-010 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        characters_payload = {
+            "characters": [
+                {
+                    "name": "Alice",
+                    "verbalized_form": "Alice",
+                    "gender": "female",
+                    "aliases": ["A"],
+                    "source": "manual",
+                    "confidence": 1.0,
+                },
+                {
+                    "name": "Bob",
+                    "verbalized_form": "Bob",
+                    "gender": "male",
+                    "aliases": ["B"],
+                    "source": "manual",
+                    "confidence": 1.0,
+                },
+                {
+                    "name": "Charlie",
+                    "verbalized_form": "Charlie",
+                    "gender": "male",
+                    "aliases": ["C"],
+                    "source": "manual",
+                    "confidence": 1.0,
+                },
+            ]
+        }
+        assert client.put(f"/api/projects/{project_id}/characters", json=characters_payload).status_code == 200
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "\"Hello, I have been waiting at the gate for you,\" Alice said.\n"
+                            "\"No, Bob is ready now,\" Bob said.\n"
+                            "\"Then listen carefully, Charlie, we move at dusk,\" Charlie said.\n"
+                            "\"And now we leave,\" Alice said.\n\n"
+                            "Chapter 2\n"
+                            "\"Hold steady, everyone,\" Bob said. \"I am with you,\" Charlie said.\n"
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        graph_report = academic_reports.get("character_cooccurrence_graph")
+        assert isinstance(graph_report, dict)
+        nodes = graph_report.get("nodes")
+        edges = graph_report.get("edges")
+        metadata = graph_report.get("metadata")
+        assert isinstance(nodes, list)
+        assert isinstance(edges, list)
+        assert isinstance(metadata, dict)
+
+        node_by_key = {
+            node.get("character_key"): node
+            for node in nodes
+            if isinstance(node.get("character_key"), str)
+        }
+        assert set(node_by_key) == {"alice", "bob", "charlie"}
+
+        for key in {"alice", "bob", "charlie"}:
+            node = node_by_key[key]
+            assert node["character_label"] == key.capitalize() if len(key) > 0 else key
+            assert isinstance(node["segment_count"], int)
+            assert node["segment_count"] >= 1
+            assert node["chapter_count"] >= 1
+            assert isinstance(node["chapter_ids"], list)
+            assert len(node["chapter_ids"]) >= 1
+            assert node["adjacency_weight"] >= 0
+
+        edge_by_pair = {
+            (edge.get("source"), edge.get("target")): edge
+            for edge in edges
+            if isinstance(edge.get("source"), str) and isinstance(edge.get("target"), str)
+        }
+        assert edge_by_pair.get(("alice", "bob"), {}).get("co_occurrence_count") == 1
+        assert edge_by_pair.get(("alice", "charlie"), {}).get("co_occurrence_count") == 1
+        assert edge_by_pair.get(("bob", "charlie"), {}).get("co_occurrence_count") == 1
+
+        for edge in edges:
+            assert edge["source"] < edge["target"]
+            assert edge["co_occurrence_count"] >= 1
+            assert edge["weight"] == edge["co_occurrence_count"]
+            assert isinstance(edge["chapter_ids"], list)
+            assert edge["chapter_count"] == len(edge["chapter_ids"])
+
+        assert metadata["node_count"] == len(nodes)
+        assert metadata["edge_count"] == len(edges)
+        assert metadata["undirected"] is True
+        assert metadata["scope"] == "adjacent_speaker_transitions_within_chapter"
+
+
+def test_export_json_includes_character_cooccurrence_centrality_table() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-011 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        characters_payload = {
+            "characters": [
+                {
+                    "name": "Alice",
+                    "verbalized_form": "Alice",
+                    "gender": "female",
+                    "aliases": ["A"],
+                    "source": "manual",
+                    "confidence": 1.0,
+                },
+                {
+                    "name": "Bob",
+                    "verbalized_form": "Bob",
+                    "gender": "male",
+                    "aliases": ["B"],
+                    "source": "manual",
+                    "confidence": 1.0,
+                },
+                {
+                    "name": "Charlie",
+                    "verbalized_form": "Charlie",
+                    "gender": "male",
+                    "aliases": ["C"],
+                    "source": "manual",
+                    "confidence": 1.0,
+                },
+            ]
+        }
+        assert client.put(f"/api/projects/{project_id}/characters", json=characters_payload).status_code == 200
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "\"Hello, I have been waiting at the gate for you,\" Alice said.\n"
+                            "\"No, Bob is ready now,\" Bob said.\n"
+                            "\"Then listen carefully, Charlie, we move at dusk,\" Charlie said.\n"
+                            "\"And now we leave,\" Alice said.\n"
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        centrality = academic_reports.get("character_cooccurrence_centrality_table")
+        assert isinstance(centrality, dict)
+        table = centrality.get("metrics_table")
+        metadata = centrality.get("metadata")
+        assert isinstance(table, list)
+        assert isinstance(metadata, dict)
+
+        assert len(table) == 3
+        assert metadata["node_count"] == 3
+        assert metadata["edge_count"] == 3
+        assert metadata["centrality_metrics"] == [
+            "degree",
+            "degree_centrality",
+            "weighted_degree",
+            "weighted_degree_centrality",
+            "closeness_centrality",
+            "betweenness_centrality",
+        ]
+        assert metadata["generated_by"] == "export_academic_centrality"
+        assert metadata["distance_transform"] == "inverse_weight"
+
+        rows_by_character = {
+            row.get("character_key"): row
+            for row in table
+            if isinstance(row.get("character_key"), str)
+        }
+        assert set(rows_by_character) == {"alice", "bob", "charlie"}
+
+        alice_row = rows_by_character["alice"]
+        bob_row = rows_by_character["bob"]
+        charlie_row = rows_by_character["charlie"]
+
+        assert alice_row["character_label"] == "Alice"
+        assert bob_row["character_label"] == "Bob"
+        assert charlie_row["character_label"] == "Charlie"
+
+        assert alice_row["degree"] == 2
+        assert bob_row["degree"] == 2
+        assert charlie_row["degree"] == 2
+
+        assert alice_row["weighted_degree"] == 2.0
+        assert bob_row["weighted_degree"] == 2.0
+        assert charlie_row["weighted_degree"] == 2.0
+
+        assert alice_row["degree_centrality"] == 1.0
+        assert bob_row["degree_centrality"] == 1.0
+        assert charlie_row["degree_centrality"] == 1.0
+
+        assert alice_row["weighted_degree_centrality"] == 1.0
+        assert bob_row["weighted_degree_centrality"] == 1.0
+        assert charlie_row["weighted_degree_centrality"] == 1.0
+
+        assert alice_row["closeness_centrality"] == 1.0
+        assert bob_row["closeness_centrality"] == 1.0
+        assert charlie_row["closeness_centrality"] == 1.0
+
+        assert bob_row["betweenness_centrality"] == 0.0
+        assert alice_row["betweenness_centrality"] == 0.0
+        assert charlie_row["betweenness_centrality"] == 0.0
+
+        ranked = [row["character_key"] for row in table]
+        assert ranked == ["alice", "bob", "charlie"]
+        assert table[0]["rank"] == 1
+        assert table[1]["rank"] == 2
+        assert table[2]["rank"] == 3
+
+
 def test_export_json_includes_warning_report_summary() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})

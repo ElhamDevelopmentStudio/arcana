@@ -3,6 +3,7 @@ import io
 import json
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from math import inf
 from typing import Any
 
 from sqlalchemy import and_, or_, select
@@ -813,6 +814,329 @@ def _build_chapter_level_character_dominance(
     return chapter_level_character_dominance
 
 
+def _build_character_cooccurrence_graph(segments: list[dict[str, Any]]) -> dict[str, Any]:
+    node_segments: dict[str, dict[str, Any]] = {}
+    edges: dict[tuple[str, str], dict[str, Any]] = {}
+    previous_speaker: str | None = None
+    previous_chapter_id: int | None = None
+
+    for segment in segments:
+        chapter_id = segment.get("chapter_id")
+        if not isinstance(chapter_id, int):
+            continue
+
+        speaker = segment.get("speaker")
+        if not isinstance(speaker, str):
+            continue
+        normalized_speaker = speaker.strip()
+        if not normalized_speaker or normalized_speaker.lower() == "unknown":
+            previous_speaker = None
+            previous_chapter_id = chapter_id
+            continue
+
+        speaker_key = normalized_speaker.lower()
+        speaker_id = segment.get("speaker_id")
+        if not isinstance(speaker_id, int):
+            speaker_id = None
+
+        node = node_segments.setdefault(
+            speaker_key,
+            {
+                "character_key": speaker_key,
+                "character_label": normalized_speaker,
+                "speaker_id": speaker_id,
+                "segment_count": 0,
+                "chapter_ids": [],
+            },
+        )
+        node["segment_count"] = int(node.get("segment_count", 0)) + 1
+        if chapter_id not in node["chapter_ids"]:
+            node["chapter_ids"].append(chapter_id)
+
+        if (
+            previous_speaker is not None
+            and previous_chapter_id == chapter_id
+            and previous_speaker != speaker_key
+        ):
+            source = min(previous_speaker, speaker_key)
+            target = max(previous_speaker, speaker_key)
+            edge = edges.setdefault(
+                (source, target),
+                {
+                    "source": source,
+                    "target": target,
+                    "co_occurrence_count": 0,
+                    "chapter_ids": [],
+                },
+            )
+            edge["co_occurrence_count"] = int(edge["co_occurrence_count"]) + 1
+            if chapter_id not in edge["chapter_ids"]:
+                edge["chapter_ids"].append(chapter_id)
+
+        previous_speaker = speaker_key
+        previous_chapter_id = chapter_id
+
+    for node in node_segments.values():
+        node["chapter_ids"] = sorted(node["chapter_ids"])
+
+    for edge in edges.values():
+        edge["chapter_ids"] = sorted(edge["chapter_ids"])
+
+    degree_by_node: dict[str, int] = {key: 0 for key in node_segments}
+    for edge in edges.values():
+        weight = int(edge["co_occurrence_count"])
+        degree_by_node[edge["source"]] = degree_by_node[edge["source"]] + weight
+        degree_by_node[edge["target"]] = degree_by_node[edge["target"]] + weight
+
+    nodes: list[dict[str, Any]] = []
+    for key in sorted(node_segments):
+        node = node_segments[key]
+        nodes.append(
+            {
+                **node,
+                "chapter_count": len(node["chapter_ids"]),
+                "adjacency_weight": degree_by_node.get(key, 0),
+            }
+        )
+
+    normalized_edges: list[dict[str, Any]] = []
+    for source, target in sorted(edges.keys()):
+        edge = edges[(source, target)]
+        normalized_edges.append(
+            {
+                "source": source,
+                "target": target,
+                "co_occurrence_count": edge["co_occurrence_count"],
+                "weight": int(edge["co_occurrence_count"]),
+                "chapter_ids": edge["chapter_ids"],
+                "chapter_count": len(edge["chapter_ids"]),
+            }
+        )
+
+    return {
+        "nodes": nodes,
+        "edges": normalized_edges,
+        "metadata": {
+            "node_count": len(nodes),
+            "edge_count": len(normalized_edges),
+            "scope": "adjacent_speaker_transitions_within_chapter",
+            "undirected": True,
+            "generated_by": "export_academic_graph",
+        },
+    }
+
+
+def _build_character_cooccurrence_centrality_table(graph_report: dict[str, Any]) -> dict[str, Any]:
+    nodes = [node for node in graph_report.get("nodes", []) if isinstance(node, dict)]
+    edges = [edge for edge in graph_report.get("edges", []) if isinstance(edge, dict)]
+
+    if not nodes:
+        return {
+            "metrics_table": [],
+            "metadata": {
+                "node_count": 0,
+                "edge_count": 0,
+                "centrality_metrics": [
+                    "degree",
+                    "degree_centrality",
+                    "weighted_degree",
+                    "weighted_degree_centrality",
+                    "closeness_centrality",
+                    "betweenness_centrality",
+                ],
+                "generated_by": "export_academic_centrality",
+            },
+        }
+
+    node_lookup: dict[str, dict[str, Any]] = {}
+    node_keys: list[str] = []
+    for node in nodes:
+        node_key = node.get("character_key")
+        if isinstance(node_key, str):
+            node_lookup[node_key] = node
+            node_keys.append(node_key)
+
+    if not node_keys:
+        return {
+            "metrics_table": [],
+            "metadata": {
+                "node_count": 0,
+                "edge_count": len(edges),
+                "centrality_metrics": [
+                    "degree",
+                    "degree_centrality",
+                    "weighted_degree",
+                    "weighted_degree_centrality",
+                    "closeness_centrality",
+                    "betweenness_centrality",
+                ],
+                "generated_by": "export_academic_centrality",
+            },
+        }
+
+    node_set = set(node_keys)
+    adjacency: dict[str, dict[str, float]] = {node_key: {} for node_key in node_set}
+
+    for edge in edges:
+        source = edge.get("source")
+        target = edge.get("target")
+        weight = edge.get("co_occurrence_count", 0)
+        if not isinstance(source, str) or not isinstance(target, str):
+            continue
+        if source not in node_set or target not in node_set or source == target:
+            continue
+
+        raw_weight = float(weight) if isinstance(weight, (int, float, str)) else 0.0
+        if raw_weight <= 0:
+            raw_weight = 0.0
+        adjacency[source][target] = adjacency[source].get(target, 0.0) + raw_weight
+        adjacency[target][source] = adjacency[target].get(source, 0.0) + raw_weight
+
+    node_count = len(node_set)
+
+    degree: dict[str, int] = {}
+    weighted_degree: dict[str, float] = {}
+    for node_key in node_keys:
+        neighbors = adjacency.get(node_key, {})
+        degree[node_key] = len(neighbors)
+        weighted_degree[node_key] = round(sum(neighbors.values()), 4)
+
+    closeness_centrality: dict[str, float] = {}
+    for start_key in node_keys:
+        distances: dict[str, float] = {node_key: inf for node_key in node_keys}
+        distances[start_key] = 0.0
+        settled: set[str] = set()
+
+        while len(settled) < node_count:
+            current_key = None
+            current_distance = inf
+            for candidate_key, candidate_distance in distances.items():
+                if candidate_key in settled or candidate_distance >= current_distance:
+                    continue
+                current_key = candidate_key
+                current_distance = candidate_distance
+
+            if current_key is None or current_distance == inf:
+                break
+
+            settled.add(current_key)
+            for neighbor_key, raw_weight in adjacency.get(current_key, {}).items():
+                if neighbor_key in settled:
+                    continue
+                distance_through = current_distance + (1.0 / raw_weight if raw_weight > 0 else inf)
+                if distance_through < distances[neighbor_key]:
+                    distances[neighbor_key] = distance_through
+
+        reachable_distances = [distance for key, distance in distances.items() if key != start_key and distance < inf]
+        reachable_count = len(reachable_distances)
+        if reachable_count == 0:
+            closeness_centrality[start_key] = 0.0
+            continue
+
+        closeness_sum = sum(reachable_distances)
+        if closeness_sum <= 0:
+            closeness_centrality[start_key] = 0.0
+            continue
+        closeness_centrality[start_key] = round((reachable_count / closeness_sum) * ((reachable_count) / (node_count - 1)), 4)
+
+    betweenness: dict[str, float] = {node_key: 0.0 for node_key in node_keys}
+    for source_key in node_keys:
+        stack: list[str] = []
+        predecessors: dict[str, list[str]] = {node_key: [] for node_key in node_keys}
+        sigma: dict[str, float] = {node_key: 0.0 for node_key in node_keys}
+        distance: dict[str, float] = {node_key: inf for node_key in node_keys}
+        sigma[source_key] = 1.0
+        distance[source_key] = 0.0
+        queue: list[tuple[float, str]] = [(0.0, source_key)]
+
+        while queue:
+            current_distance, current_key = queue.pop(0)
+            if current_distance > distance[current_key]:
+                continue
+            stack.append(current_key)
+            for neighbor_key, raw_weight in adjacency.get(current_key, {}).items():
+                if raw_weight <= 0:
+                    continue
+                path_distance = current_distance + (1.0 / raw_weight)
+                if path_distance < distance[neighbor_key] - 1e-12:
+                    distance[neighbor_key] = path_distance
+                    queue.append((path_distance, neighbor_key))
+                    queue.sort(key=lambda item: item[0])
+                    sigma[neighbor_key] = sigma[current_key]
+                    predecessors[neighbor_key] = [current_key]
+                elif abs(path_distance - distance[neighbor_key]) <= 1e-12:
+                    sigma[neighbor_key] += sigma[current_key]
+                    predecessors[neighbor_key].append(current_key)
+
+        dependencies: dict[str, float] = {node_key: 0.0 for node_key in node_keys}
+        while stack:
+            current_key = stack.pop()
+            current_sigma = sigma[current_key]
+            for predecessor_key in predecessors[current_key]:
+                predecessors_share = sigma[predecessor_key] / current_sigma if current_sigma > 0 else 0.0
+                dependencies[predecessor_key] += predecessors_share * (1.0 + dependencies[current_key])
+            if current_key != source_key:
+                betweenness[current_key] += dependencies[current_key]
+
+    if node_count > 2:
+        normalization = 2.0 / ((node_count - 1) * (node_count - 2))
+        for node_key in node_keys:
+            betweenness[node_key] = round(betweenness[node_key] * normalization, 4)
+    else:
+        for node_key in node_keys:
+            betweenness[node_key] = 0.0
+
+    max_degree_possible = max(node_count - 1, 1)
+    max_weight = max(weighted_degree.values()) if weighted_degree else 0.0
+    max_weight = max_weight if max_weight > 0 else 1.0
+
+    metrics_table = []
+    for node_key in sorted(node_keys):
+        total_weight = weighted_degree.get(node_key, 0.0)
+        metrics_table.append(
+            {
+                "character_key": node_key,
+                "character_label": node_lookup.get(node_key, {}).get("character_label", node_key),
+                "speaker_id": node_lookup.get(node_key, {}).get("speaker_id"),
+                "degree": degree.get(node_key, 0),
+                "weighted_degree": round(total_weight, 4),
+                "degree_centrality": round(degree.get(node_key, 0) / max_degree_possible, 4),
+                "weighted_degree_centrality": round(total_weight / max_weight, 4),
+                "closeness_centrality": closeness_centrality.get(node_key, 0.0),
+                "betweenness_centrality": betweenness.get(node_key, 0.0),
+            }
+        )
+
+    metrics_table.sort(
+        key=lambda row: (
+            -row["degree_centrality"],
+            -row["weighted_degree"],
+            str(row["character_key"]).lower(),
+        )
+    )
+
+    for index, row in enumerate(metrics_table, start=1):
+        row["rank"] = index
+
+    return {
+        "metrics_table": metrics_table,
+        "metadata": {
+            "node_count": node_count,
+            "edge_count": len(edges),
+            "distance_transform": "inverse_weight",
+            "generated_by": "export_academic_centrality",
+            "centrality_metrics": [
+                "degree",
+                "degree_centrality",
+                "weighted_degree",
+                "weighted_degree_centrality",
+                "closeness_centrality",
+                "betweenness_centrality",
+            ],
+        },
+    }
+
+
 def _build_tension_peak_markers(
     smoothed_tension_curve: list[dict[str, Any]],
     major_prominence_threshold: float = 0.18,
@@ -1139,6 +1463,10 @@ def build_run_export(
         segments=segments,
         window_size=5,
     )
+    character_cooccurrence_graph = _build_character_cooccurrence_graph(segments=segments)
+    character_cooccurrence_centrality_table = _build_character_cooccurrence_centrality_table(
+        graph_report=character_cooccurrence_graph,
+    )
     ordered_by = ["chapter_index", "segment_index"]
     llm_calls = _load_run_llm_calls(session, run)
     ingestion_log = dict(project.ingestion_log_json or {})
@@ -1182,6 +1510,8 @@ def build_run_export(
                 segments=segments,
                 top_characters_limit=3,
             ),
+            "character_cooccurrence_graph": character_cooccurrence_graph,
+            "character_cooccurrence_centrality_table": character_cooccurrence_centrality_table,
             "chapter_level_raw_tension": _build_chapter_level_raw_tension(segments),
             "smoothed_tension_curve": smoothed_tension_curve,
             "tension_peak_markers": _build_tension_peak_markers(
