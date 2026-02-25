@@ -6,6 +6,7 @@ Frontend app for NIPE backend-backed workflow (project setup, ingestion, mode se
 
 - React + Vite
 - Tailwind CSS v4 (`@tailwindcss/vite`)
+- shadcn/ui baseline components (`src/components/ui/*`, `components.json`)
 - Axios (API client)
 - SWR (async data)
 - Zustand (UI state)
@@ -17,13 +18,17 @@ Frontend app for NIPE backend-backed workflow (project setup, ingestion, mode se
 ## Folder Structure
 
 - `src/main.tsx`: root bootstrap (`RouterProvider`, global styles)
-- `src/router/main.tsx`: main app routes
-- `src/router/auth.tsx`: auth route tree placeholder
+- `src/router/main-routes.tsx`: main app routes
+- `src/router/auth-routes.tsx`: auth route tree placeholder
 - `src/router/index.tsx`: combined route objects
 - `src/styles/globals.css`: global design system + Tailwind utility layers
+- `src/components/ui/*`: shadcn/ui primitive components
 - `src/shared/*`: reusable API/UI/lib primitives
 - `src/features/*`: feature modules
 - `src/app/*`: app-level schemas, config, and store
+- `tests/unit/*`: unit tests
+- `tests/integration/*`: integration tests
+- `tests/regression/*`: regression tests
 - `tests/e2e/*`: Playwright visual/e2e tests
 
 ## Run

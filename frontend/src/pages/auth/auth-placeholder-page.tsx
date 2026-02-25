@@ -1,5 +1,5 @@
-import Card from "@/shared/ui/Card";
-import StatusChip from "@/shared/ui/StatusChip";
+import Card from "@/shared/ui/card";
+import StatusChip from "@/shared/ui/status-chip";
 
 function AuthPlaceholderPage() {
   return (

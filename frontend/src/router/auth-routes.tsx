@@ -1,7 +1,7 @@
 import type { RouteObject } from "react-router-dom";
 
-import AuthLayout from "@/layouts/AuthLayout";
-import AuthPlaceholderPage from "@/pages/auth/AuthPlaceholderPage";
+import AuthLayout from "@/layouts/auth-layout";
+import AuthPlaceholderPage from "@/pages/auth/auth-placeholder-page";
 
 export const authRoutes: RouteObject[] = [
   {

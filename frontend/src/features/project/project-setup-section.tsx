@@ -1,10 +1,10 @@
 import type { FormEvent } from "react";
 
 import type { IngestionSource } from "@/app/types";
-import Button from "@/shared/ui/Button";
-import Card from "@/shared/ui/Card";
-import { SelectField, TextField } from "@/shared/ui/Field";
-import StatusChip from "@/shared/ui/StatusChip";
+import Button from "@/shared/ui/button";
+import Card from "@/shared/ui/card";
+import { SelectField, TextField } from "@/shared/ui/field";
+import StatusChip from "@/shared/ui/status-chip";
 
 type ProjectSetupSectionProps = {
   loading: boolean;

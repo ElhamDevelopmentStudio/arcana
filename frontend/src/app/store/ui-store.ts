@@ -21,7 +21,7 @@ type UiStoreState = {
 const initialUiState = {
   isBusy: false,
   messages: [],
-} as const;
+} satisfies Pick<UiStoreState, "isBusy" | "messages">;
 
 export const useUiStore = create<UiStoreState>((set) => ({
   ...initialUiState,

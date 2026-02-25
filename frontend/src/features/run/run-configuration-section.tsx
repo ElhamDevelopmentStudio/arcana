@@ -1,8 +1,8 @@
 import type { FormEvent } from "react";
 
-import Button from "@/shared/ui/Button";
-import Card from "@/shared/ui/Card";
-import { TextField } from "@/shared/ui/Field";
+import Button from "@/shared/ui/button";
+import Card from "@/shared/ui/card";
+import { TextField } from "@/shared/ui/field";
 
 type RunConfigurationSectionProps = {
   loading: boolean;

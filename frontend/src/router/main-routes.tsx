@@ -1,7 +1,7 @@
 import type { RouteObject } from "react-router-dom";
 
-import App from "@/App";
-import MainLayout from "@/layouts/MainLayout";
+import ControlDeckPage from "@/pages/main/control-deck-page";
+import MainLayout from "@/layouts/main-layout";
 
 export const mainRoutes: RouteObject[] = [
   {
@@ -10,7 +10,7 @@ export const mainRoutes: RouteObject[] = [
     children: [
       {
         index: true,
-        element: <App />,
+        element: <ControlDeckPage />,
       },
     ],
   },

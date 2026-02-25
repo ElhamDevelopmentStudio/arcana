@@ -1,15 +1,18 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import App, { pickModeFromCatalog, resolveModeOptions } from "./App";
-import { resetUiStoreForTests } from "@/app/store/uiStore";
+import { resetUiStoreForTests } from "@/app/store/ui-store";
+import ControlDeckPage from "@/pages/main/control-deck-page";
 import { NipeApiClient } from "@/shared/api/http";
 
-describe("MODE-004 post-ingestion mode selection UI", () => {
+describe("control deck mode flow integration", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    resetUiStoreForTests();
+    act(() => {
+      resetUiStoreForTests();
+    });
 
     vi.spyOn(NipeApiClient.prototype, "getModeCatalog").mockResolvedValue({
       modes: ["audiobook", "academic", "author", "custom"],
@@ -19,24 +22,14 @@ describe("MODE-004 post-ingestion mode selection UI", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
-    resetUiStoreForTests();
+    act(() => {
+      resetUiStoreForTests();
+    });
   });
 
-  it("unit: mode option helpers resolve and select expected values", () => {
-    expect(resolveModeOptions(null)).toEqual(["audiobook", "academic", "author", "custom"]);
-
-    const catalog = {
-      modes: ["audiobook", "academic", "author", "custom"],
-      default_mode: "academic",
-      persisted_in: ["projects.selected_mode", "runs.config_json.mode"],
-    };
-
-    expect(pickModeFromCatalog(catalog, "author")).toBe("author");
-    expect(pickModeFromCatalog(catalog, "unknown")).toBe("academic");
-  });
-
-  it("integration: mode selector unlocks only after TXT ingestion", async () => {
+  it("keeps mode selector locked until TXT ingestion is complete", async () => {
     vi.spyOn(NipeApiClient.prototype, "createProject").mockResolvedValue({
       id: 1,
       title: "Mode Integration",
@@ -50,11 +43,9 @@ describe("MODE-004 post-ingestion mode selection UI", () => {
     });
 
     const user = userEvent.setup();
-    render(<App />);
+    render(<ControlDeckPage />);
 
-    const createButton = await screen.findByRole("button", { name: "Create Project" });
-    await user.click(createButton);
-
+    await user.click(await screen.findByRole("button", { name: "Create Project" }));
     await screen.findByText(/Project ID: 1/);
 
     const modeSelect = await screen.findByTestId("mode-select");
@@ -65,22 +56,16 @@ describe("MODE-004 post-ingestion mode selection UI", () => {
     if (!txtInput) {
       throw new Error("TXT input not found");
     }
-    const txtFile = new File(["Chapter 1\nSample"], "sample.txt", { type: "text/plain" });
-    await user.upload(txtInput, txtFile);
 
+    await user.upload(txtInput, new File(["Chapter 1\nSample"], "sample.txt", { type: "text/plain" }));
     await user.click(within(setupCard).getByRole("button", { name: "Upload TXT" }));
 
     await screen.findByText(/Chapters detected: 2/);
     expect(await screen.findByText("Detected chapters: 2")).toBeInTheDocument();
     expect(await screen.findByTestId("mode-select")).not.toBeDisabled();
-
-    const options = Array.from(within(await screen.findByTestId("mode-select")).getAllByRole("option")).map(
-      (option) => option.textContent
-    );
-    expect(options).toEqual(["audiobook", "academic", "author", "custom"]);
   });
 
-  it("e2e: selected mode is sent in run payload after ingestion", async () => {
+  it("sends selected mode in run payload", async () => {
     vi.spyOn(NipeApiClient.prototype, "createProject").mockResolvedValue({
       id: 1,
       title: "Mode E2E",
@@ -120,7 +105,7 @@ describe("MODE-004 post-ingestion mode selection UI", () => {
     });
 
     const user = userEvent.setup();
-    render(<App />);
+    render(<ControlDeckPage />);
 
     await user.click(await screen.findByRole("button", { name: "Create Project" }));
     await screen.findByText(/Project ID: 1/);
@@ -137,7 +122,6 @@ describe("MODE-004 post-ingestion mode selection UI", () => {
 
     await user.selectOptions(await screen.findByTestId("mode-select"), "author");
     await user.click(await screen.findByRole("button", { name: "Run Pipeline" }));
-
     await screen.findByText(/Segments produced: 3/);
 
     await waitFor(() => {
@@ -148,9 +132,5 @@ describe("MODE-004 post-ingestion mode selection UI", () => {
         })
       );
     });
-  });
-
-  it("regression: fallback mode ordering remains stable", () => {
-    expect(resolveModeOptions(null)).toEqual(["audiobook", "academic", "author", "custom"]);
   });
 });

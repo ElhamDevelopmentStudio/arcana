@@ -1,5 +1,7 @@
 import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
 
+import { Button as UiButton } from "@/components/ui/button";
+
 type ButtonProps = PropsWithChildren<
   ButtonHTMLAttributes<HTMLButtonElement> & {
     variant?: "primary" | "secondary" | "ghost";
@@ -7,13 +9,12 @@ type ButtonProps = PropsWithChildren<
 >;
 
 function Button({ variant = "primary", className, children, ...rest }: ButtonProps) {
+  const uiVariant = variant === "primary" ? "default" : variant === "secondary" ? "secondary" : "ghost";
+
   return (
-    <button
-      className={["ui-button", `ui-button--${variant}`, className].filter(Boolean).join(" ")}
-      {...rest}
-    >
+    <UiButton variant={uiVariant} className={className} {...rest}>
       {children}
-    </button>
+    </UiButton>
   );
 }
 

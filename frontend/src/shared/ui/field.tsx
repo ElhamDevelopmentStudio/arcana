@@ -1,5 +1,10 @@
 import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+
 type FieldProps = {
   label: string;
   hint?: string;
@@ -8,8 +13,8 @@ type FieldProps = {
 export function TextField({ label, hint, ...props }: FieldProps & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <label className="ui-field">
-      <span className="ui-field__label">{label}</span>
-      <input className="ui-input" {...props} />
+      <Label className="ui-field__label">{label}</Label>
+      <Input className="ui-input" {...props} />
       {hint ? <span className="ui-field__hint">{hint}</span> : null}
     </label>
   );
@@ -23,10 +28,10 @@ export function SelectField({
 }: FieldProps & SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <label className="ui-field">
-      <span className="ui-field__label">{label}</span>
-      <select className="ui-input" {...props}>
+      <Label className="ui-field__label">{label}</Label>
+      <Select className="ui-input" {...props}>
         {children}
-      </select>
+      </Select>
       {hint ? <span className="ui-field__hint">{hint}</span> : null}
     </label>
   );
@@ -39,8 +44,8 @@ export function TextareaField({
 }: FieldProps & TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <label className="ui-field">
-      <span className="ui-field__label">{label}</span>
-      <textarea className="ui-input ui-input--textarea" {...props} />
+      <Label className="ui-field__label">{label}</Label>
+      <Textarea className="ui-input ui-input--textarea" {...props} />
       {hint ? <span className="ui-field__hint">{hint}</span> : null}
     </label>
   );

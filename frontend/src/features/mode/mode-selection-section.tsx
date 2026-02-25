@@ -1,8 +1,8 @@
 import type { ModeCatalog } from "@/app/types";
-import Button from "@/shared/ui/Button";
-import Card from "@/shared/ui/Card";
-import { SelectField } from "@/shared/ui/Field";
-import StatusChip from "@/shared/ui/StatusChip";
+import Button from "@/shared/ui/button";
+import Card from "@/shared/ui/card";
+import { SelectField } from "@/shared/ui/field";
+import StatusChip from "@/shared/ui/status-chip";
 
 type ModeSelectionSectionProps = {
   loading: boolean;

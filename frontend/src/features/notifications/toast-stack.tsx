@@ -1,6 +1,6 @@
-import { useUiStore } from "@/app/store/uiStore";
+import { useUiStore } from "@/app/store/ui-store";
 
-import Button from "@/shared/ui/Button";
+import Button from "@/shared/ui/button";
 
 function ToastStack() {
   const messages = useUiStore((state) => state.messages);

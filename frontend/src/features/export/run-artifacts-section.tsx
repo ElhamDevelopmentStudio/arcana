@@ -1,8 +1,8 @@
 import type { ExportPayload, RunDetail } from "@/app/types";
 import { formatTimestamp } from "@/shared/lib/time";
-import Button from "@/shared/ui/Button";
-import Card from "@/shared/ui/Card";
-import StatusChip from "@/shared/ui/StatusChip";
+import Button from "@/shared/ui/button";
+import Card from "@/shared/ui/card";
+import StatusChip from "@/shared/ui/status-chip";
 
 type RunArtifactsSectionProps = {
   loading: boolean;

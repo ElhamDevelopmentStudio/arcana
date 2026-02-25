@@ -1,29 +1,29 @@
 import { FormEvent, Suspense, lazy, useEffect, useMemo, useState } from "react";
 
 import { getInitialApiBaseUrl } from "@/app/config/env";
-import { useUiStore } from "@/app/store/uiStore";
+import { useUiStore } from "@/app/store/ui-store";
 import type { ExportPayload, IngestionSource, ProjectRecord, RunDetail } from "@/app/types";
-import PageHeader from "@/features/layout/PageHeader";
-import { pickModeFromCatalog, resolveModeOptions } from "@/features/mode/modeCatalog";
-import { useModeCatalog } from "@/features/mode/useModeCatalog";
-import ToastStack from "@/features/notifications/ToastStack";
+import PageHeader from "@/features/layout/page-header";
+import { pickModeFromCatalog, resolveModeOptions } from "@/features/mode/mode-catalog";
+import { useModeCatalog } from "@/features/mode/use-mode-catalog";
+import ToastStack from "@/features/notifications/toast-stack";
 import { NipeApiClient } from "@/shared/api/http";
-import Button from "@/shared/ui/Button";
-import Card from "@/shared/ui/Card";
-import { TextField } from "@/shared/ui/Field";
-import StatusChip from "@/shared/ui/StatusChip";
+import Button from "@/shared/ui/button";
+import Card from "@/shared/ui/card";
+import { TextField } from "@/shared/ui/field";
+import StatusChip from "@/shared/ui/status-chip";
 
-const ProjectSetupSection = lazy(() => import("@/features/project/ProjectSetupSection"));
-const ModeSelectionSection = lazy(() => import("@/features/mode/ModeSelectionSection"));
-const CharacterImportSection = lazy(() => import("@/features/character/CharacterImportSection"));
-const RunConfigurationSection = lazy(() => import("@/features/run/RunConfigurationSection"));
-const RunArtifactsSection = lazy(() => import("@/features/export/RunArtifactsSection"));
+const ProjectSetupSection = lazy(() => import("@/features/project/project-setup-section"));
+const ModeSelectionSection = lazy(() => import("@/features/mode/mode-selection-section"));
+const CharacterImportSection = lazy(() => import("@/features/character/character-import-section"));
+const RunConfigurationSection = lazy(() => import("@/features/run/run-configuration-section"));
+const RunArtifactsSection = lazy(() => import("@/features/export/run-artifacts-section"));
 
 function SectionFallback() {
   return <div className="section-fallback">Loading section…</div>;
 }
 
-function App() {
+function ControlDeckPage() {
   const [apiBase, setApiBase] = useState(getInitialApiBaseUrl());
   const [projectTitle, setProjectTitle] = useState("Shadow Slave PoC");
   const [project, setProject] = useState<ProjectRecord | null>(null);
@@ -371,4 +371,4 @@ function App() {
   );
 }
 
-export default App;
+export default ControlDeckPage;
