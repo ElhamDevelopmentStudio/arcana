@@ -58,6 +58,7 @@ def test_integration_mode_switch_endpoint_persists_selected_mode() -> None:
         assert payload["project_id"] == project_id
         assert payload["previous_mode"] == "audiobook"
         assert payload["selected_mode"] == "academic"
+        assert payload["selected_modes"] == ["audiobook", "academic"]
         assert payload["chapter_count"] == 0
         assert payload["reused_ingested_corpus"] is False
         assert payload["stale_runs_marked"] == 0
@@ -103,6 +104,7 @@ def test_e2e_mode_switch_reuses_ingested_corpus_without_reingestion() -> None:
         payload = switch_resp.json()
         assert payload["previous_mode"] == "audiobook"
         assert payload["selected_mode"] == "author"
+        assert payload["selected_modes"] == ["audiobook", "author"]
         assert payload["chapter_count"] == 2
         assert payload["reused_ingested_corpus"] is True
         assert payload["stale_runs_marked"] == 0
@@ -136,6 +138,7 @@ def test_regression_mode_switch_response_snapshot() -> None:
             "project_id": project_id,
             "previous_mode": "audiobook",
             "selected_mode": "custom",
+            "selected_modes": ["audiobook", "custom"],
             "chapter_count": 0,
             "reused_ingested_corpus": False,
             "stale_runs_marked": 0,

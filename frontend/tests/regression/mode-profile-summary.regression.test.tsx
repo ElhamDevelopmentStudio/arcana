@@ -53,6 +53,7 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
       project_id: 101,
       previous_mode: 'audiobook',
       selected_mode: mode,
+      selected_modes: ['audiobook', mode],
       chapter_count: 12,
       reused_ingested_corpus: true,
       stale_runs_marked: 1,

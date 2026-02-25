@@ -14,6 +14,7 @@ Purpose:
 - allowed_modes: audiobook, academic, author, custom
 - default_mode: audiobook
 - project_mode_path: projects.selected_mode
+- project_selected_modes_path: projects.selected_modes
 - run_config_path: runs.config_json.mode
 - notes: mode enum values are lower-case and persisted at project level with per-run config snapshots.
 

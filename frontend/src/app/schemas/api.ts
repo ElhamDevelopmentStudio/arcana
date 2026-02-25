@@ -20,6 +20,7 @@ export const projectSchema = z.object({
   id: z.number().int(),
   title: z.string(),
   selected_mode: z.string(),
+  selected_modes: z.array(z.string()),
   ingestion_timestamp: z.string().nullable(),
   created_at: z.string(),
 });
@@ -28,6 +29,7 @@ export const projectModeSwitchResponseSchema = z.object({
   project_id: z.number().int(),
   previous_mode: z.string(),
   selected_mode: z.string(),
+  selected_modes: z.array(z.string()),
   chapter_count: z.number().int().nonnegative(),
   reused_ingested_corpus: z.boolean(),
   stale_runs_marked: z.number().int().nonnegative(),

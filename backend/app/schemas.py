@@ -14,6 +14,7 @@ class ProjectResponse(BaseModel):
     id: int
     title: str
     selected_mode: str
+    selected_modes: list[str]
     ingestion_timestamp: datetime | None
     created_at: datetime
 
@@ -40,6 +41,7 @@ class ProjectModeSwitchResponse(BaseModel):
     project_id: int
     previous_mode: str
     selected_mode: str
+    selected_modes: list[str]
     chapter_count: int
     reused_ingested_corpus: bool
     stale_runs_marked: int

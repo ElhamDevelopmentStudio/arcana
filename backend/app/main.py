@@ -75,11 +75,19 @@ def _get_run_or_404(session: Session, project_id: int, run_id: int) -> Run:
     return run
 
 
+def _merge_selected_modes(existing_modes: list[str] | None, mode: str) -> list[str]:
+    merged = list(existing_modes or [])
+    if mode not in merged:
+        merged.append(mode)
+    return merged
+
+
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(payload: ProjectCreate, session: Session = Depends(get_session)) -> ProjectResponse:
     project = Project(
         title=payload.title.strip(),
         selected_mode=DEFAULT_MODE,
+        selected_modes=[DEFAULT_MODE],
         voice_config_json=dict(DEFAULT_VOICE_CONFIG),
     )
     session.add(project)
@@ -90,6 +98,7 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         id=project.id,
         title=project.title,
         selected_mode=project.selected_mode,
+        selected_modes=project.selected_modes,
         ingestion_timestamp=project.ingestion_timestamp,
         created_at=project.created_at,
     )
@@ -115,6 +124,7 @@ def switch_project_mode(
         stale_runs_marked = mark_runs_stale_for_mode_switch(project_runs, payload.mode)
 
     project.selected_mode = payload.mode
+    project.selected_modes = _merge_selected_modes(project.selected_modes, payload.mode)
     session.add(project)
     session.commit()
     session.refresh(project)
@@ -123,6 +133,7 @@ def switch_project_mode(
         project_id=project.id,
         previous_mode=previous_mode,
         selected_mode=project.selected_mode,
+        selected_modes=project.selected_modes,
         chapter_count=chapter_count,
         reused_ingested_corpus=chapter_count > 0,
         stale_runs_marked=stale_runs_marked,
@@ -245,6 +256,7 @@ def create_run(
     config_snapshot = build_run_config_snapshot(mode=payload.mode, overrides=explicit_overrides)
 
     project.selected_mode = str(config_snapshot["mode"])
+    project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)
     run = Run(
         project_id=project.id,
         status="running",

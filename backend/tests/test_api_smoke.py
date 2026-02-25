@@ -47,6 +47,7 @@ def test_full_poc_api_flow_deterministic_export() -> None:
         assert project_resp.status_code == 201
         project_id = project_resp.json()["id"]
         assert project_resp.json()["selected_mode"] == "audiobook"
+        assert project_resp.json()["selected_modes"] == ["audiobook"]
 
         ingest_resp = client.post(
             f"/api/projects/{project_id}/ingest/txt",

@@ -14,6 +14,7 @@ class Project(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     selected_mode: Mapped[str] = mapped_column(String(50), nullable=False, default=DEFAULT_MODE)
+    selected_modes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     voice_config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     ingestion_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

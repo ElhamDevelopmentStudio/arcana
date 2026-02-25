@@ -52,6 +52,7 @@ python scripts_run_migration.py
 
 Mode persistence behavior:
 - Project-level selected mode is stored at `projects.selected_mode`.
+- Project-level mode history/set is tracked in `projects.selected_modes`.
 - Mode changes can be persisted before runs via `PUT /api/projects/{project_id}/mode`.
 - Mode changes mark prior runs from different modes as stale via `runs.config_json.artifacts_stale=true`.
 - Project records keep `ingestion_timestamp` (`null` until first ingestion, then UTC timestamp).

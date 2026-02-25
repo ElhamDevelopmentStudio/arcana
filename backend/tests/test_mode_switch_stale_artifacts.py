@@ -117,6 +117,7 @@ def test_regression_mode_switch_response_includes_stale_count_field() -> None:
             "project_id",
             "previous_mode",
             "selected_mode",
+            "selected_modes",
             "chapter_count",
             "reused_ingested_corpus",
             "stale_runs_marked",

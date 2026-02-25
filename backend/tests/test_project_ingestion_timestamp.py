@@ -43,10 +43,12 @@ def test_unit_project_response_supports_optional_ingestion_timestamp() -> None:
         id=1,
         title="Ingestion Timestamp Unit",
         selected_mode="audiobook",
+        selected_modes=["audiobook"],
         ingestion_timestamp=None,
         created_at=datetime.now(timezone.utc),
     )
     assert payload.ingestion_timestamp is None
+    assert payload.selected_modes == ["audiobook"]
 
 
 def test_integration_create_project_returns_null_ingestion_timestamp() -> None:
@@ -55,6 +57,7 @@ def test_integration_create_project_returns_null_ingestion_timestamp() -> None:
     assert project_resp.status_code == 201
     payload = project_resp.json()
     assert payload["ingestion_timestamp"] is None
+    assert payload["selected_modes"] == ["audiobook"]
 
 
 def test_e2e_txt_ingestion_sets_project_ingestion_timestamp() -> None:

@@ -43,10 +43,12 @@ def test_unit_project_response_includes_selected_mode_field() -> None:
         id=1,
         title="Mode Persistence Unit",
         selected_mode="academic",
+        selected_modes=["audiobook", "academic"],
         ingestion_timestamp=None,
         created_at=datetime.now(timezone.utc),
     )
     assert payload.selected_mode == "academic"
+    assert payload.selected_modes == ["audiobook", "academic"]
 
 
 def test_integration_project_default_mode_is_persisted_on_create() -> None:
@@ -55,11 +57,13 @@ def test_integration_project_default_mode_is_persisted_on_create() -> None:
         assert project_resp.status_code == 201
         project_id = project_resp.json()["id"]
         assert project_resp.json()["selected_mode"] == "audiobook"
+        assert project_resp.json()["selected_modes"] == ["audiobook"]
 
     session = get_session_factory()()
     try:
         project = session.query(Project).filter(Project.id == project_id).one()
         assert project.selected_mode == "audiobook"
+        assert project.selected_modes == ["audiobook"]
     finally:
         session.close()
 
@@ -97,6 +101,7 @@ def test_e2e_run_mode_updates_project_selected_mode() -> None:
     try:
         project = session.query(Project).filter(Project.id == project_id).one()
         assert project.selected_mode == "author"
+        assert project.selected_modes == ["audiobook", "author"]
     finally:
         session.close()
 
@@ -146,6 +151,7 @@ def test_regression_latest_run_mode_overwrites_project_selected_mode() -> None:
     try:
         project = session.query(Project).filter(Project.id == project_id).one()
         assert project.selected_mode == "custom"
+        assert project.selected_modes == ["audiobook", "academic", "custom"]
 
         runs = session.query(Run).filter(Run.project_id == project_id).order_by(Run.id.asc()).all()
         assert runs[0].config_json["mode"] == "academic"
