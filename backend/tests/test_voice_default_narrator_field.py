@@ -119,6 +119,87 @@ def test_updating_voice_config_updates_all_project_default_voice_fields() -> Non
         session.close()
 
 
+def test_updating_voice_config_clears_thought_voice_when_omitted() -> None:
+    with TestClient(app) as client:
+        create_resp = client.post("/api/projects", json={"title": "Clear Voice Thought Bucket"})
+        assert create_resp.status_code == 201
+        project_id = create_resp.json()["id"]
+
+        setup_payload = {
+            "narrator_voice": "project_narrator_voice",
+            "male_default_voice": "male_default",
+            "female_default_voice": "female_default",
+            "neutral_default_voice": "neutral_default",
+            "unknown_default_voice": "unknown_default",
+            "internal_thought_voice_policy": "thought_voice",
+            "internal_thought_voice": "setup_thought_voice",
+        }
+        setup_resp = client.put(f"/api/projects/{project_id}/voices", json=setup_payload)
+        assert setup_resp.status_code == 200
+        assert setup_resp.json()["voice_config"]["thought_voice"] == "setup_thought_voice"
+
+        clear_payload = {
+            "narrator_voice": "project_narrator_voice",
+            "male_default_voice": "male_default",
+            "female_default_voice": "female_default",
+            "neutral_default_voice": "neutral_default",
+            "unknown_default_voice": "unknown_default",
+            "internal_thought_voice_policy": "thought_voice",
+        }
+        clear_resp = client.put(f"/api/projects/{project_id}/voices", json=clear_payload)
+        assert clear_resp.status_code == 200
+        assert clear_resp.json()["voice_config"]["internal_thought_voice_policy"] == "thought_voice"
+        assert "thought_voice" not in clear_resp.json()["voice_config"]
+
+    session = get_session_factory()()
+    try:
+        project = session.query(Project).filter(Project.id == project_id).one()
+        assert project.voice_config_json["internal_thought_voice_policy"] == "thought_voice"
+        assert project.voice_config_json.get("thought_voice") is None
+    finally:
+        session.close()
+
+
+def test_updating_voice_config_treats_blank_thought_voice_as_clear() -> None:
+    with TestClient(app) as client:
+        create_resp = client.post("/api/projects", json={"title": "Blank Thought Voice Clears"})
+        assert create_resp.status_code == 201
+        project_id = create_resp.json()["id"]
+
+        setup_payload = {
+            "narrator_voice": "project_narrator_voice",
+            "male_default_voice": "male_default",
+            "female_default_voice": "female_default",
+            "neutral_default_voice": "neutral_default",
+            "unknown_default_voice": "unknown_default",
+            "internal_thought_voice_policy": "thought_voice",
+            "internal_thought_voice": "setup_thought_voice",
+        }
+        setup_resp = client.put(f"/api/projects/{project_id}/voices", json=setup_payload)
+        assert setup_resp.status_code == 200
+        assert setup_resp.json()["voice_config"]["thought_voice"] == "setup_thought_voice"
+
+        clear_payload = {
+            "narrator_voice": "project_narrator_voice",
+            "male_default_voice": "male_default",
+            "female_default_voice": "female_default",
+            "neutral_default_voice": "neutral_default",
+            "unknown_default_voice": "unknown_default",
+            "internal_thought_voice_policy": "thought_voice",
+            "internal_thought_voice": "   ",
+        }
+        clear_resp = client.put(f"/api/projects/{project_id}/voices", json=clear_payload)
+        assert clear_resp.status_code == 200
+        assert "thought_voice" not in clear_resp.json()["voice_config"]
+
+    session = get_session_factory()()
+    try:
+        project = session.query(Project).filter(Project.id == project_id).one()
+        assert project.voice_config_json.get("thought_voice") is None
+    finally:
+        session.close()
+
+
 def test_build_effective_voice_config_prefers_project_default_voice_fields() -> None:
     effective_voice_config = build_effective_voice_config(
         {
