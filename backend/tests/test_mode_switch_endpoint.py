@@ -137,3 +137,51 @@ def test_regression_mode_switch_response_snapshot() -> None:
             "chapter_count": 0,
             "reused_ingested_corpus": False,
         }
+
+
+def test_regression_repeated_mode_switches_do_not_duplicate_raw_text_rows() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Mode Switch Raw Text Integrity"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 2
+
+        session = get_session_factory()()
+        try:
+            before_rows = (
+                session.query(Chapter)
+                .filter(Chapter.project_id == project_id)
+                .order_by(Chapter.chapter_index.asc())
+                .all()
+            )
+            before_snapshot = [(row.id, row.chapter_index, row.raw_text) for row in before_rows]
+        finally:
+            session.close()
+
+        for mode in ["academic", "author", "custom", "audiobook"]:
+            switch_resp = client.put(
+                f"/api/projects/{project_id}/mode",
+                json={"mode": mode},
+            )
+            assert switch_resp.status_code == 200
+
+    session = get_session_factory()()
+    try:
+        after_rows = (
+            session.query(Chapter)
+            .filter(Chapter.project_id == project_id)
+            .order_by(Chapter.chapter_index.asc())
+            .all()
+        )
+        after_snapshot = [(row.id, row.chapter_index, row.raw_text) for row in after_rows]
+        assert after_snapshot == before_snapshot
+        assert len(after_rows) == 2
+        assert len({row.raw_text for row in after_rows}) == 2
+    finally:
+        session.close()

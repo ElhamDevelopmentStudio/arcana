@@ -51,3 +51,9 @@ Purpose:
   - updates only `projects.selected_mode`
   - does not re-ingest or alter stored chapters
   - reports whether existing ingested corpus is being reused (`chapter_count > 0`)
+
+## MODE-010 Raw Text Duplication Guard (Mode Switch)
+
+- guarantee: switching modes does not create new chapter/raw-text rows.
+- verification: repeated mode switches preserve chapter row IDs and raw-text content snapshots for the project.
+- implementation_scope: no write-path to `chapters` table inside mode switch endpoint.
