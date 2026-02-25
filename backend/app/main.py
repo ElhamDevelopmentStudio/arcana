@@ -26,6 +26,7 @@ from app.schemas import (
 from app.services.characters import parse_character_file
 from app.services.epub_ingestion import extract_epub_chapters
 from app.services.export import build_run_export
+from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
     build_encoding_warning,
     calculate_delta_affected_range,
@@ -39,6 +40,7 @@ from app.services.ingestion import (
     detect_title_with_fallback,
     detect_text_encoding,
     extract_single_append_chapter,
+    is_likely_unsupported_encoding,
     normalize_markdown_for_ingestion,
     to_internal_utf8,
 )
@@ -214,12 +216,28 @@ def ingest_txt(
 
     filename = file.filename or ""
     if not filename.lower().endswith(".txt"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .txt files are supported")
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
+            detail="Only .txt files are supported",
+        )
 
     payload = file.file.read()
     raw_text, encoding, confidence = decode_text_with_metadata(payload)
+    if is_likely_unsupported_encoding(raw_text):
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.UNSUPPORTED_ENCODING,
+            detail="Unable to decode TXT content reliably with supported encodings",
+        )
     detected_title = detect_title_with_fallback(raw_text, filename=filename)
-    chapters = detect_chapters(raw_text)
+    chapters = [(title, content) for title, content in detect_chapters(raw_text) if content.strip()]
+    if not chapters:
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.MISSING_CHAPTERS,
+            detail="No non-empty chapters found in TXT input",
+        )
     warnings: list[dict[str, str | float]] = []
     txt_warning = build_encoding_warning("txt", encoding, confidence)
     if txt_warning is not None:
@@ -266,13 +284,29 @@ def ingest_markdown(
     filename = file.filename or ""
     lower_filename = filename.lower()
     if not (lower_filename.endswith(".md") or lower_filename.endswith(".markdown")):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .md or .markdown files are supported")
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
+            detail="Only .md or .markdown files are supported",
+        )
 
     payload = file.file.read()
     markdown_text, encoding, confidence = decode_text_with_metadata(payload)
+    if is_likely_unsupported_encoding(markdown_text):
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.UNSUPPORTED_ENCODING,
+            detail="Unable to decode Markdown content reliably with supported encodings",
+        )
     normalized_source = normalize_markdown_for_ingestion(markdown_text)
     detected_title = detect_title_with_fallback(normalized_source, filename=filename)
-    chapters = detect_chapters(normalized_source)
+    chapters = [(title, content) for title, content in detect_chapters(normalized_source) if content.strip()]
+    if not chapters:
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.MISSING_CHAPTERS,
+            detail="No non-empty chapters found in Markdown input",
+        )
     warnings: list[dict[str, str | float]] = []
     markdown_warning = build_encoding_warning("markdown", encoding, confidence)
     if markdown_warning is not None:
@@ -323,7 +357,11 @@ def ingest_epub(
     project = _get_project_or_404(session, project_id)
     filename = file.filename or ""
     if not filename.lower().endswith(".epub"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .epub files are supported")
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
+            detail="Only .epub files are supported",
+        )
 
     payload = file.file.read()
     try:
@@ -332,7 +370,11 @@ def ingest_epub(
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
 
     if not chapters:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No chapter content found in EPUB")
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.MISSING_CHAPTERS,
+            detail="No chapter content found in EPUB",
+        )
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -361,6 +403,12 @@ def ingest_epub(
     session.commit()
 
     chapter_count = session.query(Chapter).filter(Chapter.project_id == project_id).count()
+    if chapter_count == 0:
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.MISSING_CHAPTERS,
+            detail="No non-empty chapter content found in EPUB",
+        )
     return IngestResponse(project_id=project_id, chapter_count=chapter_count)
 
 
@@ -376,7 +424,11 @@ def ingest_chapters_dir(
 ) -> IngestResponse:
     project = _get_project_or_404(session, project_id)
     if not files:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one chapter file is required")
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.MISSING_CHAPTERS,
+            detail="At least one chapter file is required",
+        )
 
     sorted_files = sorted(files, key=lambda upload: chapter_filename_sort_key(upload.filename or ""))
 
@@ -385,10 +437,20 @@ def ingest_chapters_dir(
     for upload in sorted_files:
         filename = upload.filename or ""
         if not filename.lower().endswith(".txt"):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chapter directory only supports .txt files")
+            raise make_ingestion_http_error(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
+                detail="Chapter directory only supports .txt files",
+            )
 
         payload = upload.file.read()
         content = decode_text(payload).strip()
+        if is_likely_unsupported_encoding(content):
+            raise make_ingestion_http_error(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error_type=IngestionErrorType.UNSUPPORTED_ENCODING,
+                detail=f"Unable to decode chapter file reliably: {filename}",
+            )
         encoding, confidence = detect_text_encoding(payload)
         directory_warning = build_encoding_warning(f"chapters-dir:{filename}", encoding, confidence)
         if directory_warning is not None:
@@ -404,7 +466,11 @@ def ingest_chapters_dir(
         )
 
     if not chapter_rows:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No non-empty chapter content found")
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.MISSING_CHAPTERS,
+            detail="No non-empty chapter content found",
+        )
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -443,17 +509,31 @@ def append_chapter(
 
     filename = file.filename or ""
     if not filename.lower().endswith(".txt"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Append chapter only supports .txt files")
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
+            detail="Append chapter only supports .txt files",
+        )
 
     payload = file.file.read()
     raw_text, encoding, confidence = decode_text_with_metadata(payload)
+    if is_likely_unsupported_encoding(raw_text):
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.UNSUPPORTED_ENCODING,
+            detail="Unable to decode appended chapter reliably with supported encodings",
+        )
     has_explicit_header = contains_explicit_chapter_header(raw_text)
     parsed_chapters = detect_chapters(raw_text)
     fallback_title = chapter_title_from_filename(filename, chapter_index=_get_next_chapter_index(session, project_id))
     try:
         parsed_title, parsed_content = extract_single_append_chapter(parsed_chapters, fallback_title=fallback_title)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise make_ingestion_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type=IngestionErrorType.MISSING_CHAPTERS,
+            detail=str(exc),
+        ) from exc
 
     next_chapter_index = _get_next_chapter_index(session, project_id)
     chapter_title = to_internal_utf8(parsed_title if has_explicit_header else fallback_title)

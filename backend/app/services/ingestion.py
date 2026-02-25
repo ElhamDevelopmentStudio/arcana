@@ -235,3 +235,22 @@ def calculate_delta_affected_range(
         "start_chapter_index": start_chapter_index,
         "end_chapter_index": end_chapter_index,
     }
+
+
+def is_likely_unsupported_encoding(
+    decoded_text: str,
+    *,
+    replacement_threshold: float = 0.02,
+    null_byte_threshold: float = 0.10,
+    minimum_length: int = 40,
+) -> bool:
+    if not decoded_text:
+        return False
+
+    length = len(decoded_text)
+    if length < minimum_length:
+        return False
+
+    replacement_ratio = decoded_text.count("\ufffd") / length
+    null_ratio = decoded_text.count("\x00") / length
+    return replacement_ratio >= replacement_threshold or null_ratio >= null_byte_threshold

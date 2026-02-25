@@ -74,6 +74,7 @@ Ingestion title fallback behavior:
 - Append ingestion rejects exact duplicates and high-overlap same-title content with HTTP `409` conflict.
 - Append ingestion persists a delta reprocessing window in `projects.ingestion_log_json.affected_range`.
 - Text ingestion performs encoding detection before decode (BOM + UTF-8/UTF-16 heuristics + cp1252 fallback).
+- Ingestion endpoint failures classify errors via `X-NIPE-Error-Type` (`unsupported_format`, `unsupported_encoding`, `missing_chapters`).
 - All ingestion inputs are normalized to UTF-8-safe internal strings before chapter persistence (`chapter_title`, `raw_text`).
 - Encoding anomalies are persisted in `projects.ingestion_log_json.warnings` and copied into `runs.config_json.ingestion_warnings`.
 - Mode catalog includes `mode_profiles` with default run-config values per mode.

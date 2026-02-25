@@ -1,0 +1,82 @@
+import io
+import os
+from pathlib import Path
+
+from fastapi import status
+from fastapi.testclient import TestClient
+
+os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_ingestion_error_types.db"
+
+from app.config import clear_settings_cache
+from app.database import init_db, reset_engine
+from app.main import app
+from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
+
+
+def setup_module() -> None:
+    clear_settings_cache()
+    reset_engine()
+    init_db()
+
+
+def teardown_module() -> None:
+    reset_engine()
+    clear_settings_cache()
+
+    db_file = Path("test_nipe_ingestion_error_types.db")
+    if db_file.exists():
+        db_file.unlink()
+
+
+def _create_project(client: TestClient, title: str) -> int:
+    response = client.post("/api/projects", json={"title": title})
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+def test_unit_make_ingestion_http_error_sets_error_type_header() -> None:
+    error = make_ingestion_http_error(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        error_type=IngestionErrorType.UNSUPPORTED_FORMAT,
+        detail="Only .txt files are supported",
+    )
+    assert error.status_code == 400
+    assert error.headers == {"X-NIPE-Error-Type": "unsupported_format"}
+    assert error.detail == "Only .txt files are supported"
+
+
+def test_integration_unsupported_format_sets_error_type_header() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project(client, "Ingestion Error Type Integration")
+        response = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.md", io.BytesIO(b"# not txt"), "text/markdown")},
+        )
+        assert response.status_code == 400
+        assert response.headers["x-nipe-error-type"] == "unsupported_format"
+        assert response.json()["detail"] == "Only .txt files are supported"
+
+
+def test_e2e_missing_chapters_sets_error_type_header() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project(client, "Ingestion Error Type E2E")
+        response = client.post(
+            f"/api/projects/{project_id}/ingest/append-chapter",
+            files={"file": ("chapter_2.txt", io.BytesIO(b"   \n  \n"), "text/plain")},
+        )
+        assert response.status_code == 400
+        assert response.headers["x-nipe-error-type"] == "missing_chapters"
+        assert "requires exactly one non-empty chapter" in response.json()["detail"]
+
+
+def test_regression_unsupported_encoding_sets_error_type_header() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project(client, "Ingestion Error Type Regression")
+        utf16_without_bom = ("Chapter 1\n" + ("Bad decode sample " * 20)).encode("utf-16-le")
+        response = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("weird.txt", io.BytesIO(utf16_without_bom), "text/plain")},
+        )
+        assert response.status_code == 400
+        assert response.headers["x-nipe-error-type"] == "unsupported_encoding"
+        assert response.json()["detail"] == "Unable to decode TXT content reliably with supported encodings"
