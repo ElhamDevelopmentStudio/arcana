@@ -69,6 +69,7 @@ Ingestion title fallback behavior:
 - Chapter-directory ingestion accepts multi-file `.txt` uploads and ingests files in natural filename order.
 - Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.
 - EPUB ingestion is toggle-controlled (`ENABLE_EPUB_INGESTION`) and currently wired to a pluggable parser stub.
+- Text ingestion performs encoding detection before decode (BOM + UTF-8/UTF-16 heuristics + cp1252 fallback).
 - Mode catalog includes `mode_profiles` with default run-config values per mode.
 
 ## API Domain Terms

@@ -8,9 +8,18 @@ MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 MAX_TITLE_CANDIDATE_LENGTH = 120
 DEFAULT_INGESTION_TITLE = "Untitled Novel"
 
+ENCODING_BOM_MAP: tuple[tuple[bytes, str, float], ...] = (
+    (b"\xff\xfe\x00\x00", "utf-32-le", 1.0),
+    (b"\x00\x00\xfe\xff", "utf-32-be", 1.0),
+    (b"\xef\xbb\xbf", "utf-8-sig", 1.0),
+    (b"\xff\xfe", "utf-16-le", 1.0),
+    (b"\xfe\xff", "utf-16-be", 1.0),
+)
+
 
 def decode_text(raw_bytes: bytes) -> str:
-    return raw_bytes.decode("utf-8", errors="replace")
+    encoding, _confidence = detect_text_encoding(raw_bytes)
+    return raw_bytes.decode(encoding, errors="replace")
 
 
 def detect_chapters(raw_text: str) -> list[tuple[str, str]]:
@@ -86,3 +95,20 @@ def normalize_markdown_for_ingestion(markdown_text: str) -> str:
     normalized = MARKDOWN_LINK_RE.sub(r"\1", normalized)
     normalized = normalized.replace("**", "").replace("__", "").replace("*", "").replace("`", "")
     return normalized.strip()
+
+
+def detect_text_encoding(raw_bytes: bytes) -> tuple[str, float]:
+    if not raw_bytes:
+        return ("utf-8", 1.0)
+
+    for bom, encoding, confidence in ENCODING_BOM_MAP:
+        if raw_bytes.startswith(bom):
+            return (encoding, confidence)
+
+    try:
+        raw_bytes.decode("utf-8", errors="strict")
+        return ("utf-8", 0.95)
+    except UnicodeDecodeError:
+        pass
+
+    return ("cp1252", 0.4)

@@ -80,7 +80,7 @@ Definition of done for each task:
 - [x] [ING-006] Support chapter-directory ingestion path.
 - [x] [ING-007] Support Markdown file ingestion path.
 - [x] [ING-008] Add EPUB parser integration toggle (optional now, pluggable).
-- [ ] [ING-009] Implement encoding detection before decode.
+- [x] [ING-009] Implement encoding detection before decode.
 - [ ] [ING-010] Convert all accepted content to UTF-8 internal form.
 - [ ] [ING-011] Persist encoding warnings in run/project logs.
 - [ ] [ING-012] Add append-chapter endpoint for incremental ingestion.
