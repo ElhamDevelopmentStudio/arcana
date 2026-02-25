@@ -262,7 +262,7 @@ Definition of done for each task:
 - [x] [ACAD-011] Compute graph centrality metrics table.
 - [x] [ACAD-012] Implement academic JSON export schema.
 - [x] [ACAD-013] Implement academic CSV export schema.
-- [ ] [ACAD-014] Implement graph JSON export schema.
+- [x] [ACAD-014] Implement graph JSON export schema.
 - [ ] [ACAD-015] Include reproducible run snapshot in academic exports.
 - [ ] [ACAD-016] Implement multi-novel workspace comparison model.
 - [ ] [ACAD-017] Implement aligned curve comparison view data.

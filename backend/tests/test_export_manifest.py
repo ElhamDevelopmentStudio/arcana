@@ -1542,6 +1542,83 @@ def test_export_csv_supports_academic_output_schema() -> None:
         assert csv_output_ids == {"AO-001", "AO-002", "AO-003", "AO-004", "AO-005", "AO-006"}
 
 
+def test_export_graph_json_format_for_academic_output() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Academic Graph JSON Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(b"Chapter 1\nThe lantern burned low and the rain beat softly outside."), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        graph_json_resp = client.get(
+            f"/api/projects/{project_id}/exports/{run_id}.json",
+            params={"output_schema": "academic", "output_format": "graph_json"},
+        )
+        assert graph_json_resp.status_code == 200
+        assert graph_json_resp.headers["content-type"] == "application/json"
+
+        payload = graph_json_resp.json()
+        assert payload["schema_version"] == "1.0.0"
+        assert payload["output_schema"] == "graph_json"
+        assert payload["output_format"] == "graph_json"
+        assert payload["output_id"] == "AO-004"
+        assert payload["output_name"] == "character_cooccurrence_graph"
+        assert payload["project_id"] == project_id
+        assert payload["run_id"] == run_id
+        assert payload["run_status"] == "completed"
+
+        graph = payload["graph"]
+        assert set(graph.keys()) >= {"nodes", "edges", "metadata"}
+        assert isinstance(graph["nodes"], list)
+        assert isinstance(graph["edges"], list)
+
+        centrality = payload["character_cooccurrence_centrality"]
+        assert set(centrality.keys()) >= {"metrics_table", "metadata"}
+        assert isinstance(centrality["metrics_table"], list)
+
+        assert payload["manifest_snapshot"]["output_schema"] == "academic_json"
+        assert payload["manifest_snapshot"]["generated_by"] == "build_run_export"
+
+
+def test_export_graph_json_rejects_invalid_academic_output_id() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Academic Graph JSON Invalid Output Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(b"Chapter 1\nThe lantern burned low and the rain beat softly outside."), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        invalid_output_resp = client.get(
+            f"/api/projects/{project_id}/exports/{run_id}.json",
+            params={
+                "output_schema": "academic",
+                "output_format": "graph_json",
+                "output_id": "AO-001",
+            },
+        )
+        assert invalid_output_resp.status_code == 400
 def test_export_json_supports_resumable_cursor() -> None:
     source_text = (
         "Chapter 1\n"
