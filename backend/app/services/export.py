@@ -157,14 +157,157 @@ def _to_number(value: Any) -> float | None:
     return None
 
 
+def _compute_scene_state(
+    segment_position: int,
+    emotion_valence: float,
+    emotion_intensity: float,
+    tension_value: float,
+    dominance_value: float,
+    prev_tension: float | None,
+    emotion_delta: float,
+    tension_delta: float,
+    summary_tone: str,
+) -> tuple[str, list[str], dict[str, Any]]:
+    tension_band = (
+        "high" if tension_value >= 0.70 else "moderate" if tension_value >= 0.40 else "low"
+    )
+    if summary_tone == "dark_irony":
+        tone_hint = "dark_irony"
+    else:
+        tone_hint = summary_tone or "neutral"
+
+    momentum = "steady"
+    if prev_tension is not None:
+        if tension_delta >= 0.12:
+            momentum = "rising"
+        elif tension_delta <= -0.12:
+            momentum = "dropping"
+
+    state = "scene_stable"
+    reasons: list[str] = []
+    evidence: dict[str, Any] = {
+        "segment_position": segment_position,
+        "tension_band": tension_band,
+        "momentum": momentum,
+        "summary_tone": tone_hint,
+        "emotion_bias": (
+            "positive"
+            if emotion_valence >= 0.25
+            else "negative" if emotion_valence <= -0.25 else "neutral"
+        ),
+        "dominance_band": "high" if dominance_value >= 0.75 else "moderate" if dominance_value >= 0.40 else "low",
+    }
+
+    if tension_band == "high":
+        if momentum == "rising":
+            state = "climb_to_peak"
+            reasons.append("tension_rising_high")
+        elif momentum == "dropping":
+            state = "peak_fade"
+            reasons.append("tension_rolling_from_peak")
+        else:
+            state = "high_tension_hold"
+            reasons.append("sustained_high_tension")
+    elif tension_band == "moderate":
+        if momentum == "rising":
+            state = "rising_scene"
+            reasons.append("tension_building")
+        elif momentum == "dropping":
+            state = "cooling_scene"
+            reasons.append("tension_releasing")
+        elif abs(emotion_delta) >= 0.20:
+            state = "emotional_turn"
+            reasons.append("emotion_turning")
+        else:
+            state = "stable_scene"
+            reasons.append("moderate_hold")
+    else:
+        if prev_tension is not None and momentum == "rising":
+            state = "low_tension_reentry"
+            reasons.append("low_band_rising")
+        elif tone_hint == "dark_irony":
+            state = "low_tension_with_irony"
+            reasons.append("tone_marker_retention")
+        else:
+            state = "low_tension_settle"
+            reasons.append("low_band_settled")
+
+    if tone_hint in {"dark_irony", "dark", "fearful", "violent"}:
+        evidence["critical_tone_present"] = True
+    if emotion_intensity >= 0.70:
+        evidence["high_emotional_intensity"] = True
+
+    if prev_tension is None:
+        state = f"scene_entry_{state}"
+        reasons.append("first_segment_context")
+
+    return state, reasons, evidence
+
+
+def _build_volatility_marker(
+    position: int,
+    from_segment: Mapping[str, Any],
+    segment: Mapping[str, Any],
+    valence_delta: float,
+    intensity_delta: float,
+    tension_delta: float,
+    dominance_delta: float,
+) -> dict[str, Any]:
+    abs_valence_delta = abs(valence_delta)
+    abs_intensity_delta = abs(intensity_delta)
+    abs_tension_delta = abs(tension_delta)
+    abs_dominance_delta = abs(dominance_delta)
+
+    weighted_score = (
+        0.45 * abs_valence_delta
+        + 0.20 * abs_intensity_delta
+        + 0.25 * abs_tension_delta
+        + 0.10 * abs_dominance_delta
+    )
+    volatility_index = min(1.0, round(weighted_score / 1.75, 4))
+
+    volatility_level = (
+        "high"
+        if volatility_index >= 0.65
+        else "moderate" if volatility_index >= 0.35 else "low"
+    )
+    triggers: list[str] = []
+    if abs_valence_delta >= 0.35:
+        triggers.append("valence_jump")
+    if abs_intensity_delta >= 0.25:
+        triggers.append("intensity_jump")
+    if abs_tension_delta >= 0.20:
+        triggers.append("tension_jump")
+    if abs_dominance_delta >= 0.20:
+        triggers.append("dominance_jump")
+
+    return {
+        "position": position,
+        "from_segment_id": from_segment.get("segment_id"),
+        "segment_id": segment.get("segment_id"),
+        "volatility_index": volatility_index,
+        "level": volatility_level,
+        "valence_delta": valence_delta,
+        "intensity_delta": intensity_delta,
+        "tension_delta": tension_delta,
+        "dominance_delta": dominance_delta,
+        "triggers": triggers,
+        "from_tension": _to_number(_to_dict(from_segment.get("tension_contribution")).get("value")),
+        "to_tension": _to_number(_to_dict(segment.get("tension_contribution")).get("value")),
+    }
+
+
 def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     emotion_valence = []
     emotion_intensity = []
     tension = []
     dominance = []
     emotion_delta = []
+    scene_states = []
+    volatility_markers = []
     previous_segment = None
     previous_values = {"valence": None, "intensity": None, "tension": None, "dominance": None}
+    previous_tension = None
 
     for position, segment in enumerate(segments, start=1):
         chapter_id = segment.get("chapter_id")
@@ -181,6 +324,20 @@ def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[st
         intensity = _to_number(segment.get("emotion_intensity"))
         tension_value = _to_number(_to_dict(segment.get("tension_contribution")).get("value"))
         dominance_value = _to_number(_to_dict(segment.get("dominance_contribution")).get("value"))
+        summary_tone = str(_to_dict(segment.get("summary_tag")).get("dominant_tone", ""))
+
+        if previous_segment is not None:
+            valence_delta = (valence or 0.0) - (previous_values["valence"] or 0.0)
+            intensity_delta = (intensity or 0.0) - (previous_values["intensity"] or 0.0)
+            tension_delta = (tension_value or 0.0) - (previous_values["tension"] or 0.0)
+            dominance_delta = (dominance_value or 0.0) - (previous_values["dominance"] or 0.0)
+            previous_tension = previous_values["tension"]
+        else:
+            valence_delta = 0.0
+            intensity_delta = 0.0
+            tension_delta = 0.0
+            dominance_delta = 0.0
+            previous_tension = None
 
         if previous_segment is not None:
             emotion_delta.append(
@@ -188,12 +345,43 @@ def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[st
                     "position": position,
                     "segment_id": segment_id,
                     "from_segment_id": previous_segment.get("segment_id"),
-                    "valence_delta": (valence or 0.0) - (previous_values["valence"] or 0.0),
-                    "intensity_delta": (intensity or 0.0) - (previous_values["intensity"] or 0.0),
-                    "tension_delta": (tension_value or 0.0) - (previous_values["tension"] or 0.0),
-                    "dominance_delta": (dominance_value or 0.0) - (previous_values["dominance"] or 0.0),
+                    "valence_delta": valence_delta,
+                    "intensity_delta": intensity_delta,
+                    "tension_delta": tension_delta,
+                    "dominance_delta": dominance_delta,
                 }
             )
+            volatility_markers.append(
+                _build_volatility_marker(
+                    position=position,
+                    from_segment=previous_segment,
+                    segment=segment,
+                    valence_delta=valence_delta,
+                    intensity_delta=intensity_delta,
+                    tension_delta=tension_delta,
+                    dominance_delta=dominance_delta,
+                )
+            )
+
+        scene_state, reasons, evidence = _compute_scene_state(
+            segment_position=position,
+            emotion_valence=valence or 0.0,
+            emotion_intensity=intensity if intensity is not None else 0.0,
+            tension_value=tension_value or 0.0,
+            dominance_value=dominance_value or 0.0,
+            prev_tension=previous_tension,
+            emotion_delta=valence_delta,
+            tension_delta=tension_delta,
+            summary_tone=summary_tone,
+        )
+        scene_states.append(
+            {
+                **timestamped_point,
+                "state": scene_state,
+                "reasons": reasons,
+                "evidence": evidence,
+            }
+        )
 
         emotion_valence.append({**timestamped_point, "value": valence if valence is not None else 0.0})
         emotion_intensity.append({**timestamped_point, "value": intensity if intensity is not None else 0.0})
@@ -211,6 +399,8 @@ def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[st
         "tension": tension,
         "dominance": dominance,
         "emotion_delta": emotion_delta,
+        "scene_states": scene_states,
+        "volatility_markers": volatility_markers,
     }
 
 
