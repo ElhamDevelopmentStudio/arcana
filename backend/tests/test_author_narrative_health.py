@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from app.schemas import NarrativeHealthReport
+from app.schemas import NarrativeHealthActionableFinding, NarrativeHealthReport
 from app.services.export import (
     _build_author_narrative_health_report,
     _build_character_dominance_findings,
@@ -133,8 +133,8 @@ def test_unit_build_dialogue_density_anomaly_findings_detects_sustained_anomaly(
     assert finding["trigger_metric"] == "elevated_dialogue_density"
     assert finding["location"]["start_chapter"] == 3
     assert finding["location"]["end_chapter"] == 4
-    assert finding["evidence_trace"]["anomaly_direction"] == "dialogue_heavy"
-    assert finding["evidence_trace"]["chapter_window"] == 2
+    assert finding["evidence"]["anomaly_direction"] == "dialogue_heavy"
+    assert finding["evidence"]["chapter_window"] == 2
     assert finding["severity"] > 0.5
 
 
@@ -183,8 +183,8 @@ def test_unit_build_character_dominance_findings_detects_over_dominant_character
     assert finding["location"]["start_chapter"] == 3
     assert finding["location"]["end_chapter"] == 3
     assert finding["trigger_metric"] == "character_dominance_outlier"
-    assert finding["evidence_trace"]["top_character"] == "Hero"
-    assert finding["evidence_trace"]["lead_share_gap"] > 0.4
+    assert finding["evidence"]["top_character"] == "Hero"
+    assert finding["evidence"]["lead_share_gap"] > 0.4
     assert finding["severity"] > 0.7
 
 
@@ -239,10 +239,10 @@ def test_unit_build_disappearing_character_findings_detects_late_disappearance()
     assert finding["trigger_metric"] == "character_disappearance"
     assert finding["location"]["start_chapter"] == 5
     assert finding["location"]["end_chapter"] == 6
-    assert finding["evidence_trace"]["speaker"] == "Lena"
-    assert finding["evidence_trace"]["last_seen_chapter"] == 4
-    assert finding["evidence_trace"]["disappearance_end_chapter"] == 6
-    assert finding["evidence_trace"]["missing_chapter_count"] == 2
+    assert finding["evidence"]["speaker"] == "Lena"
+    assert finding["evidence"]["last_seen_chapter"] == 4
+    assert finding["evidence"]["disappearance_end_chapter"] == 6
+    assert finding["evidence"]["missing_chapter_count"] == 2
     assert finding["severity"] > 0.5
 
 
@@ -284,8 +284,8 @@ def test_unit_build_monotony_risk_findings_detects_flatline_region() -> None:
     assert finding["location"]["end_segment"] == len(values)
     assert finding["trigger_metric"] == "low_tension_and_emotion_variance_window"
     assert finding["severity"] > 0.5
-    assert finding["evidence_trace"]["window_length"] == len(values)
-    assert finding["evidence_trace"]["tension_range"] < 0.06
+    assert finding["evidence"]["window_length"] == len(values)
+    assert finding["evidence"]["tension_range"] < 0.06
 
 
 def test_unit_build_emotional_monotony_findings_detects_repeated_tone_pattern() -> None:
@@ -309,9 +309,9 @@ def test_unit_build_emotional_monotony_findings_detects_repeated_tone_pattern() 
     assert finding["trigger_metric"] == "repeated_tone_pattern"
     assert finding["location"]["start_segment"] == 1
     assert finding["location"]["end_segment"] == 8
-    assert finding["evidence_trace"]["window_length"] == 8
-    assert finding["evidence_trace"]["dominant_tone"] == "calm"
-    assert finding["evidence_trace"]["dominant_tone_ratio"] >= 0.85
+    assert finding["evidence"]["window_length"] == 8
+    assert finding["evidence"]["dominant_tone"] == "calm"
+    assert finding["evidence"]["dominant_tone_ratio"] >= 0.85
 
 
 def test_unit_build_emotional_monotony_findings_rejects_varied_tones() -> None:
@@ -407,3 +407,43 @@ def test_unit_narrative_health_report_includes_emotional_monotony_findings() -> 
     assert parsed_report.findings[0].requirement_id == "ADR-002"
     possible_severities = {monotony_findings[0]["severity"], emotional_findings[0]["severity"]}
     assert parsed_report.findings[0].severity in possible_severities
+
+
+def test_unit_narrative_health_actionable_flag_schema_uses_evidence_field() -> None:
+    finding = NarrativeHealthActionableFinding.model_validate(
+        {
+            "requirement_id": "ADR-002",
+            "requirement_name": "monotony_risk_detector",
+            "location": {
+                "start_chapter": 1,
+                "end_chapter": 1,
+                "start_segment": 1,
+                "end_segment": 3,
+            },
+            "trigger_metric": "low_tension_and_emotion_variance_window",
+            "severity": 0.62,
+            "evidence": {"window_length": 8},
+        }
+    )
+
+    assert finding.evidence == {"window_length": 8}
+    assert finding.trigger_metric == "low_tension_and_emotion_variance_window"
+    assert finding.location.start_chapter == 1
+
+
+def test_unit_narrative_health_actionable_flag_schema_allows_legacy_evidence_trace_key() -> None:
+    finding = NarrativeHealthActionableFinding.model_validate(
+        {
+            "requirement_id": "ADR-002",
+            "requirement_name": "monotony_risk_detector",
+            "location": {
+                "start_chapter": 1,
+                "end_chapter": 1,
+            },
+            "trigger_metric": "low_tension_and_emotion_variance_window",
+            "severity": 0.62,
+            "evidence_trace": {"legacy_signal": "dialogue"},
+        }
+    )
+
+    assert finding.evidence == {"legacy_signal": "dialogue"}
