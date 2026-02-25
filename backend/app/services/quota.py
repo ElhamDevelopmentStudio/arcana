@@ -91,6 +91,22 @@ def mark_provider_available(session: Session, provider: str, day_key: str | None
     session.flush()
 
 
+def mark_provider_successful_call(session: Session, provider: str, day_key: str | None = None) -> None:
+    if day_key is None:
+        day_key = date.today().isoformat()
+
+    quota = (
+        session.query(ProviderQuota)
+        .filter(ProviderQuota.provider == provider, ProviderQuota.day_key == day_key)
+        .one_or_none()
+    )
+    if quota is None:
+        return
+
+    quota.last_successful_call_at = datetime.now(timezone.utc)
+    session.flush()
+
+
 def get_provider_request_count(session: Session, provider: str, day_key: str | None = None) -> int:
     if day_key is None:
         day_key = date.today().isoformat()
