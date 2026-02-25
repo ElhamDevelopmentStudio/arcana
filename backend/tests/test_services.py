@@ -1,6 +1,6 @@
 from app.services.ingestion import detect_chapters
 from app.services.phonetics import replace_pronunciations, replace_pronunciations_with_counts
-from app.services.segmentation import segment_text
+from app.services.segmentation import segment_text, split_paragraphs
 
 
 def test_detect_chapters_fallback_when_no_header() -> None:
@@ -57,3 +57,14 @@ def test_segmentation_never_exceeds_limit() -> None:
     segments = segment_text(text, max_chars=60)
     assert segments
     assert all(len(segment) <= 60 for segment in segments)
+
+
+def test_split_paragraphs_collapses_multiple_breaks_and_removes_empty_blocks() -> None:
+    text = "First paragraph.\n\n\n\nSecond paragraph.\n\n\nThird."
+    assert split_paragraphs(text) == ["First paragraph.", "Second paragraph.", "Third."]
+
+
+def test_segment_text_resets_across_paragraph_boundaries() -> None:
+    text = '"Hi there." She waved.\n\nNow a different paragraph starts with a new thought.'
+    segments = segment_text(text, max_chars=100)
+    assert segments == ['"Hi there." She waved.', "Now a different paragraph starts with a new thought."]
