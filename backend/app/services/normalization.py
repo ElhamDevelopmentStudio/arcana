@@ -31,6 +31,7 @@ THREE_OR_MORE_LINE_BREAKS_RE = re.compile(r"\n{3,}")
 ELLIPSIS_UNICODE_RE = re.compile(r"…+")
 ELLIPSIS_DOTTED_RE = re.compile(r"\.\s*\.\s*\.(?:\s*\.)*")
 PARAGRAPH_SEPARATOR_LINE_RE = re.compile(r"\n\s*(?:\*{3,}|-{3,}|_{3,}|={3,}|~{3,})\s*\n")
+EM_DASH_DIALOGUE_LEADER_RE = re.compile(r"(?m)(^|\n)\s*[—–]\s*")
 
 DEFAULT_COPY_ARTIFACT_PATTERN_SET = (
     r"^\s*Page\s+\d+\s*$||^\s*<<<[^>]+>>>\s*$||^\s*\[?Advertisement\]?\s*$"
@@ -100,6 +101,10 @@ def normalize_ellipsis_variants(text: str) -> str:
     return text
 
 
+def normalize_em_dash_dialogue_style(text: str) -> str:
+    return EM_DASH_DIALOGUE_LEADER_RE.sub(r"\1- ", text)
+
+
 def _parse_pattern_set(pattern_set: str) -> tuple[str, ...]:
     return tuple(segment.strip() for segment in pattern_set.split("||") if segment.strip())
 
@@ -128,5 +133,6 @@ def normalize_text(text: str) -> str:
     normalized = normalize_unicode_variants(text)
     normalized = normalize_quotes(normalized)
     normalized = normalize_ellipsis_variants(normalized)
+    normalized = normalize_em_dash_dialogue_style(normalized)
     normalized = remove_copy_artifacts(normalized)
     return normalize_whitespace(normalized)
