@@ -11,6 +11,9 @@ from app.modes import DEFAULT_MODE, get_mode_catalog
 from app.models import Chapter, Character, LLMCall, Project, Run, Segment
 from app.schemas import (
     CharacterImportResponse,
+    CharacterMapItem,
+    CharacterMapResponse,
+    CharacterMapUpdateRequest,
     IngestResponse,
     ModeCatalogResponse,
     ProjectCreate,
@@ -790,6 +793,89 @@ def import_characters(
     session.commit()
 
     return CharacterImportResponse(project_id=project_id, imported_count=len(parsed))
+
+
+@app.get(
+    "/api/projects/{project_id}/characters",
+    response_model=CharacterMapResponse,
+    status_code=status.HTTP_200_OK,
+)
+def list_characters(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> CharacterMapResponse:
+    _get_project_or_404(session, project_id)
+
+    character_rows = (
+        session.query(Character)
+        .filter(Character.project_id == project_id)
+        .order_by(Character.name.asc())
+        .all()
+    )
+    return CharacterMapResponse(
+        project_id=project_id,
+        characters=[
+            CharacterMapItem(
+                name=character.name,
+                verbalized_form=character.verbalized_form,
+                gender=character.gender,
+                aliases=character.aliases or [],
+                notes=character.notes,
+                source=character.source,
+                confidence=character.confidence,
+            )
+            for character in character_rows
+        ],
+    )
+
+
+@app.put(
+    "/api/projects/{project_id}/characters",
+    response_model=CharacterMapResponse,
+    status_code=status.HTTP_200_OK,
+)
+def upsert_characters(
+    project_id: int,
+    payload: CharacterMapUpdateRequest,
+    session: Session = Depends(get_session),
+) -> CharacterMapResponse:
+    _get_project_or_404(session, project_id)
+
+    deduped: dict[str, CharacterMapItem] = {}
+    for row in payload.characters:
+        deduped[row.name.strip().lower()] = row
+
+    session.query(Character).filter(Character.project_id == project_id).delete()
+    for row in deduped.values():
+        session.add(
+            Character(
+                project_id=project_id,
+                name=row.name.strip(),
+                verbalized_form=row.verbalized_form.strip(),
+                gender=row.gender.strip().lower(),
+                aliases=row.aliases,
+                notes=row.notes and row.notes.strip() or None,
+                source=row.source,
+                confidence=row.confidence,
+            )
+        )
+    session.commit()
+
+    return CharacterMapResponse(
+        project_id=project_id,
+        characters=[
+            CharacterMapItem(
+                name=row.name.strip(),
+                verbalized_form=row.verbalized_form.strip(),
+                gender=row.gender.strip().lower(),
+                aliases=row.aliases,
+                notes=row.notes and row.notes.strip() or None,
+                source=row.source,
+                confidence=row.confidence,
+            )
+            for row in deduped.values()
+        ],
+    )
 
 
 @app.put(

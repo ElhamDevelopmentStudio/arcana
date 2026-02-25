@@ -73,6 +73,44 @@ class CharacterImportResponse(BaseModel):
     imported_count: int
 
 
+class CharacterMapItem(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    verbalized_form: str = Field(min_length=1, max_length=255)
+    gender: str = Field(min_length=1, max_length=50)
+    aliases: list[str] = Field(default_factory=list)
+    notes: str | None = None
+    source: str = Field(default="manual", min_length=1, max_length=120)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+    @field_validator("gender")
+    @classmethod
+    def gender_normalized(cls, value: str) -> str:
+        stripped = value.strip().lower()
+        if not stripped:
+            raise ValueError("gender must not be blank")
+        return stripped
+
+    @field_validator("aliases")
+    @classmethod
+    def aliases_trimmed(cls, values: list[str]) -> list[str]:
+        return [alias.strip() for alias in values if str(alias).strip()]
+
+    @field_validator("source")
+    @classmethod
+    def source_defaulted(cls, value: str) -> str:
+        stripped = value.strip()
+        return stripped or "manual"
+
+
+class CharacterMapResponse(BaseModel):
+    project_id: int
+    characters: list[CharacterMapItem]
+
+
+class CharacterMapUpdateRequest(BaseModel):
+    characters: list[CharacterMapItem]
+
+
 class VoiceConfigRequest(BaseModel):
     narrator_voice: str = Field(min_length=1)
     male_default_voice: str = Field(min_length=1)

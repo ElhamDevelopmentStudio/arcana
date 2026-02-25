@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -7,13 +7,14 @@ import { AlertCircle, FileUp, Plus, UserCog, WandSparkles } from 'lucide-react';
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { appEnv } from '@/app/config/env';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
+import type { CharacterMapDto } from '@/app/schemas/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { useImportCharactersMutation } from '@/features/workflow/api/workflow-hooks';
+import { useCharacterMapQuery, useImportCharactersMutation, useSaveCharacterMapMutation } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 
 type ManualCharacterRow = {
@@ -32,6 +33,19 @@ function createRow(): ManualCharacterRow {
   };
 }
 
+function toManualRows(map: CharacterMapDto | undefined): ManualCharacterRow[] {
+  if (!map?.characters.length) {
+    return [createRow()];
+  }
+
+  return map.characters.map((item) => ({
+    id: crypto.randomUUID(),
+    name: item.name,
+    verbalized: item.verbalized_form,
+    gender: item.gender,
+  }));
+}
+
 export function ProjectCharactersPage() {
   const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
@@ -42,12 +56,29 @@ export function ProjectCharactersPage() {
   const importCharactersMutation = useImportCharactersMutation(projectId);
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [importedCount, setImportedCount] = useState<number | null>(null);
+  const [lastSavedCount, setLastSavedCount] = useState<number | null>(null);
 
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
   const manualPreviewCount = useMemo(
     () => manualRows.filter((row) => row.name.trim() && row.verbalized.trim()).length,
     [manualRows],
   );
+
+  const characterMapQuery = useCharacterMapQuery(projectId);
+  const saveCharactersMutation = useSaveCharacterMapMutation(projectId);
+
+  useEffect(() => {
+    if (characterMapQuery.data === undefined) {
+      return;
+    }
+    setManualRows(toManualRows(characterMapQuery.data));
+  }, [characterMapQuery.data]);
+
+  useEffect(() => {
+    if (characterMapQuery.data && lastSavedCount === null) {
+      setLastSavedCount(characterMapQuery.data.characters.length);
+    }
+  }, [characterMapQuery.data, lastSavedCount]);
 
   async function handleImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -63,9 +94,42 @@ export function ProjectCharactersPage() {
     try {
       const payload = await importCharactersMutation.trigger({ file: characterFile });
       setImportedCount(payload.imported_count);
+      await characterMapQuery.mutate();
       toast.success(`Imported ${payload.imported_count} character rows.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Character import failed.');
+    }
+  }
+
+  async function handleSaveManualCharacters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+
+    const payloadCharacters = manualRows
+      .map((row) => ({
+        name: row.name.trim(),
+        verbalized_form: row.verbalized.trim(),
+        gender: row.gender.trim().toLowerCase(),
+      }))
+      .filter((row) => row.name && row.verbalized_form)
+      .map((row) => ({
+        ...row,
+        aliases: [],
+        notes: null,
+        source: 'manual',
+        confidence: 1.0,
+      }));
+
+    try {
+      const savedMap = await saveCharactersMutation.trigger({ characters: payloadCharacters });
+      setLastSavedCount(savedMap.characters.length);
+      setManualRows(toManualRows(savedMap));
+      toast.success(`Saved ${savedMap.characters.length} character rows.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to save character map.');
     }
   }
 
@@ -142,6 +206,11 @@ export function ProjectCharactersPage() {
                 </div>
               )}
             </div>
+            <div className="text-sm text-muted-foreground" data-testid="character-list-state">
+              {characterMapQuery.isLoading
+                ? 'Loading saved character map.'
+                : `${characterMapQuery.data?.characters.length ?? 0} row(s) loaded.`}
+            </div>
           </CardContent>
         </Card>
 
@@ -151,7 +220,7 @@ export function ProjectCharactersPage() {
               <UserCog className="size-4 text-primary" />
               Manual Editor
             </CardTitle>
-            <CardDescription>Add, adjust, and remove rows locally before backend save integration.</CardDescription>
+            <CardDescription>Add, adjust, and remove rows and persist them immediately to this project.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid max-h-[28rem] gap-1 overflow-auto pr-1">
@@ -187,8 +256,20 @@ export function ProjectCharactersPage() {
                 <Plus className="size-4" />
                 Add Row
               </Button>
-              <p className="text-sm text-muted-foreground">Ready rows: {manualPreviewCount}</p>
+              <p className="text-sm text-muted-foreground">
+                Ready rows: {manualPreviewCount}
+                {lastSavedCount === null ? null : ` · Last saved: ${lastSavedCount}`}
+              </p>
             </div>
+            <form className="grid" onSubmit={handleSaveManualCharacters}>
+              <Button
+                data-testid="character-map-save-button"
+                disabled={saveCharactersMutation.isMutating || projectId === null}
+                type="submit"
+              >
+                {saveCharactersMutation.isMutating ? 'Saving...' : 'Save Character Map'}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </div>

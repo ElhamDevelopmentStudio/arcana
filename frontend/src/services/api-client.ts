@@ -3,6 +3,8 @@ import axios, { AxiosError, type AxiosInstance } from 'axios';
 import { appEnv } from '@/app/config/env';
 import {
   characterImportSchema,
+  characterMapSchema,
+  characterMapUpdateSchema,
   exportSchema,
   ingestResponseSchema,
   modeCatalogSchema,
@@ -14,6 +16,8 @@ import {
   voiceConfigResponseSchema,
   type RunRequestDto,
   type VoiceConfigDto,
+  type CharacterMapDto,
+  type CharacterMapUpdateDto,
 } from '@/app/schemas/api';
 
 function normalizeHttpError(error: unknown): Error {
@@ -159,6 +163,26 @@ export class NipeApiClient {
         },
       });
       return characterImportSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getCharacters(projectId: number) {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/characters`);
+      return characterMapSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async saveCharacters(projectId: number, payload: CharacterMapUpdateDto): Promise<CharacterMapDto> {
+    const parsedPayload = characterMapUpdateSchema.parse(payload);
+
+    try {
+      const response = await this.client.put(`/api/projects/${projectId}/characters`, parsedPayload);
+      return characterMapSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

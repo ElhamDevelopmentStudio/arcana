@@ -4,11 +4,13 @@ import useSWRMutation from 'swr/mutation';
 import { runRequestSchema, type RunRequestDto } from '@/app/schemas/api';
 import { nipeApiClient } from '@/services/api-client';
 import type { VoiceConfigDto } from '@/app/schemas/api';
+import type { CharacterMapDto, CharacterMapUpdateDto } from '@/app/schemas/api';
 
 export const workspaceKeys = {
   modeCatalog: ['mode-catalog'] as const,
   runDetail: (projectId: number, runId: number) => ['run-detail', projectId, runId] as const,
   exportPayload: (projectId: number, runId: number) => ['export-payload', projectId, runId] as const,
+  characterMap: (projectId: number) => ['character-map', projectId] as const,
 };
 
 export function useModeCatalogQuery(enabled: boolean) {
@@ -116,6 +118,25 @@ export function useImportCharactersMutation(projectId: number | null) {
         throw new Error('Project must exist before importing characters.');
       }
       return nipeApiClient.importCharacters(projectId, arg.file);
+    },
+  );
+}
+
+export function useCharacterMapQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? workspaceKeys.characterMap(projectId) : null,
+    async ([, currentProjectId]) => nipeApiClient.getCharacters(currentProjectId),
+  );
+}
+
+export function useSaveCharacterMapMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['save-characters', projectId] : null,
+    async (_, { arg }: { arg: CharacterMapUpdateDto }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before saving character map.');
+      }
+      return nipeApiClient.saveCharacters(projectId, arg);
     },
   );
 }
