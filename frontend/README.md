@@ -19,6 +19,13 @@ React + Vite client for the NIPE workflow.
 - shadcn/ui component base (customized locally)
 - Axios + SWR + Zustand + Zod + date-fns
 
+## Design System
+
+- Core tokens live in `src/styles/globals.css` (`:root`, `.dark`, `@theme inline`).
+- App layout uses a narrative shell: left workflow rail + right content canvas.
+- Visual style targets: low-noise backgrounds, soft depth, clear hierarchy, and high readability.
+- Shared primitives (`button`, `card`, `badge`, `input`, `native-select`) are tuned to the same spacing, radius, and shadow language.
+
 ## Scripts
 
 ```bash

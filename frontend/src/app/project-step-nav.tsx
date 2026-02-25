@@ -66,8 +66,9 @@ function isProjectStepLocked(path: string, projectId: string | null): boolean {
 
 export function ProjectStepNav({ projectId }: ProjectStepNavProps) {
   return (
-    <nav aria-label="Workflow" className="rounded-xl border bg-card p-3 shadow-sm">
-      <ul className="grid gap-2 lg:grid-cols-7">
+    <nav aria-label="Workflow" className="nipe-panel p-3.5">
+      <p className="px-1 text-[11px] font-semibold tracking-[0.15em] text-muted-foreground uppercase">Pipeline Steps</p>
+      <ul className="mt-2 grid gap-1.5">
         {PROJECT_STEPS.map((step) => {
           const locked = isProjectStepLocked(step.path, projectId);
           const to = resolvePath(step.path, projectId);
@@ -77,17 +78,19 @@ export function ProjectStepNav({ projectId }: ProjectStepNavProps) {
               <NavLink
                 className={({ isActive }) =>
                   [
-                    'group flex h-full items-center gap-2 rounded-lg border px-3 py-2 text-sm transition',
-                    isActive ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent/40',
-                    locked ? 'pointer-events-none opacity-40' : '',
+                    'group flex h-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition',
+                    isActive
+                      ? 'border-sidebar-active/30 bg-sidebar-active/10 text-sidebar-active shadow-[0_8px_18px_-14px_hsl(var(--primary)/0.8)]'
+                      : 'border-transparent text-sidebar-foreground hover:border-border hover:bg-background/85',
+                    locked ? 'pointer-events-none opacity-45' : '',
                   ].join(' ')
                 }
                 to={to}
               >
-                <Badge variant="outline" className="font-mono text-[10px]">
+                <Badge variant={locked ? 'outline' : 'secondary'} className="font-mono text-[10px]">
                   {step.short}
                 </Badge>
-                <span className="line-clamp-1">{step.label}</span>
+                <span className="line-clamp-1 font-medium tracking-[-0.01em]">{step.label}</span>
               </NavLink>
             </li>
           );

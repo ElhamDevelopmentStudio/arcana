@@ -11,14 +11,14 @@ type WorkflowPageShellProps = PropsWithChildren<{
 
 export function WorkflowPageShell({ title, description, step, action, children }: WorkflowPageShellProps) {
   return (
-    <section className="rounded-2xl border bg-card p-5 shadow-sm lg:p-6">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-3 border-b pb-4">
+    <section className="nipe-panel p-5 lg:p-6">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-3 border-b border-panel-border/80 pb-4">
         <div>
           <Badge variant="secondary" className="mb-3">
             {step}
           </Badge>
-          <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{description}</p>
+          <h2 className="text-2xl font-semibold tracking-tight text-panel-foreground">{title}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">{description}</p>
         </div>
         {action}
       </header>
