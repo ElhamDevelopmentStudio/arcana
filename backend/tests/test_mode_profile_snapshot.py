@@ -119,11 +119,13 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
+        "llm_confidence_threshold": 0.6,
         "mode_profile_snapshot": {
             "max_segment_chars": 255,
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
+            "llm_confidence_threshold": 0.6,
             "profile_intent": "user-tuned baseline with conservative defaults",
         },
     }

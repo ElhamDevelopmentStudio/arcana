@@ -16,6 +16,7 @@ EXPECTED_CUSTOM_PROFILE = {
     "llm_enabled": False,
     "provider_name": "openrouter",
     "max_calls_per_day": 25,
+    "llm_confidence_threshold": 0.6,
     "profile_intent": "user-tuned baseline with conservative defaults",
 }
 

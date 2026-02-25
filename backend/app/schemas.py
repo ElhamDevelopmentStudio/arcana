@@ -88,6 +88,7 @@ class ModeDefaultProfileResponse(BaseModel):
     llm_enabled: bool
     provider_name: str = Field(min_length=1)
     max_calls_per_day: int = Field(ge=1, le=10000)
+    llm_confidence_threshold: float = Field(ge=0.0, le=1.0)
     profile_intent: str = Field(min_length=1)
 
 
@@ -397,6 +398,7 @@ class RunCreateRequest(BaseModel):
     llm_enabled: bool = False
     provider_name: str = "openrouter"
     max_calls_per_day: int = Field(default=25, ge=1, le=10000)
+    llm_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     allow_unfinalized_character_map: bool = False
     internal_thought_voice_policy: str = "character"
     internal_thought_voice: str | None = None

@@ -23,6 +23,7 @@ EXPECTED_MODE_PAYLOAD = {
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
+            "llm_confidence_threshold": 0.6,
             "profile_intent": "tts-ready segmentation and stable narration defaults",
         },
         "academic": {
@@ -30,6 +31,7 @@ EXPECTED_MODE_PAYLOAD = {
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
+            "llm_confidence_threshold": 0.6,
             "profile_intent": "longer analytical segments for metric-friendly aggregation",
         },
         "author": {
@@ -37,6 +39,7 @@ EXPECTED_MODE_PAYLOAD = {
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
+            "llm_confidence_threshold": 0.6,
             "profile_intent": "balanced segmentation for narrative-health diagnostics",
         },
         "custom": {
@@ -44,6 +47,7 @@ EXPECTED_MODE_PAYLOAD = {
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
+            "llm_confidence_threshold": 0.6,
             "profile_intent": "user-tuned baseline with conservative defaults",
         },
     },
@@ -84,7 +88,14 @@ def test_unit_get_mode_catalog_matches_mode_constants() -> None:
 
 def test_unit_mode_default_profiles_cover_every_mode_and_required_fields() -> None:
     assert set(MODE_DEFAULT_PROFILES.keys()) == set(MODE_VALUES)
-    required_fields = {"max_segment_chars", "llm_enabled", "provider_name", "max_calls_per_day", "profile_intent"}
+    required_fields = {
+        "max_segment_chars",
+        "llm_enabled",
+        "provider_name",
+        "max_calls_per_day",
+        "llm_confidence_threshold",
+        "profile_intent",
+    }
     for mode, profile in MODE_DEFAULT_PROFILES.items():
         assert set(profile.keys()) == required_fields
         assert 80 <= profile["max_segment_chars"] <= 255, mode

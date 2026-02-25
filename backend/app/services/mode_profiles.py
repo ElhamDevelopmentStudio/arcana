@@ -10,6 +10,7 @@ PROFILE_CONFIG_KEYS: tuple[str, ...] = (
     "llm_enabled",
     "provider_name",
     "max_calls_per_day",
+    "llm_confidence_threshold",
 )
 
 
