@@ -1,4 +1,4 @@
-from app.services.tagging import detect_dialogue_blocks, detect_narration_blocks, detect_structure, tag_segment
+from app.services.tagging import detect_dialogue_blocks, detect_narration_blocks, detect_emotion_shift, detect_structure, tag_segment
 
 
 def test_detect_dialogue_blocks_recognizes_quotes_and_dash_lines() -> None:
@@ -101,6 +101,33 @@ def test_tag_segment_emotion_outputs_default_to_neutral_for_no_signal_words() ->
     assert tags["emotion_primary_label"] == "neutral"
     assert tags["emotion_secondary_label"] == "neutral"
     assert tags["emotion_confidence"] == 0.4
+
+
+def test_detect_emotion_shift_identifies_positive_to_negative_transition() -> None:
+    shift = detect_emotion_shift("He was happy, but fear and despair arrived.")
+    assert shift["has_shift"] is True
+    assert isinstance(shift["confidence"], float)
+    assert shift["confidence"] > 0
+    assert shift["from"] is not None
+    assert shift["to"] is not None
+    assert shift["from"]["label"] == "positive"
+    assert shift["to"]["label"] == "negative"
+    assert shift["from"]["secondary_label"] in {"joyful", "hopeful", "gratitude", "calm", "neutral", "positive"}
+    assert shift["to"]["secondary_label"] in {"fearful", "angry", "grief", "violent", "negative"}
+
+
+def test_detect_emotion_shift_stays_false_for_stable_emotion() -> None:
+    shift = detect_emotion_shift("The moonlight painted the room in soft silver and gentle winds.")
+    assert shift["has_shift"] is False
+    assert shift["from"] is None
+    assert shift["to"] is None
+    assert shift["evidence"]["shift_count"] == 0
+
+
+def test_tag_segment_includes_emotion_shift_field() -> None:
+    tags = tag_segment("He smiled as dawn broke, but then the grave threat arrived.")
+    assert isinstance(tags["emotion_shift"], dict)
+    assert set(tags["emotion_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "evidence"}
 
 
 def test_detect_narration_blocks_identifies_outside_dialogue_ranges() -> None:
