@@ -75,6 +75,7 @@ Ingestion title fallback behavior:
 - Chapter-title deduplication actions are logged in `projects.ingestion_log_json.dedup_actions` with occurrence mapping keys.
 - Each chapter also receives a unique internal ID (`chapter_internal_id`, e.g. `ch-0001`) independent from the human chapter title.
 - Whitespace is normalized consistently across ingestion: Unicode NBSP variants are flattened, horizontal spacing is collapsed, and 3+ line breaks are reduced to paragraph breaks.
+- Unicode compatibility variants are canonicalized with `NFKC` before quote/whitespace normalization.
 - Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.
 - EPUB ingestion is toggle-controlled (`ENABLE_EPUB_INGESTION`) and currently wired to a pluggable parser stub.
 - Incremental append ingestion supports one `.txt` chapter payload at a time (`/ingest/append-chapter`) without replacing existing chapters.

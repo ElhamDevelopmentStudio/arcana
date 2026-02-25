@@ -1,4 +1,5 @@
 import re
+import unicodedata
 
 QUOTE_TRANSLATION = str.maketrans({
     "“": '"',
@@ -34,5 +35,9 @@ def normalize_quotes(text: str) -> str:
     return text.translate(QUOTE_TRANSLATION)
 
 
+def normalize_unicode_variants(text: str) -> str:
+    return unicodedata.normalize("NFKC", text)
+
+
 def normalize_text(text: str) -> str:
-    return normalize_whitespace(normalize_quotes(text))
+    return normalize_whitespace(normalize_quotes(normalize_unicode_variants(text)))

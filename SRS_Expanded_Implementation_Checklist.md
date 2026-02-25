@@ -97,7 +97,7 @@ Definition of done for each task:
 - [x] [NORM-005] Add unique internal chapter ID assignment while preserving original title.
 - [x] [NORM-006] Log chapter-title deduplication actions.
 - [x] [NORM-007] Normalize whitespace consistently.
-- [ ] [NORM-008] Normalize Unicode variants to canonical form.
+- [x] [NORM-008] Normalize Unicode variants to canonical form.
 - [ ] [NORM-009] Normalize curly quotes to configured quote style.
 - [ ] [NORM-010] Normalize ellipsis variants.
 - [ ] [NORM-011] Normalize line breaks and paragraph separators.
