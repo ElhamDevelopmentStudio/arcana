@@ -38,6 +38,7 @@ export function ProjectModePage() {
 
   const effectiveMode = selectedMode ?? modeCatalogQuery.data?.default_mode ?? 'audiobook';
   const runModeSnapshot = runDetailQuery.data?.config?.mode;
+  const selectedProfile = modeCatalogQuery.data?.mode_profiles?.[effectiveMode];
 
   function handleModeChange(nextMode: string) {
     setSelectedMode(nextMode);
@@ -92,6 +93,21 @@ export function ProjectModePage() {
             <p>Detected chapters: {chapterCount ?? 'n/a'}.</p>
             <p>Last run mode snapshot: {typeof runModeSnapshot === 'string' ? runModeSnapshot : 'none'}.</p>
           </div>
+
+          {selectedProfile ? (
+            <div className="grid gap-1 rounded-xl bg-muted/45 px-3 py-2 text-sm text-muted-foreground" data-testid="mode-profile-summary">
+              <p>
+                Default max segment chars: <strong className="text-foreground">{selectedProfile.max_segment_chars}</strong>
+              </p>
+              <p>
+                Default provider: <strong className="text-foreground">{selectedProfile.provider_name}</strong>
+              </p>
+              <p>
+                Default daily call cap: <strong className="text-foreground">{selectedProfile.max_calls_per_day}</strong>
+              </p>
+              <p className="text-xs">{selectedProfile.profile_intent}</p>
+            </div>
+          ) : null}
 
           {!canSelectMode ? (
             <p className="text-sm text-muted-foreground">

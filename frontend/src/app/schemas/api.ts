@@ -4,6 +4,16 @@ export const modeCatalogSchema = z.object({
   modes: z.array(z.string()),
   default_mode: z.string(),
   persisted_in: z.array(z.string()),
+  mode_profiles: z.record(
+    z.string(),
+    z.object({
+      max_segment_chars: z.number().int().min(80).max(255),
+      llm_enabled: z.boolean(),
+      provider_name: z.string().min(1),
+      max_calls_per_day: z.number().int().positive(),
+      profile_intent: z.string().min(1),
+    }),
+  ),
 });
 
 export const projectSchema = z.object({

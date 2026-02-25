@@ -52,6 +52,7 @@ python scripts_run_migration.py
 Mode persistence behavior:
 - Project-level selected mode is stored at `projects.selected_mode`.
 - Each run snapshots mode in `runs.config_json.mode`.
+- Mode catalog includes `mode_profiles` with default run-config values per mode.
 
 ## API Domain Terms
 

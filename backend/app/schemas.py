@@ -17,10 +17,19 @@ class ProjectResponse(BaseModel):
     created_at: datetime
 
 
+class ModeDefaultProfileResponse(BaseModel):
+    max_segment_chars: int = Field(ge=80, le=255)
+    llm_enabled: bool
+    provider_name: str = Field(min_length=1)
+    max_calls_per_day: int = Field(ge=1, le=10000)
+    profile_intent: str = Field(min_length=1)
+
+
 class ModeCatalogResponse(BaseModel):
     modes: list[str]
     default_mode: str
     persisted_in: list[str]
+    mode_profiles: dict[str, ModeDefaultProfileResponse]
 
 
 class IngestResponse(BaseModel):

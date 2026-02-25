@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,7 +7,7 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     data: {
       modes: ['audiobook', 'academic', 'author', 'custom'],
       default_mode: 'audiobook',
-      persisted_in: ['projects.selected_mode'],
+      persisted_in: ['projects.selected_mode', 'runs.config_json.mode'],
       mode_profiles: {
         audiobook: {
           max_segment_chars: 120,
@@ -61,18 +60,13 @@ function renderModePage() {
         path: '/projects/:project_id/mode',
         element: <ProjectModePage />,
       },
-      {
-        path: '/projects/:project_id/characters',
-        element: <div data-testid="characters-page">Character page</div>,
-      },
     ],
     { initialEntries: ['/projects/101/mode'] },
   );
-
   render(<RouterProvider router={router} />);
 }
 
-describe('mode selection gating', () => {
+describe('mode profile summary regression', () => {
   beforeEach(() => {
     resetWorkspaceStore();
     useWorkspaceStore.setState({
@@ -84,20 +78,12 @@ describe('mode selection gating', () => {
     });
   });
 
-  it('keeps continue action locked until a mode is explicitly selected', async () => {
-    const user = userEvent.setup();
+  it('renders default mode profile summary from catalog when no explicit selection exists', () => {
     renderModePage();
 
-    const continueButton = screen.getByTestId('mode-continue-button');
-    expect(continueButton).toBeDisabled();
-    expect(screen.getByTestId('mode-required-hint')).toBeInTheDocument();
-    expect(screen.getByTestId('mode-profile-summary')).toHaveTextContent('Default max segment chars: 120');
-
-    await user.selectOptions(screen.getByLabelText(/select mode/i), 'author');
-    expect(continueButton).toBeEnabled();
-    expect(screen.getByTestId('mode-profile-summary')).toHaveTextContent('Default max segment chars: 160');
-
-    await user.click(continueButton);
-    expect(screen.getByTestId('characters-page')).toBeInTheDocument();
+    const summary = screen.getByTestId('mode-profile-summary');
+    expect(summary).toHaveTextContent('Default max segment chars: 120');
+    expect(summary).toHaveTextContent('Default provider: openrouter');
+    expect(summary).toHaveTextContent('Default daily call cap: 25');
   });
 });

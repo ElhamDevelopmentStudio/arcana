@@ -9,7 +9,7 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_modes_endpoint.db"
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
-from app.modes import DEFAULT_MODE, MODE_PERSISTENCE_PATHS, MODE_VALUES, get_mode_catalog
+from app.modes import DEFAULT_MODE, MODE_DEFAULT_PROFILES, MODE_PERSISTENCE_PATHS, MODE_VALUES, get_mode_catalog
 from app.models import Project
 
 
@@ -17,6 +17,36 @@ EXPECTED_MODE_PAYLOAD = {
     "modes": ["audiobook", "academic", "author", "custom"],
     "default_mode": "audiobook",
     "persisted_in": ["projects.selected_mode", "runs.config_json.mode"],
+    "mode_profiles": {
+        "audiobook": {
+            "max_segment_chars": 120,
+            "llm_enabled": False,
+            "provider_name": "openrouter",
+            "max_calls_per_day": 25,
+            "profile_intent": "tts-ready segmentation and stable narration defaults",
+        },
+        "academic": {
+            "max_segment_chars": 220,
+            "llm_enabled": False,
+            "provider_name": "openrouter",
+            "max_calls_per_day": 25,
+            "profile_intent": "longer analytical segments for metric-friendly aggregation",
+        },
+        "author": {
+            "max_segment_chars": 160,
+            "llm_enabled": False,
+            "provider_name": "openrouter",
+            "max_calls_per_day": 25,
+            "profile_intent": "balanced segmentation for narrative-health diagnostics",
+        },
+        "custom": {
+            "max_segment_chars": 255,
+            "llm_enabled": False,
+            "provider_name": "openrouter",
+            "max_calls_per_day": 25,
+            "profile_intent": "user-tuned baseline with conservative defaults",
+        },
+    },
 }
 
 
@@ -49,6 +79,18 @@ def test_unit_get_mode_catalog_matches_mode_constants() -> None:
     assert catalog["modes"] == list(MODE_VALUES)
     assert catalog["default_mode"] == DEFAULT_MODE
     assert catalog["persisted_in"] == list(MODE_PERSISTENCE_PATHS)
+    assert catalog["mode_profiles"] == MODE_DEFAULT_PROFILES
+
+
+def test_unit_mode_default_profiles_cover_every_mode_and_required_fields() -> None:
+    assert set(MODE_DEFAULT_PROFILES.keys()) == set(MODE_VALUES)
+    required_fields = {"max_segment_chars", "llm_enabled", "provider_name", "max_calls_per_day", "profile_intent"}
+    for mode, profile in MODE_DEFAULT_PROFILES.items():
+        assert set(profile.keys()) == required_fields
+        assert 80 <= profile["max_segment_chars"] <= 255, mode
+        assert profile["provider_name"], mode
+        assert profile["max_calls_per_day"] >= 1, mode
+        assert profile["profile_intent"], mode
 
 
 def test_integration_modes_endpoint_returns_expected_contract() -> None:
@@ -59,6 +101,7 @@ def test_integration_modes_endpoint_returns_expected_contract() -> None:
     assert payload["modes"] == list(MODE_VALUES)
     assert payload["default_mode"] == DEFAULT_MODE
     assert payload["persisted_in"] == list(MODE_PERSISTENCE_PATHS)
+    assert payload["mode_profiles"] == MODE_DEFAULT_PROFILES
 
 
 def test_e2e_modes_endpoint_output_can_drive_run_mode_selection() -> None:
