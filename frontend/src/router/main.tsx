@@ -1,14 +1,38 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import type { RouteObject } from 'react-router-dom';
 import { Navigate } from 'react-router-dom';
 
 import { MainShell } from '@/app/main-shell';
-import { ProjectCharactersPage } from '@/pages/projects/project-characters-page';
-import { ProjectDashboardsPage } from '@/pages/projects/project-dashboards-page';
-import { ProjectExportPage } from '@/pages/projects/project-export-page';
-import { ProjectModePage } from '@/pages/projects/project-mode-page';
-import { ProjectNewPage } from '@/pages/projects/project-new-page';
-import { ProjectPipelineSetupPage } from '@/pages/projects/project-pipeline-setup-page';
-import { ProjectRunMonitorPage } from '@/pages/projects/project-run-monitor-page';
+
+const ProjectCharactersPage = lazy(() =>
+  import('@/pages/projects/project-characters-page').then((module) => ({ default: module.ProjectCharactersPage })),
+);
+const ProjectDashboardsPage = lazy(() =>
+  import('@/pages/projects/project-dashboards-page').then((module) => ({ default: module.ProjectDashboardsPage })),
+);
+const ProjectExportPage = lazy(() =>
+  import('@/pages/projects/project-export-page').then((module) => ({ default: module.ProjectExportPage })),
+);
+const ProjectModePage = lazy(() =>
+  import('@/pages/projects/project-mode-page').then((module) => ({ default: module.ProjectModePage })),
+);
+const ProjectNewPage = lazy(() =>
+  import('@/pages/projects/project-new-page').then((module) => ({ default: module.ProjectNewPage })),
+);
+const ProjectPipelineSetupPage = lazy(() =>
+  import('@/pages/projects/project-pipeline-setup-page').then((module) => ({ default: module.ProjectPipelineSetupPage })),
+);
+const ProjectRunMonitorPage = lazy(() =>
+  import('@/pages/projects/project-run-monitor-page').then((module) => ({ default: module.ProjectRunMonitorPage })),
+);
+
+const ROUTE_SUSPENSE_FALLBACK = (
+  <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">Loading step...</div>
+);
+
+function SuspendedRoute({ children }: { children: ReactNode }) {
+  return <Suspense fallback={ROUTE_SUSPENSE_FALLBACK}>{children}</Suspense>;
+}
 
 export const mainRouter: RouteObject[] = [
   {
@@ -20,31 +44,31 @@ export const mainRouter: RouteObject[] = [
       },
       {
         path: 'projects/new',
-        element: <ProjectNewPage />,
+        element: <SuspendedRoute><ProjectNewPage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id/mode',
-        element: <ProjectModePage />,
+        element: <SuspendedRoute><ProjectModePage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id/characters',
-        element: <ProjectCharactersPage />,
+        element: <SuspendedRoute><ProjectCharactersPage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id/pipeline-setup',
-        element: <ProjectPipelineSetupPage />,
+        element: <SuspendedRoute><ProjectPipelineSetupPage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id/run-monitor',
-        element: <ProjectRunMonitorPage />,
+        element: <SuspendedRoute><ProjectRunMonitorPage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id/export',
-        element: <ProjectExportPage />,
+        element: <SuspendedRoute><ProjectExportPage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id/dashboards',
-        element: <ProjectDashboardsPage />,
+        element: <SuspendedRoute><ProjectDashboardsPage /></SuspendedRoute>,
       },
     ],
   },
