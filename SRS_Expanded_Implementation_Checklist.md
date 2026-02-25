@@ -299,7 +299,7 @@ Definition of done for each task:
 - [x] [LLM-009] Add provider registry entries for OpenRouter.
 - [x] [LLM-010] Add per-provider request count tracking.
 - [x] [LLM-011] Add estimated token usage tracking.
-- [ ] [LLM-012] Add last known rate-limit status tracking.
+- [x] [LLM-012] Add last known rate-limit status tracking.
 - [ ] [LLM-013] Add last successful call timestamp tracking.
 - [ ] [LLM-014] Add last reset timestamp tracking if available.
 - [ ] [LLM-015] Stop calls on provider rate-limit/quota error.

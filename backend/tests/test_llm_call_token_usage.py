@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
-from app.models import LLMCall, Project, Run
+from app.models import LLMCall, Project, ProviderQuota, Run
 from app.services import llm_router, pipeline
 
 
@@ -70,7 +70,6 @@ def test_pipeline_llm_probe_persists_token_usage_estimate(monkeypatch: object) -
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
-        monkeypatch.setattr(pipeline, "consume_quota", lambda **kwargs: (True, 2))
         monkeypatch.setattr(
             pipeline,
             "get_provider_runtime_settings",
@@ -89,6 +88,67 @@ def test_pipeline_llm_probe_persists_token_usage_estimate(monkeypatch: object) -
         call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
         assert call.token_usage_estimate == 512
         assert call.success is True
+    finally:
+        session.close()
+
+
+def test_pipeline_rate_limit_updates_provider_quota_status(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Provider Rate Limit Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        class _RateLimitedLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="rate_limit",
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "api-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _RateLimitedLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="The storm arrived before the dawn.",
+        )
+
+        session.flush()
+        quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one()
+        assert quota.last_rate_limit_status == "provider_rate_limited"
+        assert quota.last_rate_limit_status_at is not None
     finally:
         session.close()
 
