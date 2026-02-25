@@ -98,6 +98,7 @@ export function ProjectCharactersPage() {
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
   const [pronunciationMatchWholeWords, setPronunciationMatchWholeWords] = useState<boolean>(true);
   const [pronunciationCaseSensitive, setPronunciationCaseSensitive] = useState<boolean>(true);
+  const [pronunciationAliasAware, setPronunciationAliasAware] = useState<boolean>(false);
   const [pronunciationPreviewCharacterName, setPronunciationPreviewCharacterName] = useState<string>('');
   const [pronunciationPreviewResult, setPronunciationPreviewResult] = useState<
     PronunciationDictionaryPreviewResponseDto | null
@@ -362,6 +363,7 @@ export function ProjectCharactersPage() {
       include_character_scope: includeCharacterPronunciationScope,
       match_whole_words: pronunciationMatchWholeWords,
       case_sensitive: pronunciationCaseSensitive,
+      alias_aware: pronunciationAliasAware,
       ...(pronunciationPreviewCharacterName.trim() ? { character_name: pronunciationPreviewCharacterName.trim() } : {}),
     };
 
@@ -802,6 +804,13 @@ export function ProjectCharactersPage() {
                     onCheckedChange={(checked) => setPronunciationCaseSensitive(checked === true)}
                   />
                   <span>Case-sensitive matching</span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={pronunciationAliasAware}
+                    onCheckedChange={(checked) => setPronunciationAliasAware(checked === true)}
+                  />
+                  <span>Alias-aware substitution</span>
                 </label>
               </div>
               <div className="grid gap-2">
