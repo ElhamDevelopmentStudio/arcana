@@ -2,6 +2,7 @@ import io
 import csv
 import os
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 
@@ -629,6 +630,117 @@ def test_export_json_includes_smoothed_tension_curve() -> None:
             assert tension_point["position"] == i + 1
             assert tension_point["segment_id"] == segment["segment_id"]
             assert tension_point["smoothed_tension"] == expected_tension
+
+
+def test_export_json_includes_tension_peak_markers() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-007 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "The lock clicked loudly and somebody sprinted down the hall.\n"
+                            "A scream echoed behind the wall as glass shattered.\n"
+                            "Then silence returned, calm and airless.\n"
+                            "Footsteps slowed. A calm voice whispered, \"it's over.\"\n"
+                            "A loud crash followed, then a second scream.\n\n"
+                            "Chapter 2\n"
+                            "Rain fell outside while the room stayed still.\n"
+                            "The tension dropped to near zero as dawn seeped through the blinds.\n"
+                            "She smiled, softly, at the first bird call.\n"
+                            "The day finally began."
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        smoothed_curve_report = academic_reports.get("smoothed_tension_curve")
+        assert isinstance(smoothed_curve_report, dict)
+        tension_curve = smoothed_curve_report.get("tension_curve")
+        assert isinstance(tension_curve, list)
+
+        tension_peak_report = academic_reports.get("tension_peak_markers")
+        assert isinstance(tension_peak_report, dict)
+        peaks = tension_peak_report.get("peaks")
+        assert isinstance(peaks, list)
+        assert isinstance(tension_peak_report.get("major_peak_count"), int)
+        assert isinstance(tension_peak_report.get("minor_peak_count"), int)
+        assert isinstance(tension_peak_report.get("peak_count"), int)
+        assert tension_peak_report["peak_count"] == len(peaks)
+
+        values_smoothed: list[float] = [float(point["smoothed_tension"]) for point in tension_curve]
+
+        expected_peaks: list[dict[str, Any]] = []
+        for index in range(1, len(values_smoothed) - 1):
+            prev_value = values_smoothed[index - 1]
+            current_value = values_smoothed[index]
+            next_value = values_smoothed[index + 1]
+            if not (current_value > prev_value and current_value > next_value):
+                continue
+
+            prominence = round(current_value - max(prev_value, next_value), 4)
+            segment = export_payload["segments"][index]
+            if current_value >= 0.55 and prominence >= 0.18:
+                severity = "major"
+            elif current_value >= 0.40 and prominence >= 0.10:
+                severity = "minor"
+            else:
+                continue
+
+            expected_peaks.append(
+                {
+                    "position": index + 1,
+                    "segment_id": segment["segment_id"],
+                    "chapter_id": segment["chapter_id"],
+                    "segment_index": segment["segment_index"],
+                    "peak_type": "tension_peak",
+                    "severity": severity,
+                    "prominence": prominence,
+                    "tension_value": round(current_value, 4),
+                    "neighbors": {
+                        "previous_tension": round(prev_value, 4),
+                        "next_tension": round(next_value, 4),
+                    },
+                }
+            )
+
+        assert tension_peak_report["major_peak_count"] == len(
+            [peak for peak in peaks if peak.get("severity") == "major"]
+        )
+        assert tension_peak_report["minor_peak_count"] == len(
+            [peak for peak in peaks if peak.get("severity") == "minor"]
+        )
+        assert tension_peak_report["prominence_thresholds"] == {
+            "major": 0.18,
+            "minor": 0.10,
+        }
+        assert len(peaks) == len(expected_peaks)
+        for expected_peak, actual_peak in zip(expected_peaks, peaks):
+            assert expected_peak == actual_peak
 
 
 def test_export_json_includes_warning_report_summary() -> None:
