@@ -128,6 +128,132 @@ def _build_export_reports(project: Project, run: Run, segment_count: int, ordere
     }
 
 
+def _build_academic_export_output_inventory(
+    academic_reports: dict[str, Any],
+    generated_at: str,
+    schema_version: str,
+) -> list[dict[str, Any]]:
+    def _record_count(value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return len(value)
+        if isinstance(value, dict):
+            return len(value)
+        return 1
+
+    def _build_entry(
+        output_id: str,
+        output_name: str,
+        supported_formats: list[str],
+        data_keys: list[str] | None = None,
+        available: bool = True,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        payloads = [
+            academic_reports.get(key) for key in (data_keys or [])
+        ]
+        record_counts = [_record_count(payload) for payload in payloads]
+        available_formats = [supported_format for supported_format in supported_formats if available]
+
+        return {
+            "output_id": output_id,
+            "output_name": output_name,
+            "supported_formats": supported_formats,
+            "status": "available" if available else "not_implemented",
+            "available_formats": available_formats,
+            "data_keys": data_keys or [],
+            "data_record_counts": record_counts,
+            "evidence": {
+                "generated_by": f"academic_export_schema_{schema_version.replace('.', '_')}",
+                "generated_at": generated_at,
+                "status_reason": reason,
+            },
+        }
+
+    return [
+        _build_entry(
+            output_id="AO-001",
+            output_name="chapter_emotion_metrics_series",
+            supported_formats=["json", "csv", "time_series_json"],
+            data_keys=[
+                "chapter_level_valence_means",
+                "chapter_level_valence_variance",
+            ],
+            available=True,
+        ),
+        _build_entry(
+            output_id="AO-002",
+            output_name="chapter_tension_curve_summary",
+            supported_formats=["json", "csv", "time_series_json"],
+            data_keys=[
+                "chapter_level_raw_tension",
+                "smoothed_tension_curve",
+                "tension_peak_markers",
+                "tension_plateau_regions",
+            ],
+            available=True,
+        ),
+        _build_entry(
+            output_id="AO-003",
+            output_name="character_dominance_series",
+            supported_formats=["json", "csv", "time_series_json"],
+            data_keys=["chapter_level_character_dominance"],
+            available=True,
+        ),
+        _build_entry(
+            output_id="AO-004",
+            output_name="character_cooccurrence_graph",
+            supported_formats=["json", "graph_json", "csv"],
+            data_keys=["character_cooccurrence_graph", "character_cooccurrence_centrality_table"],
+            available=True,
+        ),
+        _build_entry(
+            output_id="AO-005",
+            output_name="comparative_run_metrics_snapshot",
+            supported_formats=["json", "csv"],
+            data_keys=["comparative_run_metrics_snapshot"],
+            available=False,
+            reason="Pending implementation for ACAD-015+",
+        ),
+        _build_entry(
+            output_id="AO-006",
+            output_name="academic_export_manifest",
+            supported_formats=["json"],
+            data_keys=["academic_export_manifest"],
+            available=True,
+        ),
+    ]
+
+
+def _build_academic_export_manifest(
+    project: Project,
+    run: Run,
+    academic_reports: dict[str, Any],
+    generated_at: datetime,
+) -> dict[str, Any]:
+    generated_at_iso = generated_at.isoformat()
+    schema_version = "1.0.0"
+    inventory = _build_academic_export_output_inventory(
+        academic_reports=academic_reports,
+        generated_at=generated_at_iso,
+        schema_version=schema_version,
+    )
+
+    return {
+        "schema_version": schema_version,
+        "output_schema": "academic_json",
+        "export_format": "json",
+        "generated_at": generated_at_iso,
+        "generated_by": "build_run_export",
+        "project_id": project.id,
+        "run_id": run.id,
+        "run_status": run.status,
+        "ordered_by": ["chapter_index", "segment_index"],
+        "outputs": inventory,
+    }
+
+
 def _build_segment_rows_query(run_id: int, from_chapter_index: int | None, from_segment_index: int | None):
     base_query = (
         select(Segment.segment_json)
@@ -1470,6 +1596,36 @@ def build_run_export(
     ordered_by = ["chapter_index", "segment_index"]
     llm_calls = _load_run_llm_calls(session, run)
     ingestion_log = dict(project.ingestion_log_json or {})
+    academic_reports = {
+        "chapter_level_valence_means": _build_chapter_level_valence_means(segments),
+        "chapter_level_valence_variance": _build_chapter_level_valence_variance(segments),
+        "chapter_level_emotional_volatility_index": _build_chapter_level_emotional_volatility_index(
+            segments=segments,
+            volatility_markers=time_series["volatility_markers"],
+        ),
+        "chapter_level_character_dominance": _build_chapter_level_character_dominance(
+            segments=segments,
+            top_characters_limit=3,
+        ),
+        "character_cooccurrence_graph": character_cooccurrence_graph,
+        "character_cooccurrence_centrality_table": character_cooccurrence_centrality_table,
+        "chapter_level_raw_tension": _build_chapter_level_raw_tension(segments),
+        "smoothed_tension_curve": smoothed_tension_curve,
+        "tension_peak_markers": _build_tension_peak_markers(
+            smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
+            major_prominence_threshold=0.18,
+            minor_prominence_threshold=0.10,
+        ),
+        "tension_plateau_regions": _build_tension_plateau_regions(
+            smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
+            flatness_tolerance=0.05,
+            min_region_length=3,
+        ),
+        "rolling_window_emotional_curves": _build_rolling_emotional_curves(
+            segments=segments,
+            window_size=5,
+        ),
+    }
     manifest = {
         "schema_version": "1.0.0",
         "export_type": "audiobook_tts_package",
@@ -1499,36 +1655,13 @@ def build_run_export(
             segment_count=len(segments),
             ordered_by=ordered_by,
         ),
-        "academic_reports": {
-            "chapter_level_valence_means": _build_chapter_level_valence_means(segments),
-            "chapter_level_valence_variance": _build_chapter_level_valence_variance(segments),
-            "chapter_level_emotional_volatility_index": _build_chapter_level_emotional_volatility_index(
-                segments=segments,
-                volatility_markers=time_series["volatility_markers"],
-            ),
-            "chapter_level_character_dominance": _build_chapter_level_character_dominance(
-                segments=segments,
-                top_characters_limit=3,
-            ),
-            "character_cooccurrence_graph": character_cooccurrence_graph,
-            "character_cooccurrence_centrality_table": character_cooccurrence_centrality_table,
-            "chapter_level_raw_tension": _build_chapter_level_raw_tension(segments),
-            "smoothed_tension_curve": smoothed_tension_curve,
-            "tension_peak_markers": _build_tension_peak_markers(
-                smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
-                major_prominence_threshold=0.18,
-                minor_prominence_threshold=0.10,
-            ),
-            "tension_plateau_regions": _build_tension_plateau_regions(
-                smoothed_tension_curve=smoothed_tension_curve.get("tension_curve", []),
-                flatness_tolerance=0.05,
-                min_region_length=3,
-            ),
-            "rolling_window_emotional_curves": _build_rolling_emotional_curves(
-                segments=segments,
-                window_size=5,
-            ),
-        },
+        "academic_reports": academic_reports,
+        "academic_export_manifest": _build_academic_export_manifest(
+            project=project,
+            run=run,
+            academic_reports=academic_reports,
+            generated_at=generated_at,
+        ),
     }
 
     return {

@@ -1289,6 +1289,94 @@ def test_export_json_includes_character_cooccurrence_centrality_table() -> None:
         assert table[2]["rank"] == 3
 
 
+def test_export_json_includes_academic_json_schema_manifest() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-012 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "Ada looked down the canyon and thought about the storm.\n\n"
+                            "Chapter 2\n"
+                            "The signal tower blinked once, and then again, then again."
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 2
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 120, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        manifest = export_resp.json()["manifest"]
+
+        academic_manifest = manifest.get("academic_export_manifest")
+        assert isinstance(academic_manifest, dict)
+        assert academic_manifest["schema_version"] == "1.0.0"
+        assert academic_manifest["output_schema"] == "academic_json"
+        assert academic_manifest["export_format"] == "json"
+        assert academic_manifest["project_id"] == project_id
+        assert academic_manifest["run_id"] == run_id
+        assert academic_manifest["run_status"] == "completed"
+
+        outputs = academic_manifest.get("outputs")
+        assert isinstance(outputs, list)
+        assert len(outputs) == 6
+
+        outputs_by_id = {entry.get("output_id"): entry for entry in outputs if isinstance(entry, dict)}
+        expected_output_names = {
+            "AO-001": "chapter_emotion_metrics_series",
+            "AO-002": "chapter_tension_curve_summary",
+            "AO-003": "character_dominance_series",
+            "AO-004": "character_cooccurrence_graph",
+            "AO-005": "comparative_run_metrics_snapshot",
+            "AO-006": "academic_export_manifest",
+        }
+
+        assert set(outputs_by_id.keys()) >= set(expected_output_names.keys())
+        for output_id, expected_name in expected_output_names.items():
+            output = outputs_by_id[output_id]
+            assert output["output_name"] == expected_name
+            assert "supported_formats" in output
+            assert "available_formats" in output
+            assert "data_keys" in output
+            assert "evidence" in output
+
+        available_outputs = {
+            output["output_id"]
+            for output in outputs
+            if isinstance(output, dict) and output.get("status") == "available"
+        }
+        assert {"AO-001", "AO-002", "AO-003", "AO-004", "AO-006"} <= available_outputs
+
+        pending_output = outputs_by_id["AO-005"]
+        assert pending_output["status"] == "not_implemented"
+        assert pending_output["evidence"]["status_reason"] == "Pending implementation for ACAD-015+"
+        assert pending_output["available_formats"] == []
+
+        ao_006 = outputs_by_id["AO-006"]
+        assert ao_006["available_formats"] == ["json"]
+        assert ao_006["data_keys"] == ["academic_export_manifest"]
+        evidence = ao_006["evidence"]
+        assert evidence["generated_by"] == "academic_export_schema_1_0_0"
+
+
 def test_export_json_includes_warning_report_summary() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})
