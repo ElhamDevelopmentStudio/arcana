@@ -9,7 +9,10 @@ from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
 from app.main import app
 from app.models import Chapter, Character
-from app.services.character_analytics import build_character_mentions_by_chapter
+from app.services.character_analytics import (
+    build_character_first_appearance_chapter_indices,
+    build_character_mentions_by_chapter,
+)
 
 
 def setup_module() -> None:
@@ -110,6 +113,71 @@ def test_unit_character_mentions_by_chapter_ignores_ambiguous_alias_matches() ->
     assert results[0].mention_counts["Lio"] == 0
 
 
+def test_unit_character_first_appearance_chapter_indices() -> None:
+    chapters = [
+        _chapter(1, "Sunny said hello. Nobody was not here."),
+        _chapter(2, "Sunny and Captain entered."),
+        _chapter(3, "Nephis appeared. Lio replied."),
+    ]
+
+    characters = [
+        Character(
+            name="Sunny",
+            verbalized_form="Sunny",
+            gender="female",
+            aliases=["Sun"],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Lio",
+            verbalized_form="Lio",
+            gender="male",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Captain",
+            verbalized_form="Captain",
+            gender="male",
+            aliases=["Cap"],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Nephis",
+            verbalized_form="Nephis",
+            gender="female",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Ghost",
+            verbalized_form="Ghost",
+            gender="unknown",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+    ]
+
+    chapter_counts = build_character_mentions_by_chapter(chapters=chapters, characters=characters)
+    first_appearance = build_character_first_appearance_chapter_indices(chapter_counts)
+
+    assert first_appearance["Sunny"] == 1
+    assert first_appearance["Lio"] == 3
+    assert first_appearance["Nephis"] == 3
+    assert first_appearance["Captain"] == 2
+    assert first_appearance["Ghost"] is None
+
+
 def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
     sample_text = (
         "Chapter 1\n"
@@ -159,3 +227,6 @@ def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
         assert counts and isinstance(counts, list)
         assert counts[0]["chapter_index"] == 1
         assert counts[0]["mention_counts"]["Sunny"] == 3
+
+        first_appearance = detail["config"]["character_first_appearance_chapter_index"]
+        assert first_appearance == {"Nephis": 1, "Sunny": 1}
