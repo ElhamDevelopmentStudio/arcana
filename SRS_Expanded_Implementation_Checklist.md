@@ -122,7 +122,7 @@ Definition of done for each task:
 - [x] [CHAR-007] Normalize and merge user-uploaded + auto + scraped candidates.
 - [x] [CHAR-008] Implement canonical-name merge suggestions.
 - [x] [CHAR-009] Create review screen for proposed characters.
-- [ ] [CHAR-010] Create approve/reject actions per proposed character.
+- [x] [CHAR-010] Create approve/reject actions per proposed character.
 - [ ] [CHAR-011] Add “Finalize character map” gate action.
 - [ ] [CHAR-012] Prevent downstream runs from using unfinalized proposed set unless override enabled.
 - [ ] [CHAR-013] Implement alias list storage per character.

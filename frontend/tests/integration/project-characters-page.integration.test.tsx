@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -204,6 +204,87 @@ describe('project characters page manual editor', () => {
     expect(screen.getByTestId('proposed-character-mire')).toBeInTheDocument();
     expect(screen.getByText('Mire → Mira')).toBeInTheDocument();
     expect(screen.getByText('Reason: name_similarity')).toBeInTheDocument();
+  });
+
+  it('allows approving and rejecting proposed characters', async () => {
+    const user = userEvent.setup();
+    mergeCharactersMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      status: 'complete',
+      candidate_count: 3,
+      proposed_characters: [
+        {
+          name: 'Mire',
+          verbalized_form: 'Mire',
+          gender: 'unknown',
+          aliases: [],
+          notes: null,
+          source: 'auto',
+          confidence: 0.61,
+          source_trace: [],
+        },
+        {
+          name: 'Tao',
+          verbalized_form: 'Tao',
+          gender: 'female',
+          aliases: [],
+          notes: null,
+          source: 'auto',
+          confidence: 0.58,
+          source_trace: [],
+        },
+      ],
+      candidates: [
+        {
+          name: 'Mira',
+          verbalized_form: 'Mira',
+          gender: 'female',
+          aliases: [],
+          notes: null,
+          source: 'merged:auto|user_import',
+          confidence: 1.0,
+          source_trace: [],
+        },
+        {
+          name: 'Mire',
+          verbalized_form: 'Mire',
+          gender: 'unknown',
+          aliases: [],
+          notes: null,
+          source: 'auto',
+          confidence: 0.61,
+          source_trace: [],
+        },
+        {
+          name: 'Tao',
+          verbalized_form: 'Tao',
+          gender: 'female',
+          aliases: [],
+          notes: null,
+          source: 'auto',
+          confidence: 0.58,
+          source_trace: [],
+        },
+      ],
+      canonical_merge_suggestions: [],
+    });
+    renderCharacterPage();
+
+    await user.click(screen.getByRole('button', { name: 'Merge user + auto + scraped candidates' }));
+
+    expect(screen.getByTestId('character-proposed-state')).toHaveTextContent('2 proposed character(s) ready for review.');
+    const mireRow = screen.getByTestId('proposed-character-mire');
+
+    await user.click(within(mireRow).getByRole('button', { name: 'Approve' }));
+    expect(screen.getAllByPlaceholderText('Character name').filter((input) => input.getAttribute('value') === 'Mire')).toHaveLength(1);
+
+    await user.click(within(screen.getByTestId('proposed-character-tao')).getByRole('button', { name: 'Reject' }));
+    expect(screen.getByTestId('character-proposed-state')).toHaveTextContent('No proposed characters to review.');
+    expect(screen.queryByTestId('proposed-character-tao')).not.toBeInTheDocument();
+
+    const manualNameInputs = screen.getAllByPlaceholderText('Character name');
+    expect(manualNameInputs).toHaveLength(2);
+    expect(screen.getAllByPlaceholderText('Character name').filter((input) => input.getAttribute('value') === 'Mire')).toHaveLength(1);
   });
 
   it('refreshes rows from backend state after import succeeds', async () => {
