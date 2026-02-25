@@ -24,7 +24,13 @@ from app.schemas import (
 )
 from app.services.characters import parse_character_file
 from app.services.export import build_run_export
-from app.services.ingestion import decode_text, detect_chapters, detect_title_with_fallback
+from app.services.ingestion import (
+    chapter_filename_sort_key,
+    chapter_title_from_filename,
+    decode_text,
+    detect_chapters,
+    detect_title_with_fallback,
+)
 from app.services.mode_profiles import build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_mode_switch
 from app.services.normalization import normalize_text
@@ -196,6 +202,61 @@ def ingest_txt(
     session.commit()
 
     return IngestResponse(project_id=project_id, chapter_count=len(chapters))
+
+
+@app.post(
+    "/api/projects/{project_id}/ingest/chapters-dir",
+    response_model=IngestResponse,
+    status_code=status.HTTP_200_OK,
+)
+def ingest_chapters_dir(
+    project_id: int,
+    files: list[UploadFile] = File(...),
+    session: Session = Depends(get_session),
+) -> IngestResponse:
+    project = _get_project_or_404(session, project_id)
+    if not files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one chapter file is required")
+
+    sorted_files = sorted(files, key=lambda upload: chapter_filename_sort_key(upload.filename or ""))
+
+    chapter_rows: list[tuple[str, str]] = []
+    for upload in sorted_files:
+        filename = upload.filename or ""
+        if not filename.lower().endswith(".txt"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chapter directory only supports .txt files")
+
+        content = decode_text(upload.file.read()).strip()
+        if not content:
+            continue
+
+        chapter_rows.append(
+            (chapter_title_from_filename(filename, chapter_index=len(chapter_rows) + 1), content)
+        )
+
+    if not chapter_rows:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No non-empty chapter content found")
+
+    session.query(Chapter).filter(Chapter.project_id == project_id).delete()
+
+    for chapter_index, (chapter_title, chapter_content) in enumerate(chapter_rows, start=1):
+        session.add(
+            Chapter(
+                project_id=project_id,
+                chapter_index=chapter_index,
+                chapter_title=chapter_title,
+                raw_text=chapter_content,
+                normalized_text=normalize_text(chapter_content),
+            )
+        )
+
+    if _project_title_needs_fallback(project.title):
+        project.title = chapter_rows[0][0]
+    project.ingestion_timestamp = datetime.now(timezone.utc)
+    session.add(project)
+    session.commit()
+
+    return IngestResponse(project_id=project_id, chapter_count=len(chapter_rows))
 
 
 @app.post(

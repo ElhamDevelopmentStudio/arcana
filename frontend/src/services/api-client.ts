@@ -86,6 +86,23 @@ export class NipeApiClient {
     }
   }
 
+  async ingestChapterDirectory(projectId: number, files: File[]) {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/ingest/chapters-dir`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return ingestResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async importCharacters(projectId: number, file: File) {
     const formData = new FormData();
     formData.append('file', file);

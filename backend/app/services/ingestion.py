@@ -1,6 +1,7 @@
 import re
 
 CHAPTER_HEADER_RE = re.compile(r"^\s*(chapter\s+[0-9ivxlcdm]+[^\n]*)\s*$", re.IGNORECASE | re.MULTILINE)
+CHAPTER_FILENAME_SPLIT_RE = re.compile(r"(\d+)")
 MAX_TITLE_CANDIDATE_LENGTH = 120
 DEFAULT_INGESTION_TITLE = "Untitled Novel"
 
@@ -51,3 +52,25 @@ def detect_title_with_fallback(raw_text: str, filename: str | None = None) -> st
             return stem.replace("_", " ").replace("-", " ")
 
     return DEFAULT_INGESTION_TITLE
+
+
+def chapter_filename_sort_key(filename: str) -> list[int | str]:
+    tokens: list[int | str] = []
+    for chunk in CHAPTER_FILENAME_SPLIT_RE.split(filename.lower()):
+        if not chunk:
+            continue
+        if chunk.isdigit():
+            tokens.append(int(chunk))
+        else:
+            tokens.append(chunk)
+    return tokens
+
+
+def chapter_title_from_filename(filename: str, chapter_index: int) -> str:
+    stem = filename.rsplit(".", 1)[0].strip()
+    if not stem:
+        return f"Chapter {chapter_index}"
+    normalized = stem.replace("_", " ").replace("-", " ").strip()
+    if not normalized:
+        return f"Chapter {chapter_index}"
+    return normalized

@@ -77,7 +77,7 @@ Definition of done for each task:
 - [x] [ING-003] Add `configuration_snapshot` reference on project creation.
 - [x] [ING-004] Implement title detection fallback when title is missing.
 - [x] [ING-005] Support TXT single-file ingestion path.
-- [ ] [ING-006] Support chapter-directory ingestion path.
+- [x] [ING-006] Support chapter-directory ingestion path.
 - [ ] [ING-007] Support Markdown file ingestion path.
 - [ ] [ING-008] Add EPUB parser integration toggle (optional now, pluggable).
 - [ ] [ING-009] Implement encoding detection before decode.

@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { useCreateProjectMutation, useIngestTxtMutation } from '@/features/workflow/api/workflow-hooks';
+import { useCreateProjectMutation, useIngestChapterDirectoryMutation, useIngestTxtMutation } from '@/features/workflow/api/workflow-hooks';
 import { projectRoute } from '@/features/workflow/utils/project-route';
 
 type IngestionSource = 'txt' | 'directory' | 'markdown' | 'epub';
@@ -21,6 +21,7 @@ export function ProjectNewPage() {
   const [title, setTitle] = useState('Shadow Slave PoC');
   const [ingestionSource, setIngestionSource] = useState<IngestionSource>('txt');
   const [txtFile, setTxtFile] = useState<File | null>(null);
+  const [directoryFiles, setDirectoryFiles] = useState<File[]>([]);
 
   const projectId = useWorkspaceStore((state) => state.projectId);
   const chapterCount = useWorkspaceStore((state) => state.chapterCount);
@@ -29,8 +30,9 @@ export function ProjectNewPage() {
 
   const createProjectMutation = useCreateProjectMutation();
   const ingestTxtMutation = useIngestTxtMutation(projectId);
+  const ingestDirectoryMutation = useIngestChapterDirectoryMutation(projectId);
 
-  const isBusy = createProjectMutation.isMutating || ingestTxtMutation.isMutating;
+  const isBusy = createProjectMutation.isMutating || ingestTxtMutation.isMutating || ingestDirectoryMutation.isMutating;
   const canContinue = projectId !== null && chapterCount !== null;
 
   async function handleCreateProject(event: FormEvent<HTMLFormElement>) {
@@ -60,23 +62,39 @@ export function ProjectNewPage() {
       return;
     }
 
-    if (ingestionSource !== 'txt') {
-      toast.info('Only TXT ingestion is currently available in backend APIs.');
+    if (ingestionSource === 'txt') {
+      if (!txtFile) {
+        toast.error('Choose a TXT file before upload.');
+        return;
+      }
+
+      try {
+        const response = await ingestTxtMutation.trigger({ file: txtFile });
+        setChapterCount(response.chapter_count);
+        toast.success(`Ingestion complete: ${response.chapter_count} chapters detected.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'TXT ingestion failed.');
+      }
       return;
     }
 
-    if (!txtFile) {
-      toast.error('Choose a TXT file before upload.');
+    if (ingestionSource === 'directory') {
+      if (directoryFiles.length === 0) {
+        toast.error('Choose chapter TXT files before upload.');
+        return;
+      }
+
+      try {
+        const response = await ingestDirectoryMutation.trigger({ files: directoryFiles });
+        setChapterCount(response.chapter_count);
+        toast.success(`Directory ingestion complete: ${response.chapter_count} chapters detected.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Chapter directory ingestion failed.');
+      }
       return;
     }
 
-    try {
-      const response = await ingestTxtMutation.trigger({ file: txtFile });
-      setChapterCount(response.chapter_count);
-      toast.success(`Ingestion complete: ${response.chapter_count} chapters detected.`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'TXT ingestion failed.');
-    }
+    toast.info('This ingestion source is not available yet.');
   }
 
   return (
@@ -148,27 +166,38 @@ export function ProjectNewPage() {
                   onChange={(event) => setIngestionSource(event.target.value as IngestionSource)}
                 >
                   <option value="txt">TXT file</option>
-                  <option value="directory">Chapter directory (pending backend)</option>
+                  <option value="directory">Chapter directory</option>
                   <option value="markdown">Markdown (pending backend)</option>
                   <option value="epub">EPUB (pending backend)</option>
                 </NativeSelect>
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="txt-upload">Upload TXT</Label>
-                <Input
-                  id="txt-upload"
-                  accept=".txt"
-                  data-testid="txt-upload-input"
-                  disabled={ingestionSource !== 'txt'}
-                  onChange={(event) => setTxtFile(event.target.files?.[0] ?? null)}
-                  type="file"
-                />
+                <Label htmlFor="txt-upload">{ingestionSource === 'directory' ? 'Upload chapter TXT files' : 'Upload TXT'}</Label>
+                {ingestionSource === 'directory' ? (
+                  <Input
+                    id="txt-upload"
+                    accept=".txt"
+                    data-testid="directory-upload-input"
+                    multiple
+                    onChange={(event) => setDirectoryFiles(Array.from(event.target.files ?? []))}
+                    type="file"
+                  />
+                ) : (
+                  <Input
+                    id="txt-upload"
+                    accept=".txt"
+                    data-testid="txt-upload-input"
+                    disabled={ingestionSource !== 'txt'}
+                    onChange={(event) => setTxtFile(event.target.files?.[0] ?? null)}
+                    type="file"
+                  />
+                )}
               </div>
 
               <div className="mt-auto space-y-2">
                 <Button data-testid="upload-txt-button" disabled={isBusy || projectId === null} type="submit">
-                  {ingestTxtMutation.isMutating ? 'Uploading...' : 'Upload & Parse'}
+                  {ingestTxtMutation.isMutating || ingestDirectoryMutation.isMutating ? 'Uploading...' : 'Upload & Parse'}
                 </Button>
                 <p className="text-sm text-muted-foreground" data-testid="chapter-count-state">
                   {chapterCount !== null ? `Detected chapters: ${chapterCount}` : 'Detected chapters: not available yet'}

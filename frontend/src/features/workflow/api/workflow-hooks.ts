@@ -60,6 +60,18 @@ export function useIngestTxtMutation(projectId: number | null) {
   );
 }
 
+export function useIngestChapterDirectoryMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['ingest-chapters-dir', projectId] : null,
+    async (_, { arg }: { arg: { files: File[] } }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before ingestion.');
+      }
+      return nipeApiClient.ingestChapterDirectory(projectId, arg.files);
+    },
+  );
+}
+
 export function useImportCharactersMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['import-characters', projectId] : null,
