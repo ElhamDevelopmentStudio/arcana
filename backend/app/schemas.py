@@ -73,6 +73,15 @@ class CharacterImportResponse(BaseModel):
     imported_count: int
 
 
+class CharacterSourceTrace(BaseModel):
+    kind: str = Field(min_length=1)
+    chapter_index: int = Field(ge=1)
+    span_start: int = Field(ge=0)
+    span_end: int = Field(ge=0)
+    excerpt: str = Field(min_length=1, max_length=400)
+    weight: float = Field(ge=0.0, le=1.0)
+
+
 class CharacterMapItem(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     verbalized_form: str = Field(min_length=1, max_length=255)
@@ -81,6 +90,7 @@ class CharacterMapItem(BaseModel):
     notes: str | None = None
     source: str = Field(default="manual", min_length=1, max_length=120)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    source_trace: list[CharacterSourceTrace] = Field(default_factory=list)
 
     @field_validator("gender")
     @classmethod

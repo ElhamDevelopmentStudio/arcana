@@ -126,6 +126,7 @@ export function ProjectCharactersPage() {
         ...row,
         aliases: [],
         notes: null,
+        source_trace: [],
         source: 'manual',
         confidence: 1.0,
       }));
@@ -225,9 +226,22 @@ export function ProjectCharactersPage() {
               {autoExtractedCandidates.length === 0 ? null : (
                 <ul className="space-y-1 text-xs text-muted-foreground">
                   {autoExtractedCandidates.map((candidate) => (
-                    <li className="flex items-center justify-between gap-2" key={candidate.name}>
-                      <span>{candidate.name}</span>
-                      <span>{Math.round(candidate.confidence * 100)}% confidence</span>
+                    <li className="space-y-1" key={candidate.name}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{candidate.name}</span>
+                        <span>{Math.round(candidate.confidence * 100)}% confidence</span>
+                      </div>
+                      {candidate.source_trace.length === 0 ? null : (
+                        <ul className="space-y-0.5 pl-2 text-[11px]">
+                          {candidate.source_trace.map((trace) => (
+                            <li key={`${candidate.name}-${trace.chapter_index}-${trace.span_start}-${trace.span_end}`}>
+                              <span className="font-medium text-foreground">Ch {trace.chapter_index}</span> ·{' '}
+                              {trace.kind.replaceAll('_', ' ')} · weight {Math.round(trace.weight * 100)}% ·{' '}
+                              <span className="italic">{trace.excerpt}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   ))}
                 </ul>

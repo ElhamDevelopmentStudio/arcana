@@ -46,6 +46,15 @@ export const characterImportSchema = z.object({
   imported_count: z.number().int().nonnegative(),
 });
 
+export const characterSourceTraceSchema = z.object({
+  kind: z.string().min(1),
+  chapter_index: z.number().int().positive(),
+  span_start: z.number().int().nonnegative(),
+  span_end: z.number().int().nonnegative(),
+  excerpt: z.string().min(1),
+  weight: z.number().min(0).max(1),
+});
+
 export const characterMapItemSchema = z.object({
   name: z.string().min(1),
   verbalized_form: z.string().min(1),
@@ -54,6 +63,7 @@ export const characterMapItemSchema = z.object({
   notes: z.string().nullable(),
   source: z.string().min(1),
   confidence: z.number().min(0).max(1),
+  source_trace: z.array(characterSourceTraceSchema).default([]),
 });
 
 export const characterMapSchema = z.object({
