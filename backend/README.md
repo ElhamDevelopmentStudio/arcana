@@ -50,6 +50,7 @@ python scripts_run_migration.py
 - `POST /api/projects/{project_id}/ingest/append-chapter`
 - `POST /api/projects/{project_id}/characters/import`
 - `POST /api/projects/{project_id}/characters/lookup-alias`
+- `GET /api/projects/{project_id}/characters/alias-collisions`
 - `PUT /api/projects/{project_id}/voices`
 - `POST /api/projects/{project_id}/runs`
 - `GET /api/projects/{project_id}/runs/{run_id}`

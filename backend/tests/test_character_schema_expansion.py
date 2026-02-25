@@ -512,3 +512,92 @@ def test_integration_character_alias_lookup_returns_none_when_missing() -> None:
         payload = missing_resp.json()
         assert payload["canonical_name"] is None
         assert payload["match_source"] == "none"
+
+
+def test_integration_character_alias_lookup_reports_conflict_for_ambiguous_alias() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Alias Conflict Lookup"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        save_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Kai",
+                        "verbalized_form": "Kai",
+                        "gender": "male",
+                        "aliases": ["Captain", "K."],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    },
+                    {
+                        "name": "Lio",
+                        "verbalized_form": "Lio",
+                        "gender": "female",
+                        "aliases": ["captain", "A."],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    },
+                ]
+            },
+        )
+        assert save_resp.status_code == 200
+
+        conflict_resp = client.post(
+            f"/api/projects/{project_id}/characters/lookup-alias",
+            json={"alias": "Captain"},
+        )
+        assert conflict_resp.status_code == 200
+        conflict_payload = conflict_resp.json()
+        assert conflict_payload["canonical_name"] is None
+        assert conflict_payload["match_source"] == "conflict"
+
+
+def test_integration_character_alias_collision_endpoint_reports_duplicates() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Alias Collision Endpoint"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        save_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Kai",
+                        "verbalized_form": "Kai",
+                        "gender": "male",
+                        "aliases": ["Captain", "K."],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    },
+                    {
+                        "name": "Lio",
+                        "verbalized_form": "Lio",
+                        "gender": "female",
+                        "aliases": ["captain", "A."],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    },
+                ]
+            },
+        )
+        assert save_resp.status_code == 200
+
+        collisions_resp = client.get(f"/api/projects/{project_id}/characters/alias-collisions")
+        assert collisions_resp.status_code == 200
+        payload = collisions_resp.json()
+        assert len(payload["collisions"]) == 1
+        collision = payload["collisions"][0]
+        assert collision["alias"].lower() == "captain"
+        assert collision["canonical_names"] == ["Kai", "Lio"]

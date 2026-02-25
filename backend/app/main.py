@@ -17,6 +17,8 @@ from app.schemas import (
     CharacterMapFinalizeResponse,
     CharacterAliasLookupRequest,
     CharacterAliasLookupResponse,
+    CharacterAliasCollisionItem,
+    CharacterAliasCollisionResponse,
     IngestResponse,
     CharacterExtractionResponse,
     CharacterScrapeRequest,
@@ -38,6 +40,7 @@ from app.services.character_scrape import extract_character_candidates_from_scra
 from app.services.epub_ingestion import extract_epub_chapters
 from app.services.character_merge import build_canonical_name_merge_suggestions, merge_character_candidates
 from app.services.character_merge import normalize_candidate_key
+from app.services.character_merge import detect_alias_conflicts
 from app.services.character_merge import resolve_alias_to_canonical_name
 from app.services.export import build_run_export
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
@@ -264,6 +267,26 @@ def lookup_character_canonical_by_alias(
         alias=payload.alias.strip(),
         canonical_name=canonical_name,
         match_source=match_source,
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/characters/alias-collisions",
+    response_model=CharacterAliasCollisionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def list_character_alias_collisions(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> CharacterAliasCollisionResponse:
+    _get_project_or_404(session, project_id)
+
+    canonical_payloads = _character_lookup_payloads(session, project_id)
+    collisions = detect_alias_conflicts(canonical_payloads)
+
+    return CharacterAliasCollisionResponse(
+        project_id=project_id,
+        collisions=[CharacterAliasCollisionItem(**payload) for payload in collisions],
     )
 
 
