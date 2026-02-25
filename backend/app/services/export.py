@@ -668,6 +668,40 @@ def _build_chapter_level_raw_tension(segments: list[dict[str, Any]]) -> list[dic
     return chapter_level_raw_tension
 
 
+def _build_smoothed_tension_curve(
+    segments: list[dict[str, Any]],
+    window_size: int,
+) -> dict[str, Any]:
+    if window_size < 1:
+        window_size = 1
+
+    tension_values: list[float] = []
+    for segment in segments:
+        tension_values.append(_to_number(_to_dict(segment.get("tension_contribution")).get("value")) or 0.0)
+
+    smoothed_curve: list[dict[str, Any]] = []
+    for index, segment in enumerate(segments):
+        start = max(0, index - window_size + 1)
+        tension_window = tension_values[start : index + 1]
+        smoothed_tension = (
+            sum(tension_window) / len(tension_window) if tension_window else 0.0
+        )
+        smoothed_curve.append(
+            {
+                "position": index + 1,
+                "chapter_id": segment.get("chapter_id"),
+                "segment_index": segment.get("segment_index"),
+                "segment_id": segment.get("segment_id"),
+                "smoothed_tension": round(smoothed_tension, 4),
+            }
+        )
+
+    return {
+        "window_size": window_size,
+        "tension_curve": smoothed_curve,
+    }
+
+
 def _csv_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -860,6 +894,10 @@ def build_run_export(
                 volatility_markers=time_series["volatility_markers"],
             ),
             "chapter_level_raw_tension": _build_chapter_level_raw_tension(segments),
+            "smoothed_tension_curve": _build_smoothed_tension_curve(
+                segments=segments,
+                window_size=5,
+            ),
             "rolling_window_emotional_curves": _build_rolling_emotional_curves(
                 segments=segments,
                 window_size=5,
