@@ -133,6 +133,9 @@ TONE_REVERSAL_MARKERS = {
     "excellent",
 }
 
+TAG_LOW_CONFIDENCE_THRESHOLD = 0.6
+TAG_VERY_LOW_CONFIDENCE_THRESHOLD = 0.3
+
 DOMINANCE_PRONOUN_TOKENS = {
     "he",
     "she",
@@ -213,6 +216,15 @@ def _build_trimmed_span(raw_text: str, raw_start: int, candidate: str) -> tuple[
 
 def _clamp_confidence(value: float) -> float:
     return max(0.0, min(1.0, round(float(value), 4)))
+
+
+def _confidence_state(confidence: float) -> str:
+    score = float(confidence)
+    if score < TAG_VERY_LOW_CONFIDENCE_THRESHOLD:
+        return "unknown"
+    if score < TAG_LOW_CONFIDENCE_THRESHOLD:
+        return "uncertain"
+    return "certain"
 
 
 def _term_occurrences(text: str, terms: set[str]) -> list[dict[str, object]]:
@@ -663,6 +675,7 @@ def detect_narration_internal_thought_shift(text: str) -> dict[str, object]:
             "from": None,
             "to": None,
             "confidence": 0.0,
+            "state": _confidence_state(0.0),
             "evidence": {
                 "unit_count": len(units),
                 "shift_count": 0,
@@ -705,6 +718,7 @@ def detect_narration_internal_thought_shift(text: str) -> dict[str, object]:
             "from": None,
             "to": None,
             "confidence": 0.0,
+            "state": _confidence_state(0.0),
             "evidence": {
                 "unit_count": len(units),
                 "shift_count": 0,
@@ -722,6 +736,7 @@ def detect_narration_internal_thought_shift(text: str) -> dict[str, object]:
             ),
         )
 
+    confidence = float(strongest["confidence"])
     return {
         "has_shift": True,
         "from": {
@@ -736,7 +751,8 @@ def detect_narration_internal_thought_shift(text: str) -> dict[str, object]:
             "start_char": int(strongest["to"]["start_char"]),
             "end_char": int(strongest["to"]["end_char"]),
         },
-        "confidence": float(strongest["confidence"]),
+        "confidence": confidence,
+        "state": _confidence_state(confidence),
         "evidence": {
             "unit_count": len(units),
             "shift_count": len(transitions),
@@ -754,6 +770,7 @@ def detect_internal_external_speech_shift(text: str) -> dict[str, object]:
             "from": None,
             "to": None,
             "confidence": 0.0,
+            "state": _confidence_state(0.0),
             "evidence": {
                 "unit_count": len(units),
                 "shift_count": 0,
@@ -796,6 +813,7 @@ def detect_internal_external_speech_shift(text: str) -> dict[str, object]:
             "from": None,
             "to": None,
             "confidence": 0.0,
+            "state": _confidence_state(0.0),
             "evidence": {
                 "unit_count": len(units),
                 "shift_count": 0,
@@ -813,6 +831,7 @@ def detect_internal_external_speech_shift(text: str) -> dict[str, object]:
             ),
         )
 
+    confidence = float(strongest["confidence"])
     return {
         "has_shift": True,
         "from": {
@@ -827,7 +846,8 @@ def detect_internal_external_speech_shift(text: str) -> dict[str, object]:
             "start_char": int(strongest["to"]["start_char"]),
             "end_char": int(strongest["to"]["end_char"]),
         },
-        "confidence": float(strongest["confidence"]),
+        "confidence": confidence,
+        "state": _confidence_state(confidence),
         "evidence": {
             "unit_count": len(units),
             "shift_count": len(transitions),
@@ -846,6 +866,7 @@ def detect_tone_reversal(text: str) -> dict[str, object]:
             "from": None,
             "to": None,
             "confidence": 0.0,
+            "state": _confidence_state(0.0),
             "evidence": {
                 "unit_count": len(units),
                 "candidate_count": 0,
@@ -879,6 +900,7 @@ def detect_tone_reversal(text: str) -> dict[str, object]:
             "from": None,
             "to": None,
             "confidence": 0.0,
+            "state": _confidence_state(0.0),
             "evidence": {
                 "unit_count": len(units),
                 "candidate_count": 0,
@@ -933,6 +955,7 @@ def detect_tone_reversal(text: str) -> dict[str, object]:
             "from": None,
             "to": None,
             "confidence": 0.0,
+            "state": _confidence_state(0.0),
             "evidence": {
                 "unit_count": len(units),
                 "candidate_count": 0,
@@ -941,6 +964,7 @@ def detect_tone_reversal(text: str) -> dict[str, object]:
         }
 
     strongest = max(candidates, key=lambda entry: (float(entry["confidence"]), -int(entry["from"]["start_char"])))
+    confidence = float(strongest["confidence"])
     return {
         "has_tone_reversal": True,
         "tone": "dark_irony",
@@ -960,7 +984,8 @@ def detect_tone_reversal(text: str) -> dict[str, object]:
             "start_char": int(strongest["to"]["start_char"]),
             "end_char": int(strongest["to"]["end_char"]),
         },
-        "confidence": float(strongest["confidence"]),
+        "confidence": confidence,
+        "state": _confidence_state(confidence),
         "evidence": {
             "unit_count": len(units),
             "candidate_count": len(candidates),
@@ -1064,6 +1089,7 @@ def detect_emotion_shift(text: str) -> dict[str, object]:
             "from": None,
             "to": None,
             "confidence": 0.0,
+            "state": _confidence_state(0.0),
             "evidence": {
                 "unit_count": len(units),
                 "shift_count": 0,
@@ -1121,6 +1147,7 @@ def detect_emotion_shift(text: str) -> dict[str, object]:
             "from": None,
             "to": None,
             "confidence": 0.0,
+            "state": _confidence_state(0.0),
             "evidence": {
                 "unit_count": len(units),
                 "shift_count": 0,
@@ -1129,6 +1156,7 @@ def detect_emotion_shift(text: str) -> dict[str, object]:
         }
 
     strongest = max(transitions, key=lambda entry: float(entry["delta"]))
+    confidence = float(strongest["confidence"])
     return {
         "has_shift": True,
         "from": {
@@ -1147,7 +1175,8 @@ def detect_emotion_shift(text: str) -> dict[str, object]:
             "start_char": int(strongest["to"]["start_char"]),
             "end_char": int(strongest["to"]["end_char"]),
         },
-        "confidence": float(strongest["confidence"]),
+        "confidence": confidence,
+        "state": _confidence_state(confidence),
         "evidence": {
             "unit_count": len(units),
             "shift_count": len(transitions),
@@ -1331,8 +1360,11 @@ def tag_segment(text: str) -> dict[str, object]:
         speaker, speaker_confidence = "unknown", 0.2
     speaker_evidence = _build_speaker_evidence(speaker_match, speaker)
     type_confidence = _compute_type_confidence(structure)
+    type_state = _confidence_state(type_confidence)
     type_evidence = _build_type_evidence(text, structure)
     valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
+    emotion_state = _confidence_state(emotion_confidence)
+    speaker_state = _confidence_state(speaker_confidence)
     emotion_shift = detect_emotion_shift(text)
     narration_internal_thought_shift = detect_narration_internal_thought_shift(text)
     internal_external_speech_shift = detect_internal_external_speech_shift(text)
@@ -1364,6 +1396,7 @@ def tag_segment(text: str) -> dict[str, object]:
         signal_count=len(tension_signal_hits),
         intensifier_count=len(tension_intensifier_hits),
     )
+    tension_state = _confidence_state(tension_confidence)
     dominance_value, dominance_level, dominant_agent, dominance_evidence = compute_dominance_contribution(
         text=text,
         speaker=speaker,
@@ -1375,6 +1408,17 @@ def tag_segment(text: str) -> dict[str, object]:
         structure=structure,
         evidence=dominance_evidence,
     )
+    dominance_state = _confidence_state(dominance_confidence)
+    summary_confidence = max(
+        float(emotion_confidence),
+        float(emotion_shift.get("confidence", 0.0))
+        if isinstance(emotion_shift, dict)
+        else 0.0,
+        float(tone_reversal.get("confidence", 0.0))
+        if isinstance(tone_reversal, dict)
+        else 0.0,
+    )
+    summary_state = _confidence_state(summary_confidence)
     summary_tag = {
         "tag_type": "segment_summary",
         "dominant_tone": (
@@ -1390,15 +1434,8 @@ def tag_segment(text: str) -> dict[str, object]:
         ),
         "dominant_state": structure,
         "dominant_agent": dominant_agent,
-        "confidence": max(
-            float(emotion_confidence),
-            float(emotion_shift.get("confidence", 0.0))
-            if isinstance(emotion_shift, dict)
-            else 0.0,
-            float(tone_reversal.get("confidence", 0.0))
-            if isinstance(tone_reversal, dict)
-            else 0.0,
-        ),
+        "confidence": summary_confidence,
+        "state": summary_state,
         "evidence": {
             "dominant_from": (
                 "tone_reversal"
@@ -1419,17 +1456,20 @@ def tag_segment(text: str) -> dict[str, object]:
     return {
         "type": structure,
         "type_confidence": type_confidence,
+        "type_state": type_state,
         "type_evidence": type_evidence,
         "dialogue_blocks": dialogue_blocks,
         "narration_blocks": narration_blocks,
         "speaker": speaker,
         "speaker_confidence": speaker_confidence,
+        "speaker_state": speaker_state,
         "speaker_evidence": speaker_evidence,
         "emotion_valence": valence,
         "emotion_intensity": intensity,
         "emotion_primary_label": primary_label,
         "emotion_secondary_label": secondary_label,
         "emotion_confidence": emotion_confidence,
+        "emotion_state": emotion_state,
         "emotion_evidence": emotion_evidence,
         "emotion_shift": emotion_shift,
         "narration_internal_thought_shift": narration_internal_thought_shift,
@@ -1441,6 +1481,7 @@ def tag_segment(text: str) -> dict[str, object]:
             "value": tension,
             "level": _tension_contribution_level(tension),
             "confidence": tension_confidence,
+            "state": tension_state,
             "evidence": _build_tension_evidence(
                 structure=structure,
                 signal_hits=tension_signal_hits,
@@ -1454,5 +1495,6 @@ def tag_segment(text: str) -> dict[str, object]:
             "dominant_agent": dominant_agent,
             "evidence": dominance_evidence,
             "confidence": dominance_confidence,
+            "state": dominance_state,
         },
     }

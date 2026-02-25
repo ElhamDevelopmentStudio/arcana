@@ -50,6 +50,7 @@ def test_tag_segment_includes_type_confidence() -> None:
     assert isinstance(tags["type_confidence"], float)
     assert 0.0 <= tags["type_confidence"] <= 1.0
     assert tags["type_confidence"] > 0.6
+    assert tags["type_state"] == "certain"
     assert isinstance(tags["type_evidence"], dict)
     assert set(tags["type_evidence"].keys()) >= {"method", "signals"}
     assert isinstance(tags["type_evidence"]["signals"], list)
@@ -68,17 +69,24 @@ def test_tag_segment_includes_speaker_evidence() -> None:
     assert isinstance(tags["speaker_evidence"], dict)
     assert tags["speaker_evidence"]["status"] == "found"
     assert tags["speaker_evidence"]["method"] == "speaker_pattern_lookup"
+    assert tags["speaker_state"] == "certain"
     speaker_span = tags["speaker_evidence"]["speaker_span"]
     assert isinstance(speaker_span, dict)
     assert speaker_span["text"] == "she"
     assert speaker_span["start_char"] < speaker_span["end_char"]
 
 
+def test_tag_segment_marks_unknown_state_for_unattributed_narrative_speaker() -> None:
+    tags = tag_segment("The fire burned low in the corner.")
+    assert tags["speaker_confidence"] == 0.2
+    assert tags["speaker_state"] == "unknown"
+
+
 def test_tag_segment_includes_tension_contribution_tag() -> None:
     tags = tag_segment("He bolted to the door as she shouted, \"Help!\" then the alarm rang.")
     tension = tags["tension_contribution"]
     assert isinstance(tension, dict)
-    assert set(tension.keys()) == {"value", "level", "confidence", "evidence"}
+    assert set(tension.keys()) == {"value", "level", "confidence", "state", "evidence"}
     assert isinstance(tension["value"], float)
     assert 0.0 <= tension["value"] <= 1.0
     assert tension["level"] in {"high", "moderate", "low", "calm"}
@@ -88,6 +96,7 @@ def test_tag_segment_includes_tension_contribution_tag() -> None:
     assert isinstance(tension["evidence"], dict)
     assert tension["evidence"]["signal_count"] >= 0
     assert tension["evidence"]["intensifier_count"] >= 0
+    assert tension["state"] in {"certain", "uncertain", "unknown"}
 
 
 def test_tag_segment_includes_emotion_evidence() -> None:
@@ -121,7 +130,7 @@ def test_tag_segment_includes_dominance_contribution_tag() -> None:
     tags = tag_segment('"Wait," Alice said.')
     dominance = tags["dominance_contribution"]
     assert isinstance(dominance, dict)
-    assert set(dominance.keys()) == {"value", "level", "dominant_agent", "evidence", "confidence"}
+    assert set(dominance.keys()) == {"value", "level", "dominant_agent", "evidence", "confidence", "state"}
     assert isinstance(dominance["value"], float)
     assert 0.0 <= dominance["value"] <= 1.0
     assert dominance["level"] in {"dominant", "strong", "moderate", "low"}
@@ -133,6 +142,7 @@ def test_tag_segment_includes_dominance_contribution_tag() -> None:
     assert "proper_noun_spans" in dominance["evidence"]
     assert isinstance(dominance["confidence"], float)
     assert 0.0 <= dominance["confidence"] <= 1.0
+    assert dominance["state"] in {"certain", "uncertain", "unknown"}
 
 
 def test_tag_segment_dominance_contribution_defaults_to_narrative_guide_when_no_speaker() -> None:
@@ -165,6 +175,7 @@ def test_detect_emotion_shift_identifies_positive_to_negative_transition() -> No
     shift = detect_emotion_shift("He was happy, but fear and despair arrived.")
     assert shift["has_shift"] is True
     assert isinstance(shift["confidence"], float)
+    assert shift["state"] in {"certain", "uncertain", "unknown"}
     assert shift["confidence"] > 0
     assert shift["from"] is not None
     assert shift["to"] is not None
@@ -179,18 +190,20 @@ def test_detect_emotion_shift_stays_false_for_stable_emotion() -> None:
     assert shift["has_shift"] is False
     assert shift["from"] is None
     assert shift["to"] is None
+    assert shift["state"] in {"certain", "uncertain", "unknown"}
     assert shift["evidence"]["shift_count"] == 0
 
 
 def test_tag_segment_includes_emotion_shift_field() -> None:
     tags = tag_segment("He smiled as dawn broke, but then the grave threat arrived.")
     assert isinstance(tags["emotion_shift"], dict)
-    assert set(tags["emotion_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "evidence"}
+    assert set(tags["emotion_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "state", "evidence"}
 
 
 def test_detect_narration_internal_thought_shift_identifies_transition() -> None:
     shift = detect_narration_internal_thought_shift("She thought the sun would rise, but the room stayed cold and silent.")
     assert shift["has_shift"] is True
+    assert shift["state"] in {"certain", "uncertain", "unknown"}
     assert shift["from"] is not None
     assert shift["to"] is not None
     assert shift["confidence"] > 0
@@ -204,18 +217,20 @@ def test_detect_narration_internal_thought_shift_stays_false_without_transition(
     assert shift["has_shift"] is False
     assert shift["from"] is None
     assert shift["to"] is None
+    assert shift["state"] in {"certain", "uncertain", "unknown"}
     assert shift["evidence"]["shift_count"] == 0
 
 
 def test_tag_segment_includes_narration_internal_thought_shift_field() -> None:
     tags = tag_segment("She thought he would return, but the wind grew loud.")
     assert isinstance(tags["narration_internal_thought_shift"], dict)
-    assert set(tags["narration_internal_thought_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "evidence"}
+    assert set(tags["narration_internal_thought_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "state", "evidence"}
 
 
 def test_detect_internal_external_speech_shift_identifies_transition() -> None:
     shift = detect_internal_external_speech_shift('She thought he would answer. "No," he said.')
     assert shift["has_shift"] is True
+    assert shift["state"] in {"certain", "uncertain", "unknown"}
     assert shift["from"] is not None
     assert shift["to"] is not None
     assert shift["confidence"] > 0
@@ -229,18 +244,20 @@ def test_detect_internal_external_speech_shift_stays_false_without_transition() 
     assert shift["has_shift"] is False
     assert shift["from"] is None
     assert shift["to"] is None
+    assert shift["state"] in {"certain", "uncertain", "unknown"}
     assert shift["evidence"]["shift_count"] == 0
 
 
 def test_tag_segment_includes_internal_external_speech_shift_field() -> None:
     tags = tag_segment('She thought he would answer. "No," he said.')
     assert isinstance(tags["internal_external_speech_shift"], dict)
-    assert set(tags["internal_external_speech_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "evidence"}
+    assert set(tags["internal_external_speech_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "state", "evidence"}
 
 
 def test_detect_tone_reversal_identifies_dark_irony_transition() -> None:
     reversal = detect_tone_reversal("Great, but the outcome was terrible.")
     assert reversal["has_tone_reversal"] is True
+    assert reversal["state"] in {"certain", "uncertain", "unknown"}
     assert reversal["tone"] == "dark_irony"
     assert reversal["from"] is not None
     assert reversal["to"] is not None
@@ -256,13 +273,14 @@ def test_detect_tone_reversal_stays_false_for_flat_positive_tone() -> None:
     assert reversal["has_tone_reversal"] is False
     assert reversal["from"] is None
     assert reversal["to"] is None
+    assert reversal["state"] in {"certain", "uncertain", "unknown"}
     assert reversal["evidence"]["transition_count"] == 0
 
 
 def test_tag_segment_includes_tone_reversal_field() -> None:
     tags = tag_segment("Great, but the outcome was terrible.")
     assert isinstance(tags["tone_reversal"], dict)
-    assert set(tags["tone_reversal"].keys()) >= {"has_tone_reversal", "tone", "from", "to", "confidence", "evidence"}
+    assert set(tags["tone_reversal"].keys()) >= {"has_tone_reversal", "tone", "from", "to", "confidence", "state", "evidence"}
 
 
 def test_tag_segment_includes_sub_segment_boundaries_for_detected_shifts() -> None:
@@ -300,6 +318,7 @@ def test_tag_segment_includes_parent_segment_summary_tag() -> None:
         "dominant_state",
         "dominant_agent",
         "confidence",
+        "state",
         "evidence",
     }
     assert summary["tag_type"] == "segment_summary"
@@ -307,6 +326,7 @@ def test_tag_segment_includes_parent_segment_summary_tag() -> None:
     assert summary["dominant_tone"] == "dark_irony"
     assert isinstance(summary["dominant_agent"], str)
     assert isinstance(summary["confidence"], float)
+    assert summary["state"] in {"certain", "uncertain", "unknown"}
 
 
 def test_tag_segment_summary_prefers_tone_reversal_dominant_tone() -> None:
