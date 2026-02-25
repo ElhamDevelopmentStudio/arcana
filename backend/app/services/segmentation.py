@@ -15,6 +15,11 @@ def split_sentences(text: str) -> list[str]:
     return sentences if sentences else [text.strip()]
 
 
+def split_paragraphs_into_sentences(text: str) -> list[list[str]]:
+    paragraphs = split_paragraphs(text)
+    return [split_sentences(paragraph) for paragraph in paragraphs if paragraph]
+
+
 def _split_long_sentence(sentence: str, max_chars: int) -> list[str]:
     chunks: list[str] = []
     remaining = sentence.strip()
@@ -34,12 +39,11 @@ def _split_long_sentence(sentence: str, max_chars: int) -> list[str]:
 
 
 def segment_text(text: str, max_chars: int = 255) -> list[str]:
-    paragraph_texts = split_paragraphs(text)
+    paragraphs_and_sentences = split_paragraphs_into_sentences(text)
     segments: list[str] = []
 
-    for paragraph_text in paragraph_texts:
+    for sentences in paragraphs_and_sentences:
         buffer = ""
-        sentences = split_sentences(paragraph_text)
         for sentence in sentences:
             sentence_parts = _split_long_sentence(sentence, max_chars)
             for part in sentence_parts:
