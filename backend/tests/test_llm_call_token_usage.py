@@ -151,8 +151,9 @@ def test_pipeline_rate_limit_updates_provider_quota_status(monkeypatch: object) 
 
         session.flush()
         quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "siliconflow").one()
-        assert quota.last_rate_limit_status == "provider_rate_limited"
+        assert quota.last_rate_limit_status == "temporarily_unavailable"
         assert quota.last_rate_limit_status_at is not None
+        assert quota.blocked is True
         assert quota.last_successful_call_at is None
         assert quota.last_rate_limit_reset_at is None
     finally:
