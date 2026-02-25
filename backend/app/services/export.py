@@ -297,6 +297,81 @@ def _build_volatility_marker(
     }
 
 
+def _build_abrupt_change_hint(
+    transition_position: int,
+    from_segment: Mapping[str, Any],
+    to_segment: Mapping[str, Any],
+    volatility_marker: Mapping[str, Any],
+) -> dict[str, Any]:
+    valence_delta = float(volatility_marker.get("valence_delta", 0.0) or 0.0)
+    intensity_delta = float(volatility_marker.get("intensity_delta", 0.0) or 0.0)
+    tension_delta = float(volatility_marker.get("tension_delta", 0.0) or 0.0)
+    dominance_delta = float(volatility_marker.get("dominance_delta", 0.0) or 0.0)
+    volatility_index = float(volatility_marker.get("volatility_index", 0.0) or 0.0)
+
+    fields_to_smooth: list[str] = []
+    reasons: list[str] = []
+    if abs(valence_delta) >= 0.25:
+        fields_to_smooth.append("emotion_valence")
+        reasons.append("large_valence_delta")
+    if abs(intensity_delta) >= 0.20:
+        fields_to_smooth.append("emotion_intensity")
+        reasons.append("large_emotion_intensity_delta")
+    if abs(tension_delta) >= 0.18:
+        fields_to_smooth.append("tension")
+        reasons.append("large_tension_delta")
+    if abs(dominance_delta) >= 0.18:
+        fields_to_smooth.append("dominance")
+        reasons.append("large_dominance_delta")
+
+    if not reasons:
+        reasons.append("low_transition_volatility")
+
+    severity = (
+        "high"
+        if volatility_index >= 0.65
+        else "moderate" if volatility_index >= 0.35 else "low"
+    )
+    avoid = severity in {"moderate", "high"}
+
+    return {
+        "position": transition_position,
+        "from_segment_id": from_segment.get("segment_id"),
+        "segment_id": to_segment.get("segment_id"),
+        "avoid": avoid,
+        "severity": severity,
+        "volatility_index": volatility_index,
+        "fields_to_smooth": fields_to_smooth,
+        "reasons": reasons,
+        "suggestions": {
+            "smoothing_strategy": (
+                "micro_crossfade" if avoid else "preserve_raw_tags"
+            ),
+            "preserve_raw_tags": True,
+        },
+        "from_raw_tags": {
+            "type": from_segment.get("type"),
+            "speaker": from_segment.get("speaker"),
+            "emotion_primary_label": from_segment.get("emotion_primary_label"),
+            "dominance_value": _to_number(_to_dict(from_segment.get("dominance_contribution")).get("value")),
+            "tension_value": _to_number(_to_dict(from_segment.get("tension_contribution")).get("value")),
+        },
+        "to_raw_tags": {
+            "type": to_segment.get("type"),
+            "speaker": to_segment.get("speaker"),
+            "emotion_primary_label": to_segment.get("emotion_primary_label"),
+            "dominance_value": _to_number(_to_dict(to_segment.get("dominance_contribution")).get("value")),
+            "tension_value": _to_number(_to_dict(to_segment.get("tension_contribution")).get("value")),
+        },
+        "evidence": {
+            "valence_delta": valence_delta,
+            "intensity_delta": intensity_delta,
+            "tension_delta": tension_delta,
+            "dominance_delta": dominance_delta,
+        },
+    }
+
+
 def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     emotion_valence = []
     emotion_intensity = []
@@ -305,6 +380,7 @@ def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[st
     emotion_delta = []
     scene_states = []
     volatility_markers = []
+    abrupt_change_hints: list[dict[str, Any]] = []
     previous_segment = None
     previous_values = {"valence": None, "intensity": None, "tension": None, "dominance": None}
     previous_tension = None
@@ -362,6 +438,14 @@ def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[st
                     dominance_delta=dominance_delta,
                 )
             )
+            abrupt_change_hints.append(
+                _build_abrupt_change_hint(
+                    transition_position=position,
+                    from_segment=previous_segment,
+                    to_segment=segment,
+                    volatility_marker=volatility_markers[-1],
+                )
+            )
 
         scene_state, reasons, evidence = _compute_scene_state(
             segment_position=position,
@@ -401,6 +485,7 @@ def _build_time_series(segments: list[dict[str, Any]]) -> dict[str, list[dict[st
         "emotion_delta": emotion_delta,
         "scene_states": scene_states,
         "volatility_markers": volatility_markers,
+        "avoid_abrupt_change_hints": abrupt_change_hints,
     }
 
 

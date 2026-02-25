@@ -246,7 +246,7 @@ Definition of done for each task:
 - [x] [AUD-013] Guarantee stable segment IDs across equivalent reruns.
 - [x] [AUD-014] Emit emotional delta metadata between adjacent segments.
 - [x] [AUD-015] Emit scene state and volatility markers.
-- [ ] [AUD-016] Emit “avoid abrupt change” smoothing hints while preserving raw tags.
+- [x] [AUD-016] Emit “avoid abrupt change” smoothing hints while preserving raw tags.
 
 ## 4.10 Academic Outputs (Ref: SRS.md §4.10)
 - [ ] [ACAD-001] Compute chapter-level valence mean.
