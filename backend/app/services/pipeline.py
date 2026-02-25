@@ -514,6 +514,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 task_type=LLMTaskType.SENTIMENT_PROBE.value,
                 success=False,
                 request_count=request_count,
+                token_usage_estimate=None,
                 detail="quota_reached",
             )
         )
@@ -551,6 +552,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             task_type=LLMTaskType.SENTIMENT_PROBE.value,
             success=response.success_flag,
             request_count=request_count,
+            token_usage_estimate=response.token_usage_estimate,
             detail=detail,
         )
     )

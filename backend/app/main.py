@@ -2750,6 +2750,7 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
             "task_type": call.task_type,
             "success": call.success,
             "request_count": call.request_count,
+            "token_usage_estimate": call.token_usage_estimate,
             "detail": call.detail,
             "created_at": call.created_at.isoformat(),
         }

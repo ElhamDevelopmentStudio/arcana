@@ -912,6 +912,7 @@ def _load_run_llm_calls(session: Session, run: Run) -> list[dict[str, Any]]:
             "task_type": call.task_type,
             "success": call.success,
             "request_count": call.request_count,
+            "token_usage_estimate": call.token_usage_estimate,
             "detail": call.detail,
             "created_at": call.created_at.isoformat(),
         }

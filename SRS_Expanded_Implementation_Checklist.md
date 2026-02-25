@@ -298,7 +298,7 @@ Definition of done for each task:
 - [x] [LLM-008] Add provider registry entries for Groq.
 - [x] [LLM-009] Add provider registry entries for OpenRouter.
 - [x] [LLM-010] Add per-provider request count tracking.
-- [ ] [LLM-011] Add estimated token usage tracking.
+- [x] [LLM-011] Add estimated token usage tracking.
 - [ ] [LLM-012] Add last known rate-limit status tracking.
 - [ ] [LLM-013] Add last successful call timestamp tracking.
 - [ ] [LLM-014] Add last reset timestamp tracking if available.

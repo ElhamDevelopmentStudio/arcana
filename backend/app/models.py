@@ -274,6 +274,7 @@ class LLMCall(Base):
     task_type: Mapped[str] = mapped_column(String(100), nullable=False)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     request_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    token_usage_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
