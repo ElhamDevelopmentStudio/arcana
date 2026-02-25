@@ -36,6 +36,15 @@ export const projectLLMSettingsResponseSchema = z.object({
   llm_enabled: z.boolean(),
 });
 
+export const llmTaskTypeSchema = z.enum([
+  'sentiment_probe',
+  'emotion_refinement',
+  'speaker_resolution',
+  'character_extraction',
+  'edge_case_structural_interpretation',
+  'scene_classification',
+]);
+
 export const projectModeSwitchResponseSchema = z.object({
   project_id: z.number().int(),
   previous_mode: z.string(),
@@ -207,7 +216,7 @@ export const runDetailSchema = z.object({
     z.object({
       id: z.number().int(),
       provider: z.string(),
-      task_type: z.string(),
+      task_type: llmTaskTypeSchema,
       success: z.boolean(),
       request_count: z.number().int(),
       detail: z.string().nullable(),
@@ -215,6 +224,8 @@ export const runDetailSchema = z.object({
     }),
   ),
 });
+
+export type LLMTaskType = z.infer<typeof llmTaskTypeSchema>;
 
 export const exportSchema = z.object({
   project_id: z.number().int(),

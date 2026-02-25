@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from app.services.llm_router import LLMRequest, LLMRouter
+from app.services.llm_task_types import LLMTaskType
 
 RUN_OPENROUTER_INTEGRATION = os.getenv("RUN_OPENROUTER_INTEGRATION") == "1"
 
@@ -77,7 +78,7 @@ def test_openrouter_connection_smoke_call() -> None:
     request = LLMRequest(
         request_id="openrouter-smoke",
         project_id=1,
-        task_type="sentiment_probe",
+        task_type=LLMTaskType.SENTIMENT_PROBE.value,
         input_text="The moonlight shimmered over the harbor as the crowd celebrated.",
         expected_schema={"sentiment": "string", "confidence": "number"},
         configuration_snapshot_id="test-openrouter-smoke",
@@ -106,7 +107,7 @@ def test_openrouter_sentiment_probe_response_matches_expected_fields() -> None:
     request = LLMRequest(
         request_id="openrouter-usecase-sentiment",
         project_id=1,
-        task_type="sentiment_probe",
+        task_type=LLMTaskType.SENTIMENT_PROBE.value,
         input_text="She whispered softly, and the room felt at peace.",
         expected_schema={"sentiment": "string", "confidence": "number"},
         configuration_snapshot_id="test-openrouter-usecase",

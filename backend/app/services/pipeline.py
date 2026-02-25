@@ -20,6 +20,7 @@ from app.services.character_merge import normalize_candidate_key
 from app.services.character_analytics import (
     build_character_occurrence_analytics,
 )
+from app.services.llm_task_types import LLMTaskType
 from app.services.phonetics import replace_pronunciations
 from app.services.quota import consume_quota
 from app.services.segmentation import segment_text_with_parent_paragraph
@@ -437,7 +438,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             LLMCall(
                 run_id=run.id,
                 provider=provider,
-                task_type="sentiment_probe",
+                task_type=LLMTaskType.SENTIMENT_PROBE.value,
                 success=False,
                 request_count=request_count,
                 detail="quota_reached",
@@ -451,7 +452,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
     request = LLMRequest(
         request_id=str(uuid4()),
         project_id=project.id,
-        task_type="sentiment_probe",
+        task_type=LLMTaskType.SENTIMENT_PROBE.value,
         input_text=input_text,
         expected_schema={"sentiment": "string", "confidence": "number"},
         configuration_snapshot_id=f"run-{run.id}",
@@ -470,7 +471,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         LLMCall(
             run_id=run.id,
             provider=provider,
-            task_type="sentiment_probe",
+            task_type=LLMTaskType.SENTIMENT_PROBE.value,
             success=response.success_flag,
             request_count=request_count,
             detail=detail,
