@@ -155,7 +155,7 @@ Definition of done for each task:
 - [x] [GEN-016] Add test cases for contradiction flags and export gating.
 
 ## 4.5 Pronunciation and Verbalization (Ref: SRS.md §4.5)
-- [ ] [VERB-001] Enforce canonical name + verbalized form as required fields.
+- [x] [VERB-001] Enforce canonical name + verbalized form as required fields.
 - [ ] [VERB-002] Add pronunciation dictionary table for non-character terms.
 - [ ] [VERB-003] Support global scope term overrides.
 - [ ] [VERB-004] Support per-character scope term overrides.
