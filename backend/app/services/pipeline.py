@@ -289,6 +289,10 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "speaker_evidence": tags.get("speaker_evidence", {}),
                 "speaker_id": speaker_id,
                 "gender": gender,
+                "type_confidence": tags["type_confidence"],
+                "speaker_state": tags.get("speaker_state", "uncertain"),
+                "emotion_state": tags.get("emotion_state", "uncertain"),
+                "summary_tag": tags.get("summary_tag", {}),
                 "emotion_evidence": tags.get("emotion_evidence", {}),
                 "tag_states": {
                     "type": tags.get("type_state", "uncertain"),
