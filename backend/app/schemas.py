@@ -441,8 +441,8 @@ class RunDetailResponse(BaseModel):
 
 
 class NarrativeHealthChapterRange(BaseModel):
-    start_chapter: int | None = Field(default=None, ge=1)
-    end_chapter: int | None = Field(default=None, ge=1)
+    start_chapter: int = Field(ge=1)
+    end_chapter: int = Field(ge=1)
     start_segment: int | None = Field(default=None, ge=1)
     end_segment: int | None = Field(default=None, ge=1)
 
@@ -450,7 +450,7 @@ class NarrativeHealthChapterRange(BaseModel):
 class NarrativeHealthActionableFinding(BaseModel):
     requirement_id: str = Field(pattern=r"^ADR-\d{3}$", min_length=1, max_length=20)
     requirement_name: str = Field(min_length=1, max_length=255)
-    location: NarrativeHealthChapterRange | None = None
+    location: NarrativeHealthChapterRange
     trigger_metric: str = Field(min_length=1, max_length=255)
     severity: float = Field(ge=0.0, le=1.0)
     evidence: dict[str, Any] = Field(

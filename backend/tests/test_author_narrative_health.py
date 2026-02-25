@@ -447,3 +447,110 @@ def test_unit_narrative_health_actionable_flag_schema_allows_legacy_evidence_tra
     )
 
     assert finding.evidence == {"legacy_signal": "dialogue"}
+
+
+def test_unit_narrative_health_report_findings_include_chapter_range_locators() -> None:
+    monotony_segments, monotony_tension_curve = _build_segments_for_test(
+        [
+            (0.42, 0.02, 0.31),
+            (0.44, 0.03, 0.30),
+            (0.43, 0.01, 0.32),
+            (0.41, 0.00, 0.31),
+            (0.42, 0.04, 0.30),
+            (0.43, 0.02, 0.33),
+            (0.44, 0.03, 0.34),
+            (0.42, 0.01, 0.29),
+        ]
+    )
+    monotony_findings = _build_monotony_risk_findings(
+        segments=monotony_segments,
+        smoothed_tension_curve=monotony_tension_curve,
+    )
+    emotional_findings = _build_emotional_monotony_findings(
+        _build_segments_for_labels_test(
+            [
+                ("calm", 0.02, 0.31),
+                ("calm", 0.03, 0.30),
+                ("calm", 0.01, 0.32),
+                ("calm", 0.00, 0.31),
+                ("calm", 0.04, 0.30),
+                ("calm", 0.02, 0.33),
+                ("calm", 0.03, 0.34),
+            ]
+        )
+    )
+    dominance_findings = _build_character_dominance_findings(
+        _build_chapter_level_character_dominance(
+            _build_segments_for_dominance_test(
+                3,
+                [
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Narrator", 0.1),
+                    ("Hero", 1.0),
+                    ("Sidekick", 0.2),
+                    ("Narrator", 0.1),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                ],
+            )
+        )
+    )
+    disappearing_findings = _build_disappearing_character_findings(
+        _build_segments_for_disappearance_test(
+            [
+                (1, "Lena"),
+                (1, "Lena"),
+                (2, "Lena"),
+                (2, "Lena"),
+                (3, "Lena"),
+                (3, "Lena"),
+                (4, "Lena"),
+                (4, "Lena"),
+                (5, "Lena"),
+                (3, "Crow"),
+                (4, "Crow"),
+                (5, "Crow"),
+                (6, "Crow"),
+                (6, "Narrator"),
+                (7, "Narrator"),
+            ]
+        )
+    )
+    dialogue_findings = _build_dialogue_density_anomaly_findings(
+        _build_segments_for_dialogue_density_test(
+            [
+                (1, 8, 4),
+                (2, 8, 4),
+                (3, 8, 7),
+                (4, 8, 7),
+                (5, 8, 2),
+            ]
+        )
+    )
+
+    project = SimpleNamespace(id=303, title="Chapter Locator", selected_mode="author", selected_modes=["author"])
+    run = SimpleNamespace(id=404, status="completed")
+    report = _build_author_narrative_health_report(
+        project=project,
+        run=run,
+        generated_at=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        segment_count=30,
+        monotony_findings=monotony_findings,
+        emotional_monotony_findings=emotional_findings,
+        character_dominance_findings=dominance_findings,
+        disappearing_character_findings=disappearing_findings,
+        dialogue_density_findings=dialogue_findings,
+    )
+    parsed_report = NarrativeHealthReport.model_validate(report)
+
+    assert len(parsed_report.findings) > 0
+    for finding in parsed_report.findings:
+        assert finding.location.start_chapter is not None
+        assert finding.location.end_chapter is not None
+        assert finding.location.start_chapter >= 1
+        assert finding.location.end_chapter >= finding.location.start_chapter
