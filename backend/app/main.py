@@ -69,7 +69,7 @@ from app.services.ingestion import (
     to_internal_utf8,
 )
 from app.services.mode_profiles import build_run_config_snapshot
-from app.services.mode_switch import mark_runs_stale_for_mode_switch
+from app.services.mode_switch import mark_runs_stale_for_gender_edit, mark_runs_stale_for_mode_switch
 from app.services.character_analytics import build_character_occurrence_analytics
 from app.services.gender_comparison import compare_manual_and_inferred_gender_fields
 from app.services.gender_inference import infer_character_genders
@@ -78,6 +78,7 @@ from app.services.normalization import (
     build_normalization_report,
     normalize_text_with_report,
 )
+from app.services.voice_preview import recompute_voice_previews_for_runs
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.voice import DEFAULT_VOICE_CONFIG
 
@@ -1079,6 +1080,9 @@ def import_characters(
         )
     project.character_map_finalized = False
     session.add(project)
+    project_runs = session.query(Run).filter(Run.project_id == project.id).all()
+    mark_runs_stale_for_gender_edit(project_runs)
+    recompute_voice_previews_for_runs(session, project=project, runs=project_runs)
 
     session.commit()
 
@@ -1347,6 +1351,9 @@ def upsert_characters(
             )
         )
     project.character_map_finalized = False
+    project_runs = session.query(Run).filter(Run.project_id == project.id).all()
+    mark_runs_stale_for_gender_edit(project_runs)
+    recompute_voice_previews_for_runs(session, project=project, runs=project_runs)
     session.add(project)
     session.commit()
 

@@ -149,9 +149,9 @@ Definition of done for each task:
 - [x] [GEN-010] Implement unknown/neutral fallback mapping to neutral/unknown voice bucket.
 - [x] [GEN-011] Ensure unknown gender never hard-fails export.
 - [x] [GEN-012] Emit low/undefined confidence in export for unknown gender.
-- [ ] [GEN-013] Mark dependent outputs stale when gender is edited.
-- [ ] [GEN-014] Trigger voice preview recomputation after gender edits.
-- [ ] [GEN-015] Add test cases for manual override precedence.
+- [x] [GEN-013] Mark dependent outputs stale when gender is edited.
+- [x] [GEN-014] Trigger voice preview recomputation after gender edits.
+- [x] [GEN-015] Add test cases for manual override precedence.
 - [ ] [GEN-016] Add test cases for contradiction flags and export gating.
 
 ## 4.5 Pronunciation and Verbalization (Ref: SRS.md §4.5)

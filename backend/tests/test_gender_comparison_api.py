@@ -282,3 +282,108 @@ def test_integration_export_not_blocked_for_unknown_gender_characters() -> None:
         payload = export_resp.json()
         assert payload["project_id"] == project_id
         assert payload["run_id"] == run_id
+
+
+def test_integration_export_prefers_manual_gender_when_inferred_conflicts() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Gender Manual Precedence In Export"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("novel.txt", io.BytesIO(b'Chapter 1\n"Hello," Alex said.'), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        upsert_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Alex",
+                        "verbalized_form": "Alex",
+                        "gender": "female",
+                        "confidence": 0.42,
+                        "source": "manual",
+                        "inferred_gender": "male",
+                        "inferred_confidence": 0.94,
+                        "inferred_source_trace": [],
+                    }
+                ],
+            },
+        )
+        assert upsert_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        payload = export_resp.json()
+        assert payload["run_id"] == run_id
+        assert payload["segments"]
+
+        segment = next(segment for segment in payload["segments"] if segment["speaker"] == "Alex")
+        assert segment["speaker"] == "Alex"
+        assert segment["gender"] == "female"
+        assert segment["voice_id"] == "female_default"
+        assert segment["confidence"]["gender"] == 0.42
+
+
+def test_integration_infer_updates_inferred_only_not_manual_gender() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Gender Inference Manual Authority"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("novel.txt", io.BytesIO(b'Chapter 1\nMr. Alex entered the room. "Enough," Alex said.'), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        upsert_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Alex",
+                        "verbalized_form": "Alex",
+                        "gender": "female",
+                        "confidence": 0.2,
+                        "source": "manual",
+                        "inferred_gender": "unknown",
+                        "inferred_confidence": 0.0,
+                        "inferred_source_trace": [],
+                    }
+                ],
+            },
+        )
+        assert upsert_resp.status_code == 200
+
+        infer_resp = client.post(f"/api/projects/{project_id}/characters/infer")
+        assert infer_resp.status_code == 200
+        inferred_map = infer_resp.json()["characters"]
+        alex = next(entry for entry in inferred_map if entry["name"] == "Alex")
+        assert alex["inferred_gender"] == "male"
+        assert alex["gender"] == "female"
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        payload = export_resp.json()
+        segment = next(segment for segment in payload["segments"] if segment["speaker"] == "Alex")
+        assert segment["gender"] == "female"
+        assert segment["voice_id"] == "female_default"
+        assert segment["confidence"]["gender"] == 0.2
