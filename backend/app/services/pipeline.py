@@ -15,7 +15,12 @@ from app.models import (
     SubSegmentTag,
 )
 from app.services.export import build_run_export
-from app.services.llm_router import LLMRequest, LLMRouter, get_provider_runtime_settings
+from app.services.llm_router import (
+    LLMRequest,
+    LLMRouter,
+    get_provider_runtime_settings,
+    is_supported_provider,
+)
 from app.services.character_merge import normalize_candidate_key
 from app.services.character_analytics import (
     build_character_occurrence_analytics,
@@ -70,6 +75,10 @@ def _coerce_confidence_threshold(value: object) -> float:
     if threshold > 1.0:
         return 1.0
     return round(threshold, 4)
+
+
+def _normalize_provider_name_for_llm(value: object) -> str:
+    return str(value).strip().lower()
 
 
 def _resolve_gender_confidence(
@@ -503,7 +512,23 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
 
 
 def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dict, input_text: str) -> None:
-    provider = str(run_config.get("provider_name", "openrouter")).lower()
+    provider = _normalize_provider_name_for_llm(run_config.get("provider_name", "openrouter"))
+
+    if not is_supported_provider(provider):
+        session.add(
+            LLMCall(
+                run_id=run.id,
+                provider=provider,
+                task_type=LLMTaskType.SENTIMENT_PROBE.value,
+                success=False,
+                request_count=0,
+                token_usage_estimate=None,
+                detail="unsupported_provider",
+            )
+        )
+        session.flush()
+        return
+
     max_calls_per_day = int(run_config.get("max_calls_per_day", 25))
 
     allowed, request_count = consume_quota(
