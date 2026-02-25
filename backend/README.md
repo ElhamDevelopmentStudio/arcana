@@ -68,6 +68,7 @@ Ingestion title fallback behavior:
 - If project title is a placeholder (`Untitled Project` / `New Project`), TXT ingestion attempts title detection from source text.
 - If no title is detectable from text, ingestion falls back to filename stem, then `Untitled Novel`.
 - Header-pattern chapter detection supports `Chapter <number|roman|textual>`, `Prologue`, `Epilogue`, and `Interlude`.
+- If explicit headers are absent, fallback heuristics split chapters on strong scene-break markers (`***`, `---`, `___`, etc.) when sections are sufficiently large.
 - Chapter-directory ingestion accepts multi-file `.txt` uploads and ingests files in natural filename order.
 - Chapter-directory ingestion treats each non-empty file boundary as one chapter unit (title derived from filename stem).
 - Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.

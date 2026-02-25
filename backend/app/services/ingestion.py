@@ -13,6 +13,7 @@ CHAPTER_FILENAME_SPLIT_RE = re.compile(r"(\d+)")
 MARKDOWN_FENCE_RE = re.compile(r"```[\s\S]*?```", re.MULTILINE)
 MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s*", re.MULTILINE)
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+AMBIGUOUS_CHAPTER_BREAK_RE = re.compile(r"\n\s*(?:\*{3,}|-{3,}|_{3,}|={3,}|~{3,})\s*\n")
 MAX_TITLE_CANDIDATE_LENGTH = 120
 DEFAULT_INGESTION_TITLE = "Untitled Novel"
 
@@ -38,6 +39,9 @@ def decode_text_with_metadata(raw_bytes: bytes) -> tuple[str, str, float]:
 def detect_chapters(raw_text: str) -> list[tuple[str, str]]:
     matches = list(CHAPTER_HEADER_RE.finditer(raw_text))
     if not matches:
+        fallback_chapters = detect_fallback_chapters_for_ambiguous_text(raw_text)
+        if fallback_chapters:
+            return fallback_chapters
         return [("Chapter 1", raw_text.strip())]
 
     chapters: list[tuple[str, str]] = []
@@ -51,12 +55,29 @@ def detect_chapters(raw_text: str) -> list[tuple[str, str]]:
         chapters.append((title, content))
 
     if not chapters:
+        fallback_chapters = detect_fallback_chapters_for_ambiguous_text(raw_text)
+        if fallback_chapters:
+            return fallback_chapters
         return [("Chapter 1", raw_text.strip())]
     return chapters
 
 
 def contains_explicit_chapter_header(raw_text: str) -> bool:
     return CHAPTER_HEADER_RE.search(raw_text) is not None
+
+
+def detect_fallback_chapters_for_ambiguous_text(
+    raw_text: str,
+    *,
+    min_section_chars: int = 140,
+) -> list[tuple[str, str]]:
+    normalized = raw_text.replace("\r\n", "\n")
+    sections = [part.strip() for part in AMBIGUOUS_CHAPTER_BREAK_RE.split(normalized) if part.strip()]
+    if len(sections) <= 1:
+        return []
+    if any(len(section) < min_section_chars for section in sections):
+        return []
+    return [(f"Chapter {index}", section) for index, section in enumerate(sections, start=1)]
 
 
 def detect_title_with_fallback(raw_text: str, filename: str | None = None) -> str:

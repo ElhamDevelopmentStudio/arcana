@@ -92,7 +92,7 @@ Definition of done for each task:
 ## 4.2 Deep Normalization (Ref: SRS.md §4.2)
 - [x] [NORM-001] Implement chapter detection from file boundaries.
 - [x] [NORM-002] Implement chapter detection from header patterns.
-- [ ] [NORM-003] Implement fallback chapter heuristics for ambiguous text.
+- [x] [NORM-003] Implement fallback chapter heuristics for ambiguous text.
 - [ ] [NORM-004] Add duplicate chapter-title detector.
 - [ ] [NORM-005] Add unique internal chapter ID assignment while preserving original title.
 - [ ] [NORM-006] Log chapter-title deduplication actions.
