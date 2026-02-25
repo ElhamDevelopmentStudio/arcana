@@ -3,6 +3,52 @@ import re
 PARAGRAPH_SPLIT_RE = re.compile(r"\n{2,}")
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 MAX_SEGMENT_CHARS_HARD_CAP = 255
+_INTELLIGIBILITY_MIN_TAIL_CHARS = 20
+_CLAUSE_CONNECTOR_PREFIXES = (
+    "and ",
+    "but ",
+    "or ",
+    "so ",
+    "then ",
+    "because ",
+    "since ",
+    "while ",
+    "if ",
+    "when ",
+    "as ",
+    "although ",
+    "though ",
+    "until ",
+    "unless ",
+    "after ",
+    "before ",
+    "once ",
+)
+
+
+def _starts_with_clause_connector(text: str) -> bool:
+    stripped = text.strip().lower()
+    return any(stripped.startswith(prefix) for prefix in _CLAUSE_CONNECTOR_PREFIXES)
+
+
+def _find_split_point(remaining: str, max_chars: int) -> int:
+    candidates = [index for index, char in enumerate(remaining[: max_chars + 1]) if char == " "]
+    if not candidates:
+        return max_chars
+
+    for cut in reversed(candidates):
+        tail = remaining[cut:]
+        if _starts_with_clause_connector(tail):
+            continue
+        if len(tail) >= _INTELLIGIBILITY_MIN_TAIL_CHARS:
+            return cut
+
+    for cut in reversed(candidates):
+        tail = remaining[cut:]
+        if len(tail) >= _INTELLIGIBILITY_MIN_TAIL_CHARS:
+            return cut
+
+    return candidates[-1]
 
 
 def split_paragraphs(text: str) -> list[str]:
@@ -26,7 +72,7 @@ def _split_long_sentence(sentence: str, max_chars: int) -> list[str]:
     remaining = sentence.strip()
 
     while len(remaining) > max_chars:
-        cut = remaining.rfind(" ", 0, max_chars + 1)
+        cut = _find_split_point(remaining, max_chars)
         if cut <= 0:
             cut = max_chars
         chunk = remaining[:cut].strip()

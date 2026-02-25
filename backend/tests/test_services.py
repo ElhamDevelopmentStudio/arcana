@@ -90,3 +90,16 @@ def test_segment_text_hard_caps_overlarge_max_chars() -> None:
     assert segments
     assert all(len(segment) <= 255 for segment in segments)
     assert len(segments) > 1
+
+
+def test_segment_text_avoids_clause_connector_starts() -> None:
+    long_alpha_prefix = " ".join(["alpha"] * 20)
+    text = f"{long_alpha_prefix} because the investigation revealed a hidden trail after midnight."
+    segments = segment_text(text, max_chars=60)
+
+    assert segments
+    assert all(len(segment) <= 60 for segment in segments)
+    for segment in segments[1:]:
+        assert not segment.strip().lower().startswith(
+            ("and ", "but ", "or ", "so ", "then ", "because ", "if ", "when ", "while ", "as ", "although ")
+        )
