@@ -69,7 +69,7 @@ Definition of done for each task:
 - [x] [MODE-009] Add mode switching endpoint that reuses ingested corpus.
 - [x] [MODE-010] Ensure mode switching does not duplicate raw text rows.
 - [x] [MODE-011] Mark downstream artifacts stale after mode switch.
-- [ ] [MODE-012] Add integration test: ingest once, run all three modes.
+- [x] [MODE-012] Add integration test: ingest once, run all three modes.
 
 ## 4.1 Ingestion and Project Setup (Ref: SRS.md §4.1)
 - [ ] [ING-001] Extend project schema to include `ingestion_timestamp`.

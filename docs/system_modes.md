@@ -67,3 +67,11 @@ Purpose:
   - `stale_on_mode: <new_selected_mode>`
   - `stale_marked_at: <utc_iso_timestamp>`
 - endpoint_response_field: `stale_runs_marked` reports how many existing runs were newly marked stale.
+
+## MODE-012 Multi-Mode Integration (Single Ingestion)
+
+- integration_target: ingest text once, then run `audiobook`, `academic`, and `author` on the same project.
+- verification:
+  - each run config keeps its own `mode` snapshot
+  - exports are generated for each mode run
+  - ingested chapter rows remain stable (no re-ingestion required between modes)
