@@ -216,6 +216,54 @@ def test_tag_segment_includes_tone_reversal_field() -> None:
     assert set(tags["tone_reversal"].keys()) >= {"has_tone_reversal", "tone", "from", "to", "confidence", "evidence"}
 
 
+def test_tag_segment_includes_sub_segment_boundaries_for_detected_shifts() -> None:
+    tags = tag_segment('She thought he would answer. "No," he said.')
+    boundaries = tags["sub_segment_boundaries"]
+    assert isinstance(boundaries, list)
+    assert any(item.get("shift_type") == "internal_external_speech_shift" for item in boundaries)
+    assert all(isinstance(item, dict) for item in boundaries)
+    for item in boundaries:
+        assert set(item.keys()) >= {
+            "shift_type",
+            "boundary_start_char",
+            "boundary_end_char",
+            "from_label",
+            "to_label",
+            "from_text",
+            "to_text",
+            "confidence",
+        }
+
+
+def test_tag_segment_has_empty_sub_segment_boundaries_when_no_shift_detected() -> None:
+    tags = tag_segment("The sky was calm and peaceful.")
+    assert isinstance(tags["sub_segment_boundaries"], list)
+    assert tags["sub_segment_boundaries"] == []
+
+
+def test_tag_segment_includes_parent_segment_summary_tag() -> None:
+    tags = tag_segment("Great, but the outcome was terrible.")
+    summary = tags["summary_tag"]
+    assert isinstance(summary, dict)
+    assert set(summary.keys()) >= {
+        "tag_type",
+        "dominant_tone",
+        "dominant_state",
+        "dominant_agent",
+        "confidence",
+    }
+    assert summary["tag_type"] == "segment_summary"
+    assert summary["dominant_state"] == tags["type"]
+    assert summary["dominant_tone"] == "dark_irony"
+    assert isinstance(summary["dominant_agent"], str)
+    assert isinstance(summary["confidence"], float)
+
+
+def test_tag_segment_summary_prefers_tone_reversal_dominant_tone() -> None:
+    tags = tag_segment("Great, but the outcome was terrible.")
+    assert tags["summary_tag"]["dominant_tone"] == "dark_irony"
+
+
 def test_detect_narration_blocks_identifies_outside_dialogue_ranges() -> None:
     text = '"She spoke," said Alex.\nThen silence returned.\n- Another reply.'
     blocks = detect_narration_blocks(text)
