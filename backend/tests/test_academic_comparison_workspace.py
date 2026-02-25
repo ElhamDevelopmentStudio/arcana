@@ -200,7 +200,7 @@ def test_get_aligned_comparison_curves_for_workspace() -> None:
         assert payload["run_count"] == 2
         assert payload["aligned_points"] == 32
         metrics = payload["metrics"]
-        assert len(metrics) == 6
+        assert len(metrics) == 7
 
         metric_ids = {metric["metric_id"] for metric in metrics}
         assert metric_ids == {
@@ -210,6 +210,7 @@ def test_get_aligned_comparison_curves_for_workspace() -> None:
             "smoothed_tension_curve",
             "rolling_valence_curve",
             "rolling_intensity_curve",
+            "normalized_pacing_signature",
         }
 
         for metric in metrics:
@@ -219,6 +220,8 @@ def test_get_aligned_comparison_curves_for_workspace() -> None:
                 normalized_positions = [point["normalized_position"] for point in run_descriptor["points"]]
                 assert normalized_positions[0] == 0.0
                 assert normalized_positions[-1] == 1.0
+                if metric["metric_id"] == "normalized_pacing_signature":
+                    assert all(0.0 <= point["value"] <= 1.0 for point in run_descriptor["points"])
 
 
 def test_get_aligned_curves_with_filter_and_alignment() -> None:
@@ -235,7 +238,7 @@ def test_get_aligned_curves_with_filter_and_alignment() -> None:
         )
         assert link_response.status_code == 201
 
-        metrics_filter = "chapter_valence_mean,smoothed_tension_curve"
+        metrics_filter = "chapter_valence_mean,smoothed_tension_curve,normalized_pacing_signature"
         filtered_response = client.get(
             f"/api/comparison-workspaces/{workspace_id}/aligned-curves?metrics={metrics_filter}&aligned_points=7"
         )

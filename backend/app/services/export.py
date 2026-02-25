@@ -790,6 +790,58 @@ def _build_chapter_level_emotional_volatility_index(
     return chapter_level_emotional_volatility_index
 
 
+def _build_normalized_pacing_signature(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not segments:
+        return []
+
+    segment_payloads: list[tuple[int, float, dict[str, Any]]] = []
+    max_word_count = 0.0
+
+    for index, segment in enumerate(segments):
+        normalized_text = segment.get("normalized_text")
+        if not isinstance(normalized_text, str):
+            normalized_text = ""
+        word_count = float(len(normalized_text.split()))
+        max_word_count = max(max_word_count, word_count)
+        segment_payloads.append(
+            (
+                index + 1,
+                word_count,
+                {
+                    "segment_id": segment.get("segment_id"),
+                    "chapter_id": segment.get("chapter_id"),
+                    "segment_index": segment.get("segment_index"),
+                },
+            )
+        )
+
+    if max_word_count <= 0.0:
+        normalized_curve: list[dict[str, Any]] = []
+        for position, word_count, segment_meta in segment_payloads:
+            normalized_curve.append(
+                {
+                    "position": position,
+                    "signature_value": 0.0,
+                    "segment_word_count": round(word_count, 4),
+                    **segment_meta,
+                }
+            )
+        return normalized_curve
+
+    normalized_curve: list[dict[str, Any]] = []
+    for position, word_count, segment_meta in segment_payloads:
+        normalized_curve.append(
+            {
+                "position": position,
+                "signature_value": round(word_count / max_word_count, 6),
+                "segment_word_count": round(word_count, 4),
+                **segment_meta,
+            }
+        )
+
+    return normalized_curve
+
+
 def _build_rolling_emotional_curves(
     segments: list[dict[str, Any]],
     window_size: int,
@@ -1909,6 +1961,7 @@ def build_run_export(
             segments=segments,
             top_characters_limit=3,
         ),
+        "normalized_pacing_signature": _build_normalized_pacing_signature(segments=segments),
         "character_cooccurrence_graph": character_cooccurrence_graph,
         "character_cooccurrence_centrality_table": character_cooccurrence_centrality_table,
         "chapter_level_raw_tension": _build_chapter_level_raw_tension(segments),

@@ -367,6 +367,9 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(alignedCurvesPayload.workspace_id).toBe(workspacePayload.workspace_id);
     expect(alignedCurvesPayload.run_count).toBe(1);
     expect(alignedCurvesPayload.aligned_points).toBe(32);
+    expect(
+      alignedCurvesPayload.metrics.some((metric) => metric.metric_id === 'normalized_pacing_signature'),
+    ).toBe(true);
     expect(alignedCurvesPayload.metrics.length).toBeGreaterThan(0);
     expect(alignedCurvesPayload.metrics.every((metric) => metric.points_per_run.length === 1)).toBe(true);
     expect(
@@ -375,7 +378,7 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
 
     const filteredCurvesResponse = await request.get(
       `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/aligned-curves`
-      + '?metrics=chapter_valence_mean,smoothed_tension_curve&aligned_points=7',
+      + '?metrics=chapter_valence_mean,smoothed_tension_curve,normalized_pacing_signature&aligned_points=7',
     );
     expect(filteredCurvesResponse.status()).toBe(200);
     const filteredCurvesPayload = (await filteredCurvesResponse.json()) as {
@@ -385,12 +388,12 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     };
     expect(filteredCurvesPayload.run_count).toBe(1);
     expect(filteredCurvesPayload.aligned_points).toBe(7);
-    expect(filteredCurvesPayload.metrics).toHaveLength(2);
+    expect(filteredCurvesPayload.metrics).toHaveLength(3);
     expect(
       filteredCurvesPayload.metrics.every((metric) => metric.points_per_run.every((run) => run.points.length === 7)),
     ).toBe(true);
     expect(filteredCurvesPayload.metrics.map((metric) => metric.metric_id).sort()).toEqual(
-      ['chapter_valence_mean', 'smoothed_tension_curve'].sort(),
+      ['chapter_valence_mean', 'smoothed_tension_curve', 'normalized_pacing_signature'].sort(),
     );
 
     const invalidMetricResponse = await request.get(

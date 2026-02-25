@@ -266,7 +266,7 @@ Definition of done for each task:
 - [x] [ACAD-015] Include reproducible run snapshot in academic exports.
 - [x] [ACAD-016] Implement multi-novel workspace comparison model.
 - [x] [ACAD-017] Implement aligned curve comparison view data.
-- [ ] [ACAD-018] Implement normalized pacing signature comparison data.
+- [x] [ACAD-018] Implement normalized pacing signature comparison data.
 - [ ] [ACAD-019] Implement comparative dataset export.
 - [ ] [ACAD-020] Add tests using at least two corpora for comparison correctness.
 
