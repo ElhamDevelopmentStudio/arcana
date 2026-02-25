@@ -1,9 +1,11 @@
 from app.services.tagging import (
     detect_dialogue_blocks,
     detect_emotion_shift,
+    detect_internal_external_speech_shift,
     detect_narration_internal_thought_shift,
     detect_narration_blocks,
     detect_structure,
+    detect_tone_reversal,
     tag_segment,
 )
 
@@ -160,6 +162,58 @@ def test_tag_segment_includes_narration_internal_thought_shift_field() -> None:
     tags = tag_segment("She thought he would return, but the wind grew loud.")
     assert isinstance(tags["narration_internal_thought_shift"], dict)
     assert set(tags["narration_internal_thought_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "evidence"}
+
+
+def test_detect_internal_external_speech_shift_identifies_transition() -> None:
+    shift = detect_internal_external_speech_shift('She thought he would answer. "No," he said.')
+    assert shift["has_shift"] is True
+    assert shift["from"] is not None
+    assert shift["to"] is not None
+    assert shift["confidence"] > 0
+    assert shift["from"]["type"] in {"internal thought", "dialogue"}
+    assert shift["to"]["type"] in {"internal thought", "dialogue"}
+    assert shift["from"]["type"] != shift["to"]["type"]
+
+
+def test_detect_internal_external_speech_shift_stays_false_without_transition() -> None:
+    shift = detect_internal_external_speech_shift('"The bridge is clear," said Mara.')
+    assert shift["has_shift"] is False
+    assert shift["from"] is None
+    assert shift["to"] is None
+    assert shift["evidence"]["shift_count"] == 0
+
+
+def test_tag_segment_includes_internal_external_speech_shift_field() -> None:
+    tags = tag_segment('She thought he would answer. "No," he said.')
+    assert isinstance(tags["internal_external_speech_shift"], dict)
+    assert set(tags["internal_external_speech_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "evidence"}
+
+
+def test_detect_tone_reversal_identifies_dark_irony_transition() -> None:
+    reversal = detect_tone_reversal("Great, but the outcome was terrible.")
+    assert reversal["has_tone_reversal"] is True
+    assert reversal["tone"] == "dark_irony"
+    assert reversal["from"] is not None
+    assert reversal["to"] is not None
+    assert reversal["confidence"] > 0
+    assert reversal["from"]["label"] in {"positive", "negative"}
+    assert reversal["to"]["label"] in {"positive", "negative"}
+    assert reversal["from"]["label"] != reversal["to"]["label"]
+    assert reversal["evidence"]["has_connector"] is True
+
+
+def test_detect_tone_reversal_stays_false_for_flat_positive_tone() -> None:
+    reversal = detect_tone_reversal("The day was warm and cheerful, and everyone felt good.")
+    assert reversal["has_tone_reversal"] is False
+    assert reversal["from"] is None
+    assert reversal["to"] is None
+    assert reversal["evidence"]["transition_count"] == 0
+
+
+def test_tag_segment_includes_tone_reversal_field() -> None:
+    tags = tag_segment("Great, but the outcome was terrible.")
+    assert isinstance(tags["tone_reversal"], dict)
+    assert set(tags["tone_reversal"].keys()) >= {"has_tone_reversal", "tone", "from", "to", "confidence", "evidence"}
 
 
 def test_detect_narration_blocks_identifies_outside_dialogue_ranges() -> None:
