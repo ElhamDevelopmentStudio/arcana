@@ -33,6 +33,7 @@ from app.services.ingestion import (
     contains_explicit_chapter_header,
     decode_text,
     decode_text_with_metadata,
+    detect_append_overlap_or_duplicate,
     detect_chapters,
     detect_title_with_fallback,
     detect_text_encoding,
@@ -453,6 +454,26 @@ def append_chapter(
     next_chapter_index = _get_next_chapter_index(session, project_id)
     chapter_title = to_internal_utf8(parsed_title if has_explicit_header else fallback_title)
     chapter_content = to_internal_utf8(parsed_content)
+    existing_chapters = (
+        session.query(Chapter.chapter_index, Chapter.chapter_title, Chapter.raw_text)
+        .filter(Chapter.project_id == project_id)
+        .order_by(Chapter.chapter_index.asc())
+        .all()
+    )
+    overlap_match = detect_append_overlap_or_duplicate(
+        new_title=chapter_title,
+        new_content=chapter_content,
+        existing_chapters=[(row[0], row[1], row[2]) for row in existing_chapters],
+    )
+    if overlap_match is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Append chapter rejected: "
+                f"{overlap_match['kind']} against chapter {overlap_match['chapter_index']}"
+            ),
+        )
+
     session.add(
         Chapter(
             project_id=project_id,

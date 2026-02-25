@@ -156,3 +156,57 @@ def extract_single_append_chapter(
     title, content = non_empty[0]
     normalized_title = title or fallback_title
     return (normalized_title, content)
+
+
+def _normalize_for_overlap(value: str) -> str:
+    return " ".join(value.split()).strip().lower()
+
+
+def detect_append_overlap_or_duplicate(
+    *,
+    new_title: str,
+    new_content: str,
+    existing_chapters: list[tuple[int, str, str]],
+    min_overlap_chars: int = 120,
+) -> dict[str, int | str] | None:
+    normalized_new_title = _normalize_for_overlap(new_title)
+    normalized_new_content = _normalize_for_overlap(new_content)
+    if not normalized_new_content:
+        return None
+
+    for chapter_index, chapter_title, chapter_content in existing_chapters:
+        normalized_existing_title = _normalize_for_overlap(chapter_title)
+        normalized_existing_content = _normalize_for_overlap(chapter_content)
+        if not normalized_existing_content:
+            continue
+
+        if normalized_new_content == normalized_existing_content:
+            return {
+                "kind": "exact_content_duplicate",
+                "chapter_index": chapter_index,
+                "chapter_title": chapter_title,
+            }
+
+        shorter = (
+            normalized_new_content
+            if len(normalized_new_content) <= len(normalized_existing_content)
+            else normalized_existing_content
+        )
+        longer = (
+            normalized_existing_content
+            if len(normalized_new_content) <= len(normalized_existing_content)
+            else normalized_new_content
+        )
+
+        if (
+            len(shorter) >= min_overlap_chars
+            and shorter in longer
+            and normalized_new_title == normalized_existing_title
+        ):
+            return {
+                "kind": "same_title_content_overlap",
+                "chapter_index": chapter_index,
+                "chapter_title": chapter_title,
+            }
+
+    return None
