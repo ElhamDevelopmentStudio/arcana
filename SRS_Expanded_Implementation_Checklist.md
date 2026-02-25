@@ -179,7 +179,7 @@ Definition of done for each task:
 - [x] [SEG-006] Implement hard max segment length ceiling.
 - [x] [SEG-007] Add intelligibility heuristic to avoid random mid-thought splits.
 - [x] [SEG-008] Prefer punctuation boundaries when splitting.
-- [ ] [SEG-009] Avoid split inside quoted utterance where possible.
+- [x] [SEG-009] Avoid split inside quoted utterance where possible.
 - [ ] [SEG-010] Add abbreviation/initial-aware split protection.
 - [ ] [SEG-011] Add metadata: chapter id.
 - [ ] [SEG-012] Add metadata: segment index.

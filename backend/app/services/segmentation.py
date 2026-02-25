@@ -33,17 +33,55 @@ def _starts_with_clause_connector(text: str) -> bool:
     return any(stripped.startswith(prefix) for prefix in _CLAUSE_CONNECTOR_PREFIXES)
 
 
+def _build_double_quote_spans(text: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    open_double_quote: int | None = None
+    open_curly_quote: int | None = None
+
+    for index, char in enumerate(text):
+        if char == '"':
+            if open_double_quote is None:
+                open_double_quote = index
+            else:
+                spans.append((open_double_quote, index + 1))
+                open_double_quote = None
+        elif char == "“":
+            if open_curly_quote is None:
+                open_curly_quote = index
+            else:
+                spans.append((open_curly_quote, index + 1))
+                open_curly_quote = None
+        elif char == "”":
+            if open_curly_quote is None:
+                spans.append((index, len(text)))
+            else:
+                spans.append((open_curly_quote, index + 1))
+                open_curly_quote = None
+
+    if open_double_quote is not None:
+        spans.append((open_double_quote, len(text)))
+    if open_curly_quote is not None:
+        spans.append((open_curly_quote, len(text)))
+    return spans
+
+
+def _is_split_inside_quote(split_index: int, quote_spans: list[tuple[int, int]]) -> bool:
+    return any(start < split_index < end for start, end in quote_spans)
+
+
 def _find_split_point(remaining: str, max_chars: int) -> int:
     candidates = [index for index, char in enumerate(remaining[: max_chars + 1]) if char == " "]
     if not candidates:
         return max_chars
 
+    quote_spans = _build_double_quote_spans(remaining)
     min_tail_ok_cutoff = _INTELLIGIBILITY_MIN_TAIL_CHARS
     punctuation_window_floor = max(1, max_chars - _PUNCTUATION_PREFERENCE_WINDOW)
     preferred_punctuation_candidates = [
         cut
         for cut in candidates
-        if cut >= punctuation_window_floor
+        if not _is_split_inside_quote(cut, quote_spans)
+        and cut >= punctuation_window_floor
         and cut - 1 >= 0
         and remaining[cut - 1] in _PREFERRED_SPLIT_PUNCTUATION
         and len(remaining[cut:]) >= min_tail_ok_cutoff
@@ -54,6 +92,8 @@ def _find_split_point(remaining: str, max_chars: int) -> int:
 
     for cut in reversed(candidates):
         tail = remaining[cut:]
+        if _is_split_inside_quote(cut, quote_spans):
+            continue
         if _starts_with_clause_connector(tail):
             continue
         if len(tail) >= _INTELLIGIBILITY_MIN_TAIL_CHARS:
@@ -61,6 +101,8 @@ def _find_split_point(remaining: str, max_chars: int) -> int:
 
     for cut in reversed(candidates):
         tail = remaining[cut:]
+        if _is_split_inside_quote(cut, quote_spans):
+            continue
         if len(tail) >= _INTELLIGIBILITY_MIN_TAIL_CHARS:
             return cut
 

@@ -113,3 +113,22 @@ def test_segment_text_prefers_punctuation_boundaries() -> None:
     segments = segment_text(text, max_chars=100)
     assert len(segments) > 1
     assert segments[0].endswith(",") or segments[0].endswith(".")
+
+
+def test_segment_text_prefers_quote_boundaries_when_possible() -> None:
+    quote_payload = (
+        "inside the quote, with repeated clauses, including commas, and details, "
+        * 6
+    )
+    text = (
+        'He said, "'
+        + quote_payload
+        + 'it keeps going" afterward, the group reacted with relief and kept discussing the plan '
+        + "for a long while until dawn."
+    )
+    opening_quote_index = text.index('"')
+    segments = segment_text(text, max_chars=120)
+    assert len(segments) > 1
+    assert '"' not in segments[0]
+    assert len(segments[0]) < opening_quote_index
+    assert segments[1].lstrip().startswith('"')
