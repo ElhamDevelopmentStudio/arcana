@@ -115,9 +115,9 @@ Definition of done for each task:
 ## 4.3 Character and Entity Extraction (Ref: SRS.md §4.3)
 - [x] [CHAR-001] Expand character schema: `name`, `verbalized_form`, `gender`, `aliases[]`, `notes`, `source`, `confidence`.
 - [x] [CHAR-002] Keep PoC JSON/CSV import backward-compatible with new schema.
-- [ ] [CHAR-003] Implement manual row add/edit/delete UI for character map.
-- [ ] [CHAR-004] Add auto-extraction job for candidate character names.
-- [ ] [CHAR-005] Store extraction confidence and source trace for each candidate.
+- [x] [CHAR-003] Implement manual row add/edit/delete UI for character map.
+- [x] [CHAR-004] Add auto-extraction job for candidate character names.
+- [x] [CHAR-005] Store extraction confidence and source trace for each candidate.
 - [x] [CHAR-006] Add optional web-scrape ingestion with explicit warning acknowledgement.
 - [x] [CHAR-007] Normalize and merge user-uploaded + auto + scraped candidates.
 - [x] [CHAR-008] Implement canonical-name merge suggestions.
