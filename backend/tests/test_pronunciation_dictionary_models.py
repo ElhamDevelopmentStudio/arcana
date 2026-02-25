@@ -166,6 +166,41 @@ def test_unit_pronunciation_dictionary_artifact_scope_terms_can_be_created() -> 
         session.close()
 
 
+def test_unit_pronunciation_dictionary_invented_scope_terms_can_be_created() -> None:
+    session = get_session_factory()()
+    try:
+        project = Project(title="Invented Pronunciation Dictionary")
+        session.add(project)
+        session.flush()
+
+        entry = PronunciationDictionary(
+            project_id=project.id,
+            scope="invented",
+            character_name="",
+            term="drakene",
+            verbalized_form="dra-ke-n",
+            source="manual",
+            confidence=0.91,
+        )
+        session.add(entry)
+        session.commit()
+
+        persisted = (
+            session.query(PronunciationDictionary)
+            .filter(
+                PronunciationDictionary.project_id == project.id,
+                PronunciationDictionary.scope == "invented",
+                PronunciationDictionary.term == "drakene",
+            )
+            .one()
+        )
+        assert persisted.scope == "invented"
+        assert persisted.character_name == ""
+        assert persisted.verbalized_form == "dra-ke-n"
+    finally:
+        session.close()
+
+
 def test_unit_pronunciation_dictionary_rejects_duplicate_term_per_project_scope_character() -> None:
     session = get_session_factory()()
     try:

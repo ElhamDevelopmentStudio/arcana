@@ -344,6 +344,7 @@ describe('project characters page manual editor', () => {
       include_character_scope: false,
       include_place_scope: false,
       include_artifact_scope: false,
+      include_invented_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Captain saw the Aegis at dawn.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('Captain saw the EE-jis at dawn.');
@@ -385,6 +386,7 @@ describe('project characters page manual editor', () => {
       include_character_scope: false,
       include_place_scope: true,
       include_artifact_scope: false,
+      include_invented_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('They entered Narnia at dawn.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('They entered Nar-nia at dawn.');
@@ -435,6 +437,7 @@ describe('project characters page manual editor', () => {
       include_character_scope: true,
       include_place_scope: false,
       include_artifact_scope: false,
+      include_invented_scope: false,
       character_name: 'Kai',
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Aegis sounded.');
@@ -481,6 +484,7 @@ describe('project characters page manual editor', () => {
       include_character_scope: false,
       include_place_scope: false,
       include_artifact_scope: false,
+      include_invented_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('CaptainAegis and Aegis.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('CaptainEE-jis and EE-jis.');
@@ -519,6 +523,7 @@ describe('project characters page manual editor', () => {
       include_character_scope: false,
       include_place_scope: false,
       include_artifact_scope: false,
+      include_invented_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Aegis sailed with aegis and AEGIS in the hold.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue(
@@ -562,6 +567,7 @@ describe('project characters page manual editor', () => {
       include_character_scope: true,
       include_place_scope: false,
       include_artifact_scope: false,
+      include_invented_scope: false,
       character_name: 'Kai',
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Al met Kai.');
@@ -602,10 +608,53 @@ describe('project characters page manual editor', () => {
       include_character_scope: false,
       include_place_scope: false,
       include_artifact_scope: true,
+      include_invented_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('The phylactery hummed nearby.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('The artefact-phrase hummed nearby.');
     expect(screen.getByText('Included scopes: artifact')).toBeInTheDocument();
     expect(screen.getByTestId('pronunciation-preview-replacements')).toHaveTextContent('phylactery → artefact-phrase');
+  });
+
+  it('runs pronunciation preview with invented word dictionary scope', async () => {
+    const user = userEvent.setup();
+    pronunciationPreviewMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      before: 'A drakene rose slowly.',
+      after: 'A dra-ke-n rose slowly.',
+      character_name: null,
+      included_scopes: ['invented'],
+      replacements: [
+        {
+          term: 'drakene',
+          verbalized_form: 'dra-ke-n',
+          count: 1,
+          scope: 'invented',
+        },
+      ],
+    });
+
+    renderCharacterPage();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Global pronunciation dictionary' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Invented word dictionary' }));
+    await user.type(screen.getByTestId('pronunciation-preview-text'), 'A drakene rose slowly.');
+    await user.click(screen.getByTestId('pronunciation-preview-button'));
+
+    expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
+      text: 'A drakene rose slowly.',
+      case_sensitive: true,
+      match_whole_words: true,
+      alias_aware: false,
+      include_global_scope: false,
+      include_character_scope: false,
+      include_place_scope: false,
+      include_artifact_scope: false,
+      include_invented_scope: true,
+    });
+    expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('A drakene rose slowly.');
+    expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('A dra-ke-n rose slowly.');
+    expect(screen.getByText('Included scopes: invented')).toBeInTheDocument();
+    expect(screen.getByTestId('pronunciation-preview-replacements')).toHaveTextContent('drakene → dra-ke-n');
   });
 });
