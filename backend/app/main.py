@@ -28,6 +28,7 @@ from app.services.epub_ingestion import extract_epub_chapters
 from app.services.export import build_run_export
 from app.services.ingestion import (
     build_encoding_warning,
+    calculate_delta_affected_range,
     chapter_filename_sort_key,
     chapter_title_from_filename,
     contains_explicit_chapter_header,
@@ -111,12 +112,15 @@ def _update_project_ingestion_log(
     project: Project,
     source: str,
     warnings: list[dict[str, str | float]],
+    affected_range: dict[str, int] | None = None,
 ) -> None:
     log_json = dict(project.ingestion_log_json or {})
     existing_warnings = list(log_json.get("warnings", []))
     existing_warnings.extend(warnings)
     log_json["warnings"] = existing_warnings
     log_json["source"] = source
+    if affected_range is not None:
+        log_json["affected_range"] = affected_range
     log_json["updated_at"] = datetime.now(timezone.utc).isoformat()
     project.ingestion_log_json = log_json
 
@@ -486,7 +490,16 @@ def append_chapter(
 
     warning = build_encoding_warning("append-chapter", encoding, confidence)
     warnings = [warning] if warning is not None else []
-    _update_project_ingestion_log(project, source="append-chapter", warnings=warnings)
+    affected_range = calculate_delta_affected_range(
+        changed_chapter_indices=[next_chapter_index],
+        total_chapter_count=len(existing_chapters) + 1,
+    )
+    _update_project_ingestion_log(
+        project,
+        source="append-chapter",
+        warnings=warnings,
+        affected_range=affected_range,
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()

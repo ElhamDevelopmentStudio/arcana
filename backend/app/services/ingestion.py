@@ -210,3 +210,28 @@ def detect_append_overlap_or_duplicate(
             }
 
     return None
+
+
+def calculate_delta_affected_range(
+    *,
+    changed_chapter_indices: list[int],
+    total_chapter_count: int,
+    context_lookback: int = 0,
+) -> dict[str, int] | None:
+    if not changed_chapter_indices or total_chapter_count <= 0:
+        return None
+
+    positive_indices = sorted({index for index in changed_chapter_indices if index > 0})
+    if not positive_indices:
+        return None
+
+    raw_start = positive_indices[0] - max(context_lookback, 0)
+    start_chapter_index = max(1, raw_start)
+    end_chapter_index = min(total_chapter_count, positive_indices[-1])
+    if start_chapter_index > end_chapter_index:
+        return None
+
+    return {
+        "start_chapter_index": start_chapter_index,
+        "end_chapter_index": end_chapter_index,
+    }
