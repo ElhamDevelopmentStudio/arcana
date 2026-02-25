@@ -638,6 +638,36 @@ def _build_rolling_emotional_curves(
     }
 
 
+def _build_chapter_level_raw_tension(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    totals: dict[int, float] = {}
+    counts: dict[int, int] = {}
+
+    for segment in segments:
+        chapter_id = segment.get("chapter_id")
+        if not isinstance(chapter_id, int):
+            continue
+        tension_value = _to_number(_to_dict(segment.get("tension_contribution")).get("value"))
+        if tension_value is None:
+            continue
+        totals[chapter_id] = totals.get(chapter_id, 0.0) + tension_value
+        counts[chapter_id] = counts.get(chapter_id, 0) + 1
+
+    chapter_level_raw_tension = []
+    for chapter_id in sorted(totals.keys()):
+        count = counts.get(chapter_id, 0)
+        if count <= 0:
+            continue
+        chapter_level_raw_tension.append(
+            {
+                "chapter_id": chapter_id,
+                "raw_tension_mean": round(totals[chapter_id] / count, 4),
+                "raw_tension_sum": round(totals[chapter_id], 4),
+                "segment_count": count,
+            }
+        )
+    return chapter_level_raw_tension
+
+
 def _csv_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -829,6 +859,7 @@ def build_run_export(
                 segments=segments,
                 volatility_markers=time_series["volatility_markers"],
             ),
+            "chapter_level_raw_tension": _build_chapter_level_raw_tension(segments),
             "rolling_window_emotional_curves": _build_rolling_emotional_curves(
                 segments=segments,
                 window_size=5,
