@@ -1,14 +1,29 @@
 from collections.abc import Mapping
+from collections.abc import Sequence
 
 import re
 
 
-def replace_pronunciations(text: str, name_to_verbalized: dict[str, str]) -> str:
+def _build_replace_pattern(names: Sequence[str], match_whole_words: bool) -> re.Pattern[str]:
+    if not names:
+        raise ValueError("No replacement terms provided.")
+
+    escaped_terms = "|".join(re.escape(name) for name in names)
+    if match_whole_words:
+        return re.compile(r"\b(" + escaped_terms + r")\b")
+    return re.compile("(" + escaped_terms + ")")
+
+
+def replace_pronunciations(
+    text: str,
+    name_to_verbalized: dict[str, str],
+    match_whole_words: bool = True,
+) -> str:
     if not name_to_verbalized:
         return text
 
     names = sorted(name_to_verbalized.keys(), key=len, reverse=True)
-    pattern = re.compile(r"\b(" + "|".join(re.escape(name) for name in names) + r")\b")
+    pattern = _build_replace_pattern(names=names, match_whole_words=match_whole_words)
 
     def _replace(match: re.Match[str]) -> str:
         key = match.group(0)
@@ -20,12 +35,13 @@ def replace_pronunciations(text: str, name_to_verbalized: dict[str, str]) -> str
 def replace_pronunciations_with_counts(
     text: str,
     name_to_verbalized: Mapping[str, str],
+    match_whole_words: bool = True,
 ) -> tuple[str, dict[str, int]]:
     if not name_to_verbalized:
         return text, {}
 
     names = sorted(name_to_verbalized.keys(), key=len, reverse=True)
-    pattern = re.compile(r"\b(" + "|".join(re.escape(name) for name in names) + r")\b")
+    pattern = _build_replace_pattern(names=names, match_whole_words=match_whole_words)
     replacement_counts: dict[str, int] = {}
 
     def _replace(match: re.Match[str]) -> str:

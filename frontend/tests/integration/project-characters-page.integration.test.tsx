@@ -337,6 +337,7 @@ describe('project characters page manual editor', () => {
 
     expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
       text: 'Captain saw the Aegis at dawn.',
+      match_whole_words: true,
       include_global_scope: true,
       include_character_scope: false,
     });
@@ -344,5 +345,39 @@ describe('project characters page manual editor', () => {
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('Captain saw the EE-jis at dawn.');
     expect(screen.getByText('Included scopes: global')).toBeInTheDocument();
     expect(screen.getByTestId('pronunciation-preview-replacements')).toHaveTextContent('Aegis → EE-jis');
+  });
+
+  it('switches whole-word matching mode for pronunciation preview', async () => {
+    const user = userEvent.setup();
+    pronunciationPreviewMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      before: 'CaptainAegis and Aegis.',
+      after: 'CaptainEE-jis and EE-jis.',
+      character_name: null,
+      included_scopes: ['global'],
+      replacements: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'EE-jis',
+          count: 2,
+          scope: 'global',
+        },
+      ],
+    });
+
+    renderCharacterPage();
+
+    await user.type(screen.getByTestId('pronunciation-preview-text'), 'CaptainAegis and Aegis.');
+    await user.click(screen.getByRole('checkbox', { name: 'Match whole words only' }));
+    await user.click(screen.getByTestId('pronunciation-preview-button'));
+
+    expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
+      text: 'CaptainAegis and Aegis.',
+      match_whole_words: false,
+      include_global_scope: true,
+      include_character_scope: false,
+    });
+    expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('CaptainAegis and Aegis.');
+    expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('CaptainEE-jis and EE-jis.');
   });
 });

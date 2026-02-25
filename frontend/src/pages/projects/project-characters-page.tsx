@@ -96,6 +96,7 @@ export function ProjectCharactersPage() {
   const [pronunciationPreviewText, setPronunciationPreviewText] = useState<string>('');
   const [includeGlobalPronunciationScope, setIncludeGlobalPronunciationScope] = useState<boolean>(true);
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
+  const [pronunciationMatchWholeWords, setPronunciationMatchWholeWords] = useState<boolean>(true);
   const [pronunciationPreviewCharacterName, setPronunciationPreviewCharacterName] = useState<string>('');
   const [pronunciationPreviewResult, setPronunciationPreviewResult] = useState<
     PronunciationDictionaryPreviewResponseDto | null
@@ -358,6 +359,7 @@ export function ProjectCharactersPage() {
       text: pronunciationPreviewText.trim(),
       include_global_scope: includeGlobalPronunciationScope,
       include_character_scope: includeCharacterPronunciationScope,
+      match_whole_words: pronunciationMatchWholeWords,
       ...(pronunciationPreviewCharacterName.trim() ? { character_name: pronunciationPreviewCharacterName.trim() } : {}),
     };
 
@@ -782,6 +784,16 @@ export function ProjectCharactersPage() {
                     <span>Character-specific dictionary</span>
                   </label>
                 </div>
+              </div>
+              <div className="grid gap-2">
+                <p className="text-sm font-medium">Matching mode</p>
+                <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={pronunciationMatchWholeWords}
+                    onCheckedChange={(checked) => setPronunciationMatchWholeWords(checked === true)}
+                  />
+                  <span>Match whole words only</span>
+                </label>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="pronunciation-preview-character">Character scope target</Label>
