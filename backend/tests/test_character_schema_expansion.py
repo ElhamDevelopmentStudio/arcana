@@ -244,3 +244,53 @@ def test_integration_character_map_endpoints_list_and_replace() -> None:
         assert rows[1].confidence == 0.91
     finally:
         session.close()
+
+
+def test_integration_character_map_finalize_action_tracks_state() -> None:
+    imported_payload = json.dumps({"Kai": {"verbalized_form": "Kai", "gender": "female"}}).encode("utf-8")
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Character Finalization Flow"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        import_resp = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={"file": ("characters.json", io.BytesIO(imported_payload), "application/json")},
+        )
+        assert import_resp.status_code == 200
+
+        list_before_finalize_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert list_before_finalize_resp.status_code == 200
+        assert list_before_finalize_resp.json()["character_map_finalized"] is False
+
+        finalize_resp = client.post(f"/api/projects/{project_id}/characters/finalize")
+        assert finalize_resp.status_code == 200
+        assert finalize_resp.json()["character_map_finalized"] is True
+
+        list_after_finalize_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert list_after_finalize_resp.status_code == 200
+        assert list_after_finalize_resp.json()["character_map_finalized"] is True
+
+        save_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Kai",
+                        "verbalized_form": "Kai",
+                        "gender": "female",
+                        "aliases": [],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    }
+                ]
+            },
+        )
+        assert save_resp.status_code == 200
+
+        list_after_save_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert list_after_save_resp.status_code == 200
+        assert list_after_save_resp.json()["character_map_finalized"] is False

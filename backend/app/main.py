@@ -14,6 +14,7 @@ from app.schemas import (
     CharacterMapItem,
     CharacterMapResponse,
     CharacterMapUpdateRequest,
+    CharacterMapFinalizeResponse,
     IngestResponse,
     CharacterExtractionResponse,
     CharacterScrapeRequest,
@@ -251,6 +252,7 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         title=project.title,
         selected_mode=project.selected_mode,
         selected_modes=project.selected_modes,
+        character_map_finalized=project.character_map_finalized,
         configuration_snapshot_id=project.configuration_snapshot_id,
         ingestion_timestamp=project.ingestion_timestamp,
         created_at=project.created_at,
@@ -838,7 +840,7 @@ def import_characters(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ) -> CharacterImportResponse:
-    _get_project_or_404(session, project_id)
+    project = _get_project_or_404(session, project_id)
 
     payload = file.file.read()
     try:
@@ -861,6 +863,8 @@ def import_characters(
                 confidence=row.confidence,
             )
         )
+    project.character_map_finalized = False
+    session.add(project)
 
     session.commit()
 
@@ -876,7 +880,7 @@ def list_characters(
     project_id: int,
     session: Session = Depends(get_session),
 ) -> CharacterMapResponse:
-    _get_project_or_404(session, project_id)
+    project = _get_project_or_404(session, project_id)
 
     character_rows = (
         session.query(Character)
@@ -886,6 +890,7 @@ def list_characters(
     )
     return CharacterMapResponse(
         project_id=project_id,
+        character_map_finalized=project.character_map_finalized,
         characters=[
             CharacterMapItem(
                 name=character.name,
@@ -898,6 +903,24 @@ def list_characters(
             )
             for character in character_rows
         ],
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/characters/finalize",
+    response_model=CharacterMapFinalizeResponse,
+    status_code=status.HTTP_200_OK,
+)
+def finalize_character_map(project_id: int, session: Session = Depends(get_session)) -> CharacterMapFinalizeResponse:
+    project = _get_project_or_404(session, project_id)
+    project.character_map_finalized = True
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+
+    return CharacterMapFinalizeResponse(
+        project_id=project.id,
+        character_map_finalized=project.character_map_finalized,
     )
 
 
@@ -1094,7 +1117,7 @@ def upsert_characters(
     payload: CharacterMapUpdateRequest,
     session: Session = Depends(get_session),
 ) -> CharacterMapResponse:
-    _get_project_or_404(session, project_id)
+    project = _get_project_or_404(session, project_id)
 
     deduped: dict[str, CharacterMapItem] = {}
     for row in payload.characters:
@@ -1114,10 +1137,13 @@ def upsert_characters(
                 confidence=row.confidence,
             )
         )
+    project.character_map_finalized = False
+    session.add(project)
     session.commit()
 
     return CharacterMapResponse(
         project_id=project_id,
+        character_map_finalized=project.character_map_finalized,
         characters=[
             CharacterMapItem(
                 name=row.name.strip(),

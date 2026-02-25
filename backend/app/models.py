@@ -19,6 +19,7 @@ class Project(Base):
     voice_config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     ingestion_log_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     ingestion_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    character_map_finalized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

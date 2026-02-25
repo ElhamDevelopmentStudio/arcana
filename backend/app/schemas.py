@@ -16,6 +16,7 @@ class ProjectResponse(BaseModel):
     selected_mode: str
     selected_modes: list[str]
     configuration_snapshot_id: str | None
+    character_map_finalized: bool
     ingestion_timestamp: datetime | None
     created_at: datetime
 
@@ -115,10 +116,16 @@ class CharacterMapItem(BaseModel):
 class CharacterMapResponse(BaseModel):
     project_id: int
     characters: list[CharacterMapItem]
+    character_map_finalized: bool
 
 
 class CharacterMapUpdateRequest(BaseModel):
     characters: list[CharacterMapItem]
+
+
+class CharacterMapFinalizeResponse(BaseModel):
+    project_id: int
+    character_map_finalized: bool
 
 
 class CharacterScrapeRequest(BaseModel):

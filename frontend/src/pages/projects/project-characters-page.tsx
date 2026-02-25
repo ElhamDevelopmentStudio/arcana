@@ -21,6 +21,7 @@ import {
   useMergeCharactersMutation,
   useImportCharactersMutation,
   useSaveCharacterMapMutation,
+  useFinalizeCharacterMapMutation,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -86,6 +87,8 @@ export function ProjectCharactersPage() {
   const autoExtractCharactersMutation = useAutoExtractCharactersMutation(projectId);
   const scrapeCharactersMutation = useScrapeCharactersMutation(projectId);
   const mergeCharactersMutation = useMergeCharactersMutation(projectId);
+  const finalizeCharactersMutation = useFinalizeCharacterMapMutation(projectId);
+  const isCharacterMapFinalized = characterMapQuery.data?.character_map_finalized ?? false;
 
   useEffect(() => {
     if (characterMapQuery.data === undefined) {
@@ -278,6 +281,21 @@ export function ProjectCharactersPage() {
     setProposedCandidates((prev) => prev.filter((_, candidateIndex) => candidateIndex !== index));
   }
 
+  async function handleFinalizeCharacterMap() {
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+
+    try {
+      await finalizeCharactersMutation.trigger();
+      await characterMapQuery.mutate();
+      toast.success('Character map finalized.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to finalize character map.');
+    }
+  }
+
   return (
     <WorkflowPageShell
       step="Step 03"
@@ -285,7 +303,22 @@ export function ProjectCharactersPage() {
       description="Manage character data through import, manual editing, and scrape-assisted discovery. This page is dedicated to character-map operations only."
       action={
         projectId !== null ? (
-          <Button onClick={() => navigate(projectRoute(projectId, 'pipeline-setup'))}>Continue to Pipeline Setup</Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant={isCharacterMapFinalized ? 'outline' : 'default'}
+              disabled={finalizeCharactersMutation.isMutating || projectId === null || isCharacterMapFinalized}
+              onClick={handleFinalizeCharacterMap}
+              type="button"
+            >
+              {finalizeCharactersMutation.isMutating
+                ? 'Finalizing...'
+                : isCharacterMapFinalized
+                  ? 'Character Map Finalized'
+                  : 'Finalize Character Map'}
+            </Button>
+            <Button onClick={() => navigate(projectRoute(projectId, 'pipeline-setup'))}>Continue to Pipeline Setup</Button>
+          </div>
         ) : (
           <Badge variant="outline">Project required</Badge>
         )
