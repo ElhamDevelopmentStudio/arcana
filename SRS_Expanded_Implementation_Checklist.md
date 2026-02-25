@@ -76,7 +76,7 @@ Definition of done for each task:
 - [x] [ING-002] Add `selected_modes` field to project schema.
 - [x] [ING-003] Add `configuration_snapshot` reference on project creation.
 - [x] [ING-004] Implement title detection fallback when title is missing.
-- [ ] [ING-005] Support TXT single-file ingestion path.
+- [x] [ING-005] Support TXT single-file ingestion path.
 - [ ] [ING-006] Support chapter-directory ingestion path.
 - [ ] [ING-007] Support Markdown file ingestion path.
 - [ ] [ING-008] Add EPUB parser integration toggle (optional now, pluggable).
