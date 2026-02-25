@@ -44,6 +44,7 @@ def test_unit_project_response_includes_selected_modes() -> None:
         title="Selected Modes Unit",
         selected_mode="author",
         selected_modes=["audiobook", "author"],
+        configuration_snapshot_id="project-1-config-initial",
         ingestion_timestamp=None,
         created_at=datetime.now(timezone.utc),
     )
@@ -57,6 +58,7 @@ def test_integration_create_project_initializes_selected_modes_with_default() ->
     payload = project_resp.json()
     assert payload["selected_mode"] == "audiobook"
     assert payload["selected_modes"] == ["audiobook"]
+    assert payload["configuration_snapshot_id"] == f"project-{payload['id']}-config-initial"
 
 
 def test_e2e_mode_switch_and_runs_append_unique_selected_modes() -> None:

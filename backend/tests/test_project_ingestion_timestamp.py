@@ -44,6 +44,7 @@ def test_unit_project_response_supports_optional_ingestion_timestamp() -> None:
         title="Ingestion Timestamp Unit",
         selected_mode="audiobook",
         selected_modes=["audiobook"],
+        configuration_snapshot_id="project-1-config-initial",
         ingestion_timestamp=None,
         created_at=datetime.now(timezone.utc),
     )
@@ -58,6 +59,7 @@ def test_integration_create_project_returns_null_ingestion_timestamp() -> None:
     payload = project_resp.json()
     assert payload["ingestion_timestamp"] is None
     assert payload["selected_modes"] == ["audiobook"]
+    assert payload["configuration_snapshot_id"] == f"project-{payload['id']}-config-initial"
 
 
 def test_e2e_txt_ingestion_sets_project_ingestion_timestamp() -> None:
@@ -87,3 +89,4 @@ def test_regression_project_payload_contains_ingestion_timestamp_field() -> None
     payload = project_resp.json()
     assert "ingestion_timestamp" in payload
     assert payload["ingestion_timestamp"] is None
+    assert payload["configuration_snapshot_id"] == f"project-{payload['id']}-config-initial"

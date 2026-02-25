@@ -82,6 +82,10 @@ def _merge_selected_modes(existing_modes: list[str] | None, mode: str) -> list[s
     return merged
 
 
+def _build_initial_configuration_snapshot_id(project_id: int) -> str:
+    return f"project-{project_id}-config-initial"
+
+
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(payload: ProjectCreate, session: Session = Depends(get_session)) -> ProjectResponse:
     project = Project(
@@ -93,12 +97,17 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
     session.add(project)
     session.commit()
     session.refresh(project)
+    project.configuration_snapshot_id = _build_initial_configuration_snapshot_id(project.id)
+    session.add(project)
+    session.commit()
+    session.refresh(project)
 
     return ProjectResponse(
         id=project.id,
         title=project.title,
         selected_mode=project.selected_mode,
         selected_modes=project.selected_modes,
+        configuration_snapshot_id=project.configuration_snapshot_id,
         ingestion_timestamp=project.ingestion_timestamp,
         created_at=project.created_at,
     )

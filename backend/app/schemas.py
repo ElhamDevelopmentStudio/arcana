@@ -15,6 +15,7 @@ class ProjectResponse(BaseModel):
     title: str
     selected_mode: str
     selected_modes: list[str]
+    configuration_snapshot_id: str | None
     ingestion_timestamp: datetime | None
     created_at: datetime
 

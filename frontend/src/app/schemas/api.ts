@@ -21,6 +21,7 @@ export const projectSchema = z.object({
   title: z.string(),
   selected_mode: z.string(),
   selected_modes: z.array(z.string()),
+  configuration_snapshot_id: z.string().nullable(),
   ingestion_timestamp: z.string().nullable(),
   created_at: z.string(),
 });

@@ -56,6 +56,7 @@ Mode persistence behavior:
 - Mode changes can be persisted before runs via `PUT /api/projects/{project_id}/mode`.
 - Mode changes mark prior runs from different modes as stale via `runs.config_json.artifacts_stale=true`.
 - Project records keep `ingestion_timestamp` (`null` until first ingestion, then UTC timestamp).
+- Project creation sets `configuration_snapshot_id` reference (initial format: `project-<id>-config-initial`).
 - Each run snapshots mode in `runs.config_json.mode`.
 - Each run stores immutable defaults at `runs.config_json.mode_profile_snapshot`.
 - Mode catalog includes `mode_profiles` with default run-config values per mode.

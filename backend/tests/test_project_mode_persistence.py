@@ -44,6 +44,7 @@ def test_unit_project_response_includes_selected_mode_field() -> None:
         title="Mode Persistence Unit",
         selected_mode="academic",
         selected_modes=["audiobook", "academic"],
+        configuration_snapshot_id="project-1-config-initial",
         ingestion_timestamp=None,
         created_at=datetime.now(timezone.utc),
     )
@@ -58,6 +59,7 @@ def test_integration_project_default_mode_is_persisted_on_create() -> None:
         project_id = project_resp.json()["id"]
         assert project_resp.json()["selected_mode"] == "audiobook"
         assert project_resp.json()["selected_modes"] == ["audiobook"]
+        assert project_resp.json()["configuration_snapshot_id"] == f"project-{project_id}-config-initial"
 
     session = get_session_factory()()
     try:
