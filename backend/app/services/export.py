@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Chapter, LLMCall, Project, Run, Segment
@@ -127,6 +127,30 @@ def _build_export_reports(project: Project, run: Run, segment_count: int, ordere
     }
 
 
+def _build_segment_rows_query(run_id: int, from_chapter_index: int | None, from_segment_index: int | None):
+    base_query = (
+        select(Segment.segment_json)
+        .join(Chapter, Chapter.id == Segment.chapter_id)
+        .where(Segment.run_id == run_id)
+        .order_by(Chapter.chapter_index.asc(), Segment.segment_index.asc())
+    )
+    if from_chapter_index is None and from_segment_index is None:
+        return base_query
+
+    if from_chapter_index is None or from_segment_index is None:
+        raise ValueError("from_chapter_index and from_segment_index must be provided together")
+
+    return base_query.where(
+        or_(
+            Chapter.chapter_index > from_chapter_index,
+            and_(
+                Chapter.chapter_index == from_chapter_index,
+                Segment.segment_index > from_segment_index,
+            ),
+        )
+    )
+
+
 def _to_number(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         return float(value)
@@ -238,12 +262,15 @@ def _build_segment_csv_row(
     }
 
 
-def build_run_export_csv(session: Session, project: Project, run: Run) -> str:
+def build_run_export_csv(
+    session: Session,
+    project: Project,
+    run: Run,
+    from_chapter_index: int | None = None,
+    from_segment_index: int | None = None,
+) -> str:
     rows = session.execute(
-        select(Segment.segment_json)
-        .join(Chapter, Chapter.id == Segment.chapter_id)
-        .where(Segment.run_id == run.id)
-        .order_by(Chapter.chapter_index.asc(), Segment.segment_index.asc())
+        _build_segment_rows_query(run.id, from_chapter_index, from_segment_index)
     ).scalars()
 
     segments = [_normalize_segment_for_export(row) for row in list(rows)]
@@ -302,13 +329,17 @@ def build_run_export_csv(session: Session, project: Project, run: Run) -> str:
     return output.getvalue()
 
 
-def build_run_export(session: Session, project: Project, run: Run) -> dict:
+def build_run_export(
+    session: Session,
+    project: Project,
+    run: Run,
+    from_chapter_index: int | None = None,
+    from_segment_index: int | None = None,
+) -> dict:
     generated_at = run.finished_at or run.started_at or datetime.now(timezone.utc)
+    total_segments = session.query(Segment).filter(Segment.run_id == run.id).count()
     rows = session.execute(
-        select(Segment.segment_json)
-        .join(Chapter, Chapter.id == Segment.chapter_id)
-        .where(Segment.run_id == run.id)
-        .order_by(Chapter.chapter_index.asc(), Segment.segment_index.asc())
+        _build_segment_rows_query(run.id, from_chapter_index, from_segment_index)
     ).scalars()
 
     segments = [_normalize_segment_for_export(row) for row in list(rows)]
@@ -354,4 +385,17 @@ def build_run_export(session: Session, project: Project, run: Run) -> dict:
         "manifest": manifest,
         "segments": segments,
         "time_series": _build_time_series(segments),
+        "cursor": {
+            "from_chapter_index": from_chapter_index,
+            "from_segment_index": from_segment_index,
+            "returned_segment_count": len(segments),
+            "total_segment_count": total_segments,
+            "has_more_segments": len(segments) < total_segments,
+            "next_resume_from": None
+            if not segments
+            else {
+                "chapter_index": segments[-1].get("chapter_id"),
+                "segment_index": segments[-1].get("segment_index"),
+            },
+        },
     }

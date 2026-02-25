@@ -2292,7 +2292,13 @@ def get_character_occurrence_analytics(
 
 
 @app.get("/api/projects/{project_id}/exports/{run_id}.json", status_code=status.HTTP_200_OK)
-def get_export_json(project_id: int, run_id: int, session: Session = Depends(get_session)) -> JSONResponse:
+def get_export_json(
+    project_id: int,
+    run_id: int,
+    from_chapter_index: int | None = None,
+    from_segment_index: int | None = None,
+    session: Session = Depends(get_session),
+) -> JSONResponse:
     project = _get_project_or_404(session, project_id)
     run = _get_run_or_404(session, project_id, run_id)
     settings = get_settings()
@@ -2319,12 +2325,30 @@ def get_export_json(project_id: int, run_id: int, session: Session = Depends(get
             },
         )
 
-    payload = build_run_export(session, project, run)
+    if (from_chapter_index is None) != (from_segment_index is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="from_chapter_index and from_segment_index must be provided together.",
+        )
+
+    payload = build_run_export(
+        session=session,
+        project=project,
+        run=run,
+        from_chapter_index=from_chapter_index,
+        from_segment_index=from_segment_index,
+    )
     return JSONResponse(content=payload)
 
 
 @app.get("/api/projects/{project_id}/exports/{run_id}.csv", status_code=status.HTTP_200_OK)
-def get_export_csv(project_id: int, run_id: int, session: Session = Depends(get_session)) -> Response:
+def get_export_csv(
+    project_id: int,
+    run_id: int,
+    from_chapter_index: int | None = None,
+    from_segment_index: int | None = None,
+    session: Session = Depends(get_session),
+) -> Response:
     project = _get_project_or_404(session, project_id)
     run = _get_run_or_404(session, project_id, run_id)
     settings = get_settings()
@@ -2351,7 +2375,19 @@ def get_export_csv(project_id: int, run_id: int, session: Session = Depends(get_
             },
         )
 
-    csv_data = build_run_export_csv(session, project, run)
+    if (from_chapter_index is None) != (from_segment_index is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="from_chapter_index and from_segment_index must be provided together.",
+        )
+
+    csv_data = build_run_export_csv(
+        session=session,
+        project=project,
+        run=run,
+        from_chapter_index=from_chapter_index,
+        from_segment_index=from_segment_index,
+    )
     filename = f"project-{project_id}-run-{run_id}.csv"
     return Response(
         content=csv_data,
