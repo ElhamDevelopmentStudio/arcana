@@ -62,7 +62,69 @@ def test_export_json_includes_manifest_metadata() -> None:
         assert manifest["ordered_by"] == ["chapter_index", "segment_index"]
         assert manifest["project"]["id"] == project_id
         assert manifest["project"]["title"] == "Manifest Package Project"
+        assert manifest["project"]["configuration_snapshot_id"] is not None
+        assert manifest["project"]["selected_mode"] == "audiobook"
         assert manifest["run"]["id"] == run_id
         assert manifest["run"]["status"] == "completed"
         assert isinstance(manifest["run"]["config_snapshot"], dict)
 
+        project_snapshot = manifest["project_config_snapshot"]
+        assert isinstance(project_snapshot, dict)
+        assert project_snapshot["configuration_snapshot_id"] == manifest["project"]["configuration_snapshot_id"]
+        assert project_snapshot["selected_mode"] == "audiobook"
+        assert project_snapshot["selected_modes"] == ["audiobook"]
+        assert project_snapshot["voice_config"]["narrator_voice"] == "narrator_default"
+        assert project_snapshot["default_voices"]["narrator"] == "narrator_default"
+
+
+def test_export_json_includes_project_config_snapshot_after_project_customization() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Project With Snapshot"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        switch_resp = client.put(f"/api/projects/{project_id}/mode", json={"mode": "academic"})
+        assert switch_resp.status_code == 200
+        assert "academic" in switch_resp.json()["selected_modes"]
+
+        voice_resp = client.put(
+            f"/api/projects/{project_id}/voices",
+            json={
+                "narrator_voice": "manifest_narrator_voice",
+                "male_default_voice": "manifest_male_voice",
+                "female_default_voice": "manifest_female_voice",
+                "neutral_default_voice": "manifest_neutral_voice",
+                "unknown_default_voice": "manifest_unknown_voice",
+                "internal_thought_voice_policy": "thought_voice",
+                "internal_thought_voice": "manifest_thought_voice",
+            },
+        )
+        assert voice_resp.status_code == 200
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(b"Chapter 1\nQuietly, it came to pass."), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"mode": "academic", "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+        manifest = export_payload.get("manifest")
+        assert isinstance(manifest, dict)
+
+        project_snapshot = manifest["project_config_snapshot"]
+        assert project_snapshot["selected_mode"] == "academic"
+        assert "academic" in project_snapshot["selected_modes"]
+        assert project_snapshot["voice_config"]["narrator_voice"] == "manifest_narrator_voice"
+        assert project_snapshot["default_voices"]["male"] == "manifest_male_voice"
+        assert project_snapshot["default_voices"]["female"] == "manifest_female_voice"
+        assert project_snapshot["voice_config"]["internal_thought_voice_policy"] == "thought_voice"
+        assert project_snapshot["voice_config"]["thought_voice"] == "manifest_thought_voice"
