@@ -160,7 +160,7 @@ Definition of done for each task:
 - [x] [VERB-003] Support global scope term overrides.
 - [x] [VERB-004] Support per-character scope term overrides.
 - [x] [VERB-005] Implement before/after substitution preview endpoint.
-- [ ] [VERB-006] Build UI preview panel for pronunciation checks.
+- [x] [VERB-006] Build UI preview panel for pronunciation checks.
 - [ ] [VERB-007] Implement whole-word matching mode.
 - [ ] [VERB-008] Implement case sensitivity toggle.
 - [ ] [VERB-009] Implement alias-aware substitution mode.
