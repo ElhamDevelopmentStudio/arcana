@@ -7,10 +7,12 @@ from app.config import get_settings
 from app.models import Chapter, Character, LLMCall, Project, Run, Segment
 from app.services.export import build_run_export
 from app.services.llm_router import LLMRequest, LLMRouter
+from app.services.character_analytics import build_character_mentions_by_chapter
 from app.services.phonetics import replace_pronunciations
 from app.services.quota import consume_quota
 from app.services.segmentation import segment_text
 from app.services.tagging import tag_segment
+from app.services.normalization import build_segment_level_offset_map
 from app.services.voice import resolve_voice
 
 
@@ -45,9 +47,21 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
 
     for chapter in chapters:
         pieces = segment_text(chapter.normalized_text, max_chars=max_chars)
+        chapter_search_cursor = 0
         for segment_index, original_text in enumerate(pieces, start=1):
             phonetic_text = replace_pronunciations(original_text, name_to_verbalized)
             tags = tag_segment(original_text)
+            segment_start = chapter.normalized_text.find(original_text, chapter_search_cursor)
+            if segment_start < 0:
+                segment_start = max(chapter_search_cursor, 0)
+                segment_offset_map: list[dict[str, int]] = []
+            else:
+                segment_offset_map = build_segment_level_offset_map(
+                    chapter.original_to_normalized_offset_map,
+                    segment_start,
+                    original_text,
+                )
+            chapter_search_cursor = segment_start + len(original_text)
 
             speaker = str(tags["speaker"])
             voice_id, resolved_gender = resolve_voice(
@@ -77,6 +91,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                     "speaker": tags["speaker_confidence"],
                     "emotion": tags["emotion_confidence"],
                 },
+                "original_to_normalized_offset_map": segment_offset_map,
             }
 
             session.add(
@@ -96,6 +111,12 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     llm_enabled = bool(run_config.get("llm_enabled", False))
     if llm_enabled and first_segment_text:
         _run_llm_probe(session=session, project=project, run=run, run_config=run_config, input_text=first_segment_text)
+
+    chapter_mention_counters = build_character_mentions_by_chapter(chapters=chapters, characters=characters)
+    run.config_json = {
+        **(run.config_json or {}),
+        "character_mentions_by_chapter": [counter.to_dict() for counter in chapter_mention_counters],
+    }
 
     run.status = "completed"
     run.finished_at = datetime.now(timezone.utc)

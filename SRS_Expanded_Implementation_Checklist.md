@@ -128,7 +128,7 @@ Definition of done for each task:
 - [x] [CHAR-013] Implement alias list storage per character.
 - [x] [CHAR-014] Implement alias->canonical lookup service.
 - [x] [CHAR-015] Add alias collision detector when alias maps to multiple canonicals.
-- [ ] [CHAR-016] Implement per-chapter mention counter.
+- [x] [CHAR-016] Implement per-chapter mention counter.
 - [ ] [CHAR-017] Compute first appearance chapter index.
 - [ ] [CHAR-018] Compute last appearance chapter index.
 - [ ] [CHAR-019] Compute mentions per 1,000 words metric.
