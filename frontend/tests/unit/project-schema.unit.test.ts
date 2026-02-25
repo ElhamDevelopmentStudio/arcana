@@ -1,0 +1,18 @@
+import { describe, expect, it } from 'vitest';
+
+import { projectSchema } from '@/app/schemas/api';
+
+describe('projectSchema', () => {
+  it('parses project payload with nullable ingestion_timestamp', () => {
+    const parsed = projectSchema.parse({
+      id: 101,
+      title: 'Shadow Slave PoC',
+      selected_mode: 'audiobook',
+      ingestion_timestamp: null,
+      created_at: '2026-02-25T00:00:00Z',
+    });
+
+    expect(parsed.id).toBe(101);
+    expect(parsed.ingestion_timestamp).toBeNull();
+  });
+});

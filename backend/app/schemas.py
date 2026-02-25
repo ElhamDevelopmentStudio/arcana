@@ -14,6 +14,7 @@ class ProjectResponse(BaseModel):
     id: int
     title: str
     selected_mode: str
+    ingestion_timestamp: datetime | None
     created_at: datetime
 
 

@@ -72,7 +72,7 @@ Definition of done for each task:
 - [x] [MODE-012] Add integration test: ingest once, run all three modes.
 
 ## 4.1 Ingestion and Project Setup (Ref: SRS.md §4.1)
-- [ ] [ING-001] Extend project schema to include `ingestion_timestamp`.
+- [x] [ING-001] Extend project schema to include `ingestion_timestamp`.
 - [ ] [ING-002] Add `selected_modes` field to project schema.
 - [ ] [ING-003] Add `configuration_snapshot` reference on project creation.
 - [ ] [ING-004] Implement title detection fallback when title is missing.

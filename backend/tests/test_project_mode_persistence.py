@@ -43,6 +43,7 @@ def test_unit_project_response_includes_selected_mode_field() -> None:
         id=1,
         title="Mode Persistence Unit",
         selected_mode="academic",
+        ingestion_timestamp=None,
         created_at=datetime.now(timezone.utc),
     )
     assert payload.selected_mode == "academic"

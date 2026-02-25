@@ -20,6 +20,7 @@ export const projectSchema = z.object({
   id: z.number().int(),
   title: z.string(),
   selected_mode: z.string(),
+  ingestion_timestamp: z.string().nullable(),
   created_at: z.string(),
 });
 

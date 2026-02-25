@@ -90,6 +90,7 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         id=project.id,
         title=project.title,
         selected_mode=project.selected_mode,
+        ingestion_timestamp=project.ingestion_timestamp,
         created_at=project.created_at,
     )
 
@@ -138,7 +139,7 @@ def ingest_txt(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ) -> IngestResponse:
-    _get_project_or_404(session, project_id)
+    project = _get_project_or_404(session, project_id)
 
     filename = file.filename or ""
     if not filename.lower().endswith(".txt"):
@@ -162,6 +163,8 @@ def ingest_txt(
             )
         )
 
+    project.ingestion_timestamp = datetime.now(timezone.utc)
+    session.add(project)
     session.commit()
 
     return IngestResponse(project_id=project_id, chapter_count=len(chapters))

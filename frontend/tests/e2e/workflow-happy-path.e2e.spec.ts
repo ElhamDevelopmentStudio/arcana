@@ -19,6 +19,7 @@ test.beforeEach(async ({ page }) => {
         id: 101,
         title: 'Shadow Slave PoC',
         selected_mode: 'audiobook',
+        ingestion_timestamp: null,
         created_at: '2026-02-25T00:00:00Z',
       }),
     });
