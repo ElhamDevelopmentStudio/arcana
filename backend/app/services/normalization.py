@@ -11,12 +11,22 @@ QUOTE_TRANSLATION = str.maketrans({
     "‛": "'",
 })
 
+UNICODE_SPACE_TRANSLATION = str.maketrans({
+    "\u00A0": " ",  # non-breaking space
+    "\u2007": " ",  # figure space
+    "\u202F": " ",  # narrow no-break space
+})
+
+HORIZONTAL_WHITESPACE_RE = re.compile(r"[ \t\f\v]+")
+THREE_OR_MORE_LINE_BREAKS_RE = re.compile(r"\n{3,}")
+
 
 def normalize_whitespace(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    text = text.translate(UNICODE_SPACE_TRANSLATION)
+    lines = [HORIZONTAL_WHITESPACE_RE.sub(" ", line).strip() for line in text.split("\n")]
     text = "\n".join(lines)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = THREE_OR_MORE_LINE_BREAKS_RE.sub("\n\n", text)
     return text.strip()
 
 
