@@ -14,6 +14,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import {
   useCreateProjectMutation,
   useIngestChapterDirectoryMutation,
+  useIngestEpubMutation,
   useIngestMarkdownMutation,
   useIngestTxtMutation,
 } from '@/features/workflow/api/workflow-hooks';
@@ -28,6 +29,7 @@ export function ProjectNewPage() {
   const [txtFile, setTxtFile] = useState<File | null>(null);
   const [directoryFiles, setDirectoryFiles] = useState<File[]>([]);
   const [markdownFile, setMarkdownFile] = useState<File | null>(null);
+  const [epubFile, setEpubFile] = useState<File | null>(null);
 
   const projectId = useWorkspaceStore((state) => state.projectId);
   const chapterCount = useWorkspaceStore((state) => state.chapterCount);
@@ -38,12 +40,14 @@ export function ProjectNewPage() {
   const ingestTxtMutation = useIngestTxtMutation(projectId);
   const ingestDirectoryMutation = useIngestChapterDirectoryMutation(projectId);
   const ingestMarkdownMutation = useIngestMarkdownMutation(projectId);
+  const ingestEpubMutation = useIngestEpubMutation(projectId);
 
   const isBusy =
     createProjectMutation.isMutating ||
     ingestTxtMutation.isMutating ||
     ingestDirectoryMutation.isMutating ||
-    ingestMarkdownMutation.isMutating;
+    ingestMarkdownMutation.isMutating ||
+    ingestEpubMutation.isMutating;
   const canContinue = projectId !== null && chapterCount !== null;
 
   async function handleCreateProject(event: FormEvent<HTMLFormElement>) {
@@ -117,6 +121,22 @@ export function ProjectNewPage() {
         toast.success(`Markdown ingestion complete: ${response.chapter_count} chapters detected.`);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Markdown ingestion failed.');
+      }
+      return;
+    }
+
+    if (ingestionSource === 'epub') {
+      if (!epubFile) {
+        toast.error('Choose an EPUB file before upload.');
+        return;
+      }
+
+      try {
+        const response = await ingestEpubMutation.trigger({ file: epubFile });
+        setChapterCount(response.chapter_count);
+        toast.success(`EPUB ingestion complete: ${response.chapter_count} chapters detected.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'EPUB ingestion failed.');
       }
       return;
     }
@@ -195,7 +215,7 @@ export function ProjectNewPage() {
                   <option value="txt">TXT file</option>
                   <option value="directory">Chapter directory</option>
                   <option value="markdown">Markdown</option>
-                  <option value="epub">EPUB (pending backend)</option>
+                  <option value="epub">EPUB</option>
                 </NativeSelect>
               </div>
 
@@ -205,7 +225,9 @@ export function ProjectNewPage() {
                     ? 'Upload chapter TXT files'
                     : ingestionSource === 'markdown'
                       ? 'Upload Markdown file'
-                      : 'Upload TXT'}
+                      : ingestionSource === 'epub'
+                        ? 'Upload EPUB file'
+                        : 'Upload TXT'}
                 </Label>
                 {ingestionSource === 'directory' ? (
                   <Input
@@ -224,6 +246,14 @@ export function ProjectNewPage() {
                     onChange={(event) => setMarkdownFile(event.target.files?.[0] ?? null)}
                     type="file"
                   />
+                ) : ingestionSource === 'epub' ? (
+                  <Input
+                    id="txt-upload"
+                    accept=".epub"
+                    data-testid="epub-upload-input"
+                    onChange={(event) => setEpubFile(event.target.files?.[0] ?? null)}
+                    type="file"
+                  />
                 ) : (
                   <Input
                     id="txt-upload"
@@ -238,7 +268,10 @@ export function ProjectNewPage() {
 
               <div className="mt-auto space-y-2">
                 <Button data-testid="upload-txt-button" disabled={isBusy || projectId === null} type="submit">
-                  {ingestTxtMutation.isMutating || ingestDirectoryMutation.isMutating || ingestMarkdownMutation.isMutating
+                  {ingestTxtMutation.isMutating ||
+                  ingestDirectoryMutation.isMutating ||
+                  ingestMarkdownMutation.isMutating ||
+                  ingestEpubMutation.isMutating
                     ? 'Uploading...'
                     : 'Upload & Parse'}
                 </Button>

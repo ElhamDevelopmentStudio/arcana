@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_session, init_db
 from app.modes import DEFAULT_MODE, get_mode_catalog
 from app.models import Chapter, Character, LLMCall, Project, Run, Segment
@@ -23,6 +24,7 @@ from app.schemas import (
     VoiceConfigResponse,
 )
 from app.services.characters import parse_character_file
+from app.services.epub_ingestion import extract_epub_chapters
 from app.services.export import build_run_export
 from app.services.ingestion import (
     chapter_filename_sort_key,
@@ -248,6 +250,64 @@ def ingest_markdown(
     session.commit()
 
     return IngestResponse(project_id=project_id, chapter_count=len(chapters))
+
+
+@app.post(
+    "/api/projects/{project_id}/ingest/epub",
+    response_model=IngestResponse,
+    status_code=status.HTTP_200_OK,
+)
+def ingest_epub(
+    project_id: int,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+) -> IngestResponse:
+    settings = get_settings()
+    if not settings.enable_epub_ingestion:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="EPUB ingestion is disabled by configuration",
+        )
+
+    project = _get_project_or_404(session, project_id)
+    filename = file.filename or ""
+    if not filename.lower().endswith(".epub"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .epub files are supported")
+
+    payload = file.file.read()
+    try:
+        chapters = extract_epub_chapters(payload)
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
+
+    if not chapters:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No chapter content found in EPUB")
+
+    session.query(Chapter).filter(Chapter.project_id == project_id).delete()
+
+    for chapter_index, (chapter_title, chapter_content) in enumerate(chapters, start=1):
+        title = chapter_title.strip() or f"Chapter {chapter_index}"
+        content = chapter_content.strip()
+        if not content:
+            continue
+        session.add(
+            Chapter(
+                project_id=project_id,
+                chapter_index=chapter_index,
+                chapter_title=title,
+                raw_text=content,
+                normalized_text=normalize_text(content),
+            )
+        )
+
+    if _project_title_needs_fallback(project.title):
+        project.title = chapters[0][0].strip() or detect_title_with_fallback("", filename=filename)
+    project.ingestion_timestamp = datetime.now(timezone.utc)
+    session.add(project)
+    session.commit()
+
+    chapter_count = session.query(Chapter).filter(Chapter.project_id == project_id).count()
+    return IngestResponse(project_id=project_id, chapter_count=chapter_count)
 
 
 @app.post(

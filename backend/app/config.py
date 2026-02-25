@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         default="https://openrouter.ai/api/v1",
         alias="OPENROUTER_BASE_URL",
     )
+    enable_epub_ingestion: bool = Field(default=False, alias="ENABLE_EPUB_INGESTION")
 
 
 @lru_cache(maxsize=1)

@@ -7,6 +7,7 @@ const createProjectTrigger = vi.fn();
 const ingestTxtTrigger = vi.fn();
 const ingestDirectoryTrigger = vi.fn();
 const ingestMarkdownTrigger = vi.fn();
+const ingestEpubTrigger = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useCreateProjectMutation: () => ({
@@ -24,6 +25,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useIngestMarkdownMutation: () => ({
     isMutating: false,
     trigger: ingestMarkdownTrigger,
+  }),
+  useIngestEpubMutation: () => ({
+    isMutating: false,
+    trigger: ingestEpubTrigger,
   }),
 }));
 
@@ -54,6 +59,7 @@ describe('project new page directory ingestion', () => {
     ingestTxtTrigger.mockReset();
     ingestDirectoryTrigger.mockReset();
     ingestMarkdownTrigger.mockReset();
+    ingestEpubTrigger.mockReset();
     createProjectTrigger.mockResolvedValue({
       id: 101,
       title: 'Shadow Slave PoC',
@@ -68,6 +74,10 @@ describe('project new page directory ingestion', () => {
       chapter_count: 2,
     });
     ingestMarkdownTrigger.mockResolvedValue({
+      project_id: 101,
+      chapter_count: 2,
+    });
+    ingestEpubTrigger.mockResolvedValue({
       project_id: 101,
       chapter_count: 2,
     });
@@ -109,6 +119,24 @@ describe('project new page directory ingestion', () => {
 
     expect(ingestMarkdownTrigger).toHaveBeenCalledTimes(1);
     expect(ingestMarkdownTrigger).toHaveBeenCalledWith({ file: markdownFile });
+    expect(screen.getByTestId('chapter-count-state')).toHaveTextContent('Detected chapters: 2');
+  });
+
+  it('uses epub ingestion mutation when source type is epub', async () => {
+    const user = userEvent.setup();
+    renderProjectNewPage();
+
+    await user.click(screen.getByTestId('create-project-button'));
+
+    await user.selectOptions(screen.getByTestId('ingestion-source-select'), 'epub');
+
+    const epubFile = new File(['epub payload'], 'novel.epub', { type: 'application/epub+zip' });
+    await user.upload(screen.getByTestId('epub-upload-input'), epubFile);
+
+    await user.click(screen.getByTestId('upload-txt-button'));
+
+    expect(ingestEpubTrigger).toHaveBeenCalledTimes(1);
+    expect(ingestEpubTrigger).toHaveBeenCalledWith({ file: epubFile });
     expect(screen.getByTestId('chapter-count-state')).toHaveTextContent('Detected chapters: 2');
   });
 });

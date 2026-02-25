@@ -46,6 +46,7 @@ python scripts_run_migration.py
 - `POST /api/projects/{project_id}/ingest/txt`
 - `POST /api/projects/{project_id}/ingest/chapters-dir`
 - `POST /api/projects/{project_id}/ingest/markdown`
+- `POST /api/projects/{project_id}/ingest/epub`
 - `POST /api/projects/{project_id}/characters/import`
 - `PUT /api/projects/{project_id}/voices`
 - `POST /api/projects/{project_id}/runs`
@@ -67,6 +68,7 @@ Ingestion title fallback behavior:
 - If no title is detectable from text, ingestion falls back to filename stem, then `Untitled Novel`.
 - Chapter-directory ingestion accepts multi-file `.txt` uploads and ingests files in natural filename order.
 - Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.
+- EPUB ingestion is toggle-controlled (`ENABLE_EPUB_INGESTION`) and currently wired to a pluggable parser stub.
 - Mode catalog includes `mode_profiles` with default run-config values per mode.
 
 ## API Domain Terms

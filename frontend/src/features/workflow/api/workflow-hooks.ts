@@ -84,6 +84,18 @@ export function useIngestMarkdownMutation(projectId: number | null) {
   );
 }
 
+export function useIngestEpubMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['ingest-epub', projectId] : null,
+    async (_, { arg }: { arg: { file: File } }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before ingestion.');
+      }
+      return nipeApiClient.ingestEpub(projectId, arg.file);
+    },
+  );
+}
+
 export function useImportCharactersMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['import-characters', projectId] : null,
