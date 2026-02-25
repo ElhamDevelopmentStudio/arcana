@@ -304,7 +304,7 @@ Definition of done for each task:
 - [x] [LLM-014] Add last reset timestamp tracking if available.
 - [x] [LLM-015] Stop calls on provider rate-limit/quota error.
 - [x] [LLM-016] Mark provider temporarily unavailable after hard limit events.
-- [ ] [LLM-017] Resume provider usage after reset detection or manual enable.
+- [x] [LLM-017] Resume provider usage after reset detection or manual enable.
 - [ ] [LLM-018] Add explicit guardrails: no bypass/circumvention behaviors.
 - [ ] [LLM-019] Add multiple API key support per provider.
 - [ ] [LLM-020] Add provider priority ordering config.

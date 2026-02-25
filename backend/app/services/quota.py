@@ -9,6 +9,14 @@ _RATE_LIMIT_STATUS_TEMPORARILY_UNAVAILABLE = "temporarily_unavailable"
 _RATE_LIMIT_STATUS_AVAILABLE = "available"
 
 
+def _ensure_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _refresh_rate_limit_status(quota: ProviderQuota, status: str | None) -> None:
     quota.last_rate_limit_status = status
     if status is None:
@@ -19,6 +27,7 @@ def _refresh_rate_limit_status(quota: ProviderQuota, status: str | None) -> None
 
 def consume_quota(session: Session, provider: str, max_calls_per_day: int) -> tuple[bool, int]:
     day_key = date.today().isoformat()
+    now = datetime.now(timezone.utc)
 
     quota = (
         session.query(ProviderQuota)
@@ -38,6 +47,15 @@ def consume_quota(session: Session, provider: str, max_calls_per_day: int) -> tu
         session.flush()
 
     quota.max_calls_per_day = max_calls_per_day
+
+    if (
+        quota.blocked
+        and quota.last_rate_limit_status == _RATE_LIMIT_STATUS_TEMPORARILY_UNAVAILABLE
+        and _ensure_utc(quota.last_rate_limit_reset_at) is not None
+        and now >= _ensure_utc(quota.last_rate_limit_reset_at)
+    ):
+        quota.blocked = False
+        _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_AVAILABLE)
 
     if quota.blocked or quota.calls_used >= quota.max_calls_per_day:
         quota.blocked = True
@@ -71,6 +89,7 @@ def mark_provider_rate_limited(session: Session, provider: str, day_key: str | N
         status=_RATE_LIMIT_STATUS_TEMPORARILY_UNAVAILABLE,
     )
     quota.blocked = True
+    quota.last_rate_limit_reset_at = None
     session.flush()
 
 
@@ -93,7 +112,7 @@ def mark_provider_reset_at(
     if quota is None:
         return
 
-    quota.last_rate_limit_reset_at = reset_at
+    quota.last_rate_limit_reset_at = _ensure_utc(reset_at)
     session.flush()
 
 
@@ -113,6 +132,7 @@ def mark_provider_available(session: Session, provider: str, day_key: str | None
         quota=quota,
         status=_RATE_LIMIT_STATUS_AVAILABLE,
     )
+    quota.blocked = False
     session.flush()
 
 
