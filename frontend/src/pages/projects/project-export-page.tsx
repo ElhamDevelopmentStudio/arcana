@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useExportPayloadQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Download, FileJson2, FileText, ShieldCheck, Table2 } from 'lucide-react';
 
 export function ProjectExportPage() {
   const navigate = useNavigate();
@@ -43,7 +44,46 @@ export function ProjectExportPage() {
         )
       }
     >
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldCheck className="size-4 text-primary" />
+              Export Gate
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">{exportPayloadQuery.data ? 'ready' : 'waiting'}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileJson2 className="size-4 text-primary" />
+              JSON
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">{exportPayloadQuery.data ? 'available' : 'pending'}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Table2 className="size-4 text-primary" />
+              CSV
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">planned output</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="size-4 text-primary" />
+              Manifest
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">deterministic metadata</CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
         <Card>
           <CardHeader>
             <CardTitle>Readiness</CardTitle>
@@ -57,20 +97,22 @@ export function ProjectExportPage() {
                 {exportPayloadQuery.data ? 'Export ready' : 'Awaiting run/export data'}
               </Badge>
             </div>
+            <Button disabled={!exportPayloadQuery.data} onClick={downloadExportJson}>
+              <Download className="size-4" />
+              Download JSON
+            </Button>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Download Center</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <Button disabled={!exportPayloadQuery.data} onClick={downloadExportJson} variant="outline">
-              Download JSON
-            </Button>
             {exportPayloadQuery.isLoading ? <p>Loading export payload...</p> : null}
             {exportPayloadQuery.error ? <p className="text-destructive">{exportPayloadQuery.error.message}</p> : null}
             {exportPayloadQuery.data ? (
-              <pre className="max-h-72 overflow-auto rounded-lg border bg-muted/30 p-3 text-xs">
+              <pre className="max-h-72 overflow-auto rounded-xl border bg-muted/35 p-3 text-xs">
                 {JSON.stringify(exportPayloadQuery.data, null, 2)}
               </pre>
             ) : (

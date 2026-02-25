@@ -2,6 +2,7 @@ import { type FormEvent, useMemo, useState } from 'react';
 
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { AlertCircle, Download, FileUp, Plus, Sparkles, UserCog, WandSparkles } from 'lucide-react';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { appEnv } from '@/app/config/env';
@@ -93,54 +94,105 @@ export function ProjectCharactersPage() {
         )
       }
     >
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Import</CardTitle>
-            <CardDescription>Upload a character map file and apply it to this project.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <form className="grid gap-3" onSubmit={handleImport}>
-              <div className="grid gap-2">
-                <Label htmlFor="character-file">CSV / JSON file</Label>
-                <Input
-                  id="character-file"
-                  accept=".csv,.json"
-                  data-testid="character-file-input"
-                  onChange={(event) => setCharacterFile(event.target.files?.[0] ?? null)}
-                  type="file"
-                />
-              </div>
-              <Button data-testid="character-import-button" disabled={importCharactersMutation.isMutating || projectId === null} type="submit">
-                {importCharactersMutation.isMutating ? 'Importing...' : 'Import Character Map'}
-              </Button>
-            </form>
-            <p className="text-sm text-muted-foreground" data-testid="character-import-state">
-              {importedCount !== null ? `Imported rows: ${importedCount}` : 'No import completed yet.'}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 lg:grid-cols-[0.95fr_1.55fr]">
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileUp className="size-4 text-primary" />
+                Import
+              </CardTitle>
+              <CardDescription>Upload a character map file and apply it to this project.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <form className="grid gap-3" onSubmit={handleImport}>
+                <div className="grid gap-2">
+                  <Label htmlFor="character-file">CSV / JSON file</Label>
+                  <Input
+                    id="character-file"
+                    accept=".csv,.json"
+                    data-testid="character-file-input"
+                    onChange={(event) => setCharacterFile(event.target.files?.[0] ?? null)}
+                    type="file"
+                  />
+                </div>
+                <Button data-testid="character-import-button" disabled={importCharactersMutation.isMutating || projectId === null} type="submit">
+                  {importCharactersMutation.isMutating ? 'Importing...' : 'Import Character Map'}
+                </Button>
+              </form>
+              <p className="text-sm text-muted-foreground" data-testid="character-import-state">
+                {importedCount !== null ? `Imported rows: ${importedCount}` : 'No import completed yet.'}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <WandSparkles className="size-4 text-primary" />
+                Scrape
+              </CardTitle>
+              <CardDescription>Gather candidates from external sources only with explicit legal acknowledgement.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              {appEnv.featureScrapeEnabled ? (
+                <>
+                  <p>Scrape feature flag is enabled in environment.</p>
+                  <Button variant="outline" type="button">
+                    Open scrape flow (placeholder)
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Badge variant="outline" className="gap-1">
+                    <AlertCircle className="size-3.5" />
+                    Disabled by environment flag
+                  </Badge>
+                  <p>Enable with `VITE_FEATURE_SCRAPE_ENABLED=true` once backend scrape APIs are implemented.</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="size-4 text-primary" />
+                Readiness
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <p className="rounded-xl bg-secondary/55 px-3 py-2 text-secondary-foreground">Ready manual rows: {manualPreviewCount}</p>
+              <p className="rounded-xl bg-secondary/45 px-3 py-2 text-secondary-foreground">
+                Imported rows: {importedCount ?? 'none yet'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Manual Editor</CardTitle>
-            <CardDescription>Add/edit/delete rows locally. Backend save endpoint will be connected when available.</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <UserCog className="size-4 text-primary" />
+              Manual Editor
+            </CardTitle>
+            <CardDescription>Add, adjust, and remove rows locally before backend save integration.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid max-h-72 gap-2 overflow-auto pr-1">
+            <div className="grid max-h-[28rem] gap-2 overflow-auto pr-1">
               {manualRows.map((row) => (
-                <div key={row.id} className="grid gap-2 rounded-lg border p-2">
-                  <Input
-                    placeholder="Character name"
-                    value={row.name}
-                    onChange={(event) => updateRow(row.id, 'name', event.target.value)}
-                  />
-                  <Input
-                    placeholder="Verbalized form"
-                    value={row.verbalized}
-                    onChange={(event) => updateRow(row.id, 'verbalized', event.target.value)}
-                  />
-                  <div className="flex gap-2">
+                <div key={row.id} className="grid gap-2 rounded-xl border bg-background/70 p-3">
+                  <div className="grid gap-2 lg:grid-cols-[1fr_1fr_160px_auto]">
+                    <Input
+                      placeholder="Character name"
+                      value={row.name}
+                      onChange={(event) => updateRow(row.id, 'name', event.target.value)}
+                    />
+                    <Input
+                      placeholder="Verbalized form"
+                      value={row.verbalized}
+                      onChange={(event) => updateRow(row.id, 'verbalized', event.target.value)}
+                    />
                     <NativeSelect value={row.gender} onChange={(event) => updateRow(row.id, 'gender', event.target.value)}>
                       <option value="male">male</option>
                       <option value="female">female</option>
@@ -155,34 +207,19 @@ export function ProjectCharactersPage() {
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3 border-t border-panel-border/70 pt-2">
               <Button variant="outline" onClick={addRow} type="button">
+                <Plus className="size-4" />
                 Add Row
               </Button>
-              <Badge variant="secondary">Ready rows: {manualPreviewCount}</Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Scrape</CardTitle>
-            <CardDescription>Gather candidates from external sources only with explicit legal acknowledgement.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            {appEnv.featureScrapeEnabled ? (
-              <>
-                <p>Scrape feature flag is enabled in environment.</p>
-                <Button variant="outline" type="button">
-                  Open scrape flow (placeholder)
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">Ready rows: {manualPreviewCount}</Badge>
+                <Button size="sm" variant="ghost" type="button">
+                  <Download className="size-4" />
+                  Export Preview
                 </Button>
-              </>
-            ) : (
-              <>
-                <Badge variant="outline">Disabled by environment flag</Badge>
-                <p>Enable with `VITE_FEATURE_SCRAPE_ENABLED=true` once backend scrape APIs are implemented.</p>
-              </>
-            )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

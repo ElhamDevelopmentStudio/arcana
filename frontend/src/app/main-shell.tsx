@@ -1,7 +1,10 @@
 import { Outlet, useLocation, useParams } from 'react-router-dom';
+import { Bell, CircleHelp, ContactRound, Search, Sparkles } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { ProjectStepNav } from '@/app/project-step-nav';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 function getProjectIdFromPath(pathname: string, fallback: string | undefined): string | null {
   if (fallback) {
@@ -70,29 +73,49 @@ export function MainShell() {
   const routeMeta = resolveRouteMeta(location.pathname);
 
   return (
-    <div className="min-h-screen text-foreground">
-      <div className="mx-auto w-full max-w-[1560px] px-4 py-5 lg:px-6">
-        <div className="grid gap-5 lg:grid-cols-[292px_1fr]">
-          <aside className="nipe-sidebar p-4 lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto w-full max-w-[1680px] px-4 py-6 lg:px-6">
+        <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
+          <aside className="nipe-sidebar p-4 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)]">
             <div className="flex h-full flex-col gap-4">
-              <div className="rounded-2xl bg-linear-155 from-primary/96 via-primary/90 to-chart-2/90 p-4 text-primary-foreground">
-                <p className="text-[11px] font-semibold tracking-[0.17em] uppercase text-primary-foreground/85">NIPE</p>
-                <h1 className="mt-2 text-xl font-bold tracking-tight">Narrative Intelligence</h1>
-                <p className="mt-2 text-sm text-primary-foreground/88">Elegant orchestration for long-form story pipelines.</p>
+              <div className="rounded-2xl bg-linear-to-br from-primary via-primary to-chart-2 p-4 text-primary-foreground shadow-[0_18px_30px_-24px_hsl(var(--primary)/0.9)]">
+                <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-primary-foreground/85">NIPE Console</p>
+                <h1 className="mt-2 text-[1.35rem] font-bold tracking-tight">Narrative Intelligence</h1>
+                <p className="mt-2 text-sm text-primary-foreground/90">Elegant orchestration for long-form story pipelines.</p>
               </div>
 
               <ProjectStepNav projectId={projectId} />
 
-              <div className="nipe-panel mt-auto p-4">
-                <p className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">Workspace</p>
-                <p className="mt-2 text-sm text-panel-foreground">
-                  {projectId ? `Project #${projectId} is active. Continue through each step in order.` : 'Create a project to unlock workflow steps.'}
-                </p>
+              <div className="nipe-panel mt-auto space-y-3 p-4">
+                <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">Support</p>
+                <button className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-sidebar-foreground transition hover:bg-secondary/70" type="button">
+                  <CircleHelp className="size-4 text-muted-foreground" />
+                  Help Center
+                </button>
+                <button className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-sidebar-foreground transition hover:bg-secondary/70" type="button">
+                  <ContactRound className="size-4 text-muted-foreground" />
+                  Contact Support
+                </button>
               </div>
             </div>
           </aside>
 
           <div className="space-y-4">
+            <header className="nipe-topbar px-5 py-4 lg:px-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="relative min-w-[240px] flex-1 lg:max-w-lg">
+                  <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input className="h-11 pl-10" placeholder="Search workflow, run IDs, or project notes..." />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="icon-sm" variant="outline">
+                    <Bell className="size-4" />
+                  </Button>
+                  <Badge variant="secondary">Project #{projectId ?? '—'}</Badge>
+                </div>
+              </div>
+            </header>
+
             <header className="nipe-topbar px-5 py-4 lg:px-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -103,6 +126,10 @@ export function MainShell() {
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">Structured Flow</Badge>
                   <Badge variant="outline">One Page, One Goal</Badge>
+                  <Badge variant="secondary" className="gap-1">
+                    <Sparkles className="size-3.5" />
+                    Design Refresh
+                  </Badge>
                 </div>
               </div>
             </header>

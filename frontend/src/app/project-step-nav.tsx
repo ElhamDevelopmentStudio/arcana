@@ -1,4 +1,6 @@
 import { NavLink } from 'react-router-dom';
+import { BookOpenText, ChartColumn, Cpu, FileOutput, ListChecks, PlayCircle, UserRoundSearch, Check } from 'lucide-react';
+import type { ComponentType } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 
@@ -10,6 +12,7 @@ type StepConfig = {
   path: string;
   label: string;
   short: string;
+  icon: ComponentType<{ className?: string }>;
 };
 
 const PROJECT_STEPS: StepConfig[] = [
@@ -17,36 +20,43 @@ const PROJECT_STEPS: StepConfig[] = [
     path: '/projects/new',
     label: 'Create Project',
     short: '01',
+    icon: BookOpenText,
   },
   {
     path: '/projects/:project_id/mode',
     label: 'Mode Selection',
     short: '02',
+    icon: ListChecks,
   },
   {
     path: '/projects/:project_id/characters',
     label: 'Character Map',
     short: '03',
+    icon: UserRoundSearch,
   },
   {
     path: '/projects/:project_id/pipeline-setup',
     label: 'Pipeline Setup',
     short: '04',
+    icon: Cpu,
   },
   {
     path: '/projects/:project_id/run-monitor',
     label: 'Run Monitor',
     short: '05',
+    icon: PlayCircle,
   },
   {
     path: '/projects/:project_id/export',
     label: 'Export',
     short: '06',
+    icon: FileOutput,
   },
   {
     path: '/projects/:project_id/dashboards',
     label: 'Dashboards',
     short: '07',
+    icon: ChartColumn,
   },
 ];
 
@@ -72,6 +82,7 @@ export function ProjectStepNav({ projectId }: ProjectStepNavProps) {
         {PROJECT_STEPS.map((step) => {
           const locked = isProjectStepLocked(step.path, projectId);
           const to = resolvePath(step.path, projectId);
+          const Icon = step.icon;
 
           return (
             <li key={step.path}>
@@ -87,10 +98,16 @@ export function ProjectStepNav({ projectId }: ProjectStepNavProps) {
                 }
                 to={to}
               >
-                <Badge variant={locked ? 'outline' : 'secondary'} className="font-mono text-[10px]">
-                  {step.short}
-                </Badge>
-                <span className="line-clamp-1 font-medium tracking-[-0.01em]">{step.label}</span>
+                <div className="flex items-center gap-2">
+                  <span className="grid size-6 place-items-center rounded-lg bg-secondary/70 text-muted-foreground">
+                    <Icon className="size-3.5" />
+                  </span>
+                  <Badge variant={locked ? 'outline' : 'secondary'} className="font-mono text-[10px]">
+                    {step.short}
+                  </Badge>
+                </div>
+                <span className="line-clamp-1 flex-1 font-medium tracking-[-0.01em]">{step.label}</span>
+                {!locked ? <Check className="size-3.5 text-chart-3 opacity-0 transition group-hover:opacity-80" /> : null}
               </NavLink>
             </li>
           );

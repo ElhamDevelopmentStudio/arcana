@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { BookOpenText, CheckCircle2, FileText, FolderGit2, Sparkles } from 'lucide-react';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
@@ -92,10 +93,69 @@ export function ProjectNewPage() {
         )
       }
     >
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-xl bg-primary/12 text-primary">
+                <FolderGit2 className="size-4" />
+              </span>
+              Project Identity
+            </CardTitle>
+            <CardDescription>Initialize a workspace before configuring any downstream pipeline logic.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>Title and metadata are persisted as the root project context.</p>
+            <p className="flex items-center gap-2 rounded-xl bg-secondary/50 px-3 py-2 text-secondary-foreground">
+              <CheckCircle2 className="size-4 text-chart-3" />
+              {projectId !== null ? `Project #${projectId} ready` : 'No project created yet'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-xl bg-primary/12 text-primary">
+                <BookOpenText className="size-4" />
+              </span>
+              Ingestion Scope
+            </CardTitle>
+            <CardDescription>Load chapterized source text for all subsequent mode and tagging passes.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>TXT flow is active now. Other sources are scaffolded and ready for backend hookup.</p>
+            <p className="rounded-xl bg-secondary/50 px-3 py-2 text-secondary-foreground">
+              {chapterCount !== null ? `Detected chapters: ${chapterCount}` : 'Detected chapters: not available yet'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-xl bg-primary/12 text-primary">
+                <Sparkles className="size-4" />
+              </span>
+              Readiness Signal
+            </CardTitle>
+            <CardDescription>When project and ingestion are both complete, the mode step unlocks automatically.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p className="rounded-xl bg-primary/9 px-3 py-2 text-primary">
+              {canContinue ? 'Ready to proceed to mode selection.' : 'Complete project creation and ingestion first.'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Project Setup</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="size-4 text-primary" />
+              Project Setup
+            </CardTitle>
             <CardDescription>Create one project before moving to downstream workflow pages.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -124,7 +184,10 @@ export function ProjectNewPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Ingestion</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpenText className="size-4 text-primary" />
+              Ingestion
+            </CardTitle>
             <CardDescription>Select source type, upload input, and verify chapter detection results.</CardDescription>
           </CardHeader>
           <CardContent>

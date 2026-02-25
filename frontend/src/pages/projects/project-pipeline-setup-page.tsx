@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react';
 
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { Bot, Gauge, Mic2, SlidersHorizontal, Sparkles, Zap } from 'lucide-react';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
@@ -11,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Switch } from '@/components/ui/switch';
 import { useRunPipelineMutation, useSaveVoicesMutation } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 
@@ -89,10 +91,52 @@ export function ProjectPipelineSetupPage() {
       description="Configure run settings and trigger execution. This page owns run configuration only."
       action={projectId !== null ? <Badge variant="outline">Project #{projectId}</Badge> : <Badge variant="outline">Project required</Badge>}
     >
+      <div className="grid gap-4 lg:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Gauge className="size-4 text-primary" />
+              Mode
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">{selectedMode ?? 'not selected'}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <SlidersHorizontal className="size-4 text-primary" />
+              Segment Limit
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">{maxSegmentChars} chars</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bot className="size-4 text-primary" />
+              LLM Mode
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">{llmEnabled ? 'enabled' : 'disabled'}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="size-4 text-primary" />
+              Run Lock
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">{isRunLocked ? 'waiting for mode selection' : 'ready to run'}</CardContent>
+        </Card>
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Voice and Segmentation Config</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Mic2 className="size-4 text-primary" />
+              Voice and Segmentation Config
+            </CardTitle>
             <CardDescription>Defaults used for downstream voice mapping and segment generation.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -118,7 +162,10 @@ export function ProjectPipelineSetupPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Run Trigger</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="size-4 text-primary" />
+              Run Trigger
+            </CardTitle>
             <CardDescription>Run mode snapshot and execution controls for the current project.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -156,9 +203,9 @@ export function ProjectPipelineSetupPage() {
                   onChange={(event) => setMaxCallsPerDay(Number(event.target.value))}
                 />
               </div>
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input checked={llmEnabled} onChange={(event) => setLlmEnabled(event.target.checked)} type="checkbox" />
-                Enable LLM-assisted refinement
+              <label className="inline-flex items-center justify-between gap-2 rounded-xl border border-panel-border/70 bg-background/70 px-3 py-2 text-sm">
+                <span>Enable LLM-assisted refinement</span>
+                <Switch checked={llmEnabled} onCheckedChange={setLlmEnabled} />
               </label>
               <Button
                 data-testid="run-pipeline-button"
