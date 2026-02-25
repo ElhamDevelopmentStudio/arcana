@@ -31,3 +31,13 @@ Purpose:
   - `load_mode_profile(mode)` -> returns a deep-copied profile for safe per-request usage.
   - `load_mode_profile_catalog()` -> returns a full mode->profile map built via loader function.
 - integration_note: `/api/modes` now loads `mode_profiles` through the service loader to avoid direct mutable constant exposure.
+
+## MODE-008 Mode Profile Snapshot In Run Config
+
+- runtime_entrypoint: `POST /api/projects/{project_id}/runs`
+- loader_usage: run creation builds config via `build_run_config_snapshot(mode, overrides)`.
+- stored_fields:
+  - `mode`
+  - effective runtime fields (`max_segment_chars`, `llm_enabled`, `provider_name`, `max_calls_per_day`)
+  - `mode_profile_snapshot` (immutable copy of defaults for selected mode at run creation time)
+- override_rule: user-supplied run fields override effective runtime values, but do not mutate `mode_profile_snapshot`.

@@ -65,7 +65,7 @@ Definition of done for each task:
 - [x] [MODE-005] Block pipeline run until mode is selected.
 - [x] [MODE-006] Define default config profile object per mode.
 - [x] [MODE-007] Implement mode profile loader in backend service.
-- [ ] [MODE-008] Store loaded profile snapshot in run config.
+- [x] [MODE-008] Store loaded profile snapshot in run config.
 - [ ] [MODE-009] Add mode switching endpoint that reuses ingested corpus.
 - [ ] [MODE-010] Ensure mode switching does not duplicate raw text rows.
 - [ ] [MODE-011] Mark downstream artifacts stale after mode switch.

@@ -23,6 +23,7 @@ from app.schemas import (
 from app.services.characters import parse_character_file
 from app.services.export import build_run_export
 from app.services.ingestion import decode_text, detect_chapters
+from app.services.mode_profiles import build_run_config_snapshot
 from app.services.normalization import normalize_text
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.voice import DEFAULT_VOICE_CONFIG
@@ -199,9 +200,11 @@ def create_run(
     session: Session = Depends(get_session),
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
-    project.selected_mode = payload.mode
 
-    config_snapshot = payload.model_dump()
+    explicit_overrides = payload.model_dump(exclude={"mode"}, exclude_unset=True)
+    config_snapshot = build_run_config_snapshot(mode=payload.mode, overrides=explicit_overrides)
+
+    project.selected_mode = str(config_snapshot["mode"])
     run = Run(
         project_id=project.id,
         status="running",
