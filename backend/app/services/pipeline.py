@@ -198,6 +198,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "segment_id": f"{chapter.chapter_index}-{segment_index:03d}",
                 "segment_index": segment_index,
                 "original_text": original_text,
+                "normalized_text": original_text,
                 "phonetic_text": phonetic_text,
                 "type": tags["type"],
                 "speaker": speaker,

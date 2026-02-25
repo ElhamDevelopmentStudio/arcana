@@ -174,6 +174,9 @@ def test_integration_export_segments_include_chapter_id_metadata() -> None:
             isinstance(segment["original_span_pointer"]["normalized_end_char"], int)
             for segment in segments
         )
+        assert all("normalized_text" in segment for segment in segments)
+        assert all(isinstance(segment["normalized_text"], str) for segment in segments)
+        assert all(segment["normalized_text"] == segment["original_text"] for segment in segments)
         assert all(
             segment["original_span_pointer"]["normalized_end_char"]
             >= segment["original_span_pointer"]["normalized_start_char"]
