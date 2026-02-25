@@ -17,6 +17,7 @@ class ParsedCharacter:
     notes: str | None
     source: str
     confidence: float
+    voice_id: str | None
     inferred_gender: str
     inferred_confidence: float
     inferred_source_trace: list[dict[str, Any]]
@@ -105,6 +106,19 @@ def _normalize_optional_gender(row_number: int, raw_value: str | None, *, field:
     return normalized
 
 
+def _normalize_optional_voice_id(raw_value: Any) -> str | None:
+    if raw_value is None:
+        return None
+
+    trimmed = str(raw_value).strip()
+    if not trimmed:
+        return None
+
+    if len(trimmed) > 255:
+        raise ValueError("voice_id must be 255 characters or fewer")
+    return trimmed
+
+
 def _coerce_source_trace(raw_source_trace: Any) -> list[dict[str, Any]]:
     if not isinstance(raw_source_trace, list):
         return []
@@ -149,6 +163,7 @@ def _validate_row(row: dict[str, str], row_number: int) -> ParsedCharacter:
         notes=row.get("notes") and str(row["notes"]).strip() or None,
         source=str(row.get("source") or "user_import").strip() or "user_import",
         confidence=_parse_confidence(row.get("confidence"), row_number, default=1.0),
+        voice_id=_normalize_optional_voice_id(row.get("voice_id")),
         inferred_gender=_normalize_optional_gender(
             row_number=row_number,
             raw_value=row.get("inferred_gender"),
@@ -182,6 +197,7 @@ def _parse_json(payload: bytes) -> list[ParsedCharacter]:
                         "notes": value.get("notes"),
                         "source": value.get("source"),
                         "confidence": value.get("confidence"),
+                        "voice_id": value.get("voice_id"),
                         "inferred_gender": value.get("inferred_gender"),
                         "inferred_confidence": value.get("inferred_confidence"),
                         "inferred_source_trace": value.get("inferred_source_trace"),
@@ -201,6 +217,7 @@ def _parse_json(payload: bytes) -> list[ParsedCharacter]:
                         "notes": item.get("notes"),
                         "source": item.get("source"),
                         "confidence": item.get("confidence"),
+                        "voice_id": item.get("voice_id"),
                         "inferred_gender": item.get("inferred_gender"),
                         "inferred_confidence": item.get("inferred_confidence"),
                         "inferred_source_trace": item.get("inferred_source_trace"),

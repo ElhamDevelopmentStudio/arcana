@@ -141,3 +141,40 @@ def test_integration_run_uses_legacy_voice_id_when_no_voice_map_exists() -> None
 
         assert segment_voice_ids
         assert any(voice_id == "legacy_orin_voice" for voice_id in segment_voice_ids)
+
+
+def test_integration_run_uses_character_map_voice_override_field() -> None:
+    expected_voice = " inline_override_voice "
+    with TestClient(app) as client:
+        project_id = _create_project_with_dialogue_and_character(client=client, character_name="Vera")
+        upsert_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Vera",
+                        "verbalized_form": "Vera",
+                        "gender": "female",
+                        "voice_id": expected_voice,
+                        "aliases": [],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "inferred_gender": "female",
+                        "inferred_confidence": 1.0,
+                        "inferred_source_trace": [],
+                    }
+                ]
+            },
+        )
+        assert upsert_resp.status_code == 200
+        assert upsert_resp.json()["characters"][0]["voice_id"] == expected_voice.strip()
+
+        list_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert list_resp.status_code == 200
+        assert list_resp.json()["characters"][0]["voice_id"] == expected_voice.strip()
+
+        segment_voice_ids = _run_and_get_voice_ids(project_id=project_id, client=client)
+
+    assert segment_voice_ids
+    assert any(voice_id == expected_voice.strip() for voice_id in segment_voice_ids)
