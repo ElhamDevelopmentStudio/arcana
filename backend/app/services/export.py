@@ -13,6 +13,16 @@ from sqlalchemy.orm import Session
 from app.models import Chapter, LLMCall, Project, Run, Segment
 
 
+AUTHOR_DIAGNOSTIC_REQUIREMENTS = [
+    ("ADR-001", "pacing_volatility_overview"),
+    ("ADR-002", "monotony_risk_detector"),
+    ("ADR-003", "character_imbalance_alerts"),
+    ("ADR-004", "emotional_cadence_diagnostics"),
+    ("ADR-005", "revision_priority_queue"),
+    ("ADR-006", "diagnostics_manifest_and_provenance"),
+]
+
+
 def _to_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -126,6 +136,46 @@ def _build_export_reports(project: Project, run: Run, segment_count: int, ordere
         },
         "mode_profile_snapshot": _to_dict(run_snapshot.get("voice_config")),
         "generated_at": run.finished_at.isoformat() if run.finished_at else run.started_at.isoformat(),
+    }
+
+
+def _build_author_narrative_health_report(
+    project: Project,
+    run: Run,
+    generated_at: datetime,
+    segment_count: int,
+) -> dict[str, Any]:
+    generated_at_iso = generated_at.isoformat()
+    requirements = [
+        {
+            "requirement_id": requirement_id,
+            "requirement_name": requirement_name,
+            "status": "not_implemented",
+            "finding_count": 0,
+            "findings": [],
+        }
+        for requirement_id, requirement_name in AUTHOR_DIAGNOSTIC_REQUIREMENTS
+    ]
+
+    return {
+        "schema_version": "1.0.0",
+        "output_schema": "author_narrative_health_json",
+        "generated_at": generated_at_iso,
+        "generated_by": "build_run_export",
+        "project_reference": {
+            "project_id": project.id,
+            "project_title": project.title,
+            "selected_mode": project.selected_mode,
+            "selected_modes": list(project.selected_modes or []),
+        },
+        "run_reference": {
+            "run_id": run.id,
+            "status": run.status,
+            "segment_count": segment_count,
+            "ordered_by": ["chapter_index", "segment_index"],
+        },
+        "requirements": requirements,
+        "findings": [],
     }
 
 
@@ -2005,6 +2055,12 @@ def build_run_export(
             "ingestion_log": ingestion_log,
             "llm_calls": llm_calls,
         },
+        "narrative_health_report": _build_author_narrative_health_report(
+            project=project,
+            run=run,
+            generated_at=generated_at,
+            segment_count=len(segments),
+        ),
         "reports": _build_export_reports(
             project=project,
             run=run,
