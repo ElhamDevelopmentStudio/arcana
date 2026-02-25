@@ -95,6 +95,63 @@ def normalize_unicode_variants(text: str) -> str:
     return unicodedata.normalize("NFKC", text)
 
 
+def _is_straight_apostrophe(text: str, index: int) -> bool:
+    prev_char = text[index - 1] if index > 0 else ""
+    next_char = text[index + 1] if index + 1 < len(text) else ""
+    return bool(prev_char.isalnum() and next_char.isalnum())
+
+
+def _is_likely_closing_quote(text: str, index: int, quote_char: str) -> bool:
+    next_char = text[index + 1] if index + 1 < len(text) else ""
+    prev_char = text[index - 1] if index > 0 else ""
+
+    if next_char == "":
+        return True
+
+    if quote_char == "'" and _is_straight_apostrophe(text, index):
+        return False
+
+    if next_char.isspace():
+        return bool(prev_char)
+
+    if next_char in '.,!?;:)]}”’"]\'':
+        return True
+
+    if prev_char.isalnum() and not next_char.isalnum():
+        return True
+
+    return False
+
+
+def _repair_straight_quote_type(text: str, quote_char: str) -> str:
+    lines = text.splitlines()
+    repaired_lines: list[str] = []
+    for line in lines:
+        candidate_indexes = [
+            index
+            for index, character in enumerate(line)
+            if character == quote_char
+            and not (quote_char == "'" and _is_straight_apostrophe(line, index))
+        ]
+
+        if len(candidate_indexes) % 2 != 0:
+            first_index = candidate_indexes[0] if candidate_indexes else -1
+            if first_index >= 0 and _is_likely_closing_quote(line, first_index, quote_char):
+                repaired_lines.append(f"{quote_char}{line}")
+            else:
+                repaired_lines.append(f"{line}{quote_char}")
+        else:
+            repaired_lines.append(line)
+
+    return "\n".join(repaired_lines)
+
+
+def repair_quote_mismatch(text: str) -> str:
+    repaired = _repair_straight_quote_type(text, '"')
+    repaired = _repair_straight_quote_type(repaired, "'")
+    return repaired
+
+
 def normalize_ellipsis_variants(text: str) -> str:
     text = ELLIPSIS_UNICODE_RE.sub("...", text)
     text = ELLIPSIS_DOTTED_RE.sub("...", text)
@@ -131,6 +188,7 @@ def remove_copy_artifacts(text: str, pattern_set: str | None = None) -> str:
 
 def normalize_text(text: str) -> str:
     normalized = normalize_unicode_variants(text)
+    normalized = repair_quote_mismatch(normalized)
     normalized = normalize_quotes(normalized)
     normalized = normalize_ellipsis_variants(normalized)
     normalized = normalize_em_dash_dialogue_style(normalized)
