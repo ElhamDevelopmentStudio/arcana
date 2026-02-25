@@ -33,7 +33,7 @@ from app.services.characters import parse_character_file
 from app.services.character_extraction import extract_character_candidates_from_texts
 from app.services.character_scrape import extract_character_candidates_from_scrape_url
 from app.services.epub_ingestion import extract_epub_chapters
-from app.services.character_merge import merge_character_candidates
+from app.services.character_merge import build_canonical_name_merge_suggestions, merge_character_candidates
 from app.services.export import build_run_export
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
@@ -992,6 +992,13 @@ def merged_candidate_characters(
     _get_project_or_404(session, project_id)
 
     merged_payloads: list[dict[str, object]] = []
+    existing_character_rows = (
+        session.query(Character)
+        .filter(Character.project_id == project_id)
+        .order_by(Character.name.asc())
+        .all()
+    )
+    canonical_names = [row.name for row in existing_character_rows]
 
     merged_payloads.extend(
         [
@@ -1001,10 +1008,7 @@ def merged_candidate_characters(
                 confidence=row.confidence,
                 source_trace=[],
             )
-            for row in session.query(Character)
-            .filter(Character.project_id == project_id)
-            .order_by(Character.name.asc())
-            .all()
+            for row in existing_character_rows
         ]
     )
 
@@ -1043,12 +1047,17 @@ def merged_candidate_characters(
         )
 
     merged_candidates = [CharacterMapItem(**payload) for payload in merge_character_candidates(merged_payloads)]
+    canonical_merge_suggestions = build_canonical_name_merge_suggestions(
+        candidate_payloads=merged_payloads,
+        canonical_names=canonical_names,
+    )
 
     return CharacterExtractionResponse(
         project_id=project_id,
         status="complete",
         candidate_count=len(merged_candidates),
         candidates=merged_candidates,
+        canonical_merge_suggestions=canonical_merge_suggestions,
     )
 
 

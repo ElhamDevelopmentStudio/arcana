@@ -120,7 +120,7 @@ Definition of done for each task:
 - [ ] [CHAR-005] Store extraction confidence and source trace for each candidate.
 - [x] [CHAR-006] Add optional web-scrape ingestion with explicit warning acknowledgement.
 - [x] [CHAR-007] Normalize and merge user-uploaded + auto + scraped candidates.
-- [ ] [CHAR-008] Implement canonical-name merge suggestions.
+- [x] [CHAR-008] Implement canonical-name merge suggestions.
 - [ ] [CHAR-009] Create review screen for proposed characters.
 - [ ] [CHAR-010] Create approve/reject actions per proposed character.
 - [ ] [CHAR-011] Add “Finalize character map” gate action.

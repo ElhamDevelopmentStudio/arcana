@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -30,6 +31,94 @@ def normalize_source_name(raw_source: str) -> str:
     if source in {"manual", "user", "user_upload", "user_uploaded"}:
         return "user_import"
     return source or "user_import"
+
+
+def _best_canonical_match_key(
+    normalized_name: str,
+    canonical_names: dict[str, str],
+) -> tuple[str, float] | None:
+    if not canonical_names:
+        return None
+
+    best_match: tuple[str, float] | None = None
+
+    for canonical_key, canonical_name in canonical_names.items():
+        if normalized_name == canonical_key:
+            continue
+
+        score = SequenceMatcher(None, normalized_name, canonical_key).ratio()
+        if score < 0.82 and normalized_name not in canonical_key and canonical_key not in normalized_name:
+            continue
+
+        if (
+            normalized_name.startswith(canonical_key)
+            or canonical_key.startswith(normalized_name)
+            or set(normalized_name.split()) & set(canonical_key.split())
+            or abs(len(normalized_name) - len(canonical_key)) <= 2
+        ):
+            if best_match is None or score > best_match[1]:
+                best_match = (canonical_name, score)
+
+    return best_match
+
+
+def build_canonical_name_merge_suggestions(
+    candidate_payloads: list[dict[str, Any]],
+    canonical_names: list[str] | set[str] | None = None,
+    threshold: float = 0.86,
+) -> list[dict[str, Any]]:
+    if not candidate_payloads:
+        return []
+
+    normalized_canonical_map: dict[str, str] = {}
+
+    if canonical_names is None:
+        canonical_names = set()
+
+    for canonical_name in canonical_names:
+        if not isinstance(canonical_name, str):
+            continue
+        normalized_key = normalize_candidate_key(canonical_name)
+        if not normalized_key:
+            continue
+        normalized_canonical_map[normalized_key] = canonical_name.strip()
+
+    if not normalized_canonical_map:
+        return []
+
+    canonical_key_set = set(normalized_canonical_map)
+    suggestions: list[dict[str, Any]] = []
+
+    for payload in candidate_payloads:
+        candidate_name = str(payload.get("name") or "").strip()
+        if not candidate_name:
+            continue
+
+        candidate_key = normalize_candidate_key(candidate_name)
+        if not candidate_key or candidate_key in canonical_key_set:
+            continue
+
+        best_match = _best_canonical_match_key(candidate_key, normalized_canonical_map)
+        if best_match is None:
+            continue
+        canonical_name, score = best_match
+        if score < threshold:
+            continue
+
+        source = str(payload.get("source") or "auto").strip() or "auto"
+        suggestions.append(
+            {
+                "canonical_name": canonical_name,
+                "alias_name": candidate_name,
+                "score": round(score, 4),
+                "candidate_source": source,
+                "canonical_source": "user_import",
+                "reason": "name_similarity",
+            }
+        )
+
+    suggestions.sort(key=lambda suggestion: suggestion["score"], reverse=True)
+    return suggestions
 
 
 def _coerce_confidence(value: Any) -> float:

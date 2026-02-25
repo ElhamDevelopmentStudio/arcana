@@ -7,7 +7,7 @@ import { AlertCircle, FileUp, Plus, UserCog, WandSparkles } from 'lucide-react';
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { appEnv } from '@/app/config/env';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
-import type { CharacterMapDto } from '@/app/schemas/api';
+import type { CharacterExtractionDto, CharacterMapDto } from '@/app/schemas/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -70,6 +70,7 @@ export function ProjectCharactersPage() {
   const [scrapeWarningAcknowledged, setScrapeWarningAcknowledged] = useState<boolean>(false);
   const [scrapedCandidates, setScrapedCandidates] = useState<CharacterMapDto['characters']>([]);
   const [mergeCandidates, setMergeCandidates] = useState<CharacterMapDto['characters']>([]);
+  const [mergeSuggestions, setMergeSuggestions] = useState<CharacterExtractionDto['canonical_merge_suggestions']>([]);
   const [mergeScrapeUrl, setMergeScrapeUrl] = useState<string>('');
   const [mergeScrapeAcknowledged, setMergeScrapeAcknowledged] = useState<boolean>(false);
 
@@ -216,6 +217,7 @@ export function ProjectCharactersPage() {
       };
       const merged = await mergeCharactersMutation.trigger(payload);
       setMergeCandidates(merged.candidates);
+      setMergeSuggestions(merged.canonical_merge_suggestions);
       toast.success(`Merged ${merged.candidate_count} candidate records.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Character merge failed.');
@@ -437,6 +439,31 @@ export function ProjectCharactersPage() {
                           ))}
                         </ul>
                       )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Canonical-name merge suggestions</p>
+              <p className="text-xs">Candidates that look similar to existing canonicals and may be merged.</p>
+              <p data-testid="character-merge-suggestions-state" className="text-xs">
+                {mergeSuggestions.length === 0 ? 'No suggestions yet.' : `${mergeSuggestions.length} suggestion(s).`}
+              </p>
+              {mergeSuggestions.length === 0 ? null : (
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  {mergeSuggestions.map((suggestion) => (
+                    <li
+                      key={`merge-suggestion-${suggestion.alias_name}-${suggestion.canonical_name}`}
+                      className="space-y-0.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span>
+                          {suggestion.alias_name} → {suggestion.canonical_name}
+                        </span>
+                        <span>{Math.round(suggestion.score * 100)}% similar</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground/90">Reason: {suggestion.reason}</p>
                     </li>
                   ))}
                 </ul>
