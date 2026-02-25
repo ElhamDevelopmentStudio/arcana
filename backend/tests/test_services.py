@@ -2,6 +2,7 @@ from app.services.ingestion import detect_chapters
 from app.services.phonetics import replace_pronunciations, replace_pronunciations_with_counts
 from app.services.segmentation import (
     segment_text,
+    segment_text_with_parent_paragraph,
     split_paragraphs,
     split_paragraphs_into_sentences,
     split_sentences,
@@ -81,6 +82,19 @@ def test_split_paragraphs_into_sentences_preserves_paragraph_grouping() -> None:
         ["First paragraph.", "Ends here."],
         ["Second paragraph asks a question?", "With follow-up."],
     ]
+
+
+def test_segment_text_with_parent_paragraph_exposes_sentence_reference() -> None:
+    text = "First sentence. Second sentence. Third sentence.\n\nFourth sentence."
+    segments = segment_text_with_parent_paragraph(text, max_chars=120)
+
+    assert len(segments) == 2
+    assert segments[0]["paragraph_index"] == 1
+    assert segments[0]["sentence_start_index"] == 1
+    assert segments[0]["sentence_end_index"] == 3
+    assert segments[1]["paragraph_index"] == 2
+    assert segments[1]["sentence_start_index"] == 1
+    assert segments[1]["sentence_end_index"] == 1
 
 
 def test_segment_text_is_built_from_paragraph_sentence_layer() -> None:
