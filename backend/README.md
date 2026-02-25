@@ -78,6 +78,7 @@ Ingestion title fallback behavior:
 - Unicode compatibility variants are canonicalized with `NFKC` before quote/whitespace normalization.
 - Quote normalization respects `NORMALIZE_QUOTE_STYLE` (`straight` default, optional `curly`) from environment settings.
 - Ellipsis variants are normalized consistently (`…`, `. . .`, and 4+ dot runs are converted to `...`).
+- Line breaks are normalized across `CRLF/CR/Unicode LS/PS/NEL`, and separator-only lines (e.g. `***`) become paragraph breaks.
 - Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.
 - EPUB ingestion is toggle-controlled (`ENABLE_EPUB_INGESTION`) and currently wired to a pluggable parser stub.
 - Incremental append ingestion supports one `.txt` chapter payload at a time (`/ingest/append-chapter`) without replacing existing chapters.

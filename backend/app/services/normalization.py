@@ -19,15 +19,27 @@ UNICODE_SPACE_TRANSLATION = str.maketrans({
     "\u2007": " ",  # figure space
     "\u202F": " ",  # narrow no-break space
 })
+UNICODE_LINE_BREAK_TRANSLATION = str.maketrans({
+    "\u2028": "\n",  # line separator
+    "\u2029": "\n",  # paragraph separator
+    "\u0085": "\n",  # next line
+})
 
 HORIZONTAL_WHITESPACE_RE = re.compile(r"[ \t\f\v]+")
 THREE_OR_MORE_LINE_BREAKS_RE = re.compile(r"\n{3,}")
 ELLIPSIS_UNICODE_RE = re.compile(r"…+")
 ELLIPSIS_DOTTED_RE = re.compile(r"\.\s*\.\s*\.(?:\s*\.)*")
+PARAGRAPH_SEPARATOR_LINE_RE = re.compile(r"\n\s*(?:\*{3,}|-{3,}|_{3,}|={3,}|~{3,})\s*\n")
+
+
+def normalize_line_breaks_and_paragraph_separators(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.translate(UNICODE_LINE_BREAK_TRANSLATION)
+    return PARAGRAPH_SEPARATOR_LINE_RE.sub("\n\n", text)
 
 
 def normalize_whitespace(text: str) -> str:
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = normalize_line_breaks_and_paragraph_separators(text)
     text = text.translate(UNICODE_SPACE_TRANSLATION)
     lines = [HORIZONTAL_WHITESPACE_RE.sub(" ", line).strip() for line in text.split("\n")]
     text = "\n".join(lines)

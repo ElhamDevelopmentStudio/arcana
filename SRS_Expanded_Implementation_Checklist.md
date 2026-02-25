@@ -100,7 +100,7 @@ Definition of done for each task:
 - [x] [NORM-008] Normalize Unicode variants to canonical form.
 - [x] [NORM-009] Normalize curly quotes to configured quote style.
 - [x] [NORM-010] Normalize ellipsis variants.
-- [ ] [NORM-011] Normalize line breaks and paragraph separators.
+- [x] [NORM-011] Normalize line breaks and paragraph separators.
 - [ ] [NORM-012] Remove obvious copy artifacts via configurable pattern set.
 - [ ] [NORM-013] Normalize em-dash dialogue style.
 - [ ] [NORM-014] Implement best-effort quote mismatch repair.
