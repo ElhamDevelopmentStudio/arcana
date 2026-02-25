@@ -41,6 +41,15 @@ def _sample_characters_json() -> bytes:
     return json.dumps(payload).encode("utf-8")
 
 
+def _segmentation_metadata_text() -> str:
+    chapter_text = (
+        "Every character in this story speaks briefly as the night wind rises. "
+        "The road was wet with rain and every lamp cast long trembling shadows. "
+        "A few minutes felt like hours inside the narrow silence. "
+    )
+    return "Chapter 1\n" + chapter_text + chapter_text + "\n\n" + "Chapter 2\n" + chapter_text + chapter_text
+
+
 def test_full_poc_api_flow_deterministic_export() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Shadow Slave PoC"})
@@ -122,3 +131,34 @@ def test_full_poc_api_flow_deterministic_export() -> None:
         data_2 = export_2.json()
 
         assert data_1["segments"] == data_2["segments"]
+
+
+def test_integration_export_segments_include_chapter_id_metadata() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Segment Chapter Metadata"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_segmentation_metadata_text().encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 2
+
+        run_resp = client.post(f"/api/projects/{project_id}/runs", json={"max_segment_chars": 80})
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        segments = export_resp.json()["segments"]
+        assert segments
+
+        chapter_ids = {segment["chapter_id"] for segment in segments}
+
+        assert chapter_ids == {1, 2}
+        assert all(isinstance(segment["chapter_id"], int) for segment in segments)
+        assert all(segment["chapter_id"] in {1, 2} for segment in segments)
+        assert all(segment.get("chapter_internal_id") in {"ch-0001", "ch-0002"} for segment in segments)
+        assert all(segment.get("chapter_internal_id", "").startswith("ch-") for segment in segments)
