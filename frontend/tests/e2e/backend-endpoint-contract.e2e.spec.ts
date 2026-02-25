@@ -401,6 +401,64 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     );
     expect(invalidMetricResponse.status()).toBe(422);
 
+    const comparativeExportResponse = await request.get(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/exports/comparative-dataset.json`,
+    );
+    expect(comparativeExportResponse.status()).toBe(200);
+    const comparativeExportPayload = (await comparativeExportResponse.json()) as {
+      workspace_id: number;
+      workspace_name: string;
+      generated_at: string;
+      run_count: number;
+      aligned_points: number;
+      metrics: Array<{ metric_id: string; points_per_run: Array<{ run_id: number; points: unknown[] }> }>;
+      runs: Array<{
+        run_id: number;
+        project_id: number;
+        project_title: string;
+        status: string;
+        segment_count: number;
+        run_config_mode: string;
+        academic_reports: Record<string, unknown>;
+        comparative_run_metrics_snapshot: Record<string, unknown>;
+        academic_export_manifest: Record<string, unknown>;
+      }>;
+    };
+    expect(comparativeExportPayload.workspace_id).toBe(workspacePayload.workspace_id);
+    expect(comparativeExportPayload.workspace_name).toBeTruthy();
+    expect(comparativeExportPayload.generated_at).toBeTruthy();
+    expect(comparativeExportPayload.run_count).toBe(1);
+    expect(comparativeExportPayload.aligned_points).toBe(32);
+    expect(comparativeExportPayload.metrics.length).toBeGreaterThan(0);
+    expect(comparativeExportPayload.metrics.every((metric) => metric.points_per_run.length === 1)).toBe(true);
+    expect(comparativeExportPayload.metrics.every((metric) => metric.points_per_run[0].points.length === 32)).toBe(true);
+    expect(comparativeExportPayload.runs).toHaveLength(1);
+    expect(comparativeExportPayload.runs[0].run_id).toBe(runId);
+    expect(comparativeExportPayload.runs[0].academic_reports).toBeTruthy();
+    expect(comparativeExportPayload.runs[0].comparative_run_metrics_snapshot).toBeTruthy();
+    expect(comparativeExportPayload.runs[0].academic_export_manifest).toBeTruthy();
+
+    const filteredComparativeExportResponse = await request.get(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/exports/comparative-dataset.json`
+      + '?metrics=chapter_valence_mean,smoothed_tension_curve,normalized_pacing_signature&aligned_points=7',
+    );
+    expect(filteredComparativeExportResponse.status()).toBe(200);
+    const filteredComparativeExportPayload = (await filteredComparativeExportResponse.json()) as {
+      run_count: number;
+      aligned_points: number;
+      metrics: Array<{ metric_id: string }>;
+    };
+    expect(filteredComparativeExportPayload.run_count).toBe(1);
+    expect(filteredComparativeExportPayload.aligned_points).toBe(7);
+    expect(filteredComparativeExportPayload.metrics.map((metric) => metric.metric_id).sort()).toEqual(
+      ['chapter_valence_mean', 'smoothed_tension_curve', 'normalized_pacing_signature'].sort(),
+    );
+
+    const invalidComparativeExportResponse = await request.get(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/exports/comparative-dataset.json?metrics=bad_metric`,
+    );
+    expect(invalidComparativeExportResponse.status()).toBe(422);
+
     const invalidRunAssignmentResponse = await request.post(
       `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/runs`,
       {

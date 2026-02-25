@@ -10,6 +10,8 @@ from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
 from app.main import app
 
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
 
 def setup_module() -> None:
     clear_settings_cache()
@@ -69,6 +71,12 @@ def _create_ingested_project_with_text(client: TestClient, title: str, text: str
     assert ingest_resp.status_code == 200
     assert ingest_resp.json()["chapter_count"] >= 1
     return project_id
+
+
+def _fixture_text(filename: str) -> str:
+    text = (FIXTURES_DIR / filename).read_text(encoding="utf-8").strip()
+    assert text
+    return text
 
 
 def test_create_comparison_workspace() -> None:
@@ -281,3 +289,193 @@ def test_aligned_curves_rejects_invalid_aligned_points() -> None:
             f"/api/comparison-workspaces/{workspace_id}/aligned-curves?aligned_points=401"
         )
         assert too_many_response.status_code == 400
+
+
+def test_export_comparative_dataset_for_workspace() -> None:
+    short_novel = (
+        "Chapter 1\n"
+        "The gate opened slowly.\n\n"
+        "Chapter 2\n"
+        "Clouds moved over the hill and the room held its breath."
+    )
+    long_novel = (
+        "Chapter 1\n"
+        "This chapter opens with many subtle emotional turns.\n"
+        "The air was stale and bright with unease.\n\n"
+        "Chapter 2\n"
+        "Later, footsteps echoed against the wall while the argument deepened.\n"
+        "A soft laugh cut through the storm.\n\n"
+        "Chapter 3\n"
+        "By night, the pace accelerated.\n"
+        "Then, too quickly, everything stilled."
+    )
+
+    with TestClient(app) as client:
+        project_one = _create_ingested_project_with_text(client, "Comparative Dataset One", short_novel)
+        project_two = _create_ingested_project_with_text(client, "Comparative Dataset Two", long_novel)
+        run_one = _run_project(client, project_one)
+        run_two = _run_project(client, project_two)
+
+        create_response = client.post(
+            "/api/comparison-workspaces",
+            json={"name": "Workspace ACAD-019"},
+        )
+        assert create_response.status_code == 201
+        workspace_id = create_response.json()["workspace_id"]
+
+        link_one_response = client.post(
+            f"/api/comparison-workspaces/{workspace_id}/runs",
+            json={"project_id": project_one, "run_id": run_one},
+        )
+        assert link_one_response.status_code == 201
+        link_two_response = client.post(
+            f"/api/comparison-workspaces/{workspace_id}/runs",
+            json={"project_id": project_two, "run_id": run_two},
+        )
+        assert link_two_response.status_code == 201
+
+        export_response = client.get(f"/api/comparison-workspaces/{workspace_id}/exports/comparative-dataset.json")
+        assert export_response.status_code == 200
+        payload = export_response.json()
+        assert payload["workspace_id"] == workspace_id
+        assert payload["run_count"] == 2
+        assert payload["aligned_points"] == 32
+        assert payload["workspace_name"] == "Workspace ACAD-019"
+        assert "generated_at" in payload
+        assert payload["generated_at"] is not None
+
+        assert isinstance(payload["metrics"], list)
+        assert len(payload["metrics"]) == 7
+        for metric in payload["metrics"]:
+            assert len(metric["points_per_run"]) == 2
+            for run_descriptor in metric["points_per_run"]:
+                assert run_descriptor["run_id"] in {run_one, run_two}
+                assert len(run_descriptor["points"]) == 32
+
+        assert isinstance(payload["runs"], list)
+        assert len(payload["runs"]) == 2
+        run_identifiers = {run["run_id"] for run in payload["runs"]}
+        assert run_identifiers == {run_one, run_two}
+        for run in payload["runs"]:
+            assert "academic_reports" in run
+            assert "comparative_run_metrics_snapshot" in run
+            assert "academic_export_manifest" in run
+            assert "segment_count" in run
+
+
+def test_export_comparative_dataset_supports_metric_filter_and_validation() -> None:
+    with TestClient(app) as client:
+        project_one = _create_ingested_project(client, "Comparative Filter")
+        run_one = _run_project(client, project_one)
+
+        create_response = client.post(
+            "/api/comparison-workspaces",
+            json={"name": "Workspace ACAD-019 Filter"},
+        )
+        assert create_response.status_code == 201
+        workspace_id = create_response.json()["workspace_id"]
+
+        add_run_response = client.post(
+            f"/api/comparison-workspaces/{workspace_id}/runs",
+            json={"project_id": project_one, "run_id": run_one},
+        )
+        assert add_run_response.status_code == 201
+
+        filtered_response = client.get(
+            f"/api/comparison-workspaces/{workspace_id}/exports/comparative-dataset.json"
+            "?metrics=chapter_valence_mean,smoothed_tension_curve,normalized_pacing_signature&aligned_points=9"
+        )
+        assert filtered_response.status_code == 200
+        filtered_payload = filtered_response.json()
+        assert filtered_payload["aligned_points"] == 9
+        assert filtered_payload["run_count"] == 1
+        assert {metric["metric_id"] for metric in filtered_payload["metrics"]} == {
+            "chapter_valence_mean",
+            "smoothed_tension_curve",
+            "normalized_pacing_signature",
+        }
+        for metric in filtered_payload["metrics"]:
+            assert len(metric["points_per_run"][0]["points"]) == 9
+
+        invalid_metric_response = client.get(
+            f"/api/comparison-workspaces/{workspace_id}/exports/comparative-dataset.json?metrics=bad_metric"
+        )
+        assert invalid_metric_response.status_code == 422
+
+        invalid_bound_response = client.get(
+            f"/api/comparison-workspaces/{workspace_id}/exports/comparative-dataset.json?aligned_points=401"
+        )
+        assert invalid_bound_response.status_code == 400
+
+
+def test_comparative_dataset_verifies_differences_across_two_corpora() -> None:
+    with TestClient(app) as client:
+        corpus_one_project = _create_ingested_project_with_text(
+            client,
+            "Rapid Emotion Corpus",
+            _fixture_text("rapid_emotional_shifts.txt"),
+        )
+        corpus_two_project = _create_ingested_project_with_text(
+            client,
+            "Mixed Narration Corpus",
+            _fixture_text("mixed_narration_dialogue_segment.txt"),
+        )
+        corpus_one_run = _run_project(client, corpus_one_project)
+        corpus_two_run = _run_project(client, corpus_two_project)
+
+        create_response = client.post(
+            "/api/comparison-workspaces",
+            json={"name": "Workspace ACAD-020"},
+        )
+        assert create_response.status_code == 201
+        workspace_id = create_response.json()["workspace_id"]
+
+        add_one_response = client.post(
+            f"/api/comparison-workspaces/{workspace_id}/runs",
+            json={"project_id": corpus_one_project, "run_id": corpus_one_run},
+        )
+        assert add_one_response.status_code == 201
+        add_two_response = client.post(
+            f"/api/comparison-workspaces/{workspace_id}/runs",
+            json={"project_id": corpus_two_project, "run_id": corpus_two_run},
+        )
+        assert add_two_response.status_code == 201
+
+        export_response = client.get(
+            f"/api/comparison-workspaces/{workspace_id}/exports/comparative-dataset.json?aligned_points=8"
+        )
+        assert export_response.status_code == 200
+        payload = export_response.json()
+        assert payload["run_count"] == 2
+        assert payload["aligned_points"] == 8
+        assert isinstance(payload["metrics"], list)
+        assert len(payload["metrics"]) == 7
+
+        points_per_run_by_metric = {
+            metric["metric_id"]: {
+                run_descriptor["run_id"]: [point["value"] for point in run_descriptor["points"]]
+                for run_descriptor in metric["points_per_run"]
+            }
+            for metric in payload["metrics"]
+        }
+        assert points_per_run_by_metric["chapter_valence_mean"][corpus_one_run] != points_per_run_by_metric["chapter_valence_mean"][
+            corpus_two_run
+        ]
+        assert points_per_run_by_metric["smoothed_tension_curve"][corpus_one_run] != points_per_run_by_metric["smoothed_tension_curve"][
+            corpus_two_run
+        ]
+
+        metric_norm_sig = points_per_run_by_metric["normalized_pacing_signature"]
+        assert all(0.0 <= value <= 1.0 for run_points in metric_norm_sig.values() for value in run_points)
+
+        runs = payload["runs"]
+        assert len(runs) == 2
+        run_segment_counts = {run["run_id"]: run["segment_count"] for run in runs}
+        assert run_segment_counts[corpus_one_run] > 0
+        assert run_segment_counts[corpus_two_run] > 0
+        assert run_segment_counts[corpus_one_run] != run_segment_counts[corpus_two_run]
+
+        for run in runs:
+            assert "academic_export_manifest" in run
+            assert "comparative_run_metrics_snapshot" in run
+            assert "academic_reports" in run

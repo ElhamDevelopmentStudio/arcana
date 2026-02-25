@@ -47,6 +47,8 @@ from app.schemas import (
     ComparisonAlignedCurveRunDescriptor,
     ComparisonWorkspaceCreateRequest,
     ComparisonWorkspaceAlignedCurvesResponse,
+    ComparisonWorkspaceComparativeExportResponse,
+    ComparisonWorkspaceComparativeRunDescriptor,
     ComparisonWorkspaceResponse,
     ComparisonWorkspaceRunDescriptor,
     ComparisonWorkspaceRunLinkRequest,
@@ -350,6 +352,129 @@ def _align_curve_points(points: list[tuple[float, float]], align_count: int) -> 
         )
 
     return aligned_points
+
+
+def _resolve_aligned_curve_metric_ids(metrics: str | None) -> list[str]:
+    requested = [value.strip() for value in (metrics or "").split(",") if value.strip()]
+    available_metric_ids = set(_ALIGNED_CURVE_DEFINITIONS.keys())
+    if requested:
+        unknown_metrics = [metric_id for metric_id in requested if metric_id not in available_metric_ids]
+        if unknown_metrics:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unsupported metric filter(s): {', '.join(sorted(unknown_metrics))}",
+            )
+        return requested
+    return sorted(available_metric_ids)
+
+
+def _load_workspace_runs_for_comparison(
+    session: Session,
+    workspace: ComparisonWorkspace,
+) -> list[tuple[ComparisonWorkspaceRun, Project, Run]]:
+    return (
+        session.query(ComparisonWorkspaceRun, Project, Run)
+        .join(Project, ComparisonWorkspaceRun.project_id == Project.id)
+        .join(Run, ComparisonWorkspaceRun.run_id == Run.id)
+        .filter(ComparisonWorkspaceRun.workspace_id == workspace.id)
+        .order_by(ComparisonWorkspaceRun.created_at.asc(), ComparisonWorkspaceRun.id.asc())
+        .all()
+    )
+
+
+def _build_workspace_aligned_curve_payloads(
+    session: Session,
+    workspace_runs: list[tuple[ComparisonWorkspaceRun, Project, Run]],
+    selected_metric_ids: list[str],
+    aligned_points: int,
+) -> list[ComparisonAlignedCurveMetricDescriptor]:
+    metric_series_by_id = {
+        metric_id: []
+        for metric_id in selected_metric_ids
+    }
+
+    for _, project_row, run in workspace_runs:
+        if run is None or project_row is None:
+            continue
+        export_payload = build_run_export(session=session, project=project_row, run=run)
+        manifest = export_payload.get("manifest", {})
+        academic_reports = manifest.get("academic_reports", {})
+        if not isinstance(academic_reports, dict):
+            academic_reports = {}
+
+        for metric_id in selected_metric_ids:
+            definition = _ALIGNED_CURVE_DEFINITIONS[metric_id]
+            points = _extract_curve_points(
+                academic_reports=academic_reports,
+                source_path=definition["source_path"],
+                value_key=definition["value_key"],
+                position_key=definition["position_key"],
+            )
+            aligned_points_for_run = _align_curve_points(points=points, align_count=aligned_points)
+            metric_series_by_id[metric_id].append(
+                ComparisonAlignedCurveRunDescriptor(
+                    run_id=run.id,
+                    project_id=project_row.id,
+                    project_title=project_row.title,
+                    status=run.status,
+                    points=aligned_points_for_run,
+                )
+            )
+
+    metric_payloads: list[ComparisonAlignedCurveMetricDescriptor] = []
+    for metric_id in selected_metric_ids:
+        definition = _ALIGNED_CURVE_DEFINITIONS[metric_id]
+        metric_payloads.append(
+            ComparisonAlignedCurveMetricDescriptor(
+                metric_id=metric_id,
+                metric_label=definition["label"],
+                value_key=definition["value_key"],
+                source_path=definition["source_path"],
+                points_per_run=metric_series_by_id[metric_id],
+            )
+        )
+    return metric_payloads
+
+
+def _build_comparison_run_export_records(
+    session: Session,
+    workspace_runs: list[tuple[ComparisonWorkspaceRun, Project, Run]],
+) -> list[ComparisonWorkspaceComparativeRunDescriptor]:
+    run_records: list[ComparisonWorkspaceComparativeRunDescriptor] = []
+    for _, project_row, run in workspace_runs:
+        if run is None or project_row is None:
+            continue
+        segment_count = session.query(Segment).filter(Segment.run_id == run.id).count()
+        export_payload = build_run_export(session=session, project=project_row, run=run)
+        manifest = export_payload.get("manifest", {})
+        academic_reports = manifest.get("academic_reports", {})
+        academic_export_manifest = manifest.get("academic_export_manifest", {})
+        config = dict(run.config_json or {})
+
+        if not isinstance(academic_reports, dict):
+            academic_reports = {}
+        if not isinstance(academic_export_manifest, dict):
+            academic_export_manifest = {}
+
+        run_records.append(
+            ComparisonWorkspaceComparativeRunDescriptor(
+                run_id=run.id,
+                project_id=project_row.id,
+                project_title=project_row.title,
+                status=run.status,
+                segment_count=segment_count,
+                run_config_mode=str(config.get("mode", DEFAULT_MODE)),
+                academic_reports=academic_reports,
+                comparative_run_metrics_snapshot=(
+                    dict(academic_reports.get("comparative_run_metrics_snapshot", {}))
+                )
+                if isinstance(academic_reports, dict)
+                else {},
+                academic_export_manifest=academic_export_manifest,
+            )
+        )
+
+    return run_records
 
 
 def _merge_selected_modes(existing_modes: list[str] | None, mode: str) -> list[str]:
@@ -701,74 +826,14 @@ def get_aligned_comparison_curves(
         )
 
     workspace = _get_comparison_workspace_or_404(session, workspace_id)
-
-    requested = [value.strip() for value in (metrics or "").split(",") if value.strip()]
-    available_metric_ids = set(_ALIGNED_CURVE_DEFINITIONS.keys())
-    if requested:
-        unknown_metrics = [metric_id for metric_id in requested if metric_id not in available_metric_ids]
-        if unknown_metrics:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Unsupported metric filter(s): {', '.join(sorted(unknown_metrics))}",
-            )
-        selected_metric_ids = requested
-    else:
-        selected_metric_ids = sorted(available_metric_ids)
-
-    workspace_runs = (
-        session.query(ComparisonWorkspaceRun, Project, Run)
-        .join(Project, ComparisonWorkspaceRun.project_id == Project.id)
-        .join(Run, ComparisonWorkspaceRun.run_id == Run.id)
-        .filter(ComparisonWorkspaceRun.workspace_id == workspace.id)
-        .order_by(ComparisonWorkspaceRun.created_at.asc(), ComparisonWorkspaceRun.id.asc())
-        .all()
+    selected_metric_ids = _resolve_aligned_curve_metric_ids(metrics)
+    workspace_runs = _load_workspace_runs_for_comparison(session=session, workspace=workspace)
+    metric_payloads = _build_workspace_aligned_curve_payloads(
+        session=session,
+        workspace_runs=workspace_runs,
+        selected_metric_ids=selected_metric_ids,
+        aligned_points=aligned_points,
     )
-
-    metric_series_by_id = {
-        metric_id: []
-        for metric_id in selected_metric_ids
-    }
-
-    for _, project_row, run in workspace_runs:
-        if run is None or project_row is None:
-            continue
-        export_payload = build_run_export(session=session, project=project_row, run=run)
-        manifest = export_payload.get("manifest", {})
-        academic_reports = manifest.get("academic_reports", {})
-        if not isinstance(academic_reports, dict):
-            academic_reports = {}
-
-        for metric_id in selected_metric_ids:
-            definition = _ALIGNED_CURVE_DEFINITIONS[metric_id]
-            points = _extract_curve_points(
-                academic_reports=academic_reports,
-                source_path=definition["source_path"],
-                value_key=definition["value_key"],
-                position_key=definition["position_key"],
-            )
-            aligned_points_for_run = _align_curve_points(points=points, align_count=aligned_points)
-            metric_series_by_id[metric_id].append(
-                ComparisonAlignedCurveRunDescriptor(
-                    run_id=run.id,
-                    project_id=project_row.id,
-                    project_title=project_row.title,
-                    status=run.status,
-                    points=aligned_points_for_run,
-                )
-            )
-
-    metric_payloads: list[ComparisonAlignedCurveMetricDescriptor] = []
-    for metric_id in selected_metric_ids:
-        definition = _ALIGNED_CURVE_DEFINITIONS[metric_id]
-        metric_payloads.append(
-            ComparisonAlignedCurveMetricDescriptor(
-                metric_id=metric_id,
-                metric_label=definition["label"],
-                value_key=definition["value_key"],
-                source_path=definition["source_path"],
-                points_per_run=metric_series_by_id[metric_id],
-            )
-        )
 
     return ComparisonWorkspaceAlignedCurvesResponse(
         workspace_id=workspace.id,
@@ -776,6 +841,50 @@ def get_aligned_comparison_curves(
         run_count=len(workspace_runs),
         aligned_points=aligned_points,
         metrics=metric_payloads,
+    )
+
+
+@app.get(
+    "/api/comparison-workspaces/{workspace_id}/exports/comparative-dataset.json",
+    response_model=ComparisonWorkspaceComparativeExportResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_comparative_dataset_export(
+    workspace_id: int,
+    metrics: str | None = None,
+    aligned_points: int = 32,
+    session: Session = Depends(get_session),
+) -> ComparisonWorkspaceComparativeExportResponse:
+    if aligned_points < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="aligned_points must be at least 2",
+        )
+    if aligned_points > 400:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="aligned_points must be 400 or fewer",
+        )
+
+    workspace = _get_comparison_workspace_or_404(session, workspace_id)
+    selected_metric_ids = _resolve_aligned_curve_metric_ids(metrics)
+    workspace_runs = _load_workspace_runs_for_comparison(session=session, workspace=workspace)
+    metric_payloads = _build_workspace_aligned_curve_payloads(
+        session=session,
+        workspace_runs=workspace_runs,
+        selected_metric_ids=selected_metric_ids,
+        aligned_points=aligned_points,
+    )
+    run_records = _build_comparison_run_export_records(session=session, workspace_runs=workspace_runs)
+
+    return ComparisonWorkspaceComparativeExportResponse(
+        workspace_id=workspace.id,
+        workspace_name=workspace.name,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        run_count=len(workspace_runs),
+        aligned_points=aligned_points,
+        metrics=metric_payloads,
+        runs=run_records,
     )
 
 
