@@ -270,6 +270,69 @@ def test_unit_merge_character_candidates_normalizes_and_merges() -> None:
     ]
 
 
+def test_unit_merge_character_candidates_keeps_manual_gender_over_auto() -> None:
+    merged = merge_character_candidates(
+        [
+            {
+                "name": "Kira",
+                "verbalized_form": "Kira",
+                "gender": "unknown",
+                "aliases": [],
+                "notes": "manual entry",
+                "source": "manual",
+                "confidence": 1.0,
+                "source_trace": [],
+            },
+            {
+                "name": "kira",
+                "verbalized_form": "Kira",
+                "gender": "female",
+                "aliases": [],
+                "notes": "auto sample",
+                "source": "auto",
+                "confidence": 0.8,
+                "source_trace": [],
+            },
+        ]
+    )
+
+    assert len(merged) == 1
+    assert merged[0]["name"] == "Kira"
+    assert merged[0]["gender"] == "unknown"
+    assert merged[0]["source"] == "merged:auto|user_import"
+
+
+def test_unit_merge_character_candidates_order_does_not_change_manual_authority() -> None:
+    merged = merge_character_candidates(
+        [
+            {
+                "name": "Kira",
+                "verbalized_form": "Kira",
+                "gender": "female",
+                "aliases": [],
+                "notes": "auto sample",
+                "source": "auto",
+                "confidence": 0.8,
+                "source_trace": [],
+            },
+            {
+                "name": "kira",
+                "verbalized_form": "Kira",
+                "gender": "unknown",
+                "aliases": [],
+                "notes": "manual entry",
+                "source": "manual",
+                "confidence": 1.0,
+                "source_trace": [],
+            },
+        ]
+    )
+
+    assert len(merged) == 1
+    assert merged[0]["gender"] == "unknown"
+    assert merged[0]["source"] == "merged:auto|user_import"
+
+
 def test_unit_build_canonical_name_merge_suggestions_identifies_similar_existing_canonical_names() -> None:
     candidate_payloads = [
         {

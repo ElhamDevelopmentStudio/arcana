@@ -139,7 +139,7 @@ Definition of done for each task:
 ## 4.4 Gender Tagging and Ambiguity (Ref: SRS.md §4.4)
 - [x] [GEN-001] Restrict gender values to `male/female/neutral/unknown/custom`.
 - [x] [GEN-002] Add DB constraint/validation for permitted values.
-- [ ] [GEN-003] Treat manual gender as authoritative in resolver logic.
+- [x] [GEN-003] Treat manual gender as authoritative in resolver logic.
 - [ ] [GEN-004] Implement optional gender inference module.
 - [ ] [GEN-005] Persist inferred gender + confidence + evidence trace.
 - [ ] [GEN-006] Add manual/inferred comparison service.

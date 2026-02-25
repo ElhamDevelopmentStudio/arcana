@@ -256,6 +256,10 @@ def _normalize_aliases(aliases: Any) -> list[str]:
     return list(dict.fromkeys(normalized))
 
 
+def _has_manual_source(source_set: set[str]) -> bool:
+    return "user_import" in source_set
+
+
 @dataclass
 class _CandidateAccumulator:
     name: str
@@ -332,7 +336,11 @@ def merge_character_candidates(candidates: list[dict[str, Any]]) -> list[dict[st
             existing.notes = candidate_payload.notes or existing.notes
             existing.confidence = candidate_payload.confidence
             existing.source = candidate_payload.source
-        elif existing.gender == "unknown" and candidate_payload.gender != "unknown":
+        elif (
+            not _has_manual_source(existing.source_set)
+            and existing.gender == "unknown"
+            and candidate_payload.gender != "unknown"
+        ):
             existing.gender = candidate_payload.gender
         if existing.notes is None and candidate_payload.notes:
             existing.notes = candidate_payload.notes
