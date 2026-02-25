@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from ast import literal_eval
 from typing import Any
 
+ALLOWED_GENDER_VALUES = frozenset({"male", "female", "neutral", "unknown", "custom"})
 
 @dataclass
 class ParsedCharacter:
@@ -77,10 +78,22 @@ def _resolve_field(row: dict[str, str], field_names: list[str]) -> str:
     return ""
 
 
+def _normalize_gender(row_number: int, raw_value: str) -> str:
+    normalized = str(raw_value).strip().lower()
+    if not normalized:
+        return ""
+    if normalized not in ALLOWED_GENDER_VALUES:
+        raise ValueError(
+            f"Row {row_number} has unsupported gender '{raw_value}'. "
+            f"Supported values are: male, female, neutral, unknown, custom"
+        )
+    return normalized
+
+
 def _validate_row(row: dict[str, str], row_number: int) -> ParsedCharacter:
     name = _resolve_field(row, ["name"])
     verbalized_form = _resolve_field(row, ["verbalized_form", "verbalized"])
-    gender = _resolve_field(row, ["gender"])
+    gender = _normalize_gender(row_number, _resolve_field(row, ["gender"]))
 
     required_fields = [
         ("name", name),
@@ -95,7 +108,7 @@ def _validate_row(row: dict[str, str], row_number: int) -> ParsedCharacter:
     return ParsedCharacter(
         name=name,
         verbalized_form=verbalized_form,
-        gender=gender.strip().lower(),
+        gender=gender,
         aliases=_parse_aliases(row.get("aliases")),
         notes=row.get("notes") and str(row["notes"]).strip() or None,
         source=str(row.get("source") or "user_import").strip() or "user_import",

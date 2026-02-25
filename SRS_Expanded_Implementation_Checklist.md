@@ -137,7 +137,7 @@ Definition of done for each task:
 - [x] [CHAR-022] Add tests for merge, alias conflict, and finalize workflow.
 
 ## 4.4 Gender Tagging and Ambiguity (Ref: SRS.md §4.4)
-- [ ] [GEN-001] Restrict gender values to `male/female/neutral/unknown/custom`.
+- [x] [GEN-001] Restrict gender values to `male/female/neutral/unknown/custom`.
 - [ ] [GEN-002] Add DB constraint/validation for permitted values.
 - [ ] [GEN-003] Treat manual gender as authoritative in resolver logic.
 - [ ] [GEN-004] Implement optional gender inference module.

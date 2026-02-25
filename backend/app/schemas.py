@@ -21,12 +21,24 @@ class ProjectResponse(BaseModel):
     created_at: datetime
 
 
+ALLOWED_GENDER_VALUES = frozenset({"male", "female", "neutral", "unknown", "custom"})
+
+
 def _normalize_mode_or_raise(value: str) -> str:
     stripped = value.strip().lower()
     if not stripped:
         raise ValueError("mode must not be blank")
     if not is_valid_mode(stripped):
         raise ValueError("mode must be one of: audiobook, academic, author, custom")
+    return stripped
+
+
+def _normalize_gender_or_raise(value: str) -> str:
+    stripped = value.strip().lower()
+    if not stripped:
+        raise ValueError("gender must not be blank")
+    if stripped not in ALLOWED_GENDER_VALUES:
+        raise ValueError("gender must be one of: male, female, neutral, unknown, custom")
     return stripped
 
 
@@ -96,10 +108,7 @@ class CharacterMapItem(BaseModel):
     @field_validator("gender")
     @classmethod
     def gender_normalized(cls, value: str) -> str:
-        stripped = value.strip().lower()
-        if not stripped:
-            raise ValueError("gender must not be blank")
-        return stripped
+        return _normalize_gender_or_raise(value)
 
     @field_validator("aliases")
     @classmethod

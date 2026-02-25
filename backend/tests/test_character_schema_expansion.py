@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import pytest
 
 from pathlib import Path
 
@@ -61,6 +62,13 @@ def test_unit_parse_character_file_supports_extended_fields() -> None:
     assert row.confidence == 0.88
 
 
+def test_unit_parse_character_file_rejects_invalid_gender() -> None:
+    payload = json.dumps({"Kai": {"verbalized_form": "Kai", "gender": "nonbinary"}}).encode("utf-8")
+
+    with pytest.raises(ValueError, match="unsupported gender"):
+        parse_character_file("characters.json", payload)
+
+
 def test_integration_character_import_stores_schema_fields_and_defaults_for_legacy_rows() -> None:
     payload = json.dumps(
         {
@@ -105,6 +113,46 @@ def test_integration_character_import_stores_schema_fields_and_defaults_for_lega
             session.close()
 
 
+def test_integration_character_import_rejects_invalid_gender() -> None:
+    payload = json.dumps({"Kai": {"verbalized_form": "Kai", "gender": "nonbinary"}}).encode("utf-8")
+
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Invalid Gender Import"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        import_resp = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={"file": ("characters.json", io.BytesIO(payload), "application/json")},
+        )
+        assert import_resp.status_code == 400
+        assert "unsupported gender" in import_resp.json()["detail"]
+
+
+def test_integration_character_map_rejects_invalid_gender_on_save() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Invalid Gender Save"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        save_resp = client.put(
+            f"/api/projects/{project_id}/characters",
+            json={
+                "characters": [
+                    {
+                        "name": "Kai",
+                        "verbalized_form": "Kai",
+                        "gender": "nonbinary",
+                        "aliases": [],
+                        "notes": None,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "source_trace": [],
+                    }
+                ]
+            },
+        )
+        assert save_resp.status_code == 422
 def test_unit_parse_character_file_legacy_csv_uses_verbalized_header() -> None:
     csv_payload = "name,verbalized,gender\nKai,Kai,female\nLio,Lee-o,male\n"
 
