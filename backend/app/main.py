@@ -16,6 +16,7 @@ from app.schemas import (
     CharacterMapUpdateRequest,
     IngestResponse,
     CharacterExtractionResponse,
+    CharacterScrapeRequest,
     ModeCatalogResponse,
     ProjectCreate,
     ProjectModeSwitchRequest,
@@ -29,6 +30,7 @@ from app.schemas import (
 )
 from app.services.characters import parse_character_file
 from app.services.character_extraction import extract_character_candidates_from_texts
+from app.services.character_scrape import extract_character_candidates_from_scrape_url
 from app.services.epub_ingestion import extract_epub_chapters
 from app.services.export import build_run_export
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
@@ -871,6 +873,69 @@ def auto_extract_characters(
             aliases=[],
             notes=None,
             source="auto",
+            confidence=candidate.confidence,
+            source_trace=[
+                {
+                    "kind": trace.kind,
+                    "chapter_index": trace.chapter_index,
+                    "span_start": trace.span_start,
+                    "span_end": trace.span_end,
+                    "excerpt": trace.excerpt,
+                    "weight": trace.weight,
+                }
+                for trace in candidate.source_trace
+            ],
+        )
+        for candidate in candidates
+    ]
+
+    return CharacterExtractionResponse(
+        project_id=project_id,
+        status="complete",
+        candidate_count=len(mapped_candidates),
+        candidates=mapped_candidates,
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/characters/scrape",
+    response_model=CharacterExtractionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def scrape_characters(
+    project_id: int,
+    payload: CharacterScrapeRequest,
+    session: Session = Depends(get_session),
+) -> CharacterExtractionResponse:
+    _get_project_or_404(session, project_id)
+
+    if not payload.acknowledge_source_risk:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You must acknowledge scrape risk before proceeding.",
+        )
+
+    existing_names = {
+        row.name.strip().lower()
+        for row in session.query(Character.name).filter(Character.project_id == project_id).all()
+    }
+
+    try:
+        candidates = extract_character_candidates_from_scrape_url(
+            payload.source_url,
+            known_names=existing_names,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    mapped_candidates = [
+        CharacterMapItem(
+            name=candidate.name,
+            verbalized_form=candidate.name,
+            gender="unknown",
+            aliases=[],
+            notes=None,
+            source="scrape",
             confidence=candidate.confidence,
             source_trace=[
                 {

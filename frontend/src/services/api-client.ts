@@ -5,6 +5,7 @@ import {
   characterImportSchema,
   characterMapSchema,
   characterMapUpdateSchema,
+  characterScrapeRequestSchema,
   exportSchema,
   ingestResponseSchema,
   modeCatalogSchema,
@@ -18,6 +19,7 @@ import {
   type VoiceConfigDto,
   type CharacterMapDto,
   type CharacterMapUpdateDto,
+  type CharacterScrapeRequestDto,
   type CharacterExtractionDto,
   characterExtractionSchema,
 } from '@/app/schemas/api';
@@ -193,6 +195,16 @@ export class NipeApiClient {
   async extractCharacters(projectId: number) {
     try {
       const response = await this.client.post(`/api/projects/${projectId}/characters/extract`);
+      return characterExtractionSchema.parse(response.data) as CharacterExtractionDto;
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async scrapeCharacters(projectId: number, payload: CharacterScrapeRequestDto) {
+    try {
+      const parsedPayload = characterScrapeRequestSchema.parse(payload);
+      const response = await this.client.post(`/api/projects/${projectId}/characters/scrape`, parsedPayload);
       return characterExtractionSchema.parse(response.data) as CharacterExtractionDto;
     } catch (error) {
       throw normalizeHttpError(error);

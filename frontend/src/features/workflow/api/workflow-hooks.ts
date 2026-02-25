@@ -5,6 +5,7 @@ import { runRequestSchema, type RunRequestDto } from '@/app/schemas/api';
 import { nipeApiClient } from '@/services/api-client';
 import type { VoiceConfigDto } from '@/app/schemas/api';
 import type { CharacterMapUpdateDto } from '@/app/schemas/api';
+import type { CharacterScrapeRequestDto } from '@/app/schemas/api';
 
 export const workspaceKeys = {
   modeCatalog: ['mode-catalog'] as const,
@@ -149,6 +150,18 @@ export function useAutoExtractCharactersMutation(projectId: number | null) {
         throw new Error('Project must exist before extracting characters.');
       }
       return nipeApiClient.extractCharacters(projectId);
+    },
+  );
+}
+
+export function useScrapeCharactersMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['scrape-characters', projectId] : null,
+    async (_, { arg }: { arg: CharacterScrapeRequestDto }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before scraping characters.');
+      }
+      return nipeApiClient.scrapeCharacters(projectId, arg);
     },
   );
 }

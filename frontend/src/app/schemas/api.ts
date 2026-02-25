@@ -75,6 +75,11 @@ export const characterMapUpdateSchema = z.object({
   characters: z.array(characterMapItemSchema),
 });
 
+export const characterScrapeRequestSchema = z.object({
+  source_url: z.string().min(1).max(2048).url(),
+  acknowledge_source_risk: z.boolean(),
+});
+
 export const characterExtractionSchema = z.object({
   project_id: z.number().int(),
   status: z.string(),
@@ -145,6 +150,7 @@ export type CharacterImportDto = z.infer<typeof characterImportSchema>;
 export type CharacterMapItemDto = z.infer<typeof characterMapItemSchema>;
 export type CharacterMapDto = z.infer<typeof characterMapSchema>;
 export type CharacterMapUpdateDto = z.infer<typeof characterMapUpdateSchema>;
+export type CharacterScrapeRequestDto = z.infer<typeof characterScrapeRequestSchema>;
 export type CharacterExtractionDto = z.infer<typeof characterExtractionSchema>;
 export type VoiceConfigDto = z.infer<typeof voiceConfigSchema>;
 export type RunRequestDto = z.infer<typeof runRequestSchema>;
