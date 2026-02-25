@@ -76,6 +76,64 @@ def test_export_json_includes_manifest_metadata() -> None:
         assert project_snapshot["voice_config"]["narrator_voice"] == "narrator_default"
         assert project_snapshot["default_voices"]["narrator"] == "narrator_default"
 
+        logs = manifest["logs"]
+        assert isinstance(logs, dict)
+        assert isinstance(logs["ingestion_log"], dict)
+        assert logs["ingestion_log"]["source"] == "txt"
+        assert isinstance(logs["llm_calls"], list)
+
+        reports = manifest["reports"]
+        assert isinstance(reports, dict)
+        assert isinstance(reports["project"], dict)
+        assert reports["run"]["id"] == run_id
+        assert reports["run"]["segment_count"] == len(export_payload["segments"])
+        assert reports["run"]["ordered_by"] == ["chapter_index", "segment_index"]
+        assert reports["project"]["configuration_snapshot_id"] == manifest["project"]["configuration_snapshot_id"]
+        assert isinstance(reports["normalization_report"], dict)
+        assert reports["normalization_report"]["source"] == "txt"
+        assert isinstance(reports["character_analytics_snapshot"], dict)
+        assert isinstance(reports["mode_profile_snapshot"], dict)
+
+
+def test_export_json_includes_warning_report_summary() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "repair.txt",
+                    io.BytesIO(b'Chapter 1\nHe said "Take cover on the east side.'),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+        assert ingest_resp.json()["chapter_count"] == 1
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "mode": "audiobook"},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        manifest = export_resp.json()["manifest"]
+
+        logs = manifest["logs"]["ingestion_log"]
+        assert logs["source"] == "txt"
+        warning_types = {item.get("type") for item in logs.get("warnings", [])}
+        assert "quote_repair_confidence_low" in warning_types
+
+        reports = manifest["reports"]
+        assert reports["normalization_report"]["lossy_transform_flags"]["quote_repair_applied"] is True
+        assert reports["normalization_report"]["counts"]["quote_repair_count"] >= 1
+
 
 def test_export_json_includes_project_config_snapshot_after_project_customization() -> None:
     with TestClient(app) as client:
