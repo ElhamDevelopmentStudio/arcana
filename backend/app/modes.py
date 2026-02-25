@@ -63,9 +63,11 @@ def is_valid_mode(value: str) -> bool:
 
 
 def get_mode_catalog() -> dict[str, object]:
+    from app.services.mode_profiles import load_mode_profile_catalog
+
     return {
         "modes": list(MODE_VALUES),
         "default_mode": DEFAULT_MODE,
         "persisted_in": list(MODE_PERSISTENCE_PATHS),
-        "mode_profiles": MODE_DEFAULT_PROFILES,
+        "mode_profiles": load_mode_profile_catalog(),
     }

@@ -22,3 +22,12 @@ Purpose:
 - catalog_path: /api/modes -> `mode_profiles`
 - profile_fields: `max_segment_chars`, `llm_enabled`, `provider_name`, `max_calls_per_day`, `profile_intent`
 - guaranteed_profile_modes: audiobook, academic, author, custom
+
+## MODE-007 Backend Mode Profile Loader
+
+- service_path: `backend/app/services/mode_profiles.py`
+- loader_functions:
+  - `normalize_mode_value(mode)` -> resolves blank/none to default mode and validates enum values.
+  - `load_mode_profile(mode)` -> returns a deep-copied profile for safe per-request usage.
+  - `load_mode_profile_catalog()` -> returns a full mode->profile map built via loader function.
+- integration_note: `/api/modes` now loads `mode_profiles` through the service loader to avoid direct mutable constant exposure.
