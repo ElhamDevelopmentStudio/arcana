@@ -283,6 +283,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "emotion_primary_label": tags["emotion_primary_label"],
                 "emotion_secondary_label": tags["emotion_secondary_label"],
                 "tension_contribution": tags["tension_contribution"],
+                "dominance_contribution": tags["dominance_contribution"],
                 "confidence": {
                     "speaker": tags["speaker_confidence"],
                     "emotion": tags["emotion_confidence"],

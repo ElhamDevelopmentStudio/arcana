@@ -62,6 +62,29 @@ def test_tag_segment_tension_contribution_remains_low_for_stable_description() -
     assert tension["value"] < 0.35
 
 
+def test_tag_segment_includes_dominance_contribution_tag() -> None:
+    tags = tag_segment('"Wait," Alice said.')
+    dominance = tags["dominance_contribution"]
+    assert isinstance(dominance, dict)
+    assert set(dominance.keys()) == {"value", "level", "dominant_agent", "evidence"}
+    assert isinstance(dominance["value"], float)
+    assert 0.0 <= dominance["value"] <= 1.0
+    assert dominance["level"] in {"dominant", "strong", "moderate", "low"}
+    assert dominance["dominant_agent"] == "alice"
+    assert isinstance(dominance["evidence"], dict)
+    assert "speaker_resolved" in dominance["evidence"]
+    assert "pronoun_reference_count" in dominance["evidence"]
+    assert "proper_noun_hits" in dominance["evidence"]
+
+
+def test_tag_segment_dominance_contribution_defaults_to_narrative_guide_when_no_speaker() -> None:
+    tags = tag_segment("The moonlight painted the room in silver lines.")
+    dominance = tags["dominance_contribution"]
+    assert isinstance(dominance, dict)
+    assert dominance["dominant_agent"] == "narrative_guide"
+    assert dominance["value"] >= 0.0
+
+
 def test_tag_segment_emotion_outputs_include_valence_intensity_and_labels() -> None:
     tags = tag_segment("The night was calm and good, and hope was rising.")
     assert tags["emotion_valence"] > 0
