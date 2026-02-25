@@ -427,6 +427,13 @@ def test_integration_character_merge_candidates_endpoint_merges_auto_and_scrape(
         assert merged_map["Mira"]["source"] == "merged:auto|user_import"
         assert len(merged_map["Lena"]["source_trace"]) == 2
 
+        assert "proposed_characters" in merged_payload
+        proposed = merged_payload["proposed_characters"]
+        assert isinstance(proposed, list)
+        assert len(proposed) == 1
+        assert proposed[0]["name"] == "Lena"
+        assert proposed[0]["source"] == "merged:auto|scrape"
+
 
 def test_integration_character_merge_candidates_endpoint_returns_canonical_merge_suggestions(monkeypatch) -> None:
     def _fake_extract_character_candidates_from_texts(
@@ -500,3 +507,9 @@ def test_integration_character_merge_candidates_endpoint_returns_canonical_merge
         assert suggestion["canonical_source"] == "user_import"
         assert suggestion["reason"] == "name_similarity"
         assert suggestion["score"] >= 0.85
+
+        assert "proposed_characters" in merged_payload
+        proposed = merged_payload["proposed_characters"]
+        assert len(proposed) == 2
+        proposed_names = {entry["name"] for entry in proposed}
+        assert proposed_names == {"Miran", "Lio"}

@@ -70,6 +70,7 @@ export function ProjectCharactersPage() {
   const [scrapeWarningAcknowledged, setScrapeWarningAcknowledged] = useState<boolean>(false);
   const [scrapedCandidates, setScrapedCandidates] = useState<CharacterMapDto['characters']>([]);
   const [mergeCandidates, setMergeCandidates] = useState<CharacterMapDto['characters']>([]);
+  const [proposedCandidates, setProposedCandidates] = useState<CharacterMapDto['characters']>([]);
   const [mergeSuggestions, setMergeSuggestions] = useState<CharacterExtractionDto['canonical_merge_suggestions']>([]);
   const [mergeScrapeUrl, setMergeScrapeUrl] = useState<string>('');
   const [mergeScrapeAcknowledged, setMergeScrapeAcknowledged] = useState<boolean>(false);
@@ -217,6 +218,7 @@ export function ProjectCharactersPage() {
       };
       const merged = await mergeCharactersMutation.trigger(payload);
       setMergeCandidates(merged.candidates);
+      setProposedCandidates(merged.proposed_characters);
       setMergeSuggestions(merged.canonical_merge_suggestions);
       toast.success(`Merged ${merged.candidate_count} candidate records.`);
     } catch (error) {
@@ -464,6 +466,42 @@ export function ProjectCharactersPage() {
                         <span>{Math.round(suggestion.score * 100)}% similar</span>
                       </div>
                       <p className="text-[11px] text-muted-foreground/90">Reason: {suggestion.reason}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Proposed characters review screen</p>
+              <p className="text-xs">Review proposed candidates before adding them to the character map.</p>
+              <p data-testid="character-proposed-state" className="text-xs">
+                {proposedCandidates.length === 0
+                  ? 'No proposed characters to review.'
+                  : `${proposedCandidates.length} proposed character(s) ready for review.`}
+              </p>
+              {proposedCandidates.length === 0 ? null : (
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  {proposedCandidates.map((candidate) => (
+                    <li
+                      className="space-y-1"
+                      key={`proposed-${candidate.name}-${candidate.source}`}
+                      data-testid={`proposed-character-${candidate.name.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{candidate.name}</span>
+                        <span>{Math.round(candidate.confidence * 100)}% · {candidate.source}</span>
+                      </div>
+                      {candidate.source_trace.length === 0 ? null : (
+                        <ul className="space-y-0.5 pl-2 text-[11px]">
+                          {candidate.source_trace.map((trace) => (
+                            <li key={`proposed-${candidate.name}-${trace.chapter_index}-${trace.span_start}-${trace.span_end}`}>
+                              <span className="font-medium text-foreground">Ch {trace.chapter_index}</span> ·{' '}
+                              {trace.kind.replaceAll('_', ' ')} · weight {Math.round(trace.weight * 100)}% ·{' '}
+                              <span className="italic">{trace.excerpt}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   ))}
                 </ul>
