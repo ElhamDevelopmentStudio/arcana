@@ -135,6 +135,24 @@ def _resolve_speaker_entry(
     return _character_lookup_entry_for_speaker(speaker=speaker, character_lookup=character_lookup)
 
 
+def _should_escalate_to_llm(tags: dict[str, object]) -> bool:
+    check_states = {
+        str(tags.get("type_state", "unknown")).lower(),
+        str(tags.get("speaker_state", "unknown")).lower(),
+        str(tags.get("emotion_state", "unknown")).lower(),
+        str(tags.get("summary_tag", {}).get("state", "unknown")).lower()
+        if isinstance(tags.get("summary_tag"), dict)
+        else "unknown",
+        str(tags.get("tension_contribution", {}).get("state", "unknown")).lower()
+        if isinstance(tags.get("tension_contribution"), dict)
+        else "unknown",
+        str(tags.get("dominance_contribution", {}).get("state", "unknown")).lower()
+        if isinstance(tags.get("dominance_contribution"), dict)
+        else "unknown",
+    }
+    return any(state in {"uncertain", "unknown"} for state in check_states)
+
+
 def execute_pipeline(session: Session, project: Project, run: Run, run_config: dict) -> dict:
     chapters = (
         session.query(Chapter)
@@ -228,7 +246,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     session.query(SubSegmentTag).filter(SubSegmentTag.run_id == run.id).delete()
 
     max_chars = int(run_config.get("max_segment_chars", 255))
-    first_segment_text: str | None = None
+    llm_probe_text: str | None = None
     total_segments = 0
     segment_payloads: list[dict[str, object]] = []
 
@@ -359,6 +377,8 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 "original_to_normalized_offset_map": segment_offset_map,
             }
             segment_payloads.append(segment_payload)
+            if llm_probe_text is None and _should_escalate_to_llm(segment_payload):
+                llm_probe_text = original_text
 
             segment = Segment(
                 run_id=run.id,
@@ -393,14 +413,17 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                     )
                 )
 
-            if first_segment_text is None:
-                first_segment_text = original_text
-
             total_segments += 1
 
     llm_enabled = bool(run_config.get("llm_enabled", False))
-    if llm_enabled and first_segment_text:
-        _run_llm_probe(session=session, project=project, run=run, run_config=run_config, input_text=first_segment_text)
+    if llm_enabled and llm_probe_text:
+        _run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config=run_config,
+            input_text=llm_probe_text,
+        )
 
     character_occurrence_analytics = build_character_occurrence_analytics(
         chapters=chapters,
