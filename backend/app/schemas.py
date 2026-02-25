@@ -453,3 +453,61 @@ class CharacterOccurrenceAnalyticsResponse(BaseModel):
     character_last_appearance_chapter_index: dict[str, int | None]
     character_mentions_per_1000_words: dict[str, float]
     character_dialogue_line_counts: dict[str, int]
+
+
+class ComparisonWorkspaceCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class ComparisonWorkspaceRunLinkRequest(BaseModel):
+    project_id: int = Field(ge=1)
+    run_id: int = Field(ge=1)
+
+
+class ComparisonWorkspaceRunDescriptor(BaseModel):
+    run_id: int
+    project_id: int
+    project_title: str
+    status: str
+    segment_count: int
+    run_config_mode: str
+
+
+class ComparisonWorkspaceResponse(BaseModel):
+    workspace_id: int
+    name: str
+    description: str | None
+    created_at: datetime
+    run_count: int
+    runs: list[ComparisonWorkspaceRunDescriptor]
+
+
+class ComparisonAlignedCurvePoint(BaseModel):
+    normalized_position: float = Field(ge=0.0, le=1.0)
+    value: float
+    source_position: int | None = None
+
+
+class ComparisonAlignedCurveRunDescriptor(BaseModel):
+    run_id: int
+    project_id: int
+    project_title: str
+    status: str
+    points: list[ComparisonAlignedCurvePoint]
+
+
+class ComparisonAlignedCurveMetricDescriptor(BaseModel):
+    metric_id: str
+    metric_label: str
+    value_key: str
+    source_path: list[str]
+    points_per_run: list[ComparisonAlignedCurveRunDescriptor]
+
+
+class ComparisonWorkspaceAlignedCurvesResponse(BaseModel):
+    workspace_id: int
+    workspace_name: str
+    run_count: int
+    aligned_points: int
+    metrics: list[ComparisonAlignedCurveMetricDescriptor]

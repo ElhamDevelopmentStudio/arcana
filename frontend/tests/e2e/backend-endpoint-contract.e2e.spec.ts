@@ -318,6 +318,97 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(runDetailPayload.status).toBe('completed');
     expect(runDetailPayload.config.mode).toBe('author');
 
+    const workspaceCreateResponse = await request.post(`${backendBaseUrl}/api/comparison-workspaces`, {
+      data: { name: uniqueTitle('comparison-workspace') },
+    });
+    expect(workspaceCreateResponse.status()).toBe(201);
+    const workspacePayload = (await workspaceCreateResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+    };
+    expect(workspacePayload.run_count).toBe(0);
+
+    const addRunToWorkspaceResponse = await request.post(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/runs`,
+      {
+        data: {
+          project_id: projectId,
+          run_id: runId,
+        },
+      },
+    );
+    expect(addRunToWorkspaceResponse.status()).toBe(201);
+    const workspaceAfterAddPayload = (await addRunToWorkspaceResponse.json()) as {
+      run_count: number;
+      runs: Array<{ run_id: number }>;
+    };
+    expect(workspaceAfterAddPayload.run_count).toBe(1);
+    expect(workspaceAfterAddPayload.runs).toHaveLength(1);
+    expect(workspaceAfterAddPayload.runs[0].run_id).toBe(runId);
+
+    const getWorkspaceResponse = await request.get(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}`,
+    );
+    expect(getWorkspaceResponse.status()).toBe(200);
+    const getWorkspacePayload = (await getWorkspaceResponse.json()) as { run_count: number; runs: unknown[] };
+    expect(getWorkspacePayload.run_count).toBe(1);
+    expect(Array.isArray(getWorkspacePayload.runs)).toBe(true);
+
+    const alignedCurvesResponse = await request.get(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/aligned-curves`,
+    );
+    expect(alignedCurvesResponse.status()).toBe(200);
+    const alignedCurvesPayload = (await alignedCurvesResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+      aligned_points: number;
+      metrics: Array<{ metric_id: string; points_per_run: Array<{ points: unknown[] }> }>;
+    };
+    expect(alignedCurvesPayload.workspace_id).toBe(workspacePayload.workspace_id);
+    expect(alignedCurvesPayload.run_count).toBe(1);
+    expect(alignedCurvesPayload.aligned_points).toBe(32);
+    expect(alignedCurvesPayload.metrics.length).toBeGreaterThan(0);
+    expect(alignedCurvesPayload.metrics.every((metric) => metric.points_per_run.length === 1)).toBe(true);
+    expect(
+      alignedCurvesPayload.metrics.every((metric) => metric.points_per_run[0].points.length === 32),
+    ).toBe(true);
+
+    const filteredCurvesResponse = await request.get(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/aligned-curves`
+      + '?metrics=chapter_valence_mean,smoothed_tension_curve&aligned_points=7',
+    );
+    expect(filteredCurvesResponse.status()).toBe(200);
+    const filteredCurvesPayload = (await filteredCurvesResponse.json()) as {
+      run_count: number;
+      aligned_points: number;
+      metrics: Array<{ metric_id: string; points_per_run: Array<{ points: unknown[] }> }>;
+    };
+    expect(filteredCurvesPayload.run_count).toBe(1);
+    expect(filteredCurvesPayload.aligned_points).toBe(7);
+    expect(filteredCurvesPayload.metrics).toHaveLength(2);
+    expect(
+      filteredCurvesPayload.metrics.every((metric) => metric.points_per_run.every((run) => run.points.length === 7)),
+    ).toBe(true);
+    expect(filteredCurvesPayload.metrics.map((metric) => metric.metric_id).sort()).toEqual(
+      ['chapter_valence_mean', 'smoothed_tension_curve'].sort(),
+    );
+
+    const invalidMetricResponse = await request.get(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/aligned-curves?metrics=bad_metric`,
+    );
+    expect(invalidMetricResponse.status()).toBe(422);
+
+    const invalidRunAssignmentResponse = await request.post(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/runs`,
+      {
+        data: {
+          project_id: projectId + 10_000,
+          run_id: runId,
+        },
+      },
+    );
+    expect(invalidRunAssignmentResponse.status()).toBe(404);
+
     const analyticsResponse = await request.get(
       `${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/character-analytics`,
     );
