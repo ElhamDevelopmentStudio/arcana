@@ -1,4 +1,11 @@
-from app.services.tagging import detect_dialogue_blocks, detect_narration_blocks, detect_emotion_shift, detect_structure, tag_segment
+from app.services.tagging import (
+    detect_dialogue_blocks,
+    detect_emotion_shift,
+    detect_narration_internal_thought_shift,
+    detect_narration_blocks,
+    detect_structure,
+    tag_segment,
+)
 
 
 def test_detect_dialogue_blocks_recognizes_quotes_and_dash_lines() -> None:
@@ -128,6 +135,31 @@ def test_tag_segment_includes_emotion_shift_field() -> None:
     tags = tag_segment("He smiled as dawn broke, but then the grave threat arrived.")
     assert isinstance(tags["emotion_shift"], dict)
     assert set(tags["emotion_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "evidence"}
+
+
+def test_detect_narration_internal_thought_shift_identifies_transition() -> None:
+    shift = detect_narration_internal_thought_shift("She thought the sun would rise, but the room stayed cold and silent.")
+    assert shift["has_shift"] is True
+    assert shift["from"] is not None
+    assert shift["to"] is not None
+    assert shift["confidence"] > 0
+    assert shift["from"]["type"] in {"internal thought", "narration"}
+    assert shift["to"]["type"] in {"internal thought", "narration"}
+    assert shift["from"]["type"] != shift["to"]["type"]
+
+
+def test_detect_narration_internal_thought_shift_stays_false_without_transition() -> None:
+    shift = detect_narration_internal_thought_shift("She thought the moon had moved, while she considered the path and then thought again.")
+    assert shift["has_shift"] is False
+    assert shift["from"] is None
+    assert shift["to"] is None
+    assert shift["evidence"]["shift_count"] == 0
+
+
+def test_tag_segment_includes_narration_internal_thought_shift_field() -> None:
+    tags = tag_segment("She thought he would return, but the wind grew loud.")
+    assert isinstance(tags["narration_internal_thought_shift"], dict)
+    assert set(tags["narration_internal_thought_shift"].keys()) >= {"has_shift", "from", "to", "confidence", "evidence"}
 
 
 def test_detect_narration_blocks_identifies_outside_dialogue_ranges() -> None:
