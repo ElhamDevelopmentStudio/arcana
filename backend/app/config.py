@@ -1,4 +1,6 @@
 from functools import lru_cache
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +19,7 @@ class Settings(BaseSettings):
         alias="OPENROUTER_BASE_URL",
     )
     enable_epub_ingestion: bool = Field(default=False, alias="ENABLE_EPUB_INGESTION")
+    normalize_quote_style: Literal["straight", "curly"] = Field(default="straight", alias="NORMALIZE_QUOTE_STYLE")
 
 
 @lru_cache(maxsize=1)
