@@ -165,7 +165,7 @@ Definition of done for each task:
 - [x] [VERB-008] Implement case sensitivity toggle.
 - [x] [VERB-009] Implement alias-aware substitution mode.
 - [x] [VERB-010] Emit warnings for ambiguous replacement candidates.
-- [ ] [VERB-011] Support place-name verbalizations.
+- [x] [VERB-011] Support place-name verbalizations.
 - [ ] [VERB-012] Support artifact terminology verbalizations.
 - [ ] [VERB-013] Support invented word verbalizations.
 - [ ] [VERB-014] Add tests for false positive replacement prevention.
