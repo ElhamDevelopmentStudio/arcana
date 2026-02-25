@@ -144,6 +144,7 @@ class CharacterGenderComparisonItem(BaseModel):
     manual_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     inferred_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     comparison: str = Field(min_length=1, max_length=80)
+    contradiction_severity: float = Field(default=0.0, ge=0.0, le=1.0)
     is_contradiction: bool
     requires_review: bool
 

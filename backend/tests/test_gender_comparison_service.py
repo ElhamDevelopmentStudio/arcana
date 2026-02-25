@@ -26,9 +26,11 @@ def test_unit_gender_comparison_flags_conflict_and_matches() -> None:
     kai = next(item for item in payload if item["name"] == "Kai")
 
     assert nia["comparison"] == "conflict"
+    assert nia["contradiction_severity"] == 0.955
     assert nia["is_contradiction"] is True
     assert nia["requires_review"] is True
     assert kai["comparison"] == "match"
+    assert kai["contradiction_severity"] == 0.0
     assert kai["is_contradiction"] is False
     assert kai["requires_review"] is False
 
@@ -57,9 +59,11 @@ def test_unit_gender_comparison_marks_unknown_and_custom_as_not_actionable() -> 
     ray = next(item for item in payload if item["name"] == "Ray")
 
     assert tessa["comparison"] == "manual_unknown"
+    assert tessa["contradiction_severity"] == 0.0
     assert tessa["requires_review"] is False
     assert tessa["is_contradiction"] is False
     assert ray["comparison"] == "manual_custom"
+    assert ray["contradiction_severity"] == 0.0
     assert ray["requires_review"] is False
     assert ray["is_contradiction"] is False
 
