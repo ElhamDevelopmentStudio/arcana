@@ -231,7 +231,7 @@ Definition of done for each task:
 - [x] [VOICE-012] Add tests for every fallback path.
 
 ## 4.9 Audiobook Outputs (Ref: SRS.md §4.9)
-- [ ] [AUD-001] Define audiobook export package manifest structure.
+- [x] [AUD-001] Define audiobook export package manifest structure.
 - [ ] [AUD-002] Include ordered segment list for entire corpus.
 - [ ] [AUD-003] Include phonetic-ready text per segment.
 - [ ] [AUD-004] Include per-segment voice resolution outputs.
