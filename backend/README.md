@@ -59,6 +59,10 @@ Mode persistence behavior:
 - Project creation sets `configuration_snapshot_id` reference (initial format: `project-<id>-config-initial`).
 - Each run snapshots mode in `runs.config_json.mode`.
 - Each run stores immutable defaults at `runs.config_json.mode_profile_snapshot`.
+
+Ingestion title fallback behavior:
+- If project title is a placeholder (`Untitled Project` / `New Project`), TXT ingestion attempts title detection from source text.
+- If no title is detectable from text, ingestion falls back to filename stem, then `Untitled Novel`.
 - Mode catalog includes `mode_profiles` with default run-config values per mode.
 
 ## API Domain Terms

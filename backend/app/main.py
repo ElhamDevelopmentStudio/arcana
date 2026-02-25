@@ -24,7 +24,7 @@ from app.schemas import (
 )
 from app.services.characters import parse_character_file
 from app.services.export import build_run_export
-from app.services.ingestion import decode_text, detect_chapters
+from app.services.ingestion import decode_text, detect_chapters, detect_title_with_fallback
 from app.services.mode_profiles import build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_mode_switch
 from app.services.normalization import normalize_text
@@ -84,6 +84,11 @@ def _merge_selected_modes(existing_modes: list[str] | None, mode: str) -> list[s
 
 def _build_initial_configuration_snapshot_id(project_id: int) -> str:
     return f"project-{project_id}-config-initial"
+
+
+def _project_title_needs_fallback(title: str) -> bool:
+    normalized = title.strip().lower()
+    return normalized in {"", "untitled", "untitled project", "new project"}
 
 
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -167,6 +172,7 @@ def ingest_txt(
 
     payload = file.file.read()
     raw_text = decode_text(payload)
+    detected_title = detect_title_with_fallback(raw_text, filename=filename)
     chapters = detect_chapters(raw_text)
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
@@ -183,6 +189,8 @@ def ingest_txt(
             )
         )
 
+    if _project_title_needs_fallback(project.title):
+        project.title = detected_title
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
