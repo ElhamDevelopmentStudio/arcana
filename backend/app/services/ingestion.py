@@ -47,6 +47,10 @@ def detect_chapters(raw_text: str) -> list[tuple[str, str]]:
     return chapters
 
 
+def contains_explicit_chapter_header(raw_text: str) -> bool:
+    return CHAPTER_HEADER_RE.search(raw_text) is not None
+
+
 def detect_title_with_fallback(raw_text: str, filename: str | None = None) -> str:
     search_window = raw_text
     first_chapter_match = CHAPTER_HEADER_RE.search(raw_text)
@@ -139,3 +143,16 @@ def build_encoding_warning(source: str, encoding: str, confidence: float) -> dic
         "level": "warning",
         "message": message,
     }
+
+
+def extract_single_append_chapter(
+    chapters: list[tuple[str, str]],
+    fallback_title: str,
+) -> tuple[str, str]:
+    non_empty = [(title.strip(), content.strip()) for title, content in chapters if content.strip()]
+    if len(non_empty) != 1:
+        raise ValueError("Append chapter endpoint requires exactly one non-empty chapter in the uploaded file")
+
+    title, content = non_empty[0]
+    normalized_title = title or fallback_title
+    return (normalized_title, content)

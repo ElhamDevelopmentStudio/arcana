@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import {
+  useAppendChapterMutation,
   useCreateProjectMutation,
   useIngestChapterDirectoryMutation,
   useIngestEpubMutation,
@@ -30,6 +31,7 @@ export function ProjectNewPage() {
   const [directoryFiles, setDirectoryFiles] = useState<File[]>([]);
   const [markdownFile, setMarkdownFile] = useState<File | null>(null);
   const [epubFile, setEpubFile] = useState<File | null>(null);
+  const [appendChapterFile, setAppendChapterFile] = useState<File | null>(null);
 
   const projectId = useWorkspaceStore((state) => state.projectId);
   const chapterCount = useWorkspaceStore((state) => state.chapterCount);
@@ -41,13 +43,15 @@ export function ProjectNewPage() {
   const ingestDirectoryMutation = useIngestChapterDirectoryMutation(projectId);
   const ingestMarkdownMutation = useIngestMarkdownMutation(projectId);
   const ingestEpubMutation = useIngestEpubMutation(projectId);
+  const appendChapterMutation = useAppendChapterMutation(projectId);
 
   const isBusy =
     createProjectMutation.isMutating ||
     ingestTxtMutation.isMutating ||
     ingestDirectoryMutation.isMutating ||
     ingestMarkdownMutation.isMutating ||
-    ingestEpubMutation.isMutating;
+    ingestEpubMutation.isMutating ||
+    appendChapterMutation.isMutating;
   const canContinue = projectId !== null && chapterCount !== null;
 
   async function handleCreateProject(event: FormEvent<HTMLFormElement>) {
@@ -142,6 +146,26 @@ export function ProjectNewPage() {
     }
 
     toast.info('This ingestion source is not available yet.');
+  }
+
+  async function handleAppendChapter() {
+    if (projectId === null) {
+      toast.error('Create a project first.');
+      return;
+    }
+    if (!appendChapterFile) {
+      toast.error('Choose a chapter TXT file before append.');
+      return;
+    }
+
+    try {
+      const response = await appendChapterMutation.trigger({ file: appendChapterFile });
+      setChapterCount(response.chapter_count);
+      setAppendChapterFile(null);
+      toast.success(`Chapter appended. Total chapters: ${response.chapter_count}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Append chapter failed.');
+    }
   }
 
   return (
@@ -278,6 +302,26 @@ export function ProjectNewPage() {
                 <p className="text-sm text-muted-foreground" data-testid="chapter-count-state">
                   {chapterCount !== null ? `Detected chapters: ${chapterCount}` : 'Detected chapters: not available yet'}
                 </p>
+                <div className="mt-3 rounded-xl border border-border/70 bg-muted/20 p-3">
+                  <p className="text-sm font-medium text-foreground">Append one chapter</p>
+                  <p className="text-xs text-muted-foreground">Use this after initial ingestion for incremental chapter additions.</p>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Input
+                      accept=".txt"
+                      data-testid="append-chapter-upload-input"
+                      onChange={(event) => setAppendChapterFile(event.target.files?.[0] ?? null)}
+                      type="file"
+                    />
+                    <Button
+                      data-testid="append-chapter-button"
+                      disabled={isBusy || projectId === null}
+                      onClick={handleAppendChapter}
+                      type="button"
+                    >
+                      {appendChapterMutation.isMutating ? 'Appending...' : 'Append Chapter'}
+                    </Button>
+                  </div>
+                </div>
                 {canContinue ? <p className="text-sm text-primary">Ready to continue.</p> : null}
               </div>
             </form>

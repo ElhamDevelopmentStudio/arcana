@@ -30,11 +30,13 @@ from app.services.ingestion import (
     build_encoding_warning,
     chapter_filename_sort_key,
     chapter_title_from_filename,
+    contains_explicit_chapter_header,
     decode_text,
     decode_text_with_metadata,
     detect_chapters,
     detect_title_with_fallback,
     detect_text_encoding,
+    extract_single_append_chapter,
     normalize_markdown_for_ingestion,
     to_internal_utf8,
 )
@@ -116,6 +118,18 @@ def _update_project_ingestion_log(
     log_json["source"] = source
     log_json["updated_at"] = datetime.now(timezone.utc).isoformat()
     project.ingestion_log_json = log_json
+
+
+def _get_next_chapter_index(session: Session, project_id: int) -> int:
+    last_chapter = (
+        session.query(Chapter)
+        .filter(Chapter.project_id == project_id)
+        .order_by(Chapter.chapter_index.desc())
+        .first()
+    )
+    if last_chapter is None:
+        return 1
+    return int(last_chapter.chapter_index) + 1
 
 
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -408,6 +422,56 @@ def ingest_chapters_dir(
     session.commit()
 
     return IngestResponse(project_id=project_id, chapter_count=len(chapter_rows))
+
+
+@app.post(
+    "/api/projects/{project_id}/ingest/append-chapter",
+    response_model=IngestResponse,
+    status_code=status.HTTP_200_OK,
+)
+def append_chapter(
+    project_id: int,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+) -> IngestResponse:
+    project = _get_project_or_404(session, project_id)
+
+    filename = file.filename or ""
+    if not filename.lower().endswith(".txt"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Append chapter only supports .txt files")
+
+    payload = file.file.read()
+    raw_text, encoding, confidence = decode_text_with_metadata(payload)
+    has_explicit_header = contains_explicit_chapter_header(raw_text)
+    parsed_chapters = detect_chapters(raw_text)
+    fallback_title = chapter_title_from_filename(filename, chapter_index=_get_next_chapter_index(session, project_id))
+    try:
+        parsed_title, parsed_content = extract_single_append_chapter(parsed_chapters, fallback_title=fallback_title)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    next_chapter_index = _get_next_chapter_index(session, project_id)
+    chapter_title = to_internal_utf8(parsed_title if has_explicit_header else fallback_title)
+    chapter_content = to_internal_utf8(parsed_content)
+    session.add(
+        Chapter(
+            project_id=project_id,
+            chapter_index=next_chapter_index,
+            chapter_title=chapter_title,
+            raw_text=chapter_content,
+            normalized_text=normalize_text(chapter_content),
+        )
+    )
+
+    warning = build_encoding_warning("append-chapter", encoding, confidence)
+    warnings = [warning] if warning is not None else []
+    _update_project_ingestion_log(project, source="append-chapter", warnings=warnings)
+    project.ingestion_timestamp = datetime.now(timezone.utc)
+    session.add(project)
+    session.commit()
+
+    chapter_count = session.query(Chapter).filter(Chapter.project_id == project_id).count()
+    return IngestResponse(project_id=project_id, chapter_count=chapter_count)
 
 
 @app.post(

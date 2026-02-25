@@ -47,6 +47,7 @@ python scripts_run_migration.py
 - `POST /api/projects/{project_id}/ingest/chapters-dir`
 - `POST /api/projects/{project_id}/ingest/markdown`
 - `POST /api/projects/{project_id}/ingest/epub`
+- `POST /api/projects/{project_id}/ingest/append-chapter`
 - `POST /api/projects/{project_id}/characters/import`
 - `PUT /api/projects/{project_id}/voices`
 - `POST /api/projects/{project_id}/runs`
@@ -69,6 +70,7 @@ Ingestion title fallback behavior:
 - Chapter-directory ingestion accepts multi-file `.txt` uploads and ingests files in natural filename order.
 - Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.
 - EPUB ingestion is toggle-controlled (`ENABLE_EPUB_INGESTION`) and currently wired to a pluggable parser stub.
+- Incremental append ingestion supports one `.txt` chapter payload at a time (`/ingest/append-chapter`) without replacing existing chapters.
 - Text ingestion performs encoding detection before decode (BOM + UTF-8/UTF-16 heuristics + cp1252 fallback).
 - All ingestion inputs are normalized to UTF-8-safe internal strings before chapter persistence (`chapter_title`, `raw_text`).
 - Encoding anomalies are persisted in `projects.ingestion_log_json.warnings` and copied into `runs.config_json.ingestion_warnings`.

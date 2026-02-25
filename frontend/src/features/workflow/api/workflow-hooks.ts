@@ -96,6 +96,18 @@ export function useIngestEpubMutation(projectId: number | null) {
   );
 }
 
+export function useAppendChapterMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['append-chapter', projectId] : null,
+    async (_, { arg }: { arg: { file: File } }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before append ingestion.');
+      }
+      return nipeApiClient.appendChapter(projectId, arg.file);
+    },
+  );
+}
+
 export function useImportCharactersMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['import-characters', projectId] : null,

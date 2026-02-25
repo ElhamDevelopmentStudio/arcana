@@ -133,6 +133,21 @@ export class NipeApiClient {
     }
   }
 
+  async appendChapter(projectId: number, file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/ingest/append-chapter`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return ingestResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async importCharacters(projectId: number, file: File) {
     const formData = new FormData();
     formData.append('file', file);

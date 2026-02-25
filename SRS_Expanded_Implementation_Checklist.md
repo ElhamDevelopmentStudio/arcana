@@ -83,7 +83,7 @@ Definition of done for each task:
 - [x] [ING-009] Implement encoding detection before decode.
 - [x] [ING-010] Convert all accepted content to UTF-8 internal form.
 - [x] [ING-011] Persist encoding warnings in run/project logs.
-- [ ] [ING-012] Add append-chapter endpoint for incremental ingestion.
+- [x] [ING-012] Add append-chapter endpoint for incremental ingestion.
 - [ ] [ING-013] Implement chapter overlap/duplicate detector on append.
 - [ ] [ING-014] Add “affected range” calculator for delta reprocessing.
 - [ ] [ING-015] Add ingestion error types for unsupported format/encoding/missing chapters.

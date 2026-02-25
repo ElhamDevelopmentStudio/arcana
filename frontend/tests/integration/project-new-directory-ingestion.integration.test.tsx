@@ -8,6 +8,7 @@ const ingestTxtTrigger = vi.fn();
 const ingestDirectoryTrigger = vi.fn();
 const ingestMarkdownTrigger = vi.fn();
 const ingestEpubTrigger = vi.fn();
+const appendChapterTrigger = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useCreateProjectMutation: () => ({
@@ -29,6 +30,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useIngestEpubMutation: () => ({
     isMutating: false,
     trigger: ingestEpubTrigger,
+  }),
+  useAppendChapterMutation: () => ({
+    isMutating: false,
+    trigger: appendChapterTrigger,
   }),
 }));
 
@@ -60,6 +65,7 @@ describe('project new page directory ingestion', () => {
     ingestDirectoryTrigger.mockReset();
     ingestMarkdownTrigger.mockReset();
     ingestEpubTrigger.mockReset();
+    appendChapterTrigger.mockReset();
     createProjectTrigger.mockResolvedValue({
       id: 101,
       title: 'Shadow Slave PoC',
@@ -80,6 +86,10 @@ describe('project new page directory ingestion', () => {
     ingestEpubTrigger.mockResolvedValue({
       project_id: 101,
       chapter_count: 2,
+    });
+    appendChapterTrigger.mockResolvedValue({
+      project_id: 101,
+      chapter_count: 3,
     });
   });
 
@@ -138,5 +148,21 @@ describe('project new page directory ingestion', () => {
     expect(ingestEpubTrigger).toHaveBeenCalledTimes(1);
     expect(ingestEpubTrigger).toHaveBeenCalledWith({ file: epubFile });
     expect(screen.getByTestId('chapter-count-state')).toHaveTextContent('Detected chapters: 2');
+  });
+
+  it('uses append chapter mutation for incremental chapter ingestion', async () => {
+    const user = userEvent.setup();
+    renderProjectNewPage();
+
+    await user.click(screen.getByTestId('create-project-button'));
+
+    const appendFile = new File(['Bonus chapter content'], 'chapter_3.txt', { type: 'text/plain' });
+    await user.upload(screen.getByTestId('append-chapter-upload-input'), appendFile);
+
+    await user.click(screen.getByTestId('append-chapter-button'));
+
+    expect(appendChapterTrigger).toHaveBeenCalledTimes(1);
+    expect(appendChapterTrigger).toHaveBeenCalledWith({ file: appendFile });
+    expect(screen.getByTestId('chapter-count-state')).toHaveTextContent('Detected chapters: 3');
   });
 });
