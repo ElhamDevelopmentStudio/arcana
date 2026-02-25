@@ -28,6 +28,7 @@ from app.services.epub_ingestion import extract_epub_chapters
 from app.services.export import build_run_export
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
+    build_duplicate_title_dedup_actions,
     build_duplicate_title_warnings,
     build_encoding_warning,
     build_internal_chapter_id,
@@ -117,12 +118,17 @@ def _update_project_ingestion_log(
     project: Project,
     source: str,
     warnings: list[dict[str, object]],
+    dedup_actions: list[dict[str, object]] | None = None,
     affected_range: dict[str, int] | None = None,
 ) -> None:
     log_json = dict(project.ingestion_log_json or {})
     existing_warnings = list(log_json.get("warnings", []))
     existing_warnings.extend(warnings)
     log_json["warnings"] = existing_warnings
+    if dedup_actions:
+        existing_dedup_actions = list(log_json.get("dedup_actions", []))
+        existing_dedup_actions.extend(dedup_actions)
+        log_json["dedup_actions"] = existing_dedup_actions
     log_json["source"] = source
     if affected_range is not None:
         log_json["affected_range"] = affected_range
@@ -246,6 +252,7 @@ def ingest_txt(
     if txt_warning is not None:
         warnings.append(txt_warning)
     warnings.extend(build_duplicate_title_warnings("txt", chapters))
+    dedup_actions = build_duplicate_title_dedup_actions("txt", chapters)
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -266,7 +273,7 @@ def ingest_txt(
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
-    _update_project_ingestion_log(project, source="txt", warnings=warnings)
+    _update_project_ingestion_log(project, source="txt", warnings=warnings, dedup_actions=dedup_actions)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -317,6 +324,7 @@ def ingest_markdown(
     if markdown_warning is not None:
         warnings.append(markdown_warning)
     warnings.extend(build_duplicate_title_warnings("markdown", chapters))
+    dedup_actions = build_duplicate_title_dedup_actions("markdown", chapters)
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -336,7 +344,7 @@ def ingest_markdown(
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
-    _update_project_ingestion_log(project, source="markdown", warnings=warnings)
+    _update_project_ingestion_log(project, source="markdown", warnings=warnings, dedup_actions=dedup_actions)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -409,6 +417,7 @@ def ingest_epub(
         project,
         source="epub",
         warnings=build_duplicate_title_warnings("epub", chapters),
+        dedup_actions=build_duplicate_title_dedup_actions("epub", chapters),
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
@@ -477,6 +486,7 @@ def ingest_chapters_dir(
         for chapter_title, chapter_content in detect_chapters_from_file_boundaries(file_boundaries)
     ]
     warnings.extend(build_duplicate_title_warnings("chapters-dir", chapter_rows))
+    dedup_actions = build_duplicate_title_dedup_actions("chapters-dir", chapter_rows)
 
     if not chapter_rows:
         raise make_ingestion_http_error(
@@ -501,7 +511,7 @@ def ingest_chapters_dir(
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(chapter_rows[0][0])
-    _update_project_ingestion_log(project, source="chapters-dir", warnings=warnings)
+    _update_project_ingestion_log(project, source="chapters-dir", warnings=warnings, dedup_actions=dedup_actions)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -587,6 +597,7 @@ def append_chapter(
     warnings: list[dict[str, object]] = [warning] if warning is not None else []
     combined_titles = [(row[1], row[2]) for row in existing_chapters] + [(chapter_title, chapter_content)]
     warnings.extend(build_duplicate_title_warnings("append-chapter", combined_titles))
+    dedup_actions = build_duplicate_title_dedup_actions("append-chapter", combined_titles)
     affected_range = calculate_delta_affected_range(
         changed_chapter_indices=[next_chapter_index],
         total_chapter_count=len(existing_chapters) + 1,
@@ -595,6 +606,7 @@ def append_chapter(
         project,
         source="append-chapter",
         warnings=warnings,
+        dedup_actions=dedup_actions,
         affected_range=affected_range,
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)

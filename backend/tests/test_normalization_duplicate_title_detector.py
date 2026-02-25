@@ -10,7 +10,7 @@ from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
 from app.models import Project
-from app.services.ingestion import detect_duplicate_chapter_titles
+from app.services.ingestion import build_duplicate_title_dedup_actions, detect_duplicate_chapter_titles
 
 
 def setup_module() -> None:
@@ -41,6 +41,21 @@ def test_unit_detect_duplicate_chapter_titles_detects_case_insensitive_duplicate
     assert duplicates[0]["occurrences"] == [1, 2]
 
 
+def test_unit_build_duplicate_title_dedup_actions_emits_stable_occurrence_keys() -> None:
+    actions = build_duplicate_title_dedup_actions(
+        "txt",
+        [
+            ("Chapter 1", "A"),
+            ("chapter 1", "B"),
+        ],
+    )
+    assert len(actions) == 1
+    assert actions[0]["type"] == "chapter_title_dedup_action"
+    assert actions[0]["canonical_occurrence"] == 1
+    assert actions[0]["duplicate_occurrences"] == [2]
+    assert actions[0]["dedup_keys"] == ["chapter 1__01", "chapter 1__02"]
+
+
 def test_integration_txt_ingestion_logs_duplicate_title_warnings() -> None:
     text = (
         "Chapter 1\n"
@@ -63,7 +78,9 @@ def test_integration_txt_ingestion_logs_duplicate_title_warnings() -> None:
     try:
         project = session.query(Project).filter(Project.id == project_id).one()
         warnings = project.ingestion_log_json.get("warnings", [])
+        dedup_actions = project.ingestion_log_json.get("dedup_actions", [])
         assert any(item.get("type") == "duplicate_chapter_title" for item in warnings)
+        assert any(item.get("type") == "chapter_title_dedup_action" for item in dedup_actions)
     finally:
         session.close()
 
@@ -91,8 +108,11 @@ def test_e2e_append_chapter_logs_duplicate_title_warning_without_blocking() -> N
     try:
         project = session.query(Project).filter(Project.id == project_id).one()
         warnings = project.ingestion_log_json.get("warnings", [])
+        dedup_actions = project.ingestion_log_json.get("dedup_actions", [])
         duplicates = [item for item in warnings if item.get("type") == "duplicate_chapter_title"]
+        dedup_logs = [item for item in dedup_actions if item.get("type") == "chapter_title_dedup_action"]
         assert duplicates
+        assert dedup_logs
     finally:
         session.close()
 
@@ -119,6 +139,8 @@ def test_regression_unique_titles_do_not_emit_duplicate_title_warning() -> None:
     try:
         project = session.query(Project).filter(Project.id == project_id).one()
         warnings = project.ingestion_log_json.get("warnings", [])
+        dedup_actions = project.ingestion_log_json.get("dedup_actions", [])
         assert not any(item.get("type") == "duplicate_chapter_title" for item in warnings)
+        assert dedup_actions == []
     finally:
         session.close()

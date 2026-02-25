@@ -341,3 +341,27 @@ def build_duplicate_title_warnings(source: str, chapters: list[tuple[str, str]])
             }
         )
     return warnings
+
+
+def build_duplicate_title_dedup_actions(source: str, chapters: list[tuple[str, str]]) -> list[dict[str, object]]:
+    actions: list[dict[str, object]] = []
+    for duplicate in detect_duplicate_chapter_titles(chapters):
+        title = str(duplicate["title"])
+        occurrences = list(duplicate["occurrences"]) if isinstance(duplicate["occurrences"], list) else []
+        if not occurrences:
+            continue
+        normalized_title = _normalize_for_overlap(title) or "untitled"
+        dedup_keys = [f"{normalized_title}__{position:02d}" for position in range(1, len(occurrences) + 1)]
+        actions.append(
+            {
+                "source": source,
+                "type": "chapter_title_dedup_action",
+                "title": title,
+                "normalized_title": normalized_title,
+                "canonical_occurrence": occurrences[0],
+                "duplicate_occurrences": occurrences[1:],
+                "dedup_keys": dedup_keys,
+                "message": f"Prepared dedup keys for duplicate chapter title '{title}'",
+            }
+        )
+    return actions
