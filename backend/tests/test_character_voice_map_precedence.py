@@ -111,6 +111,20 @@ def _run_and_get_voice_ids(project_id: int, client: TestClient) -> list[str]:
     return [segment["voice_id"] for segment in export_resp.json()["segments"]]
 
 
+def _run_and_get_segment_payloads(project_id: int, client: TestClient) -> list[dict]:
+    run_resp = client.post(
+        f"/api/projects/{project_id}/runs",
+        json={"allow_unfinalized_character_map": True},
+    )
+    assert run_resp.status_code == 200
+    run_id = run_resp.json()["run_id"]
+
+    export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+    assert export_resp.status_code == 200
+
+    return export_resp.json()["segments"]
+
+
 def test_integration_run_prefers_voice_map_voice_id_over_legacy_field() -> None:
     with TestClient(app) as client:
         project_id = _create_project_with_dialogue_and_character(client=client, character_name="Lena")
@@ -178,3 +192,26 @@ def test_integration_run_uses_character_map_voice_override_field() -> None:
 
     assert segment_voice_ids
     assert any(voice_id == expected_voice.strip() for voice_id in segment_voice_ids)
+
+
+def test_integration_dialogue_segments_emit_resolved_voice_output() -> None:
+    resolved_voice = "resolved_voice_for_test"
+    with TestClient(app) as client:
+        project_id = _create_project_with_dialogue_and_character(client=client, character_name="Iris")
+        _set_character_voice(
+            project_id=project_id,
+            character_name="Iris",
+            legacy_voice="legacy_iris_voice",
+            map_voice=resolved_voice,
+        )
+
+        segments = _run_and_get_segment_payloads(project_id=project_id, client=client)
+        dialogue_segments = [segment for segment in segments if segment["type"] == "dialogue"]
+        assert dialogue_segments
+
+        first_dialogue = dialogue_segments[0]
+        assert first_dialogue["voice_id"] == resolved_voice
+        assert first_dialogue["resolved_voice_id"] == resolved_voice
+        assert isinstance(first_dialogue["speaker_id"], int)
+        assert first_dialogue["speaker_id"] > 0
+        assert first_dialogue["gender"] == "male"
