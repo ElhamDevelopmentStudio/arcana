@@ -19,7 +19,7 @@ ENCODING_BOM_MAP: tuple[tuple[bytes, str, float], ...] = (
 
 def decode_text(raw_bytes: bytes) -> str:
     encoding, _confidence = detect_text_encoding(raw_bytes)
-    return raw_bytes.decode(encoding, errors="replace")
+    return to_internal_utf8(raw_bytes.decode(encoding, errors="replace"))
 
 
 def detect_chapters(raw_text: str) -> list[tuple[str, str]]:
@@ -94,7 +94,7 @@ def normalize_markdown_for_ingestion(markdown_text: str) -> str:
     normalized = MARKDOWN_HEADING_RE.sub("", normalized)
     normalized = MARKDOWN_LINK_RE.sub(r"\1", normalized)
     normalized = normalized.replace("**", "").replace("__", "").replace("*", "").replace("`", "")
-    return normalized.strip()
+    return to_internal_utf8(normalized.strip())
 
 
 def detect_text_encoding(raw_bytes: bytes) -> tuple[str, float]:
@@ -112,3 +112,7 @@ def detect_text_encoding(raw_bytes: bytes) -> tuple[str, float]:
         pass
 
     return ("cp1252", 0.4)
+
+
+def to_internal_utf8(value: str) -> str:
+    return value.encode("utf-8", errors="replace").decode("utf-8", errors="replace")

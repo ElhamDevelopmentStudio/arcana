@@ -33,6 +33,7 @@ from app.services.ingestion import (
     detect_chapters,
     detect_title_with_fallback,
     normalize_markdown_for_ingestion,
+    to_internal_utf8,
 )
 from app.services.mode_profiles import build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_mode_switch
@@ -187,19 +188,21 @@ def ingest_txt(
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
     for idx, (title, content) in enumerate(chapters, start=1):
-        normalized = normalize_text(content)
+        chapter_title = to_internal_utf8(title)
+        chapter_content = to_internal_utf8(content)
+        normalized = normalize_text(chapter_content)
         session.add(
             Chapter(
                 project_id=project_id,
                 chapter_index=idx,
-                chapter_title=title,
-                raw_text=content,
+                chapter_title=chapter_title,
+                raw_text=chapter_content,
                 normalized_text=normalized,
             )
         )
 
     if _project_title_needs_fallback(project.title):
-        project.title = detected_title
+        project.title = to_internal_utf8(detected_title)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -233,18 +236,20 @@ def ingest_markdown(
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
     for chapter_index, (chapter_title, chapter_content) in enumerate(chapters, start=1):
+        stored_chapter_title = to_internal_utf8(chapter_title)
+        stored_chapter_content = to_internal_utf8(chapter_content)
         session.add(
             Chapter(
                 project_id=project_id,
                 chapter_index=chapter_index,
-                chapter_title=chapter_title,
-                raw_text=chapter_content,
-                normalized_text=normalize_text(chapter_content),
+                chapter_title=stored_chapter_title,
+                raw_text=stored_chapter_content,
+                normalized_text=normalize_text(stored_chapter_content),
             )
         )
 
     if _project_title_needs_fallback(project.title):
-        project.title = detected_title
+        project.title = to_internal_utf8(detected_title)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -286,8 +291,8 @@ def ingest_epub(
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
     for chapter_index, (chapter_title, chapter_content) in enumerate(chapters, start=1):
-        title = chapter_title.strip() or f"Chapter {chapter_index}"
-        content = chapter_content.strip()
+        title = to_internal_utf8(chapter_title.strip() or f"Chapter {chapter_index}")
+        content = to_internal_utf8(chapter_content.strip())
         if not content:
             continue
         session.add(
@@ -301,7 +306,9 @@ def ingest_epub(
         )
 
     if _project_title_needs_fallback(project.title):
-        project.title = chapters[0][0].strip() or detect_title_with_fallback("", filename=filename)
+        project.title = to_internal_utf8(
+            chapters[0][0].strip() or detect_title_with_fallback("", filename=filename)
+        )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -337,7 +344,10 @@ def ingest_chapters_dir(
             continue
 
         chapter_rows.append(
-            (chapter_title_from_filename(filename, chapter_index=len(chapter_rows) + 1), content)
+            (
+                to_internal_utf8(chapter_title_from_filename(filename, chapter_index=len(chapter_rows) + 1)),
+                to_internal_utf8(content),
+            )
         )
 
     if not chapter_rows:
@@ -357,7 +367,7 @@ def ingest_chapters_dir(
         )
 
     if _project_title_needs_fallback(project.title):
-        project.title = chapter_rows[0][0]
+        project.title = to_internal_utf8(chapter_rows[0][0])
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()

@@ -70,6 +70,7 @@ Ingestion title fallback behavior:
 - Markdown ingestion accepts `.md`/`.markdown` files and normalizes markdown syntax before chapter detection.
 - EPUB ingestion is toggle-controlled (`ENABLE_EPUB_INGESTION`) and currently wired to a pluggable parser stub.
 - Text ingestion performs encoding detection before decode (BOM + UTF-8/UTF-16 heuristics + cp1252 fallback).
+- All ingestion inputs are normalized to UTF-8-safe internal strings before chapter persistence (`chapter_title`, `raw_text`).
 - Mode catalog includes `mode_profiles` with default run-config values per mode.
 
 ## API Domain Terms
