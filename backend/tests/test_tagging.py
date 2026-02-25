@@ -1,4 +1,4 @@
-from app.services.tagging import detect_dialogue_blocks, detect_structure, tag_segment
+from app.services.tagging import detect_dialogue_blocks, detect_narration_blocks, detect_structure, tag_segment
 
 
 def test_detect_dialogue_blocks_recognizes_quotes_and_dash_lines() -> None:
@@ -21,3 +21,12 @@ def test_tag_segment_includes_dialogue_blocks_for_traceability() -> None:
     tags = tag_segment('"Wait," she asked.')
     assert tags["type"] == "dialogue"
     assert tags["dialogue_blocks"] == [{"type": "dialogue", "text": '"Wait," she asked.'}]
+    assert tags["narration_blocks"] == []
+
+
+def test_detect_narration_blocks_identifies_outside_dialogue_ranges() -> None:
+    text = '"She spoke," said Alex.\nThen silence returned.\n- Another reply.'
+    blocks = detect_narration_blocks(text)
+    assert blocks == [
+        {"type": "narration", "text": "Then silence returned."},
+    ]
