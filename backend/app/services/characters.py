@@ -63,17 +63,36 @@ def _parse_confidence(row: dict[str, str], row_number: int) -> float:
     return round(confidence, 4)
 
 
+def _resolve_field(row: dict[str, str], field_names: list[str]) -> str:
+    for field in field_names:
+        value = row.get(field)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
 def _validate_row(row: dict[str, str], row_number: int) -> ParsedCharacter:
-    required_fields = ["name", "verbalized_form", "gender"]
-    missing = [field for field in required_fields if not str(row.get(field, "")).strip()]
+    name = _resolve_field(row, ["name"])
+    verbalized_form = _resolve_field(row, ["verbalized_form", "verbalized"])
+    gender = _resolve_field(row, ["gender"])
+
+    required_fields = [
+        ("name", name),
+        ("verbalized_form", verbalized_form),
+        ("gender", gender),
+    ]
+    missing = [field_name for field_name, value in required_fields if not value]
     if missing:
         missing_csv = ", ".join(missing)
         raise ValueError(f"Row {row_number} is missing required fields: {missing_csv}")
 
     return ParsedCharacter(
-        name=row["name"].strip(),
-        verbalized_form=row["verbalized_form"].strip(),
-        gender=row["gender"].strip().lower(),
+        name=name,
+        verbalized_form=verbalized_form,
+        gender=gender.strip().lower(),
         aliases=_parse_aliases(row.get("aliases")),
         notes=row.get("notes") and str(row["notes"]).strip() or None,
         source=str(row.get("source") or "user_import").strip() or "user_import",
