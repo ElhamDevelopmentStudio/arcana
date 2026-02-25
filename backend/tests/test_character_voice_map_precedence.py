@@ -302,6 +302,13 @@ def test_integration_exported_segments_include_gender_used_in_resolution() -> No
         assert dialogue_segments
         assert dialogue_segments[0]["gender"] == "male"
 
+        confidence = dialogue_segments[0].get("confidence", {})
+        assert isinstance(confidence, dict)
+        assert "gender" in confidence
+        assert "speaker" in confidence
+        assert isinstance(confidence["gender"], (int, float))
+        assert isinstance(confidence["speaker"], (int, float))
+
 
 def test_integration_gender_resolution_defaults_to_unknown_for_unmapped_speaker() -> None:
     text = 'Chapter 1\n"Hello there," Phantom said.'
@@ -332,3 +339,8 @@ def test_integration_gender_resolution_defaults_to_unknown_for_unmapped_speaker(
         first_dialogue = [segment for segment in segments if segment.get("type") == "dialogue"][0]
         assert first_dialogue["speaker_id"] is None
         assert first_dialogue["gender"] == "unknown"
+
+        confidence = first_dialogue.get("confidence", {})
+        assert isinstance(confidence, dict)
+        assert 0.0 <= float(confidence["gender"]) <= 1.0
+        assert 0.0 <= float(confidence["speaker"]) <= 1.0
