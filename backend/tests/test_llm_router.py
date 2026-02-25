@@ -110,3 +110,43 @@ def test_llm_router_call_hits_provider_base_url_and_model(monkeypatch: object) -
     assert response.provider_used == "siliconflow"
     assert observed["url"] == "https://api.siliconflow.cn/v1/chat/completions"
     assert observed["headers"]["Authorization"] == "Bearer siliconflow-key"
+
+
+def test_llm_router_extracts_rate_limit_reset_timestamp_from_headers(monkeypatch: object) -> None:
+    response = llm_router.LLMRouter("https://api.example.com")
+
+    class DummyResponse:
+        status_code = 429
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {"retry-after": "60", "x-ratelimit-reset": "1735689600"}
+
+        def raise_for_status(self) -> None:
+            raise RuntimeError("should not reach")
+
+        def json(self) -> dict:
+            return {}
+
+    def fake_post(_url: str, *args: object, **kwargs: object) -> DummyResponse:
+        return DummyResponse()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+    call = response.call(
+        request=llm_router.LLMRequest(
+            request_id="rate-limit-reset-test",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="The wind shifted.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="rate-limit-reset-test",
+        ),
+        provider_name="openrouter",
+        model_identifier="openai/gpt-4o-mini",
+        api_key="api-key",
+    )
+
+    assert call.success_flag is False
+    assert call.error_code == "rate_limit"
+    assert call.rate_limit_reset_at is not None
+    assert call.rate_limit_reset_at.timestamp() == 1735689600

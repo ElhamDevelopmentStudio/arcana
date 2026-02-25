@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -67,6 +67,7 @@ def test_pipeline_llm_probe_persists_token_usage_estimate(monkeypatch: object) -
                     token_usage_estimate=512,
                     success_flag=True,
                     error_code=None,
+                    rate_limit_reset_at=None,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
@@ -129,6 +130,7 @@ def test_pipeline_rate_limit_updates_provider_quota_status(monkeypatch: object) 
                     token_usage_estimate=None,
                     success_flag=False,
                     error_code="rate_limit",
+                    rate_limit_reset_at=None,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
@@ -143,7 +145,7 @@ def test_pipeline_rate_limit_updates_provider_quota_status(monkeypatch: object) 
             session=session,
             project=project,
             run=run,
-        run_config={"provider_name": "siliconflow", "max_calls_per_day": 10},
+            run_config={"provider_name": "siliconflow", "max_calls_per_day": 10},
             input_text="The storm arrived before the dawn.",
         )
 
@@ -152,6 +154,69 @@ def test_pipeline_rate_limit_updates_provider_quota_status(monkeypatch: object) 
         assert quota.last_rate_limit_status == "provider_rate_limited"
         assert quota.last_rate_limit_status_at is not None
         assert quota.last_successful_call_at is None
+        assert quota.last_rate_limit_reset_at is None
+    finally:
+        session.close()
+
+
+def test_pipeline_rate_limit_reset_timestamp_is_saved_when_available(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Provider Rate Limit Reset Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        reset_at = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(minutes=1)
+
+        class _RateLimitedLLMRouterWithReset:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="rate_limit",
+                    rate_limit_reset_at=reset_at,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "api-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _RateLimitedLLMRouterWithReset)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="The storm arrived before the dawn.",
+        )
+
+        quota = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").one()
+        assert int(quota.last_rate_limit_reset_at.replace(tzinfo=timezone.utc).timestamp()) == int(reset_at.timestamp())
     finally:
         session.close()
 

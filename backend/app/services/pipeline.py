@@ -26,6 +26,7 @@ from app.services.quota import (
     consume_quota,
     mark_provider_available,
     mark_provider_rate_limited,
+    mark_provider_reset_at,
     mark_provider_successful_call,
 )
 from app.services.segmentation import segment_text_with_parent_paragraph
@@ -555,6 +556,11 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         mark_provider_successful_call(session=session, provider=provider)
     elif response.error_code == "rate_limit":
         mark_provider_rate_limited(session=session, provider=provider)
+        mark_provider_reset_at(
+            session=session,
+            provider=provider,
+            reset_at=response.rate_limit_reset_at,
+        )
 
     session.add(
         LLMCall(
