@@ -188,7 +188,7 @@ Definition of done for each task:
 - [x] [SEG-015] Add metadata: phonetic-ready text.
 - [x] [SEG-016] Add metadata: parent paragraph reference.
 - [x] [SEG-017] Add metadata: parent sentence reference.
-- [ ] [SEG-018] Implement chapter reconstruction from segments.
+- [x] [SEG-018] Implement chapter reconstruction from segments.
 - [ ] [SEG-019] Implement corpus reconstruction from chapter artifacts.
 - [ ] [SEG-020] Add round-trip audit test (reconstructed text consistency).
 
