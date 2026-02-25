@@ -134,7 +134,7 @@ Definition of done for each task:
 - [x] [CHAR-019] Compute mentions per 1,000 words metric.
 - [x] [CHAR-020] Compute dialogue line counts where speaker attribution exists.
 - [x] [CHAR-021] Add API endpoint for character occurrence analytics.
-- [ ] [CHAR-022] Add tests for merge, alias conflict, and finalize workflow.
+- [x] [CHAR-022] Add tests for merge, alias conflict, and finalize workflow.
 
 ## 4.4 Gender Tagging and Ambiguity (Ref: SRS.md §4.4)
 - [ ] [GEN-001] Restrict gender values to `male/female/neutral/unknown/custom`.
