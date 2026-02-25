@@ -1,77 +1,73 @@
-# NIPE Frontend
+# React + TypeScript + Vite
 
-Frontend app for NIPE backend-backed workflow (project setup, ingestion, mode selection, run execution, and export inspection).
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Stack
+Currently, two official plugins are available:
 
-- React + Vite
-- Tailwind CSS v4 (`@tailwindcss/vite`)
-- shadcn/ui baseline components (`src/components/ui/*`, `components.json`)
-- Axios (API client)
-- SWR (async data)
-- Zustand (UI state)
-- Zod (runtime schema validation)
-- date-fns (time formatting)
-- Vitest + Testing Library (unit/integration/e2e-style component tests)
-- Playwright (browser e2e + visual regression)
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
-## Folder Structure
+## React Compiler
 
-- `src/main.tsx`: root bootstrap (`RouterProvider`, global styles)
-- `src/router/main-routes.tsx`: main app routes
-- `src/router/auth-routes.tsx`: auth route tree placeholder
-- `src/router/index.tsx`: combined route objects
-- `src/styles/globals.css`: global design system + Tailwind utility layers
-- `src/components/ui/*`: shadcn/ui primitive components
-- `src/shared/*`: reusable API/UI/lib primitives
-- `src/features/*`: feature modules
-- `src/app/*`: app-level schemas, config, and store
-- `tests/unit/*`: unit tests
-- `tests/integration/*`: integration tests
-- `tests/regression/*`: regression tests
-- `tests/e2e/*`: Playwright visual/e2e tests
+The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
 
-## Run
+## Expanding the ESLint configuration
 
-```bash
-cd frontend
-npm install
-npm run dev
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
 
-Default API target is `http://localhost:8000`. Override with:
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
-```bash
-VITE_API_BASE_URL=http://localhost:8000 npm run dev
-```
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
 
-## Build
-
-```bash
-cd frontend
-npm run build
-```
-
-## Tests
-
-Vitest:
-
-```bash
-cd frontend
-npm run test:run
-```
-
-Playwright e2e + visual:
-
-```bash
-cd frontend
-npx playwright install chromium
-npm run test:playwright
-```
-
-Update visual snapshots intentionally:
-
-```bash
-cd frontend
-npm run test:playwright:update
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```

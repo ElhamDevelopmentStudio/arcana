@@ -1,8 +1,15 @@
-import { createBrowserRouter, type RouteObject } from "react-router-dom";
+import { createBrowserRouter } from 'react-router-dom';
 
-import { authRoutes } from "@/router/auth-routes";
-import { mainRoutes } from "@/router/main-routes";
+import { authRouter } from './auth';
+import { mainRouter } from './main';
 
-const routes: RouteObject[] = [...mainRoutes, ...authRoutes];
-
-export const appRouter = createBrowserRouter(routes);
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    children: mainRouter,
+  },
+  {
+    path: '/auth',
+    children: authRouter,
+  },
+]);

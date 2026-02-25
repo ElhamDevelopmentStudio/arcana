@@ -533,23 +533,23 @@ Definition of done for each task:
 - [ ] [FE-005] Add “deferred FE task ID required” policy when backend ships without UI.
 
 ### 13.2 App Shell, Routing, and State
-- [x] [FE-010] Define route map for project setup, mode selection, run monitor, export viewer, dashboards.
-- [x] [FE-011] Implement centralized API client layer with typed request/response helpers.
+- [ ] [FE-010] Define route map for project setup, mode selection, run monitor, export viewer, dashboards.
+- [ ] [FE-011] Implement centralized API client layer with typed request/response helpers.
 - [ ] [FE-012] Implement shared query/mutation state strategy for project/run lifecycles.
 - [ ] [FE-013] Implement global loading/error toaster with consistent formatting.
 - [ ] [FE-014] Add client-side schema guards for critical API payloads.
-- [x] [FE-015] Add frontend environment config loader for API base URL and feature flags.
+- [ ] [FE-015] Add frontend environment config loader for API base URL and feature flags.
 - [ ] [FE-016] Add frontend telemetry hooks for key UX actions (create/ingest/run/export).
 - [ ] [FE-017] Add resilient refresh behavior for page reload during active run.
 - [ ] [FE-018] Add stale-state invalidation after run completion.
 - [ ] [FE-019] Add frontend regression tests for route transitions and persisted UI state.
 
 ### 13.3 Mode and Ingestion UX (SRS §3, §4.1, §4.2)
-- [x] [FE-020] Build mode-selection panel that loads mode catalog from API and displays default.
-- [x] [FE-021] Lock mode-selection controls until ingestion completes successfully.
-- [x] [FE-022] Display project-level selected mode and current run-mode snapshot together.
+- [ ] [FE-020] Build mode-selection panel that loads mode catalog from API and displays default.
+- [ ] [FE-021] Lock mode-selection controls until ingestion completes successfully.
+- [ ] [FE-022] Display project-level selected mode and current run-mode snapshot together.
 - [ ] [FE-023] Add mode-switch confirmation modal explaining downstream stale artifacts.
-- [x] [FE-024] Build ingestion source selector UI for TXT/directory/Markdown/EPUB toggle.
+- [ ] [FE-024] Build ingestion source selector UI for TXT/directory/Markdown/EPUB toggle.
 - [ ] [FE-025] Build upload progress and parse summary card with chapter counts.
 - [ ] [FE-026] Display normalization report summary (dedupe/quote-repair/warnings).
 - [ ] [FE-027] Add “append chapters” UI path with overlap warning display.
@@ -629,19 +629,19 @@ Definition of done for each task:
 - [ ] [FE-089] Add frontend regression tests for error-state and warning-state rendering.
 
 ### 13.10 Playwright Visual and E2E Suite (Frontend + API Integration)
-- [x] [PW-001] Set up Playwright test runner and browser project matrix.
-- [x] [PW-002] Add baseline visual snapshots for project creation and ingestion screens.
+- [ ] [PW-001] Set up Playwright test runner and browser project matrix.
+- [ ] [PW-002] Add baseline visual snapshots for project creation and ingestion screens.
 - [ ] [PW-003] Add baseline visual snapshots for post-ingestion mode selection screen.
 - [ ] [PW-004] Add baseline visual snapshots for character map and voice mapping screens.
-- [x] [PW-005] Add baseline visual snapshots for run monitor and export panels.
+- [ ] [PW-005] Add baseline visual snapshots for run monitor and export panels.
 - [ ] [PW-006] Add baseline visual snapshots for tension/polarity/character dashboards.
 - [ ] [PW-007] Add responsive visual snapshots (desktop/tablet/mobile) for core pages.
-- [x] [PW-008] Add end-to-end Playwright flow: create project -> ingest -> select mode -> run -> export.
+- [ ] [PW-008] Add end-to-end Playwright flow: create project -> ingest -> select mode -> run -> export.
 - [ ] [PW-009] Add end-to-end Playwright flow for academic dashboard and export retrieval.
 - [ ] [PW-010] Add end-to-end Playwright flow for author diagnostics review and flag inspection.
 - [ ] [PW-011] Add visual diff thresholds and explicit allowlist for intentional UI changes.
-- [x] [PW-012] Add deterministic test-data fixtures for Playwright runs.
-- [x] [PW-013] Add Playwright API mocking strategy for isolated frontend contract tests.
+- [ ] [PW-012] Add deterministic test-data fixtures for Playwright runs.
+- [ ] [PW-013] Add Playwright API mocking strategy for isolated frontend contract tests.
 - [ ] [PW-014] Add Playwright “real backend” profile for integrated local E2E checks.
 - [ ] [PW-015] Add flaky-test retry policy and trace/video artifact retention.
 - [ ] [PW-016] Add CI job split: unit/integration vs Playwright visual/e2e.

@@ -23,6 +23,23 @@ Keep implementation accurate, incremental, testable, and easy to resume from a n
 13. The following frontend libraries are mandatory for implementation: `axios`, `swr`, `date-fns`, `zustand`, `zod`.
 14. Tailwind CSS is the primary frontend styling system; keep bespoke CSS minimal and design-token driven from `globals.css`.
 
+## Frontend Architecture Rules (Mandatory)
+
+1. The frontend must be multi-page and route-driven. Do not collapse core workflows into a single control page.
+2. Each page must have one primary responsibility and one primary user goal.
+3. A page should show only the information and actions needed for that step; avoid unrelated controls.
+4. Use modular feature boundaries: each route gets its own page module, local view components, and tests.
+5. Shared UI primitives belong in reusable component folders; business logic stays in feature/domain modules.
+6. API base URL must come from environment config (`.env` / `import.meta.env`) and never from user-entered form fields.
+7. Route sequence must follow the product workflow, including at minimum:
+- `/projects/new` for project creation.
+- `/projects/:project_id/mode` for mode selection.
+- `/projects/:project_id/characters` for character map operations.
+- `/projects/:project_id/pipeline-setup` for pipeline configuration.
+8. If backend support for a sub-feature is not implemented yet, keep the page structure and show a clear placeholder/disabled state instead of mixing it into another page.
+9. Navigation between workflow pages must be explicit, predictable, and persistent (step nav or equivalent).
+10. Every new route must include corresponding unit/integration/e2e coverage as applicable.
+
 ## Task Granularity Standard
 
 A task is “small enough” when:
