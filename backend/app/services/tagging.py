@@ -211,6 +211,21 @@ def _build_trimmed_span(raw_text: str, raw_start: int, candidate: str) -> tuple[
     return span_start, span_end
 
 
+def _clamp_confidence(value: float) -> float:
+    return max(0.0, min(1.0, round(float(value), 4)))
+
+
+def _compute_type_confidence(structure: str) -> float:
+    return {
+        STRUCTURAL_TYPE_NARRATION: 0.7,
+        STRUCTURAL_TYPE_DIALOGUE: 0.92,
+        STRUCTURAL_TYPE_INTERNAL_THOUGHT: 0.83,
+        STRUCTURAL_TYPE_MIXED: 0.72,
+        STRUCTURAL_TYPE_DESCRIPTION: 0.75,
+        STRUCTURAL_TYPE_ACTION: 0.78,
+    }.get(structure, 0.65)
+
+
 def detect_dialogue_blocks(text: str) -> list[dict[str, str]]:
     quoted_spans: list[tuple[int, int]] = [
         (match.start(), match.end()) for match in DIALOGUE_QUOTE_RE.finditer(text)
@@ -1055,6 +1070,17 @@ def _tension_contribution_level(value: float) -> str:
     return "calm"
 
 
+def _compute_tension_confidence(value: float, structure: str, signal_count: int, intensifier_count: int) -> float:
+    base_confidence = 0.32 + (0.56 * value)
+    if structure in {STRUCTURAL_TYPE_ACTION, STRUCTURAL_TYPE_MIXED, STRUCTURAL_TYPE_DIALOGUE}:
+        base_confidence += 0.08
+    elif structure == STRUCTURAL_TYPE_DESCRIPTION:
+        base_confidence -= 0.07
+    signal_boost = min(0.12, 0.03 * signal_count)
+    intensifier_boost = min(0.06, 0.02 * intensifier_count)
+    return _clamp_confidence(base_confidence + signal_boost + intensifier_boost)
+
+
 def compute_tension_contribution(text: str, valence: float, intensity: float, structure: str) -> float:
     tokens = _tokenize(text)
     signal_count = sum(1 for token in tokens if token in TENSION_SIGNAL_WORDS)
@@ -1087,6 +1113,24 @@ def _dominance_contribution_level(value: float) -> str:
     if value >= 0.35:
         return "moderate"
     return "low"
+
+
+def _compute_dominance_confidence(value: float, speaker: str, structure: str, evidence: dict[str, object]) -> float:
+    pronoun_score = 0.06 * int(bool(evidence.get("speaker_resolved")))
+    pronoun_ref_count = int(evidence.get("pronoun_reference_count", 0))
+    proper_noun_count = int(evidence.get("proper_noun_hits", 0))
+    proper_noun_score = min(0.2, 0.02 * proper_noun_count)
+    pronoun_ref_score = min(0.12, 0.02 * pronoun_ref_count)
+    structure_bonus = {
+        STRUCTURAL_TYPE_DIALOGUE: 0.12,
+        STRUCTURAL_TYPE_MIXED: 0.06,
+        STRUCTURAL_TYPE_ACTION: 0.06,
+    }.get(structure, 0.0)
+
+    base_confidence = 0.33 + (0.52 * value) + pronoun_score + pronoun_ref_score + proper_noun_score + structure_bonus
+    if not speaker or speaker == "unknown":
+        base_confidence -= 0.12
+    return _clamp_confidence(base_confidence)
 
 
 def compute_dominance_contribution(
@@ -1144,6 +1188,7 @@ def tag_segment(text: str) -> dict[str, object]:
     narration_blocks = detect_narration_blocks(text)
     structure = detect_structure(text)
     speaker, speaker_confidence = resolve_speaker(text) if structure == "dialogue" else ("unknown", 0.2)
+    type_confidence = _compute_type_confidence(structure)
     valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
     emotion_shift = detect_emotion_shift(text)
     narration_internal_thought_shift = detect_narration_internal_thought_shift(text)
@@ -1164,10 +1209,22 @@ def tag_segment(text: str) -> dict[str, object]:
         intensity=intensity,
         structure=structure,
     )
+    tension_confidence = _compute_tension_confidence(
+        value=tension,
+        structure=structure,
+        signal_count=sum(1 for token in _tokenize(text) if token in TENSION_SIGNAL_WORDS),
+        intensifier_count=sum(1 for token in _tokenize(text) if token in TENSION_INTENSIFIERS),
+    )
     dominance_value, dominance_level, dominant_agent, dominance_evidence = compute_dominance_contribution(
         text=text,
         speaker=speaker,
         structure=structure,
+    )
+    dominance_confidence = _compute_dominance_confidence(
+        value=dominance_value,
+        speaker=speaker,
+        structure=structure,
+        evidence=dominance_evidence,
     )
     summary_tag = {
         "tag_type": "segment_summary",
@@ -1197,6 +1254,7 @@ def tag_segment(text: str) -> dict[str, object]:
 
     return {
         "type": structure,
+        "type_confidence": type_confidence,
         "dialogue_blocks": dialogue_blocks,
         "narration_blocks": narration_blocks,
         "speaker": speaker,
@@ -1215,11 +1273,13 @@ def tag_segment(text: str) -> dict[str, object]:
         "tension_contribution": {
             "value": tension,
             "level": _tension_contribution_level(tension),
+            "confidence": tension_confidence,
         },
         "dominance_contribution": {
             "value": dominance_value,
             "level": dominance_level,
             "dominant_agent": dominant_agent,
             "evidence": dominance_evidence,
+            "confidence": dominance_confidence,
         },
     }

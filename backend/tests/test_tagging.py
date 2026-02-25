@@ -45,6 +45,13 @@ def test_detect_structure_returns_mixed_when_dialogue_and_narration_mix() -> Non
     )
 
 
+def test_tag_segment_includes_type_confidence() -> None:
+    tags = tag_segment('"Wait," she asked.')
+    assert isinstance(tags["type_confidence"], float)
+    assert 0.0 <= tags["type_confidence"] <= 1.0
+    assert tags["type_confidence"] > 0.6
+
+
 def test_tag_segment_includes_dialogue_blocks_for_traceability() -> None:
     tags = tag_segment('"Wait," she asked.')
     assert tags["type"] == "dialogue"
@@ -56,11 +63,13 @@ def test_tag_segment_includes_tension_contribution_tag() -> None:
     tags = tag_segment("He bolted to the door as she shouted, \"Help!\" then the alarm rang.")
     tension = tags["tension_contribution"]
     assert isinstance(tension, dict)
-    assert set(tension.keys()) == {"value", "level"}
+    assert set(tension.keys()) == {"value", "level", "confidence"}
     assert isinstance(tension["value"], float)
     assert 0.0 <= tension["value"] <= 1.0
     assert tension["level"] in {"high", "moderate", "low", "calm"}
     assert tension["value"] > 0.0
+    assert isinstance(tension["confidence"], float)
+    assert 0.0 <= tension["confidence"] <= 1.0
 
 
 def test_tag_segment_tension_contribution_remains_low_for_stable_description() -> None:
@@ -69,13 +78,15 @@ def test_tag_segment_tension_contribution_remains_low_for_stable_description() -
     assert isinstance(tension, dict)
     assert tension["level"] in {"calm", "low"}
     assert tension["value"] < 0.35
+    assert isinstance(tension["confidence"], float)
+    assert 0.0 <= tension["confidence"] <= 1.0
 
 
 def test_tag_segment_includes_dominance_contribution_tag() -> None:
     tags = tag_segment('"Wait," Alice said.')
     dominance = tags["dominance_contribution"]
     assert isinstance(dominance, dict)
-    assert set(dominance.keys()) == {"value", "level", "dominant_agent", "evidence"}
+    assert set(dominance.keys()) == {"value", "level", "dominant_agent", "evidence", "confidence"}
     assert isinstance(dominance["value"], float)
     assert 0.0 <= dominance["value"] <= 1.0
     assert dominance["level"] in {"dominant", "strong", "moderate", "low"}
@@ -84,6 +95,8 @@ def test_tag_segment_includes_dominance_contribution_tag() -> None:
     assert "speaker_resolved" in dominance["evidence"]
     assert "pronoun_reference_count" in dominance["evidence"]
     assert "proper_noun_hits" in dominance["evidence"]
+    assert isinstance(dominance["confidence"], float)
+    assert 0.0 <= dominance["confidence"] <= 1.0
 
 
 def test_tag_segment_dominance_contribution_defaults_to_narrative_guide_when_no_speaker() -> None:

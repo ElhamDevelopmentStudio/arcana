@@ -303,6 +303,9 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                     "speaker": tags["speaker_confidence"],
                     "emotion": tags["emotion_confidence"],
                     "gender": _resolve_gender_confidence(speaker=speaker, character_lookup=character_lookup),
+                    "type": tags["type_confidence"],
+                    "tension": tags["tension_contribution"]["confidence"],
+                    "dominance": tags["dominance_contribution"]["confidence"],
                 },
                 "original_span_pointer": {
                     "original_start_char": original_span_start,
