@@ -7,6 +7,7 @@ import type { VoiceConfigDto } from '@/app/schemas/api';
 import type { CharacterMapUpdateDto } from '@/app/schemas/api';
 import type { CharacterScrapeRequestDto } from '@/app/schemas/api';
 import type { CharacterCandidatesMergeRequestDto } from '@/app/schemas/api';
+import type { PronunciationDictionaryPreviewRequestDto } from '@/app/schemas/api';
 
 export const workspaceKeys = {
   modeCatalog: ['mode-catalog'] as const,
@@ -187,6 +188,18 @@ export function useMergeCharactersMutation(projectId: number | null) {
         throw new Error('Project must exist before merging character candidates.');
       }
       return nipeApiClient.mergeCharacters(projectId, arg);
+    },
+  );
+}
+
+export function usePronunciationPreviewMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['preview-pronunciation-dictionary', projectId] : null,
+    async (_, { arg }: { arg: PronunciationDictionaryPreviewRequestDto }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before previewing pronunciation dictionary changes.');
+      }
+      return nipeApiClient.previewPronunciationDictionary(projectId, arg);
     },
   );
 }

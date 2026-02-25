@@ -11,6 +11,8 @@ const saveCharactersMutationTrigger = vi.fn();
 const autoExtractCharactersMutationTrigger = vi.fn();
 const scrapeCharactersMutationTrigger = vi.fn();
 const mergeCharactersMutationTrigger = vi.fn();
+const pronunciationPreviewMutationTrigger = vi.fn();
+const finalizeCharactersMutationTrigger = vi.fn();
 const characterMapQueryData = {
   project_id: 101,
   characters: [
@@ -53,6 +55,14 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isMutating: false,
     trigger: mergeCharactersMutationTrigger,
   }),
+  useFinalizeCharacterMapMutation: () => ({
+    isMutating: false,
+    trigger: finalizeCharactersMutationTrigger,
+  }),
+  usePronunciationPreviewMutation: () => ({
+    isMutating: false,
+    trigger: pronunciationPreviewMutationTrigger,
+  }),
 }));
 
 function renderCharacterPage() {
@@ -80,6 +90,8 @@ describe('project characters page manual editor', () => {
     autoExtractCharactersMutationTrigger.mockReset();
     scrapeCharactersMutationTrigger.mockReset();
     mergeCharactersMutationTrigger.mockReset();
+    pronunciationPreviewMutationTrigger.mockReset();
+    finalizeCharactersMutationTrigger.mockReset();
     saveCharactersMutationTrigger.mockResolvedValue({
       project_id: 101,
       characters: [
@@ -92,6 +104,21 @@ describe('project characters page manual editor', () => {
           source_trace: [],
           source: 'manual',
           confidence: 1.0,
+        },
+      ],
+    });
+    pronunciationPreviewMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      before: 'Captain saw the Aegis at dawn.',
+      after: 'Captain saw the EE-jis at dawn.',
+      character_name: null,
+      included_scopes: ['global'],
+      replacements: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'EE-jis',
+          count: 1,
+          scope: 'global',
         },
       ],
     });
@@ -299,5 +326,23 @@ describe('project characters page manual editor', () => {
     expect(importTrigger).toHaveBeenCalledTimes(1);
     expect(importTrigger).toHaveBeenCalledWith({ file });
     expect(mutateCharacterMap).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs pronunciation preview and renders before/after substitutions', async () => {
+    const user = userEvent.setup();
+    renderCharacterPage();
+
+    await user.type(screen.getByTestId('pronunciation-preview-text'), 'Captain saw the Aegis at dawn.');
+    await user.click(screen.getByTestId('pronunciation-preview-button'));
+
+    expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
+      text: 'Captain saw the Aegis at dawn.',
+      include_global_scope: true,
+      include_character_scope: false,
+    });
+    expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Captain saw the Aegis at dawn.');
+    expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('Captain saw the EE-jis at dawn.');
+    expect(screen.getByText('Included scopes: global')).toBeInTheDocument();
+    expect(screen.getByTestId('pronunciation-preview-replacements')).toHaveTextContent('Aegis → EE-jis');
   });
 });

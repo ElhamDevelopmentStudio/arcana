@@ -2,18 +2,24 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { AlertCircle, FileUp, Plus, UserCog, WandSparkles } from 'lucide-react';
+import { AlertCircle, FileUp, Plus, Search, UserCog, WandSparkles } from 'lucide-react';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { appEnv } from '@/app/config/env';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
-import type { CharacterExtractionDto, CharacterMapDto } from '@/app/schemas/api';
+import type {
+  CharacterExtractionDto,
+  CharacterMapDto,
+  PronunciationDictionaryPreviewRequestDto,
+  PronunciationDictionaryPreviewResponseDto,
+} from '@/app/schemas/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import {
   useAutoExtractCharactersMutation,
   useCharacterMapQuery,
@@ -22,6 +28,7 @@ import {
   useImportCharactersMutation,
   useSaveCharacterMapMutation,
   useFinalizeCharacterMapMutation,
+  usePronunciationPreviewMutation,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -86,19 +93,37 @@ export function ProjectCharactersPage() {
   const [mergeSuggestions, setMergeSuggestions] = useState<CharacterExtractionDto['canonical_merge_suggestions']>([]);
   const [mergeScrapeUrl, setMergeScrapeUrl] = useState<string>('');
   const [mergeScrapeAcknowledged, setMergeScrapeAcknowledged] = useState<boolean>(false);
+  const [pronunciationPreviewText, setPronunciationPreviewText] = useState<string>('');
+  const [includeGlobalPronunciationScope, setIncludeGlobalPronunciationScope] = useState<boolean>(true);
+  const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
+  const [pronunciationPreviewCharacterName, setPronunciationPreviewCharacterName] = useState<string>('');
+  const [pronunciationPreviewResult, setPronunciationPreviewResult] = useState<
+    PronunciationDictionaryPreviewResponseDto | null
+  >(null);
 
+  const characterMapQuery = useCharacterMapQuery(projectId);
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
   const manualPreviewCount = useMemo(
     () => manualRows.filter((row) => row.name.trim() && row.verbalized.trim()).length,
     [manualRows],
   );
+  const characterNameOptions = useMemo(() => {
+    if (!characterMapQuery.data) {
+      return [];
+    }
+    return characterMapQuery.data.characters
+      .map((character) => character.name.trim())
+      .filter(Boolean)
+      .filter((name, index, allNames) => allNames.indexOf(name) === index)
+      .sort((a, b) => a.localeCompare(b));
+  }, [characterMapQuery.data]);
 
-  const characterMapQuery = useCharacterMapQuery(projectId);
   const saveCharactersMutation = useSaveCharacterMapMutation(projectId);
   const autoExtractCharactersMutation = useAutoExtractCharactersMutation(projectId);
   const scrapeCharactersMutation = useScrapeCharactersMutation(projectId);
   const mergeCharactersMutation = useMergeCharactersMutation(projectId);
   const finalizeCharactersMutation = useFinalizeCharacterMapMutation(projectId);
+  const pronunciationPreviewMutation = usePronunciationPreviewMutation(projectId);
   const isCharacterMapFinalized = characterMapQuery.data?.character_map_finalized ?? false;
 
   useEffect(() => {
@@ -306,6 +331,42 @@ export function ProjectCharactersPage() {
       toast.success('Character map finalized.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to finalize character map.');
+    }
+  }
+
+  async function handlePronunciationPreview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    if (!pronunciationPreviewText.trim()) {
+      toast.error('Provide sample text for preview.');
+      return;
+    }
+    if (!includeGlobalPronunciationScope && !includeCharacterPronunciationScope) {
+      toast.error('Enable at least one pronunciation scope before previewing.');
+      return;
+    }
+    if (includeCharacterPronunciationScope && !pronunciationPreviewCharacterName.trim()) {
+      toast.error('Choose a character name for character-scoped preview.');
+      return;
+    }
+
+    const requestPayload: PronunciationDictionaryPreviewRequestDto = {
+      text: pronunciationPreviewText.trim(),
+      include_global_scope: includeGlobalPronunciationScope,
+      include_character_scope: includeCharacterPronunciationScope,
+      ...(pronunciationPreviewCharacterName.trim() ? { character_name: pronunciationPreviewCharacterName.trim() } : {}),
+    };
+
+    try {
+      const previewResult = await pronunciationPreviewMutation.trigger(requestPayload);
+      setPronunciationPreviewResult(previewResult);
+      toast.success('Pronunciation preview generated.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Pronunciation preview failed.');
     }
   }
 
@@ -679,6 +740,137 @@ export function ProjectCharactersPage() {
                 {saveCharactersMutation.isMutating ? 'Saving...' : 'Save Character Map'}
               </Button>
             </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="size-4 text-primary" />
+              Pronunciation Check Preview
+            </CardTitle>
+            <CardDescription>Check dictionary substitutions before running the pipeline.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form className="grid gap-3" onSubmit={handlePronunciationPreview}>
+              <div className="grid gap-2">
+                <Label htmlFor="pronunciation-preview-text">Sample text</Label>
+                <Textarea
+                  id="pronunciation-preview-text"
+                  rows={6}
+                  value={pronunciationPreviewText}
+                  onChange={(event) => setPronunciationPreviewText(event.target.value)}
+                  placeholder="Paste a paragraph or dialogue line here..."
+                  data-testid="pronunciation-preview-text"
+                />
+              </div>
+              <div className="grid gap-2">
+                <p className="text-sm font-medium">Scope</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                    <Checkbox
+                      checked={includeGlobalPronunciationScope}
+                      onCheckedChange={(checked) => setIncludeGlobalPronunciationScope(checked === true)}
+                    />
+                    <span>Global pronunciation dictionary</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                    <Checkbox
+                      checked={includeCharacterPronunciationScope}
+                      onCheckedChange={(checked) => setIncludeCharacterPronunciationScope(checked === true)}
+                    />
+                    <span>Character-specific dictionary</span>
+                  </label>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="pronunciation-preview-character">Character scope target</Label>
+                <NativeSelect
+                  id="pronunciation-preview-character"
+                  value={pronunciationPreviewCharacterName}
+                  onChange={(event) => setPronunciationPreviewCharacterName(event.target.value)}
+                  disabled={!includeCharacterPronunciationScope}
+                >
+                  <option value="">Select character (optional)</option>
+                  {characterNameOptions.map((characterName) => (
+                    <option key={characterName} value={characterName}>
+                      {characterName}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <Button
+                data-testid="pronunciation-preview-button"
+                disabled={
+                  pronunciationPreviewMutation.isMutating ||
+                  !pronunciationPreviewText.trim() ||
+                  projectId === null ||
+                  (!includeGlobalPronunciationScope && !includeCharacterPronunciationScope) ||
+                  (includeCharacterPronunciationScope && !pronunciationPreviewCharacterName.trim())
+                }
+                type="submit"
+              >
+                {pronunciationPreviewMutation.isMutating ? 'Previewing...' : 'Run Pronunciation Preview'}
+              </Button>
+            </form>
+            <div className="space-y-2">
+              {pronunciationPreviewResult === null ? (
+                <p className="text-sm text-muted-foreground">Run a sample preview to inspect substitutions.</p>
+              ) : (
+                <>
+                  <div className="text-sm text-muted-foreground">
+                    Included scopes:{' '}
+                    {pronunciationPreviewResult.included_scopes.length === 0
+                      ? 'none'
+                      : pronunciationPreviewResult.included_scopes.join(', ')}
+                  </div>
+                  <div className="grid gap-2">
+                    <div className="grid gap-1">
+                      <Label htmlFor="pronunciation-preview-before">Before</Label>
+                      <Textarea
+                        id="pronunciation-preview-before"
+                        readOnly
+                        value={pronunciationPreviewResult.before}
+                        rows={4}
+                        data-testid="pronunciation-preview-before"
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label htmlFor="pronunciation-preview-after">After</Label>
+                      <Textarea
+                        id="pronunciation-preview-after"
+                        readOnly
+                        value={pronunciationPreviewResult.after}
+                        rows={4}
+                        data-testid="pronunciation-preview-after"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <p className="text-sm text-foreground">Replacement summary</p>
+                    {pronunciationPreviewResult.replacements.length === 0 ? (
+                      <p>No replacements were applied.</p>
+                    ) : (
+                      <ul className="space-y-1" data-testid="pronunciation-preview-replacements">
+                        {pronunciationPreviewResult.replacements.map((replacement) => (
+                          <li
+                            className="flex flex-wrap items-center justify-between gap-2"
+                            key={`${pronunciationPreviewResult.project_id}-${replacement.term}-${replacement.scope}-${replacement.verbalized_form}`}
+                          >
+                            <span>
+                              {replacement.term} → {replacement.verbalized_form}
+                            </span>
+                            <span>
+                              {replacement.count}x · {replacement.scope}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
