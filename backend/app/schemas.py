@@ -397,6 +397,7 @@ class RunCreateRequest(BaseModel):
     max_segment_chars: int = Field(default=255, ge=80, le=255)
     llm_enabled: bool = False
     provider_name: str = "openrouter"
+    deep_semantic_refinement: bool = False
     max_calls_per_day: int = Field(default=25, ge=1, le=10000)
     llm_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     allow_unfinalized_character_map: bool = False

@@ -149,8 +149,11 @@ def _resolve_speaker_entry(
 
 
 def _should_escalate_to_llm(
-    tags: dict[str, object], *, confidence_threshold: float = _LLM_CONFIDENCE_THRESHOLD_DEFAULT
+    tags: dict[str, object], *, confidence_threshold: float = _LLM_CONFIDENCE_THRESHOLD_DEFAULT, deep_semantic_refinement: bool = False
 ) -> bool:
+    if bool(deep_semantic_refinement):
+        return True
+
     threshold = _coerce_confidence_threshold(confidence_threshold)
     ambiguity_flags = tags.get("ambiguity_flags")
     if isinstance(ambiguity_flags, str):
@@ -423,6 +426,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             if llm_probe_text is None and _should_escalate_to_llm(
                 segment_payload,
                 confidence_threshold=run_config.get("llm_confidence_threshold", _LLM_CONFIDENCE_THRESHOLD_DEFAULT),
+                deep_semantic_refinement=run_config.get("deep_semantic_refinement", False),
             ):
                 llm_probe_text = original_text
 

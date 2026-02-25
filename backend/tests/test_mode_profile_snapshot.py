@@ -56,11 +56,13 @@ def test_unit_build_run_config_snapshot_keeps_profile_snapshot_and_applies_overr
         overrides={
             "max_segment_chars": 144,
             "provider_name": "groq",
+            "deep_semantic_refinement": True,
         },
     )
     assert snapshot["mode"] == "author"
     assert snapshot["max_segment_chars"] == 144
     assert snapshot["provider_name"] == "groq"
+    assert snapshot["deep_semantic_refinement"] is True
     assert snapshot["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["author"]
     assert snapshot["mode_profile_snapshot"]["provider_name"] == "openrouter"
 
@@ -120,12 +122,14 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
         "llm_confidence_threshold": 0.6,
+        "deep_semantic_refinement": False,
         "mode_profile_snapshot": {
             "max_segment_chars": 255,
             "llm_enabled": False,
             "provider_name": "openrouter",
             "max_calls_per_day": 25,
             "llm_confidence_threshold": 0.6,
+            "deep_semantic_refinement": False,
             "profile_intent": "user-tuned baseline with conservative defaults",
         },
     }
