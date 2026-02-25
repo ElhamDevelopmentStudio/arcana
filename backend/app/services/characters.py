@@ -2,6 +2,8 @@ import csv
 import io
 import json
 from dataclasses import dataclass
+from ast import literal_eval
+from typing import Any
 
 
 @dataclass
@@ -9,6 +11,56 @@ class ParsedCharacter:
     name: str
     verbalized_form: str
     gender: str
+    aliases: list[str]
+    notes: str | None
+    source: str
+    confidence: float
+
+
+def _parse_aliases(raw_aliases: Any) -> list[str]:
+    if raw_aliases is None:
+        return []
+
+    if isinstance(raw_aliases, list):
+        return [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
+
+    if not isinstance(raw_aliases, str):
+        return []
+
+    text = raw_aliases.strip()
+    if not text:
+        return []
+
+    try:
+        parsed = literal_eval(text)
+    except (SyntaxError, ValueError):
+        parsed = None
+
+    if isinstance(parsed, list):
+        return [str(alias).strip() for alias in parsed if str(alias).strip()]
+
+    return [piece.strip() for piece in text.split(",") if piece.strip()]
+
+
+def _parse_confidence(row: dict[str, str], row_number: int) -> float:
+    raw_value = row.get("confidence")
+    if raw_value is None:
+        return 1.0
+
+    if isinstance(raw_value, (int, float)):
+        confidence = float(raw_value)
+    else:
+        if str(raw_value).strip() == "":
+            return 1.0
+        try:
+            confidence = float(str(raw_value).strip())
+        except ValueError as exc:
+            raise ValueError(f"Row {row_number} has invalid confidence: {raw_value}") from exc
+
+    if not (0.0 <= confidence <= 1.0):
+        raise ValueError(f"Row {row_number} has confidence outside range [0.0, 1.0]: {confidence}")
+
+    return round(confidence, 4)
 
 
 def _validate_row(row: dict[str, str], row_number: int) -> ParsedCharacter:
@@ -22,6 +74,10 @@ def _validate_row(row: dict[str, str], row_number: int) -> ParsedCharacter:
         name=row["name"].strip(),
         verbalized_form=row["verbalized_form"].strip(),
         gender=row["gender"].strip().lower(),
+        aliases=_parse_aliases(row.get("aliases")),
+        notes=row.get("notes") and str(row["notes"]).strip() or None,
+        source=str(row.get("source") or "user_import").strip() or "user_import",
+        confidence=_parse_confidence(row, row_number),
     )
 
 
@@ -40,6 +96,10 @@ def _parse_json(payload: bytes) -> list[ParsedCharacter]:
                         or value.get("verbalized")
                         or "",
                         "gender": value.get("gender", ""),
+                        "aliases": value.get("aliases"),
+                        "notes": value.get("notes"),
+                        "source": value.get("source"),
+                        "confidence": value.get("confidence"),
                     }
                 )
     elif isinstance(data, list):
@@ -52,6 +112,10 @@ def _parse_json(payload: bytes) -> list[ParsedCharacter]:
                         or item.get("verbalized")
                         or "",
                         "gender": item.get("gender", ""),
+                        "aliases": item.get("aliases"),
+                        "notes": item.get("notes"),
+                        "source": item.get("source"),
+                        "confidence": item.get("confidence"),
                     }
                 )
 

@@ -52,7 +52,8 @@ from app.services.mode_profiles import build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_mode_switch
 from app.services.normalization import (
     build_original_to_normalized_offset_map,
-    normalize_text_with_warnings,
+    build_normalization_report,
+    normalize_text_with_report,
 )
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.voice import DEFAULT_VOICE_CONFIG
@@ -123,6 +124,7 @@ def _update_project_ingestion_log(
     warnings: list[dict[str, object]],
     dedup_actions: list[dict[str, object]] | None = None,
     affected_range: dict[str, int] | None = None,
+    normalization_report: dict[str, object] | None = None,
 ) -> None:
     log_json = dict(project.ingestion_log_json or {})
     existing_warnings = list(log_json.get("warnings", []))
@@ -133,6 +135,8 @@ def _update_project_ingestion_log(
         existing_dedup_actions.extend(dedup_actions)
         log_json["dedup_actions"] = existing_dedup_actions
     log_json["source"] = source
+    if normalization_report is not None:
+        log_json["normalization_report"] = normalization_report
     if affected_range is not None:
         log_json["affected_range"] = affected_range
     log_json["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -251,10 +255,14 @@ def ingest_txt(
             detail="No non-empty chapters found in TXT input",
         )
     warnings: list[dict[str, object]] = []
+    chapter_normalization_reports: list[dict[str, object]] = []
+    encoding_warnings: list[dict[str, object]] = []
     txt_warning = build_encoding_warning("txt", encoding, confidence)
     if txt_warning is not None:
         warnings.append(txt_warning)
-    warnings.extend(build_duplicate_title_warnings("txt", chapters))
+        encoding_warnings.append(txt_warning)
+    duplicate_title_warnings = build_duplicate_title_warnings("txt", chapters)
+    warnings.extend(duplicate_title_warnings)
     dedup_actions = build_duplicate_title_dedup_actions("txt", chapters)
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
@@ -262,7 +270,11 @@ def ingest_txt(
     for idx, (title, content) in enumerate(chapters, start=1):
         chapter_title = to_internal_utf8(title)
         chapter_content = to_internal_utf8(content)
-        normalized, quote_warnings = normalize_text_with_warnings(chapter_content, source="txt")
+        normalized, quote_warnings, chapter_report = normalize_text_with_report(
+            chapter_content,
+            source="txt",
+        )
+        chapter_normalization_reports.append(chapter_report)
         chapter_offset_map = build_original_to_normalized_offset_map(chapter_content, normalized)
         warnings.extend(quote_warnings)
         session.add(
@@ -278,10 +290,23 @@ def ingest_txt(
                 original_to_normalized_offset_map=chapter_offset_map,
             )
         )
+    normalization_report = build_normalization_report(
+        source="txt",
+        chapter_count=len(chapter_normalization_reports),
+        chapter_reports=chapter_normalization_reports,
+        suspected_duplicate_title_count=len(duplicate_title_warnings),
+        encoding_issue_count=len(encoding_warnings),
+    )
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
-    _update_project_ingestion_log(project, source="txt", warnings=warnings, dedup_actions=dedup_actions)
+    _update_project_ingestion_log(
+        project,
+        source="txt",
+        warnings=warnings,
+        dedup_actions=dedup_actions,
+        normalization_report=normalization_report,
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -328,10 +353,14 @@ def ingest_markdown(
             detail="No non-empty chapters found in Markdown input",
         )
     warnings: list[dict[str, object]] = []
+    chapter_normalization_reports: list[dict[str, object]] = []
+    encoding_warnings: list[dict[str, object]] = []
     markdown_warning = build_encoding_warning("markdown", encoding, confidence)
     if markdown_warning is not None:
         warnings.append(markdown_warning)
-    warnings.extend(build_duplicate_title_warnings("markdown", chapters))
+        encoding_warnings.append(markdown_warning)
+    duplicate_title_warnings = build_duplicate_title_warnings("markdown", chapters)
+    warnings.extend(duplicate_title_warnings)
     dedup_actions = build_duplicate_title_dedup_actions("markdown", chapters)
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
@@ -339,10 +368,11 @@ def ingest_markdown(
     for chapter_index, (chapter_title, chapter_content) in enumerate(chapters, start=1):
         stored_chapter_title = to_internal_utf8(chapter_title)
         stored_chapter_content = to_internal_utf8(chapter_content)
-        normalized, quote_warnings = normalize_text_with_warnings(
+        normalized, quote_warnings, chapter_report = normalize_text_with_report(
             stored_chapter_content,
             source="markdown",
         )
+        chapter_normalization_reports.append(chapter_report)
         chapter_offset_map = build_original_to_normalized_offset_map(
             stored_chapter_content,
             normalized,
@@ -361,10 +391,23 @@ def ingest_markdown(
                 original_to_normalized_offset_map=chapter_offset_map,
             )
         )
+    normalization_report = build_normalization_report(
+        source="markdown",
+        chapter_count=len(chapter_normalization_reports),
+        chapter_reports=chapter_normalization_reports,
+        suspected_duplicate_title_count=len(duplicate_title_warnings),
+        encoding_issue_count=len(encoding_warnings),
+    )
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
-    _update_project_ingestion_log(project, source="markdown", warnings=warnings, dedup_actions=dedup_actions)
+    _update_project_ingestion_log(
+        project,
+        source="markdown",
+        warnings=warnings,
+        dedup_actions=dedup_actions,
+        normalization_report=normalization_report,
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -412,6 +455,10 @@ def ingest_epub(
         )
 
     warnings: list[dict[str, object]] = []
+    chapter_normalization_reports: list[dict[str, object]] = []
+    duplicate_title_warnings = build_duplicate_title_warnings("epub", chapters)
+    warnings.extend(duplicate_title_warnings)
+    encoding_issue_count = 0
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
     for chapter_index, (chapter_title, chapter_content) in enumerate(chapters, start=1):
@@ -419,7 +466,11 @@ def ingest_epub(
         content = to_internal_utf8(chapter_content.strip())
         if not content:
             continue
-        normalized, quote_warnings = normalize_text_with_warnings(content, source="epub")
+        normalized, quote_warnings, chapter_report = normalize_text_with_report(
+            content,
+            source="epub",
+        )
+        chapter_normalization_reports.append(chapter_report)
         chapter_offset_map = build_original_to_normalized_offset_map(content, normalized)
         warnings.extend(quote_warnings)
         session.add(
@@ -440,11 +491,19 @@ def ingest_epub(
         project.title = to_internal_utf8(
             chapters[0][0].strip() or detect_title_with_fallback("", filename=filename)
         )
+    normalization_report = build_normalization_report(
+        source="epub",
+        chapter_count=len(chapter_normalization_reports),
+        chapter_reports=chapter_normalization_reports,
+        suspected_duplicate_title_count=len(duplicate_title_warnings),
+        encoding_issue_count=encoding_issue_count,
+    )
     _update_project_ingestion_log(
         project,
         source="epub",
-        warnings=warnings + build_duplicate_title_warnings("epub", chapters),
+        warnings=warnings,
         dedup_actions=build_duplicate_title_dedup_actions("epub", chapters),
+        normalization_report=normalization_report,
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
@@ -482,6 +541,8 @@ def ingest_chapters_dir(
 
     file_boundaries: list[tuple[str, str]] = []
     warnings: list[dict[str, object]] = []
+    encoding_warnings: list[dict[str, object]] = []
+    chapter_normalization_reports: list[dict[str, object]] = []
     for upload in sorted_files:
         filename = upload.filename or ""
         if not filename.lower().endswith(".txt"):
@@ -503,6 +564,7 @@ def ingest_chapters_dir(
         directory_warning = build_encoding_warning(f"chapters-dir:{filename}", encoding, confidence)
         if directory_warning is not None:
             warnings.append(directory_warning)
+            encoding_warnings.append(directory_warning)
         if not content:
             continue
 
@@ -512,7 +574,8 @@ def ingest_chapters_dir(
         (to_internal_utf8(chapter_title), to_internal_utf8(chapter_content))
         for chapter_title, chapter_content in detect_chapters_from_file_boundaries(file_boundaries)
     ]
-    warnings.extend(build_duplicate_title_warnings("chapters-dir", chapter_rows))
+    duplicate_title_warnings = build_duplicate_title_warnings("chapters-dir", chapter_rows)
+    warnings.extend(duplicate_title_warnings)
     dedup_actions = build_duplicate_title_dedup_actions("chapters-dir", chapter_rows)
 
     if not chapter_rows:
@@ -525,10 +588,11 @@ def ingest_chapters_dir(
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
     for chapter_index, (chapter_title, chapter_content) in enumerate(chapter_rows, start=1):
-        normalized, quote_warnings = normalize_text_with_warnings(
+        normalized, quote_warnings, chapter_report = normalize_text_with_report(
             chapter_content,
             source="chapters-dir",
         )
+        chapter_normalization_reports.append(chapter_report)
         chapter_offset_map = build_original_to_normalized_offset_map(chapter_content, normalized)
         warnings.extend(quote_warnings)
         session.add(
@@ -547,7 +611,20 @@ def ingest_chapters_dir(
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(chapter_rows[0][0])
-    _update_project_ingestion_log(project, source="chapters-dir", warnings=warnings, dedup_actions=dedup_actions)
+    normalization_report = build_normalization_report(
+        source="chapters-dir",
+        chapter_count=len(chapter_normalization_reports),
+        chapter_reports=chapter_normalization_reports,
+        suspected_duplicate_title_count=len(duplicate_title_warnings),
+        encoding_issue_count=len(encoding_warnings),
+    )
+    _update_project_ingestion_log(
+        project,
+        source="chapters-dir",
+        warnings=warnings,
+        dedup_actions=dedup_actions,
+        normalization_report=normalization_report,
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -616,15 +693,24 @@ def append_chapter(
                 "Append chapter rejected: "
                 f"{overlap_match['kind']} against chapter {overlap_match['chapter_index']}"
             ),
-        )
+    )
 
     warning = build_encoding_warning("append-chapter", encoding, confidence)
-    normalized, quote_warnings = normalize_text_with_warnings(chapter_content, source="append-chapter")
+    chapter_normalization_reports: list[dict[str, object]] = []
+    encoding_warnings: list[dict[str, object]] = []
+    if warning is not None:
+        encoding_warnings.append(warning)
+    normalized, quote_warnings, chapter_report = normalize_text_with_report(
+        chapter_content,
+        source="append-chapter",
+    )
+    chapter_normalization_reports.append(chapter_report)
     chapter_offset_map = build_original_to_normalized_offset_map(chapter_content, normalized)
     warnings: list[dict[str, object]] = [warning] if warning is not None else []
     warnings.extend(quote_warnings)
     combined_titles = [(row[1], row[2]) for row in existing_chapters] + [(chapter_title, chapter_content)]
-    warnings.extend(build_duplicate_title_warnings("append-chapter", combined_titles))
+    duplicate_title_warnings = build_duplicate_title_warnings("append-chapter", combined_titles)
+    warnings.extend(duplicate_title_warnings)
     dedup_actions = build_duplicate_title_dedup_actions("append-chapter", combined_titles)
 
     session.add(
@@ -651,6 +737,13 @@ def append_chapter(
         warnings=warnings,
         dedup_actions=dedup_actions,
         affected_range=affected_range,
+        normalization_report=build_normalization_report(
+            source="append-chapter",
+            chapter_count=1,
+            chapter_reports=chapter_normalization_reports,
+            suspected_duplicate_title_count=len(duplicate_title_warnings),
+            encoding_issue_count=len(encoding_warnings),
+        ),
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
@@ -687,6 +780,10 @@ def import_characters(
                 name=row.name,
                 verbalized_form=row.verbalized_form,
                 gender=row.gender,
+                aliases=row.aliases,
+                notes=row.notes,
+                source=row.source,
+                confidence=row.confidence,
             )
         )
 
@@ -734,6 +831,9 @@ def create_run(
     explicit_overrides = payload.model_dump(exclude={"mode"}, exclude_unset=True)
     config_snapshot = build_run_config_snapshot(mode=payload.mode, overrides=explicit_overrides)
     config_snapshot["ingestion_warnings"] = list((project.ingestion_log_json or {}).get("warnings", []))
+    config_snapshot["normalization_report"] = (
+        project.ingestion_log_json or {}
+    ).get("normalization_report", {})
 
     project.selected_mode = str(config_snapshot["mode"])
     project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)

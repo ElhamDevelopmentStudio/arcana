@@ -1,4 +1,15 @@
-from enum import StrEnum
+from enum import Enum
+try:
+    from enum import StrEnum
+except ImportError:  # pragma: no cover
+    class StrEnum(str, Enum):
+        """Fallback for Python versions without enum.StrEnum."""
+
+        def __str__(self) -> str:
+            return self.value
+
+        def __format__(self, format_spec: str) -> str:
+            return str.__format__(self.value, format_spec)
 
 from fastapi import HTTPException
 

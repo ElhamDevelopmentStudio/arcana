@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS characters (
     name VARCHAR(255) NOT NULL,
     verbalized_form VARCHAR(255) NOT NULL,
     gender VARCHAR(50) NOT NULL,
+    aliases JSONB NOT NULL DEFAULT '[]'::jsonb,
+    notes TEXT,
+    source VARCHAR(120) NOT NULL DEFAULT 'user_import',
+    confidence REAL NOT NULL DEFAULT 1.0,
     voice_id VARCHAR(255),
     CONSTRAINT uq_project_character_name UNIQUE (project_id, name)
 );

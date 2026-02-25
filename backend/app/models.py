@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -62,6 +62,10 @@ class Character(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     verbalized_form: Mapped[str] = mapped_column(String(255), nullable=False)
     gender: Mapped[str] = mapped_column(String(50), nullable=False)
+    aliases: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(120), nullable=False, default="user_import")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     voice_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     project: Mapped[Project] = relationship("Project", back_populates="characters")
