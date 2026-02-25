@@ -518,6 +518,39 @@ def _build_chapter_level_valence_means(segments: list[dict[str, Any]]) -> list[d
     return chapter_level_valence_means
 
 
+def _build_chapter_level_valence_variance(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    totals: dict[int, float] = {}
+    counts: dict[int, int] = {}
+    sum_squares: dict[int, float] = {}
+
+    for segment in segments:
+        chapter_id = segment.get("chapter_id")
+        if not isinstance(chapter_id, int):
+            continue
+        valence = _to_number(segment.get("emotion_valence"))
+        if valence is None:
+            continue
+        totals[chapter_id] = totals.get(chapter_id, 0.0) + valence
+        sum_squares[chapter_id] = sum_squares.get(chapter_id, 0.0) + (valence * valence)
+        counts[chapter_id] = counts.get(chapter_id, 0) + 1
+
+    chapter_level_valence_variance = []
+    for chapter_id in sorted(totals.keys()):
+        count = counts.get(chapter_id, 0)
+        if count <= 0:
+            continue
+        mean = totals[chapter_id] / count
+        variance = sum_squares[chapter_id] / count - (mean * mean)
+        chapter_level_valence_variance.append(
+            {
+                "chapter_id": chapter_id,
+                "valence_variance": round(max(0.0, variance), 4),
+                "segment_count": count,
+            }
+        )
+    return chapter_level_valence_variance
+
+
 def _csv_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -703,6 +736,7 @@ def build_run_export(
         ),
         "academic_reports": {
             "chapter_level_valence_means": _build_chapter_level_valence_means(segments),
+            "chapter_level_valence_variance": _build_chapter_level_valence_variance(segments),
         },
     }
 

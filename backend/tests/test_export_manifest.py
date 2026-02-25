@@ -235,6 +235,79 @@ def test_export_json_includes_chapter_level_valence_means() -> None:
             assert chapter_mean["valence_mean"] == expected_mean
 
 
+def test_export_json_includes_chapter_level_valence_variance() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-002 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "Clouds gathered over the city as bells rang in the distance. "
+                            "Someone knocked once, then waited. "
+                            "The hallway stayed silent. "
+                            "A second knock cracked the darkened air into something more urgent.\n\n"
+                            "Chapter 2\n"
+                            "By dawn the detective had already checked every door twice. "
+                            "He wrote down names, suspects, and every impossible detail he could remember. "
+                            "The dawn did not answer."
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 120, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        variance = academic_reports.get("chapter_level_valence_variance")
+        assert isinstance(variance, list)
+        assert variance, "Expected at least one chapter variance entry"
+
+        by_chapter: dict[int, list[float]] = {}
+        for segment in export_payload["segments"]:
+            chapter_id = segment.get("chapter_id")
+            valence = segment.get("emotion_valence")
+            if isinstance(chapter_id, int) and isinstance(valence, (int, float)):
+                by_chapter.setdefault(chapter_id, []).append(float(valence))
+
+        assert len(variance) == len(by_chapter)
+
+        for chapter_variance in variance:
+            assert set(chapter_variance.keys()) >= {
+                "chapter_id",
+                "valence_variance",
+                "segment_count",
+            }
+            chapter_id = chapter_variance["chapter_id"]
+            assert chapter_id in by_chapter
+
+            values = by_chapter[chapter_id]
+            assert chapter_variance["segment_count"] == len(values)
+            expected_mean = sum(values) / len(values)
+            expected_variance = round(sum((value - expected_mean) ** 2 for value in values) / len(values), 4)
+            assert chapter_variance["valence_variance"] == expected_variance
+
+
 def test_export_json_includes_warning_report_summary() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})
