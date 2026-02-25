@@ -7,6 +7,7 @@ from app.config import get_settings
 from app.models import Chapter, Character, LLMCall, Project, PronunciationDictionary, Run, Segment
 from app.services.export import build_run_export
 from app.services.llm_router import LLMRequest, LLMRouter
+from app.services.character_merge import normalize_candidate_key
 from app.services.character_analytics import (
     build_character_occurrence_analytics,
 )
@@ -19,6 +20,7 @@ from app.services.voice import resolve_voice
 
 _LOW_GENDER_CONFIDENCE = 0.0
 _LOW_CONFIDENCE_GENDERS = frozenset({"neutral", "unknown"})
+_AMBIGUOUS_CHARACTER_REFERENCE = object()
 
 
 class PipelineError(RuntimeError):
@@ -39,12 +41,12 @@ def _coerce_confidence(value: object) -> float:
 
 def _resolve_gender_confidence(
     speaker: str,
-    character_lookup: dict[str, dict[str, object]],
+    character_lookup: dict[str, dict[str, object] | object],
 ) -> float:
-    if not speaker or speaker.lower() == "unknown":
+    if not speaker:
         return _LOW_GENDER_CONFIDENCE
 
-    entry = character_lookup.get(speaker.lower())
+    entry = _character_lookup_entry_for_speaker(speaker=speaker, character_lookup=character_lookup)
     if entry is None:
         return _LOW_GENDER_CONFIDENCE
 
@@ -53,6 +55,61 @@ def _resolve_gender_confidence(
         return _LOW_GENDER_CONFIDENCE
 
     return _coerce_confidence(entry.get("confidence"))
+
+
+def _character_lookup_entry_for_speaker(
+    speaker: str,
+    character_lookup: dict[str, dict[str, object] | object],
+) -> dict[str, object] | None:
+    normalized_speaker = normalize_candidate_key(speaker)
+    if not normalized_speaker:
+        return None
+
+    entry = character_lookup.get(normalized_speaker)
+    if not isinstance(entry, dict):
+        return None
+    return entry
+
+
+def _build_character_lookup(rows: list[Character]) -> dict[str, dict[str, object] | object]:
+    lookup: dict[str, dict[str, object] | object] = {}
+
+    def add_lookup_key(normalized_key: str, entry: dict[str, object]) -> None:
+        if not normalized_key:
+            return
+        existing = lookup.get(normalized_key)
+        if existing is None:
+            lookup[normalized_key] = entry
+            return
+        if existing is entry:
+            return
+        if isinstance(existing, dict) and existing.get("id") == entry.get("id"):
+            return
+        lookup[normalized_key] = _AMBIGUOUS_CHARACTER_REFERENCE
+
+    for character in rows:
+        speaker_entry: dict[str, object] = {
+            "id": character.id,
+            "gender": character.gender,
+            "voice_id": character.voice_id,
+            "confidence": character.confidence,
+        }
+        add_lookup_key(normalize_candidate_key(character.name), speaker_entry)
+        for alias in character.aliases or []:
+            add_lookup_key(normalize_candidate_key(alias), speaker_entry)
+
+    return lookup
+
+
+def _resolve_speaker_entry(
+    speaker: str,
+    character_lookup: dict[str, dict[str, object] | object],
+) -> dict[str, object] | None:
+    if not speaker:
+        return None
+    if normalize_candidate_key(speaker) == "unknown":
+        return None
+    return _character_lookup_entry_for_speaker(speaker=speaker, character_lookup=character_lookup)
 
 
 def execute_pipeline(session: Session, project: Project, run: Run, run_config: dict) -> dict:
@@ -128,14 +185,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     }
     for character in characters:
         name_to_verbalized[character.name.strip()] = character.verbalized_form.strip()
-    character_lookup = {
-        character.name.lower(): {
-            "gender": character.gender,
-            "voice_id": character.voice_id,
-            "confidence": character.confidence,
-        }
-        for character in characters
-    }
+    character_lookup = _build_character_lookup(rows=characters)
 
     session.query(Segment).filter(Segment.run_id == run.id).delete()
     session.query(LLMCall).filter(LLMCall.run_id == run.id).delete()
@@ -157,6 +207,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 parent_sentence_end_index = parent_sentence_start_index
             tags = tag_segment(original_text)
             speaker = str(tags["speaker"])
+            speaker_entry = _resolve_speaker_entry(speaker=speaker, character_lookup=character_lookup)
             normalized_speaker = speaker.strip().lower()
             pronunciation_map = {**name_to_verbalized}
             if normalized_speaker and normalized_speaker != "unknown":
@@ -193,10 +244,14 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 voice_config=project.voice_config_json,
             )
 
-            canonical_entry = character_lookup.get(speaker.lower()) if speaker.lower() != "unknown" else None
+            canonical_entry = speaker_entry
             gender = resolved_gender
             if canonical_entry is not None:
                 gender = str(canonical_entry.get("gender", resolved_gender))
+
+            speaker_id: int | None = None
+            if canonical_entry is not None:
+                speaker_id = int(canonical_entry["id"]) if canonical_entry.get("id") is not None else None
 
             segment_payload = {
                 "chapter_id": chapter.chapter_index,
@@ -220,6 +275,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 },
                 "type": tags["type"],
                 "speaker": speaker,
+                "speaker_id": speaker_id,
                 "gender": gender,
                 "voice_id": voice_id,
                 "emotion_valence": tags["emotion_valence"],
