@@ -16,6 +16,7 @@ type WorkspaceState = {
 type ProjectResponse = {
   id: number;
   selected_mode: string;
+  llm_enabled: boolean;
 };
 
 type ModeCatalogResponse = {
@@ -71,6 +72,23 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     const projectId = project.id;
     expect(projectId).toBeGreaterThan(0);
     expect(project.selected_mode).toBe('audiobook');
+    expect(project.llm_enabled).toBe(false);
+
+    const projectLlmGetResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/llm`);
+    expect(projectLlmGetResponse.status()).toBe(200);
+    const projectLlmGetPayload = (await projectLlmGetResponse.json()) as { project_id: number; llm_enabled: boolean };
+    expect(projectLlmGetPayload.project_id).toBe(projectId);
+    expect(projectLlmGetPayload.llm_enabled).toBe(false);
+
+    const projectLlmPutResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/llm`, {
+      data: {
+        llm_enabled: true,
+      },
+    });
+    expect(projectLlmPutResponse.status()).toBe(200);
+    const projectLlmPutPayload = (await projectLlmPutResponse.json()) as { project_id: number; llm_enabled: boolean };
+    expect(projectLlmPutPayload.project_id).toBe(projectId);
+    expect(projectLlmPutPayload.llm_enabled).toBe(true);
 
     const invalidModeResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
       data: { mode: 'invalid-mode' },
@@ -293,6 +311,28 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(finalizeResponse.status()).toBe(200);
     const finalizePayload = (await finalizeResponse.json()) as { character_map_finalized: boolean };
     expect(finalizePayload.character_map_finalized).toBe(true);
+
+    const projectInheritedRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 120,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(projectInheritedRunResponse.status()).toBe(200);
+    const projectInheritedRunPayload = (await projectInheritedRunResponse.json()) as {
+      run_id: number;
+    };
+    const projectInheritedRunDetailResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${projectInheritedRunPayload.run_id}`,
+    );
+    expect(projectInheritedRunDetailResponse.status()).toBe(200);
+    const projectInheritedRunDetail = (await projectInheritedRunDetailResponse.json()) as {
+      config: { llm_enabled: boolean };
+    };
+    expect(projectInheritedRunDetail.config.llm_enabled).toBe(true);
 
     const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
       data: {

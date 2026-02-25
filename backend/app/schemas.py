@@ -15,10 +15,20 @@ class ProjectResponse(BaseModel):
     title: str
     selected_mode: str
     selected_modes: list[str]
+    llm_enabled: bool
     configuration_snapshot_id: str | None
     character_map_finalized: bool
     ingestion_timestamp: datetime | None
     created_at: datetime
+
+
+class ProjectLLMSettingsRequest(BaseModel):
+    llm_enabled: bool
+
+
+class ProjectLLMSettingsResponse(BaseModel):
+    project_id: int
+    llm_enabled: bool
 
 
 ALLOWED_GENDER_VALUES = frozenset({"male", "female", "neutral", "unknown", "custom"})

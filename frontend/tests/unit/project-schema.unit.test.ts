@@ -9,6 +9,7 @@ describe('projectSchema', () => {
       title: 'Shadow Slave PoC',
       selected_mode: 'audiobook',
       selected_modes: ['audiobook'],
+      llm_enabled: false,
       configuration_snapshot_id: 'project-101-config-initial',
       ingestion_timestamp: null,
       created_at: '2026-02-25T00:00:00Z',

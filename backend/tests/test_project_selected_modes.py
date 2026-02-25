@@ -44,7 +44,9 @@ def test_unit_project_response_includes_selected_modes() -> None:
         title="Selected Modes Unit",
         selected_mode="author",
         selected_modes=["audiobook", "author"],
+        llm_enabled=False,
         configuration_snapshot_id="project-1-config-initial",
+        character_map_finalized=False,
         ingestion_timestamp=None,
         created_at=datetime.now(timezone.utc),
     )

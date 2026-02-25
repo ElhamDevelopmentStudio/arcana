@@ -57,6 +57,8 @@ from app.schemas import (
     ProjectModeSwitchRequest,
     ProjectModeSwitchResponse,
     ProjectResponse,
+    ProjectLLMSettingsRequest,
+    ProjectLLMSettingsResponse,
     RunCreateRequest,
     CharacterOccurrenceAnalyticsResponse,
     RunDetailResponse,
@@ -1000,6 +1002,7 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         title=payload.title.strip(),
         selected_mode=DEFAULT_MODE,
         selected_modes=[DEFAULT_MODE],
+        llm_enabled=False,
         voice_config_json=dict(DEFAULT_VOICE_CONFIG),
         default_narrator_voice=DEFAULT_VOICE_CONFIG["narrator_voice"],
         default_male_voice=DEFAULT_VOICE_CONFIG["male_default_voice"],
@@ -1020,11 +1023,44 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         title=project.title,
         selected_mode=project.selected_mode,
         selected_modes=project.selected_modes,
+        llm_enabled=project.llm_enabled,
         character_map_finalized=project.character_map_finalized,
         configuration_snapshot_id=project.configuration_snapshot_id,
         ingestion_timestamp=project.ingestion_timestamp,
         created_at=project.created_at,
     )
+
+
+@app.get(
+    "/api/projects/{project_id}/llm",
+    response_model=ProjectLLMSettingsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_llm_settings(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> ProjectLLMSettingsResponse:
+    project = _get_project_or_404(session, project_id)
+    return ProjectLLMSettingsResponse(project_id=project.id, llm_enabled=project.llm_enabled)
+
+
+@app.put(
+    "/api/projects/{project_id}/llm",
+    response_model=ProjectLLMSettingsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def update_project_llm_settings(
+    project_id: int,
+    payload: ProjectLLMSettingsRequest,
+    session: Session = Depends(get_session),
+) -> ProjectLLMSettingsResponse:
+    project = _get_project_or_404(session, project_id)
+    project.llm_enabled = payload.llm_enabled
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+
+    return ProjectLLMSettingsResponse(project_id=project.id, llm_enabled=project.llm_enabled)
 
 
 @app.put(
@@ -2628,6 +2664,7 @@ def create_run(
         )
 
     explicit_overrides = payload.model_dump(exclude={"mode"}, exclude_unset=True)
+    explicit_overrides.setdefault("llm_enabled", project.llm_enabled)
     _coalesce_internal_thought_policy(project=project, explicit_overrides=explicit_overrides)
     run_config = build_run_config_snapshot(
         mode=payload.mode,
