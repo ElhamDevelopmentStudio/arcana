@@ -44,6 +44,11 @@ class Chapter(Base):
     original_text_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_text_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    original_to_normalized_offset_map: Mapped[list[dict[str, int | str]]] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+    )
 
     project: Mapped[Project] = relationship("Project", back_populates="chapters")
 

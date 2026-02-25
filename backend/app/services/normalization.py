@@ -1,4 +1,5 @@
 import re
+from difflib import SequenceMatcher
 import unicodedata
 from functools import lru_cache
 
@@ -39,6 +40,22 @@ DEFAULT_COPY_ARTIFACT_PATTERN_SET = (
 QUOTE_REPAIR_LOW_CONFIDENCE_THRESHOLD = 0.7
 _LOW_CONFIDENCE_QUOTE_REPAIR_CONFIDENCE = 0.45
 _HIGH_CONFIDENCE_QUOTE_REPAIR_CONFIDENCE = 0.9
+
+
+def build_original_to_normalized_offset_map(
+    original_text: str, normalized_text: str
+) -> list[dict[str, int | str]]:
+    matcher = SequenceMatcher(None, original_text, normalized_text, autojunk=False)
+    return [
+        {
+            "original_start": original_start,
+            "original_end": original_end,
+            "normalized_start": normalized_start,
+            "normalized_end": normalized_end,
+            "type": op,
+        }
+        for op, original_start, original_end, normalized_start, normalized_end in matcher.get_opcodes()
+    ]
 
 
 def normalize_line_breaks_and_paragraph_separators(text: str) -> str:
