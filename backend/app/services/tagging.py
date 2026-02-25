@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 
 POSITIVE_WORDS = {
     "happy",
@@ -132,6 +133,8 @@ TONE_REVERSAL_MARKERS = {
     "perfect",
     "excellent",
 }
+
+ShiftMarkerDetector = tuple[str, Callable[[str], dict[str, object]]]
 
 TAG_LOW_CONFIDENCE_THRESHOLD = 0.6
 TAG_VERY_LOW_CONFIDENCE_THRESHOLD = 0.3
@@ -1187,6 +1190,23 @@ def detect_emotion_shift(text: str) -> dict[str, object]:
     }
 
 
+def detect_shift_markers(text: str) -> dict[str, dict[str, object]]:
+    """
+    Run all registered intra-segment shift markers for a segment.
+    """
+    return {
+        marker_name: detector(text) for marker_name, detector in _SHIFT_MARKER_DETECTORS
+    }
+
+
+_SHIFT_MARKER_DETECTORS: tuple[ShiftMarkerDetector, ...] = (
+    ("emotion_shift", detect_emotion_shift),
+    ("narration_internal_thought_shift", detect_narration_internal_thought_shift),
+    ("internal_external_speech_shift", detect_internal_external_speech_shift),
+    ("tone_reversal", detect_tone_reversal),
+)
+
+
 def compute_valence(text: str) -> tuple[float, float, float, str, str]:
     tokens = _tokenize(text)
     if not tokens:
@@ -1365,22 +1385,18 @@ def tag_segment(text: str) -> dict[str, object]:
     valence, intensity, emotion_confidence, primary_label, secondary_label = compute_valence(text)
     emotion_state = _confidence_state(emotion_confidence)
     speaker_state = _confidence_state(speaker_confidence)
-    emotion_shift = detect_emotion_shift(text)
-    narration_internal_thought_shift = detect_narration_internal_thought_shift(text)
-    internal_external_speech_shift = detect_internal_external_speech_shift(text)
-    tone_reversal = detect_tone_reversal(text)
+    shift_markers = detect_shift_markers(text)
+    emotion_shift = shift_markers["emotion_shift"]
+    narration_internal_thought_shift = shift_markers["narration_internal_thought_shift"]
+    internal_external_speech_shift = shift_markers["internal_external_speech_shift"]
+    tone_reversal = shift_markers["tone_reversal"]
     emotion_evidence = _build_emotion_evidence(
         positive_hits=_term_occurrences(text, POSITIVE_WORDS),
         negative_hits=_term_occurrences(text, NEGATIVE_WORDS),
     )
     sub_segment_boundaries = _build_sub_segment_boundaries(
         segment_text=text,
-        tag_payloads=[
-            ("emotion_shift", emotion_shift),
-            ("narration_internal_thought_shift", narration_internal_thought_shift),
-            ("internal_external_speech_shift", internal_external_speech_shift),
-            ("tone_reversal", tone_reversal),
-        ],
+        tag_payloads=list(shift_markers.items()),
     )
     tension = compute_tension_contribution(
         text=text,
