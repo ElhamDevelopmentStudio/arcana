@@ -178,7 +178,7 @@ Definition of done for each task:
 - [x] [SEG-005] Implement audiobook max target length config.
 - [x] [SEG-006] Implement hard max segment length ceiling.
 - [x] [SEG-007] Add intelligibility heuristic to avoid random mid-thought splits.
-- [ ] [SEG-008] Prefer punctuation boundaries when splitting.
+- [x] [SEG-008] Prefer punctuation boundaries when splitting.
 - [ ] [SEG-009] Avoid split inside quoted utterance where possible.
 - [ ] [SEG-010] Add abbreviation/initial-aware split protection.
 - [ ] [SEG-011] Add metadata: chapter id.
