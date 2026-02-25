@@ -156,6 +156,8 @@ export const voiceConfigSchema = z.object({
   narrator_voice: z.string(),
   male_default_voice: z.string(),
   female_default_voice: z.string(),
+  neutral_default_voice: z.string(),
+  unknown_default_voice: z.string(),
 });
 
 export const voiceConfigResponseSchema = z.object({

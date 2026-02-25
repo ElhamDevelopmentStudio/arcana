@@ -89,6 +89,10 @@ def recompute_voice_previews_for_runs(
     voice_config = build_effective_voice_config(
         project.voice_config_json,
         default_narrator_voice=project.default_narrator_voice,
+        default_male_voice=project.default_male_voice,
+        default_female_voice=project.default_female_voice,
+        default_neutral_voice=project.default_neutral_voice,
+        default_unknown_voice=project.default_unknown_voice,
     )
     recomputed_at = datetime.now(timezone.utc).isoformat()
 

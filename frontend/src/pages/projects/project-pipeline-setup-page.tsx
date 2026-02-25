@@ -33,6 +33,8 @@ export function ProjectPipelineSetupPage() {
   const [narratorVoice, setNarratorVoice] = useState('narrator_default');
   const [maleVoice, setMaleVoice] = useState('male_default');
   const [femaleVoice, setFemaleVoice] = useState('female_default');
+  const [neutralVoice, setNeutralVoice] = useState('neutral_default');
+  const [unknownVoice, setUnknownVoice] = useState('unknown_default');
   const [maxSegmentChars, setMaxSegmentChars] = useState(255);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [providerName, setProviderName] = useState('openrouter');
@@ -72,6 +74,8 @@ export function ProjectPipelineSetupPage() {
         narrator_voice: narratorVoice,
         male_default_voice: maleVoice,
         female_default_voice: femaleVoice,
+        neutral_default_voice: neutralVoice,
+        unknown_default_voice: unknownVoice,
       });
       toast.success('Voice configuration saved.');
     } catch (error) {
@@ -138,6 +142,22 @@ export function ProjectPipelineSetupPage() {
               <div className="grid gap-2">
                 <Label htmlFor="female-voice">Default female voice</Label>
                 <Input id="female-voice" value={femaleVoice} onChange={(event) => setFemaleVoice(event.target.value)} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="neutral-voice">Default neutral voice</Label>
+                <Input
+                  id="neutral-voice"
+                  value={neutralVoice}
+                  onChange={(event) => setNeutralVoice(event.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="unknown-voice">Default unknown voice</Label>
+                <Input
+                  id="unknown-voice"
+                  value={unknownVoice}
+                  onChange={(event) => setUnknownVoice(event.target.value)}
+                />
               </div>
               <Button disabled={saveVoicesMutation.isMutating || projectId === null} type="submit">
                 {saveVoicesMutation.isMutating ? 'Saving...' : 'Save Voice Config'}

@@ -477,6 +477,10 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         selected_modes=[DEFAULT_MODE],
         voice_config_json=dict(DEFAULT_VOICE_CONFIG),
         default_narrator_voice=DEFAULT_VOICE_CONFIG["narrator_voice"],
+        default_male_voice=DEFAULT_VOICE_CONFIG["male_default_voice"],
+        default_female_voice=DEFAULT_VOICE_CONFIG["female_default_voice"],
+        default_neutral_voice=DEFAULT_VOICE_CONFIG["neutral_default_voice"],
+        default_unknown_voice=DEFAULT_VOICE_CONFIG["unknown_default_voice"],
     )
     session.add(project)
     session.commit()
@@ -2032,6 +2036,10 @@ def update_voice_config(
     project = _get_project_or_404(session, project_id)
 
     narrator_voice = payload.narrator_voice.strip()
+    male_voice = payload.male_default_voice.strip()
+    female_voice = payload.female_default_voice.strip()
+    neutral_voice = payload.neutral_default_voice.strip()
+    unknown_voice = payload.unknown_default_voice.strip()
     if not narrator_voice:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -2040,12 +2048,16 @@ def update_voice_config(
 
     project.voice_config_json = {
         "narrator_voice": narrator_voice,
-        "male_default_voice": payload.male_default_voice.strip(),
-        "female_default_voice": payload.female_default_voice.strip(),
-        "neutral_default_voice": payload.neutral_default_voice.strip(),
-        "unknown_default_voice": payload.unknown_default_voice.strip(),
+        "male_default_voice": male_voice,
+        "female_default_voice": female_voice,
+        "neutral_default_voice": neutral_voice,
+        "unknown_default_voice": unknown_voice,
     }
     project.default_narrator_voice = narrator_voice
+    project.default_male_voice = male_voice
+    project.default_female_voice = female_voice
+    project.default_neutral_voice = neutral_voice
+    project.default_unknown_voice = unknown_voice
     session.add(project)
     session.commit()
     session.refresh(project)

@@ -11,10 +11,22 @@ def build_effective_voice_config(
     voice_config: dict[str, str] | None,
     *,
     default_narrator_voice: str | None = None,
+    default_male_voice: str | None = None,
+    default_female_voice: str | None = None,
+    default_neutral_voice: str | None = None,
+    default_unknown_voice: str | None = None,
 ) -> dict[str, str]:
     merged = DEFAULT_VOICE_CONFIG | (voice_config or {})
     if default_narrator_voice:
         merged["narrator_voice"] = default_narrator_voice
+    if default_male_voice:
+        merged["male_default_voice"] = default_male_voice
+    if default_female_voice:
+        merged["female_default_voice"] = default_female_voice
+    if default_neutral_voice:
+        merged["neutral_default_voice"] = default_neutral_voice
+    if default_unknown_voice:
+        merged["unknown_default_voice"] = default_unknown_voice
     return merged
 
 
