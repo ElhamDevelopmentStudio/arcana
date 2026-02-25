@@ -308,6 +308,87 @@ def test_export_json_includes_chapter_level_valence_variance() -> None:
             assert chapter_variance["valence_variance"] == expected_variance
 
 
+def test_export_json_includes_chapter_level_emotional_volatility_index() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest ACAD-003 Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        (
+                            "Chapter 1\n"
+                            "The rain came down in a steady rhythm while footsteps moved on the stairs.\n"
+                            "A single window blinked with the reflection of distant lights and then vanished.\n"
+                            "Every room in the house felt a little too aware.\n"
+                            "He closed the door quietly and listened for breath.\n\n"
+                            "Chapter 2\n"
+                            "By morning the corridor hummed with voices and papers scraping on the table.\n"
+                            "Someone moved quickly and a drawer slammed hard.\n"
+                            "The detective counted three sets of keys before dawn."
+                        ).encode("utf-8")
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 100, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_resp.status_code == 200
+        export_payload = export_resp.json()
+
+        academic_reports = export_payload["manifest"].get("academic_reports")
+        assert isinstance(academic_reports, dict)
+
+        volatility_indexes = academic_reports.get("chapter_level_emotional_volatility_index")
+        assert isinstance(volatility_indexes, list)
+        assert volatility_indexes, "Expected at least one chapter volatility entry"
+
+        volatility_by_chapter: dict[int, list[float]] = {}
+        segment_by_id: dict[str, int] = {}
+        for segment in export_payload["segments"]:
+            if isinstance(segment.get("segment_id"), str) and isinstance(segment.get("chapter_id"), int):
+                segment_by_id[segment["segment_id"]] = segment["chapter_id"]
+
+        for marker in export_payload["time_series"]["volatility_markers"]:
+            segment_id = marker.get("segment_id")
+            if not isinstance(segment_id, str):
+                continue
+            chapter_id = segment_by_id.get(segment_id)
+            if chapter_id is None:
+                continue
+            volatility_by_chapter.setdefault(chapter_id, []).append(float(marker.get("volatility_index")))
+
+        assert len(volatility_indexes) == len(volatility_by_chapter)
+
+        for chapter_volatility in volatility_indexes:
+            assert set(chapter_volatility.keys()) >= {
+                "chapter_id",
+                "emotional_volatility_index",
+                "segment_count",
+            }
+            chapter_id = chapter_volatility["chapter_id"]
+            assert chapter_id in volatility_by_chapter
+
+            values = volatility_by_chapter[chapter_id]
+            assert chapter_volatility["segment_count"] == len(values)
+            assert values, "Expected at least one volatility transition per included chapter"
+            expected_index = round(sum(values) / len(values), 4)
+            assert chapter_volatility["emotional_volatility_index"] == expected_index
+
+
 def test_export_json_includes_warning_report_summary() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Warnings Report Project"})

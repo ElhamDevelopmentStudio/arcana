@@ -551,6 +551,44 @@ def _build_chapter_level_valence_variance(segments: list[dict[str, Any]]) -> lis
     return chapter_level_valence_variance
 
 
+def _build_chapter_level_emotional_volatility_index(
+    segments: list[dict[str, Any]],
+    volatility_markers: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    marker_by_segment_id: dict[str, float] = {}
+    for marker in volatility_markers:
+        segment_id = marker.get("segment_id")
+        if isinstance(segment_id, str):
+            marker_by_segment_id[segment_id] = float(marker.get("volatility_index", 0.0) or 0.0)
+
+    totals: dict[int, float] = {}
+    counts: dict[int, int] = {}
+    for segment in segments:
+        chapter_id = segment.get("chapter_id")
+        segment_id = segment.get("segment_id")
+        if not isinstance(chapter_id, int) or not isinstance(segment_id, str):
+            continue
+        if segment_id not in marker_by_segment_id:
+            continue
+        volatility_index = marker_by_segment_id[segment_id]
+        totals[chapter_id] = totals.get(chapter_id, 0.0) + volatility_index
+        counts[chapter_id] = counts.get(chapter_id, 0) + 1
+
+    chapter_level_emotional_volatility_index = []
+    for chapter_id in sorted(totals.keys()):
+        count = counts.get(chapter_id, 0)
+        if count <= 0:
+            continue
+        chapter_level_emotional_volatility_index.append(
+            {
+                "chapter_id": chapter_id,
+                "emotional_volatility_index": round(totals[chapter_id] / count, 4),
+                "segment_count": count,
+            }
+        )
+    return chapter_level_emotional_volatility_index
+
+
 def _csv_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -702,6 +740,7 @@ def build_run_export(
     ).scalars()
 
     segments = [_normalize_segment_for_export(row) for row in list(rows)]
+    time_series = _build_time_series(segments)
     ordered_by = ["chapter_index", "segment_index"]
     llm_calls = _load_run_llm_calls(session, run)
     ingestion_log = dict(project.ingestion_log_json or {})
@@ -737,6 +776,10 @@ def build_run_export(
         "academic_reports": {
             "chapter_level_valence_means": _build_chapter_level_valence_means(segments),
             "chapter_level_valence_variance": _build_chapter_level_valence_variance(segments),
+            "chapter_level_emotional_volatility_index": _build_chapter_level_emotional_volatility_index(
+                segments=segments,
+                volatility_markers=time_series["volatility_markers"],
+            ),
         },
     }
 
@@ -747,7 +790,7 @@ def build_run_export(
         "status": run.status,
         "manifest": manifest,
         "segments": segments,
-        "time_series": _build_time_series(segments),
+        "time_series": time_series,
         "cursor": {
             "from_chapter_index": from_chapter_index,
             "from_segment_index": from_segment_index,
