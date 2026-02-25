@@ -128,3 +128,27 @@ def test_unit_pronunciation_dictionary_rejects_duplicate_term_per_project_scope_
     finally:
         session.rollback()
         session.close()
+
+
+def test_unit_pronunciation_dictionary_rejects_invalid_scope_value() -> None:
+    session = get_session_factory()()
+    try:
+        project = Project(title="Pronunciation Dictionary Scope Guard")
+        session.add(project)
+        session.flush()
+
+        session.add(
+            PronunciationDictionary(
+                project_id=project.id,
+                scope="chapter",
+                character_name="",
+                term="Aegis",
+                verbalized_form="EE-jis",
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+    finally:
+        session.rollback()
+        session.close()
