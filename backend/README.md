@@ -157,3 +157,15 @@ UC-3 traceability execution (`USE-008`, Draft novel -> Author diagnostics):
 ```bash
 python scripts_run_uc3_traceability.py
 ```
+
+USE-009 optional slow large-corpus regression suite (`novels_extra_chapter_0_to_22.txt`, UC1/UC2/UC3 deterministic re-run checks):
+
+```bash
+python scripts_run_large_corpus_traceability.py --allow-slow
+```
+
+Optional slow test execution for USE-009:
+
+```bash
+RUN_SLOW_TRACEABILITY=1 pytest tests/test_large_corpus_traceability_regression.py -q
+```
