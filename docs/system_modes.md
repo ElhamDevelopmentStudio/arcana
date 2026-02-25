@@ -57,3 +57,13 @@ Purpose:
 - guarantee: switching modes does not create new chapter/raw-text rows.
 - verification: repeated mode switches preserve chapter row IDs and raw-text content snapshots for the project.
 - implementation_scope: no write-path to `chapters` table inside mode switch endpoint.
+
+## MODE-011 Stale Artifact Marking On Mode Switch
+
+- stale_policy: when mode changes, runs produced under different mode are marked stale.
+- stale_marker_fields (stored in `runs.config_json`):
+  - `artifacts_stale: true`
+  - `stale_reason: "mode_switched"`
+  - `stale_on_mode: <new_selected_mode>`
+  - `stale_marked_at: <utc_iso_timestamp>`
+- endpoint_response_field: `stale_runs_marked` reports how many existing runs were newly marked stale.

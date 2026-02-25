@@ -50,6 +50,7 @@ test.beforeEach(async ({ page }) => {
         selected_mode: payload.mode ?? 'audiobook',
         chapter_count: 12,
         reused_ingested_corpus: true,
+        stale_runs_marked: 1,
       }),
     });
   });

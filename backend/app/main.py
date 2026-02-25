@@ -26,6 +26,7 @@ from app.services.characters import parse_character_file
 from app.services.export import build_run_export
 from app.services.ingestion import decode_text, detect_chapters
 from app.services.mode_profiles import build_run_config_snapshot
+from app.services.mode_switch import mark_runs_stale_for_mode_switch
 from app.services.normalization import normalize_text
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.voice import DEFAULT_VOICE_CONFIG
@@ -107,6 +108,11 @@ def switch_project_mode(
     previous_mode = project.selected_mode
 
     chapter_count = session.query(Chapter).filter(Chapter.project_id == project.id).count()
+    stale_runs_marked = 0
+    if previous_mode != payload.mode:
+        project_runs = session.query(Run).filter(Run.project_id == project.id).all()
+        stale_runs_marked = mark_runs_stale_for_mode_switch(project_runs, payload.mode)
+
     project.selected_mode = payload.mode
     session.add(project)
     session.commit()
@@ -118,6 +124,7 @@ def switch_project_mode(
         selected_mode=project.selected_mode,
         chapter_count=chapter_count,
         reused_ingested_corpus=chapter_count > 0,
+        stale_runs_marked=stale_runs_marked,
     )
 
 

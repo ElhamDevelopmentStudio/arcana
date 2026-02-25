@@ -29,6 +29,7 @@ export const projectModeSwitchResponseSchema = z.object({
   selected_mode: z.string(),
   chapter_count: z.number().int().nonnegative(),
   reused_ingested_corpus: z.boolean(),
+  stale_runs_marked: z.number().int().nonnegative(),
 });
 
 export const ingestResponseSchema = z.object({

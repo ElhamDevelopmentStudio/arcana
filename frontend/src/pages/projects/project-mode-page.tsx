@@ -49,7 +49,13 @@ export function ProjectModePage() {
     try {
       const response = await switchModeMutation.trigger({ mode: nextMode });
       setSelectedMode(response.selected_mode);
-      toast.success(`Mode set to ${response.selected_mode}.`);
+      if (response.stale_runs_marked > 0) {
+        toast.success(
+          `Mode set to ${response.selected_mode}. ${response.stale_runs_marked} previous run(s) marked stale.`,
+        );
+      } else {
+        toast.success(`Mode set to ${response.selected_mode}.`);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to switch mode');
     }

@@ -10,9 +10,11 @@ describe('projectModeSwitchResponseSchema', () => {
       selected_mode: 'author',
       chapter_count: 12,
       reused_ingested_corpus: true,
+      stale_runs_marked: 1,
     });
 
     expect(parsed.selected_mode).toBe('author');
     expect(parsed.reused_ingested_corpus).toBe(true);
+    expect(parsed.stale_runs_marked).toBe(1);
   });
 });

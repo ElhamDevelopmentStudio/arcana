@@ -41,6 +41,7 @@ class ProjectModeSwitchResponse(BaseModel):
     selected_mode: str
     chapter_count: int
     reused_ingested_corpus: bool
+    stale_runs_marked: int
 
 
 class ModeDefaultProfileResponse(BaseModel):

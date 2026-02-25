@@ -53,6 +53,7 @@ python scripts_run_migration.py
 Mode persistence behavior:
 - Project-level selected mode is stored at `projects.selected_mode`.
 - Mode changes can be persisted before runs via `PUT /api/projects/{project_id}/mode`.
+- Mode changes mark prior runs from different modes as stale via `runs.config_json.artifacts_stale=true`.
 - Each run snapshots mode in `runs.config_json.mode`.
 - Each run stores immutable defaults at `runs.config_json.mode_profile_snapshot`.
 - Mode catalog includes `mode_profiles` with default run-config values per mode.

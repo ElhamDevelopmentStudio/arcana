@@ -60,6 +60,7 @@ def test_integration_mode_switch_endpoint_persists_selected_mode() -> None:
         assert payload["selected_mode"] == "academic"
         assert payload["chapter_count"] == 0
         assert payload["reused_ingested_corpus"] is False
+        assert payload["stale_runs_marked"] == 0
 
     session = get_session_factory()()
     try:
@@ -104,6 +105,7 @@ def test_e2e_mode_switch_reuses_ingested_corpus_without_reingestion() -> None:
         assert payload["selected_mode"] == "author"
         assert payload["chapter_count"] == 2
         assert payload["reused_ingested_corpus"] is True
+        assert payload["stale_runs_marked"] == 0
 
     session = get_session_factory()()
     try:
@@ -136,6 +138,7 @@ def test_regression_mode_switch_response_snapshot() -> None:
             "selected_mode": "custom",
             "chapter_count": 0,
             "reused_ingested_corpus": False,
+            "stale_runs_marked": 0,
         }
 
 
