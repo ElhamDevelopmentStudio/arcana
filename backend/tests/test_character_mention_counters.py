@@ -421,3 +421,14 @@ def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
 
         dialogue_line_counts = detail["config"]["character_dialogue_line_counts"]
         assert dialogue_line_counts == {"Nephis": 0, "Sunny": 1}
+
+        analytics_resp = client.get(f"/api/projects/{project_id}/runs/{run_id}/character-analytics")
+        assert analytics_resp.status_code == 200
+        analytics = analytics_resp.json()
+        assert analytics["project_id"] == project_id
+        assert analytics["run_id"] == run_id
+        assert analytics["character_mentions_by_chapter"] == counts
+        assert analytics["character_first_appearance_chapter_index"] == first_appearance
+        assert analytics["character_last_appearance_chapter_index"] == last_appearance
+        assert analytics["character_mentions_per_1000_words"] == mentions_per_1000_words
+        assert analytics["character_dialogue_line_counts"] == dialogue_line_counts

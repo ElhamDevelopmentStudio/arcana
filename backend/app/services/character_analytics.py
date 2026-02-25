@@ -19,6 +19,31 @@ class ChapterMentionCounter:
         }
 
 
+def build_character_occurrence_analytics(
+    chapters: list[Chapter],
+    characters: list[Character],
+    segment_payloads: list[dict[str, object]],
+) -> dict[str, object]:
+    chapter_mention_counters = build_character_mentions_by_chapter(chapters=chapters, characters=characters)
+    return {
+        "character_mentions_by_chapter": [counter.to_dict() for counter in chapter_mention_counters],
+        "character_first_appearance_chapter_index": build_character_first_appearance_chapter_indices(
+            chapter_mention_counters,
+        ),
+        "character_last_appearance_chapter_index": build_character_last_appearance_chapter_indices(
+            chapter_mention_counters,
+        ),
+        "character_mentions_per_1000_words": build_character_mentions_per_1000_words(
+            chapter_mention_counters=chapter_mention_counters,
+            chapters=chapters,
+        ),
+        "character_dialogue_line_counts": build_character_dialogue_line_counts(
+            segments=segment_payloads,
+            characters=characters,
+        ),
+    }
+
+
 def build_character_first_appearance_chapter_indices(
     chapter_mention_counters: list[ChapterMentionCounter],
 ) -> dict[str, int | None]:
