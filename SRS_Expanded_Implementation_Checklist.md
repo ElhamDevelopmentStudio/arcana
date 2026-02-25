@@ -240,7 +240,7 @@ Definition of done for each task:
 - [x] [AUD-007] Include logs/reports in export package.
 - [x] [AUD-008] Implement JSON export writer.
 - [x] [AUD-009] Implement CSV export writer.
-- [ ] [AUD-010] Implement time-series export arrays.
+- [x] [AUD-010] Implement time-series export arrays.
 - [ ] [AUD-011] Enforce stable chapter->segment ordering.
 - [ ] [AUD-012] Implement resumable export by chapter/segment cursor.
 - [ ] [AUD-013] Guarantee stable segment IDs across equivalent reruns.
