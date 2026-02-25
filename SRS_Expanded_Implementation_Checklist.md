@@ -213,7 +213,7 @@ Definition of done for each task:
 - [x] [TAG-018] Build optional review UI for emotional peaks/troughs.
 - [x] [TAG-019] Build optional review UI for low-confidence regions.
 - [x] [TAG-020] Ensure pipeline can run fully without any manual review step.
-- [ ] [TAG-021] Add evaluation fixtures for rapid emotional shifts.
+- [x] [TAG-021] Add evaluation fixtures for rapid emotional shifts.
 - [ ] [TAG-022] Add evaluation fixtures for mixed narration/dialogue segments.
 
 ## 4.8 Voice Mapping (Ref: SRS.md §4.8)
