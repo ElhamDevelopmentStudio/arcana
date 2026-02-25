@@ -10,6 +10,7 @@ from app.database import init_db, reset_engine
 from app.main import app
 from app.models import Chapter, Character
 from app.services.character_analytics import (
+    build_character_last_appearance_chapter_indices,
     build_character_first_appearance_chapter_indices,
     build_character_mentions_by_chapter,
 )
@@ -178,6 +179,71 @@ def test_unit_character_first_appearance_chapter_indices() -> None:
     assert first_appearance["Ghost"] is None
 
 
+def test_unit_character_last_appearance_chapter_indices() -> None:
+    chapters = [
+        _chapter(1, "Sunny said hello and Captain entered."),
+        _chapter(2, "Sunny and Nephis argued while Captain replied."),
+        _chapter(3, "Nephis stood in silence."),
+    ]
+
+    characters = [
+        Character(
+            name="Sunny",
+            verbalized_form="Sunny",
+            gender="female",
+            aliases=["Sun"],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Lio",
+            verbalized_form="Lio",
+            gender="male",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Captain",
+            verbalized_form="Captain",
+            gender="male",
+            aliases=["Cap"],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Nephis",
+            verbalized_form="Nephis",
+            gender="female",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+        Character(
+            name="Ghost",
+            verbalized_form="Ghost",
+            gender="unknown",
+            aliases=[],
+            notes=None,
+            source="manual",
+            confidence=1.0,
+        ),
+    ]
+
+    chapter_counts = build_character_mentions_by_chapter(chapters=chapters, characters=characters)
+    last_appearance = build_character_last_appearance_chapter_indices(chapter_counts)
+
+    assert last_appearance["Sunny"] == 2
+    assert last_appearance["Captain"] == 2
+    assert last_appearance["Nephis"] == 3
+    assert last_appearance["Lio"] is None
+    assert last_appearance["Ghost"] is None
+
+
 def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
     sample_text = (
         "Chapter 1\n"
@@ -230,3 +296,6 @@ def test_integration_pipeline_run_stores_per_chapter_mention_counts() -> None:
 
         first_appearance = detail["config"]["character_first_appearance_chapter_index"]
         assert first_appearance == {"Nephis": 1, "Sunny": 1}
+
+        last_appearance = detail["config"]["character_last_appearance_chapter_index"]
+        assert last_appearance == {"Nephis": 1, "Sunny": 1}

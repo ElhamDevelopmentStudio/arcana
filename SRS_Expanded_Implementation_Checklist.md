@@ -130,7 +130,7 @@ Definition of done for each task:
 - [x] [CHAR-015] Add alias collision detector when alias maps to multiple canonicals.
 - [x] [CHAR-016] Implement per-chapter mention counter.
 - [x] [CHAR-017] Compute first appearance chapter index.
-- [ ] [CHAR-018] Compute last appearance chapter index.
+- [x] [CHAR-018] Compute last appearance chapter index.
 - [ ] [CHAR-019] Compute mentions per 1,000 words metric.
 - [ ] [CHAR-020] Compute dialogue line counts where speaker attribution exists.
 - [ ] [CHAR-021] Add API endpoint for character occurrence analytics.
