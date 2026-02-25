@@ -1,5 +1,5 @@
 from app.services.ingestion import detect_chapters
-from app.services.phonetics import replace_pronunciations
+from app.services.phonetics import replace_pronunciations, replace_pronunciations_with_counts
 from app.services.segmentation import segment_text
 
 
@@ -15,6 +15,20 @@ def test_replace_pronunciation_whole_word_only() -> None:
     replaced = replace_pronunciations(text, {"Sunny": "Sunny", "Nephis": "Ne-fis"})
     assert "Ne-fis" in replaced
     assert "Sunlight" in replaced
+
+
+def test_replace_pronunciation_reports_replacement_counts() -> None:
+    text = "Sunny, Sunny met Nephis. Nephis smiled after Sunny said hello."
+    replaced, counts = replace_pronunciations_with_counts(
+        text,
+        {
+            "Sunny": "Sŏo-nee",
+            "Nephis": "Ne-fis",
+        },
+    )
+    assert replaced == "Sŏo-nee, Sŏo-nee met Ne-fis. Ne-fis smiled after Sŏo-nee said hello."
+    assert counts["Sunny"] == 3
+    assert counts["Nephis"] == 2
 
 
 def test_segmentation_never_exceeds_limit() -> None:

@@ -209,6 +209,37 @@ class PronunciationDictionaryResponse(BaseModel):
     entries: list[PronunciationDictionaryItem]
 
 
+class PronunciationDictionaryPreviewItem(BaseModel):
+    term: str
+    verbalized_form: str
+    count: int = Field(ge=1)
+    scope: str
+
+
+class PronunciationDictionaryPreviewRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10000)
+    character_name: str | None = None
+    include_global_scope: bool = True
+    include_character_scope: bool = True
+
+    @field_validator("character_name")
+    @classmethod
+    def normalize_character_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class PronunciationDictionaryPreviewResponse(BaseModel):
+    project_id: int
+    before: str
+    after: str
+    character_name: str | None
+    replacements: list[PronunciationDictionaryPreviewItem]
+    included_scopes: list[str]
+
+
 class CharacterAliasLookupRequest(BaseModel):
     alias: str = Field(min_length=1, max_length=255)
 

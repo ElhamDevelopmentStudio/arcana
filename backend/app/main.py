@@ -20,6 +20,9 @@ from app.schemas import (
     CharacterAliasCollisionItem,
     CharacterAliasCollisionResponse,
     PronunciationDictionaryItem,
+    PronunciationDictionaryPreviewItem,
+    PronunciationDictionaryPreviewRequest,
+    PronunciationDictionaryPreviewResponse,
     PronunciationDictionaryResponse,
     PronunciationDictionaryUpdateRequest,
     IngestResponse,
@@ -84,6 +87,7 @@ from app.services.normalization import (
 from app.services.voice_preview import recompute_voice_previews_for_runs
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.voice import DEFAULT_VOICE_CONFIG
+from app.services.phonetics import replace_pronunciations_with_counts
 
 app = FastAPI(title="NIPE PoC API", version="0.1.0")
 
@@ -225,6 +229,16 @@ def _build_pronunciation_dictionary_payload(entry: PronunciationDictionary) -> P
         source=entry.source,
         confidence=entry.confidence,
     )
+
+
+def _normalize_character_reference_name(raw_name: str) -> str:
+    normalized = raw_name.strip()
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="character_name must not be blank",
+        )
+    return normalized
 
 
 def _build_inferred_gender_lookup(
@@ -1460,6 +1474,177 @@ def set_global_pronunciation_dictionary(
         project_id=project.id,
         scope="global",
         entries=[_build_pronunciation_dictionary_payload(entry) for entry in saved_entries],
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/pronunciation-dictionary/character/{character_name}",
+    response_model=PronunciationDictionaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_character_pronunciation_dictionary(
+    project_id: int,
+    character_name: str,
+    session: Session = Depends(get_session),
+) -> PronunciationDictionaryResponse:
+    _get_project_or_404(session, project_id)
+    normalized_name = _normalize_character_reference_name(character_name)
+
+    entries = (
+        session.query(PronunciationDictionary)
+        .filter(
+            PronunciationDictionary.project_id == project_id,
+            PronunciationDictionary.scope == "character",
+            PronunciationDictionary.character_name == normalized_name,
+        )
+        .order_by(PronunciationDictionary.term.asc())
+        .all()
+    )
+    return PronunciationDictionaryResponse(
+        project_id=project_id,
+        scope="character",
+        entries=[_build_pronunciation_dictionary_payload(entry) for entry in entries],
+    )
+
+
+@app.put(
+    "/api/projects/{project_id}/pronunciation-dictionary/character/{character_name}",
+    response_model=PronunciationDictionaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def set_character_pronunciation_dictionary(
+    project_id: int,
+    character_name: str,
+    payload: PronunciationDictionaryUpdateRequest,
+    session: Session = Depends(get_session),
+) -> PronunciationDictionaryResponse:
+    project = _get_project_or_404(session, project_id)
+    normalized_name = _normalize_character_reference_name(character_name)
+
+    deduped: dict[str, PronunciationDictionaryItem] = {}
+    for row in payload.entries:
+        deduped[row.term.strip().lower()] = row
+
+    session.query(PronunciationDictionary).filter(
+        PronunciationDictionary.project_id == project_id,
+        PronunciationDictionary.scope == "character",
+        PronunciationDictionary.character_name == normalized_name,
+    ).delete()
+
+    for row in deduped.values():
+        session.add(
+            PronunciationDictionary(
+                project_id=project_id,
+                scope="character",
+                character_name=normalized_name,
+                term=row.term.strip(),
+                verbalized_form=row.verbalized_form.strip(),
+                source=row.source,
+                confidence=row.confidence,
+            )
+        )
+    session.commit()
+
+    saved_entries = (
+        session.query(PronunciationDictionary)
+        .filter(
+            PronunciationDictionary.project_id == project_id,
+            PronunciationDictionary.scope == "character",
+            PronunciationDictionary.character_name == normalized_name,
+        )
+        .order_by(PronunciationDictionary.term.asc())
+        .all()
+    )
+    return PronunciationDictionaryResponse(
+        project_id=project.id,
+        scope="character",
+        entries=[_build_pronunciation_dictionary_payload(entry) for entry in saved_entries],
+    )
+
+
+def _build_pronunciation_preview_scope_map(
+    project_id: int,
+    session: Session,
+    scope: str,
+    character_name: str | None = None,
+) -> dict[str, str]:
+    query = session.query(PronunciationDictionary).filter(
+        PronunciationDictionary.project_id == project_id,
+        PronunciationDictionary.scope == scope,
+    )
+
+    if scope == "character" and character_name is not None:
+        query = query.filter(PronunciationDictionary.character_name == character_name)
+
+    entries = query.all()
+    return {entry.term.strip(): entry.verbalized_form.strip() for entry in entries}
+
+
+@app.post(
+    "/api/projects/{project_id}/pronunciation-dictionary/preview",
+    response_model=PronunciationDictionaryPreviewResponse,
+    status_code=status.HTTP_200_OK,
+)
+def preview_pronunciation_dictionary(
+    project_id: int,
+    payload: PronunciationDictionaryPreviewRequest,
+    session: Session = Depends(get_session),
+) -> PronunciationDictionaryPreviewResponse:
+    _get_project_or_404(session, project_id)
+
+    if not payload.include_global_scope and not payload.include_character_scope:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Set at least one of include_global_scope or include_character_scope to true.",
+        )
+
+    normalized_character_name = payload.character_name.strip() if payload.character_name else None
+
+    global_map: dict[str, str] = {}
+    character_map: dict[str, str] = {}
+    included_scopes: list[str] = []
+
+    if payload.include_global_scope:
+        global_map = _build_pronunciation_preview_scope_map(project_id, session, "global")
+        if global_map:
+            included_scopes.append("global")
+
+    if payload.include_character_scope and normalized_character_name is not None:
+        character_map = _build_pronunciation_preview_scope_map(
+            project_id,
+            session,
+            "character",
+            normalized_character_name,
+        )
+        if character_map:
+            included_scopes.append("character")
+
+    replacement_map = {**global_map}
+    replacement_map.update(character_map)
+
+    after_text, counts = replace_pronunciations_with_counts(payload.text, replacement_map)
+    replacement_items = []
+    for term, count in sorted(counts.items(), key=lambda item: item[0].lower()):
+        verbalized = replacement_map.get(term)
+        if verbalized is None or count <= 0:
+            continue
+        scope = "character" if term in character_map else "global"
+        replacement_items.append(
+            PronunciationDictionaryPreviewItem(
+                term=term,
+                verbalized_form=verbalized,
+                count=count,
+                scope=scope,
+            )
+        )
+
+    return PronunciationDictionaryPreviewResponse(
+        project_id=project_id,
+        before=payload.text,
+        after=after_text,
+        character_name=normalized_character_name,
+        replacements=replacement_items,
+        included_scopes=included_scopes,
     )
 
 
