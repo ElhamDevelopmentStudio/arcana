@@ -52,6 +52,7 @@ from app.services.character_merge import normalize_candidate_key
 from app.services.character_merge import detect_alias_conflicts
 from app.services.character_merge import resolve_alias_to_canonical_name
 from app.services.export import build_run_export, build_run_export_csv
+from app.services.export import build_run_export_academic_csv
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
     build_duplicate_title_dedup_actions,
@@ -2347,6 +2348,7 @@ def get_export_csv(
     run_id: int,
     from_chapter_index: int | None = None,
     from_segment_index: int | None = None,
+    output_schema: str | None = None,
     session: Session = Depends(get_session),
 ) -> Response:
     project = _get_project_or_404(session, project_id)
@@ -2381,14 +2383,39 @@ def get_export_csv(
             detail="from_chapter_index and from_segment_index must be provided together.",
         )
 
-    csv_data = build_run_export_csv(
-        session=session,
-        project=project,
-        run=run,
-        from_chapter_index=from_chapter_index,
-        from_segment_index=from_segment_index,
-    )
-    filename = f"project-{project_id}-run-{run_id}.csv"
+    if output_schema is not None and output_schema != "academic":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported output_schema '{output_schema}'. Supported values: academic.",
+        )
+
+    if output_schema == "academic":
+        export_payload = build_run_export(
+            session=session,
+            project=project,
+            run=run,
+            from_chapter_index=from_chapter_index,
+            from_segment_index=from_segment_index,
+        )
+        manifest = export_payload.get("manifest", {})
+        academic_reports = manifest.get("academic_reports", {})
+        academic_manifest = manifest.get("academic_export_manifest", {})
+        csv_data = build_run_export_academic_csv(
+            project=project,
+            run=run,
+            academic_reports=academic_reports,
+            academic_manifest=academic_manifest,
+        )
+        filename = f"project-{project_id}-run-{run_id}-academic.csv"
+    else:
+        csv_data = build_run_export_csv(
+            session=session,
+            project=project,
+            run=run,
+            from_chapter_index=from_chapter_index,
+            from_segment_index=from_segment_index,
+        )
+        filename = f"project-{project_id}-run-{run_id}.csv"
     return Response(
         content=csv_data,
         media_type="text/csv",

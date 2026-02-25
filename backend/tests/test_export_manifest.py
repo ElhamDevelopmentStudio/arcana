@@ -1451,6 +1451,97 @@ def test_export_csv_contains_tts_ready_segments() -> None:
         assert rows[1][header.index("segment_id")] != ""
 
 
+def test_export_csv_supports_academic_output_schema() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Academic CSV Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(b"Chapter 1\nThe lantern burned low and the rain beat softly outside."), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_payload = client.get(f"/api/projects/{project_id}/exports/{run_id}.json").json()
+        manifest = export_payload["manifest"]
+        academic_manifest = manifest["academic_export_manifest"]
+        assert academic_manifest["output_schema"] == "academic_json"
+
+        academic_csv_resp = client.get(
+            f"/api/projects/{project_id}/exports/{run_id}.csv",
+            params={"output_schema": "academic"},
+        )
+        assert academic_csv_resp.status_code == 200
+        assert academic_csv_resp.headers["content-type"] == "text/csv; charset=utf-8"
+        assert academic_csv_resp.headers["content-disposition"] == f"attachment; filename=\"project-{project_id}-run-{run_id}-academic.csv\""
+
+        rows = list(csv.DictReader(io.StringIO(academic_csv_resp.text)))
+        assert len(rows) > 0
+        expected_fields = {
+            "record_type",
+            "output_order",
+            "output_id",
+            "output_name",
+            "output_status",
+            "output_schema",
+            "data_key",
+            "record_count",
+            "record_payload",
+            "status_reason",
+            "generated_by",
+            "generated_at",
+            "project_id",
+            "run_id",
+            "run_status",
+        }
+        assert set(rows[0].keys()) >= expected_fields
+
+        manifest_row = next((row for row in rows if row["record_type"] == "manifest"), None)
+        assert manifest_row is not None
+        assert manifest_row["output_id"] == "AO-MANIFEST"
+        assert manifest_row["output_name"] == "academic_export_manifest"
+        assert manifest_row["output_status"] == "available"
+        assert manifest_row["data_key"] == "academic_export_manifest"
+        assert manifest_row["project_id"] == str(project_id)
+        assert manifest_row["run_id"] == str(run_id)
+
+        output_rows = [row for row in rows if row["record_type"] == "output"]
+        assert len(output_rows) == 6
+
+        data_records = [row for row in rows if row["record_type"] == "data_record"]
+        assert len(data_records) > 0
+
+        output_ids = {row["output_id"] for row in output_rows}
+        assert output_ids == {"AO-001", "AO-002", "AO-003", "AO-004", "AO-005", "AO-006"}
+
+        by_output = {row["output_id"]: [] for row in output_rows}
+        for record in data_records:
+            by_output.setdefault(record["output_id"], []).append(record)
+
+        assert by_output["AO-005"] == []
+        for output_id in ("AO-001", "AO-002", "AO-003", "AO-004", "AO-006"):
+            assert len(by_output[output_id]) > 0
+
+        ao_005_rows = [row for row in output_rows if row["output_id"] == "AO-005"]
+        assert ao_005_rows
+        assert ao_005_rows[0]["output_status"] == "not_implemented"
+
+        ao_006_row = next(row for row in output_rows if row["output_id"] == "AO-006")
+        assert ao_006_row["output_status"] == "available"
+        assert ao_006_row["data_key"] == ""
+
+        csv_output_ids = {row["output_id"] for row in output_rows if row["output_id"] != "AO-MANIFEST"}
+        assert csv_output_ids == {"AO-001", "AO-002", "AO-003", "AO-004", "AO-005", "AO-006"}
+
+
 def test_export_json_supports_resumable_cursor() -> None:
     source_text = (
         "Chapter 1\n"
