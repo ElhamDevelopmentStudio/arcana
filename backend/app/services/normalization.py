@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from functools import lru_cache
 
 from app.config import get_settings
 
@@ -30,6 +31,10 @@ THREE_OR_MORE_LINE_BREAKS_RE = re.compile(r"\n{3,}")
 ELLIPSIS_UNICODE_RE = re.compile(r"…+")
 ELLIPSIS_DOTTED_RE = re.compile(r"\.\s*\.\s*\.(?:\s*\.)*")
 PARAGRAPH_SEPARATOR_LINE_RE = re.compile(r"\n\s*(?:\*{3,}|-{3,}|_{3,}|={3,}|~{3,})\s*\n")
+
+DEFAULT_COPY_ARTIFACT_PATTERN_SET = (
+    r"^\s*Page\s+\d+\s*$||^\s*<<<[^>]+>>>\s*$||^\s*\[?Advertisement\]?\s*$"
+)
 
 
 def normalize_line_breaks_and_paragraph_separators(text: str) -> str:
@@ -95,8 +100,33 @@ def normalize_ellipsis_variants(text: str) -> str:
     return text
 
 
+def _parse_pattern_set(pattern_set: str) -> tuple[str, ...]:
+    return tuple(segment.strip() for segment in pattern_set.split("||") if segment.strip())
+
+
+@lru_cache(maxsize=16)
+def _compile_copy_artifact_patterns(pattern_set: str) -> tuple[re.Pattern[str], ...]:
+    return tuple(re.compile(pattern, re.IGNORECASE) for pattern in _parse_pattern_set(pattern_set))
+
+
+def remove_copy_artifacts(text: str, pattern_set: str | None = None) -> str:
+    resolved_pattern_set = pattern_set if pattern_set is not None else get_settings().copy_artifact_patterns
+    if not resolved_pattern_set.strip():
+        return text
+
+    compiled_patterns = _compile_copy_artifact_patterns(resolved_pattern_set)
+    lines = text.split("\n")
+    filtered_lines: list[str] = []
+    for line in lines:
+        if any(pattern.match(line) for pattern in compiled_patterns):
+            continue
+        filtered_lines.append(line)
+    return "\n".join(filtered_lines)
+
+
 def normalize_text(text: str) -> str:
     normalized = normalize_unicode_variants(text)
     normalized = normalize_quotes(normalized)
     normalized = normalize_ellipsis_variants(normalized)
+    normalized = remove_copy_artifacts(normalized)
     return normalize_whitespace(normalized)
