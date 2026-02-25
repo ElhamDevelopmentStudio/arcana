@@ -1,6 +1,14 @@
 import re
 
-CHAPTER_HEADER_RE = re.compile(r"^\s*(chapter\s+[0-9ivxlcdm]+[^\n]*)\s*$", re.IGNORECASE | re.MULTILINE)
+TEXTUAL_CHAPTER_NUMBER_PATTERN = (
+    "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|"
+    "fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty"
+)
+CHAPTER_HEADER_RE = re.compile(
+    rf"^\s*((?:(?:chapter|ch\.)\s+(?:[0-9]+|[ivxlcdm]+|(?:{TEXTUAL_CHAPTER_NUMBER_PATTERN}))[^\n]*)|"
+    r"(?:prologue|epilogue|interlude(?:\s+[0-9ivxlcdm]+)?))\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 CHAPTER_FILENAME_SPLIT_RE = re.compile(r"(\d+)")
 MARKDOWN_FENCE_RE = re.compile(r"```[\s\S]*?```", re.MULTILINE)
 MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s*", re.MULTILINE)
