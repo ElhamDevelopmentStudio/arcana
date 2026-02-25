@@ -222,6 +222,7 @@ class PronunciationDictionaryPreviewRequest(BaseModel):
     include_global_scope: bool = True
     include_character_scope: bool = True
     match_whole_words: bool = True
+    case_sensitive: bool = True
 
     @field_validator("character_name")
     @classmethod

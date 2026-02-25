@@ -1626,6 +1626,7 @@ def preview_pronunciation_dictionary(
         payload.text,
         replacement_map,
         match_whole_words=payload.match_whole_words,
+        case_sensitive=payload.case_sensitive,
     )
     replacement_items = []
     for term, count in sorted(counts.items(), key=lambda item: item[0].lower()):

@@ -337,6 +337,7 @@ describe('project characters page manual editor', () => {
 
     expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
       text: 'Captain saw the Aegis at dawn.',
+      case_sensitive: true,
       match_whole_words: true,
       include_global_scope: true,
       include_character_scope: false,
@@ -373,11 +374,49 @@ describe('project characters page manual editor', () => {
 
     expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
       text: 'CaptainAegis and Aegis.',
+      case_sensitive: true,
       match_whole_words: false,
       include_global_scope: true,
       include_character_scope: false,
     });
     expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('CaptainAegis and Aegis.');
     expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue('CaptainEE-jis and EE-jis.');
+  });
+
+  it('switches case-sensitive matching mode for pronunciation preview', async () => {
+    const user = userEvent.setup();
+    pronunciationPreviewMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      before: 'Aegis sailed with aegis and AEGIS in the hold.',
+      after: 'EE-jis sailed with EE-jis and EE-jis in the hold.',
+      character_name: null,
+      included_scopes: ['global'],
+      replacements: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'EE-jis',
+          count: 3,
+          scope: 'global',
+        },
+      ],
+    });
+
+    renderCharacterPage();
+
+    await user.type(screen.getByTestId('pronunciation-preview-text'), 'Aegis sailed with aegis and AEGIS in the hold.');
+    await user.click(screen.getByRole('checkbox', { name: 'Case-sensitive matching' }));
+    await user.click(screen.getByTestId('pronunciation-preview-button'));
+
+    expect(pronunciationPreviewMutationTrigger).toHaveBeenCalledWith({
+      text: 'Aegis sailed with aegis and AEGIS in the hold.',
+      case_sensitive: false,
+      match_whole_words: true,
+      include_global_scope: true,
+      include_character_scope: false,
+    });
+    expect(screen.getByTestId('pronunciation-preview-before')).toHaveValue('Aegis sailed with aegis and AEGIS in the hold.');
+    expect(screen.getByTestId('pronunciation-preview-after')).toHaveValue(
+      'EE-jis sailed with EE-jis and EE-jis in the hold.',
+    );
   });
 });
