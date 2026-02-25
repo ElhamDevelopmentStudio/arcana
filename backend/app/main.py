@@ -74,7 +74,7 @@ from app.services.ingestion import (
     normalize_markdown_for_ingestion,
     to_internal_utf8,
 )
-from app.services.mode_profiles import build_run_config_snapshot
+from app.services.mode_profiles import PROFILE_CONFIG_KEYS, build_run_config_snapshot
 from app.services.mode_switch import mark_runs_stale_for_gender_edit, mark_runs_stale_for_mode_switch
 from app.services.character_analytics import build_character_occurrence_analytics
 from app.services.gender_comparison import compare_manual_and_inferred_gender_fields
@@ -86,7 +86,7 @@ from app.services.normalization import (
 )
 from app.services.voice_preview import recompute_voice_previews_for_runs
 from app.services.pipeline import PipelineError, execute_pipeline
-from app.services.voice import DEFAULT_VOICE_CONFIG
+from app.services.voice import DEFAULT_VOICE_CONFIG, _normalize_internal_thought_voice_policy
 from app.services.phonetics import replace_pronunciations_with_counts
 
 app = FastAPI(title="NIPE PoC API", version="0.1.0")
@@ -264,6 +264,23 @@ def _build_inferred_gender_lookup(
         normalized_name = normalize_candidate_key(result["name"])
         inferred_lookup[normalized_name] = result
     return inferred_lookup
+
+
+def _coalesce_internal_thought_policy(
+    project: Project,
+    explicit_overrides: dict[str, object],
+) -> None:
+    project_voice_config = dict(project.voice_config_json or {})
+
+    if "internal_thought_voice_policy" not in explicit_overrides:
+        explicit_overrides["internal_thought_voice_policy"] = _normalize_internal_thought_voice_policy(
+            project_voice_config.get("internal_thought_voice_policy")
+        )
+
+    if "internal_thought_voice" not in explicit_overrides:
+        project_thought_voice = str(project_voice_config.get("thought_voice", "")).strip()
+        if project_thought_voice:
+            explicit_overrides["internal_thought_voice"] = project_thought_voice
 
 
 @app.post(
@@ -2051,13 +2068,23 @@ def update_voice_config(
             detail="narrator_voice must not be blank",
         )
 
-    project.voice_config_json = {
+    voice_config = dict(project.voice_config_json or {})
+    voice_config.update(
+        {
         "narrator_voice": narrator_voice,
         "male_default_voice": male_voice,
         "female_default_voice": female_voice,
         "neutral_default_voice": neutral_voice,
         "unknown_default_voice": unknown_voice,
-    }
+        "internal_thought_voice_policy": payload.internal_thought_voice_policy,
+        }
+    )
+    if payload.internal_thought_voice is not None:
+        voice_config["thought_voice"] = payload.internal_thought_voice
+    else:
+        voice_config.pop("thought_voice", None)
+
+    project.voice_config_json = voice_config
     project.default_narrator_voice = narrator_voice
     project.default_male_voice = male_voice
     project.default_female_voice = female_voice
@@ -2095,18 +2122,28 @@ def create_run(
         )
 
     explicit_overrides = payload.model_dump(exclude={"mode"}, exclude_unset=True)
-    config_snapshot = build_run_config_snapshot(mode=payload.mode, overrides=explicit_overrides)
-    config_snapshot["ingestion_warnings"] = list((project.ingestion_log_json or {}).get("warnings", []))
-    config_snapshot["normalization_report"] = (
+    _coalesce_internal_thought_policy(project=project, explicit_overrides=explicit_overrides)
+    run_config = build_run_config_snapshot(
+        mode=payload.mode,
+        overrides=explicit_overrides,
+    )
+    run_config["ingestion_warnings"] = list((project.ingestion_log_json or {}).get("warnings", []))
+    run_config["normalization_report"] = (
         project.ingestion_log_json or {}
     ).get("normalization_report", {})
+    run_config_extra_fields = {
+        key: value
+        for key, value in explicit_overrides.items()
+        if key not in PROFILE_CONFIG_KEYS and key != "allow_unfinalized_character_map"
+    }
+    run_config.update(run_config_extra_fields)
 
-    project.selected_mode = str(config_snapshot["mode"])
+    project.selected_mode = str(run_config["mode"])
     project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)
     run = Run(
         project_id=project.id,
         status="running",
-        config_json=config_snapshot,
+        config_json=run_config,
         started_at=datetime.now(timezone.utc),
     )
     session.add(run)
@@ -2118,7 +2155,7 @@ def create_run(
             session=session,
             project=project,
             run=run,
-            run_config=config_snapshot,
+            run_config=run_config,
         )
         session.commit()
     except PipelineError as exc:

@@ -6,6 +6,42 @@ DEFAULT_VOICE_CONFIG = {
     "unknown_default_voice": "unknown_default",
 }
 
+INTERNAL_THOUGHT_VOICE_POLICIES = ("character", "narrator", "thought_voice")
+
+
+def _normalize_internal_thought_voice_policy(raw_policy: object | None) -> str:
+    policy = str(raw_policy).strip().lower() if raw_policy is not None else "character"
+    if policy in INTERNAL_THOUGHT_VOICE_POLICIES:
+        return policy
+    return "character"
+
+
+def _resolve_dialogue_like_voice(
+    speaker: str,
+    character_lookup: dict[str, dict[str, str | None]],
+    merged_config: dict[str, str],
+) -> tuple[str, str]:
+    if not speaker or speaker.lower() == "unknown":
+        return merged_config["unknown_default_voice"], "unknown"
+
+    entry = character_lookup.get(speaker.lower())
+    if entry is None:
+        return merged_config["unknown_default_voice"], "unknown"
+
+    if entry.get("voice_id"):
+        return str(entry["voice_id"]), str(entry.get("gender", "unknown"))
+
+    gender = str(entry.get("gender", "unknown")).lower()
+    if gender == "male":
+        return merged_config["male_default_voice"], gender
+    if gender == "female":
+        return merged_config["female_default_voice"], gender
+    if gender == "neutral":
+        return merged_config["neutral_default_voice"], gender
+    if gender == "unknown":
+        return merged_config["unknown_default_voice"], gender
+    return merged_config["unknown_default_voice"], gender
+
 
 def build_effective_voice_config(
     voice_config: dict[str, str] | None,
@@ -38,27 +74,31 @@ def resolve_voice(
 ) -> tuple[str, str]:
     merged_config = DEFAULT_VOICE_CONFIG | (voice_config or {})
     narrator_voice = merged_config["narrator_voice"]
+    normalized_speaker = speaker.strip().lower()
+    internal_thought_policy = _normalize_internal_thought_voice_policy(
+        merged_config.get("internal_thought_voice_policy")
+    )
 
-    if segment_type != "dialogue":
+    if segment_type == "dialogue":
+        return _resolve_dialogue_like_voice(
+            speaker=normalized_speaker,
+            character_lookup=character_lookup,
+            merged_config=merged_config,
+        )
+
+    if segment_type == "internal thought":
+        if internal_thought_policy == "character":
+            return _resolve_dialogue_like_voice(
+                speaker=normalized_speaker,
+                character_lookup=character_lookup,
+                merged_config=merged_config,
+            )
+        if internal_thought_policy == "narrator":
+            return narrator_voice, "unknown"
+        if internal_thought_policy == "thought_voice":
+            thought_voice = str(merged_config.get("thought_voice", narrator_voice)).strip()
+            return (thought_voice or narrator_voice), "unknown"
+
         return narrator_voice, "unknown"
 
-    if not speaker or speaker.lower() == "unknown":
-        return merged_config["unknown_default_voice"], "unknown"
-
-    entry = character_lookup.get(speaker.lower())
-    if entry is None:
-        return merged_config["unknown_default_voice"], "unknown"
-
-    if entry.get("voice_id"):
-        return str(entry["voice_id"]), str(entry.get("gender", "unknown"))
-
-    gender = str(entry.get("gender", "unknown")).lower()
-    if gender == "male":
-        return merged_config["male_default_voice"], gender
-    if gender == "female":
-        return merged_config["female_default_voice"], gender
-    if gender == "neutral":
-        return merged_config["neutral_default_voice"], gender
-    if gender == "unknown":
-        return merged_config["unknown_default_voice"], gender
-    return merged_config["unknown_default_voice"], gender
+    return narrator_voice, "unknown"

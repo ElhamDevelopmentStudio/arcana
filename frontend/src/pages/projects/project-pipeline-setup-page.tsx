@@ -35,6 +35,8 @@ export function ProjectPipelineSetupPage() {
   const [femaleVoice, setFemaleVoice] = useState('female_default');
   const [neutralVoice, setNeutralVoice] = useState('neutral_default');
   const [unknownVoice, setUnknownVoice] = useState('unknown_default');
+  const [internalThoughtVoicePolicy, setInternalThoughtVoicePolicy] = useState('character');
+  const [internalThoughtVoice, setInternalThoughtVoice] = useState('');
   const [maxSegmentChars, setMaxSegmentChars] = useState(255);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [providerName, setProviderName] = useState('openrouter');
@@ -70,12 +72,17 @@ export function ProjectPipelineSetupPage() {
     }
 
     try {
+      const trimmedThoughtVoice =
+        internalThoughtVoicePolicy === 'thought_voice' ? internalThoughtVoice.trim() : '';
+
       await saveVoicesMutation.trigger({
         narrator_voice: narratorVoice,
         male_default_voice: maleVoice,
         female_default_voice: femaleVoice,
         neutral_default_voice: neutralVoice,
         unknown_default_voice: unknownVoice,
+        internal_thought_voice_policy: internalThoughtVoicePolicy,
+        internal_thought_voice: trimmedThoughtVoice || undefined,
       });
       toast.success('Voice configuration saved.');
     } catch (error) {
@@ -95,6 +102,9 @@ export function ProjectPipelineSetupPage() {
     }
 
     try {
+      const trimmedThoughtVoice =
+        internalThoughtVoicePolicy === 'thought_voice' ? internalThoughtVoice.trim() : '';
+
       const run = await runPipelineMutation.trigger({
         mode: selectedMode,
         max_segment_chars: maxSegmentChars,
@@ -102,6 +112,8 @@ export function ProjectPipelineSetupPage() {
         provider_name: providerName,
         max_calls_per_day: maxCallsPerDay,
         allow_unfinalized_character_map: allowUnfinalizedCharacterMap,
+        internal_thought_voice_policy: internalThoughtVoicePolicy,
+        internal_thought_voice: trimmedThoughtVoice || undefined,
       });
       setRunId(run.run_id);
       toast.success(`Run #${run.run_id} completed with ${run.segment_count} segments.`);
@@ -157,6 +169,28 @@ export function ProjectPipelineSetupPage() {
                   id="unknown-voice"
                   value={unknownVoice}
                   onChange={(event) => setUnknownVoice(event.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="internal-thought-policy">Internal thought voice policy</Label>
+                <NativeSelect
+                  id="internal-thought-policy"
+                  value={internalThoughtVoicePolicy}
+                  onChange={(event) => setInternalThoughtVoicePolicy(event.target.value)}
+                >
+                  <option value="character">Use character voice</option>
+                  <option value="narrator">Use narrator voice</option>
+                  <option value="thought_voice">Use separate thought voice</option>
+                </NativeSelect>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="internal-thought-voice">Thought voice</Label>
+                <Input
+                  id="internal-thought-voice"
+                  value={internalThoughtVoice}
+                  onChange={(event) => setInternalThoughtVoice(event.target.value)}
+                  disabled={internalThoughtVoicePolicy !== 'thought_voice'}
+                  placeholder="Only required when using thought voice policy"
                 />
               </div>
               <Button disabled={saveVoicesMutation.isMutating || projectId === null} type="submit">

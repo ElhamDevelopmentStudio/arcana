@@ -25,7 +25,11 @@ from app.services.quota import consume_quota
 from app.services.segmentation import segment_text_with_parent_paragraph
 from app.services.tagging import tag_segment
 from app.services.normalization import build_segment_level_offset_map
-from app.services.voice import build_effective_voice_config, resolve_voice
+from app.services.voice import (
+    _normalize_internal_thought_voice_policy,
+    build_effective_voice_config,
+    resolve_voice,
+)
 
 _LOW_GENDER_CONFIDENCE = 0.0
 _LOW_CONFIDENCE_GENDERS = frozenset({"neutral", "unknown"})
@@ -212,6 +216,11 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
         default_neutral_voice=project.default_neutral_voice,
         default_unknown_voice=project.default_unknown_voice,
     )
+    voice_config["internal_thought_voice_policy"] = _normalize_internal_thought_voice_policy(
+        run_config.get("internal_thought_voice_policy")
+    )
+    if run_config.get("internal_thought_voice"):
+        voice_config["thought_voice"] = str(run_config["internal_thought_voice"]).strip()
 
     session.query(Segment).filter(Segment.run_id == run.id).delete()
     session.query(LLMCall).filter(LLMCall.run_id == run.id).delete()
