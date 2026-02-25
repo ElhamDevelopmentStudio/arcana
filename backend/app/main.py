@@ -28,6 +28,7 @@ from app.services.epub_ingestion import extract_epub_chapters
 from app.services.export import build_run_export
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
 from app.services.ingestion import (
+    build_duplicate_title_warnings,
     build_encoding_warning,
     calculate_delta_affected_range,
     chapter_filename_sort_key,
@@ -114,7 +115,7 @@ def _project_title_needs_fallback(title: str) -> bool:
 def _update_project_ingestion_log(
     project: Project,
     source: str,
-    warnings: list[dict[str, str | float]],
+    warnings: list[dict[str, object]],
     affected_range: dict[str, int] | None = None,
 ) -> None:
     log_json = dict(project.ingestion_log_json or {})
@@ -239,10 +240,11 @@ def ingest_txt(
             error_type=IngestionErrorType.MISSING_CHAPTERS,
             detail="No non-empty chapters found in TXT input",
         )
-    warnings: list[dict[str, str | float]] = []
+    warnings: list[dict[str, object]] = []
     txt_warning = build_encoding_warning("txt", encoding, confidence)
     if txt_warning is not None:
         warnings.append(txt_warning)
+    warnings.extend(build_duplicate_title_warnings("txt", chapters))
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -308,10 +310,11 @@ def ingest_markdown(
             error_type=IngestionErrorType.MISSING_CHAPTERS,
             detail="No non-empty chapters found in Markdown input",
         )
-    warnings: list[dict[str, str | float]] = []
+    warnings: list[dict[str, object]] = []
     markdown_warning = build_encoding_warning("markdown", encoding, confidence)
     if markdown_warning is not None:
         warnings.append(markdown_warning)
+    warnings.extend(build_duplicate_title_warnings("markdown", chapters))
 
     session.query(Chapter).filter(Chapter.project_id == project_id).delete()
 
@@ -398,7 +401,11 @@ def ingest_epub(
         project.title = to_internal_utf8(
             chapters[0][0].strip() or detect_title_with_fallback("", filename=filename)
         )
-    _update_project_ingestion_log(project, source="epub", warnings=[])
+    _update_project_ingestion_log(
+        project,
+        source="epub",
+        warnings=build_duplicate_title_warnings("epub", chapters),
+    )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -434,7 +441,7 @@ def ingest_chapters_dir(
     sorted_files = sorted(files, key=lambda upload: chapter_filename_sort_key(upload.filename or ""))
 
     file_boundaries: list[tuple[str, str]] = []
-    warnings: list[dict[str, str | float]] = []
+    warnings: list[dict[str, object]] = []
     for upload in sorted_files:
         filename = upload.filename or ""
         if not filename.lower().endswith(".txt"):
@@ -465,6 +472,7 @@ def ingest_chapters_dir(
         (to_internal_utf8(chapter_title), to_internal_utf8(chapter_content))
         for chapter_title, chapter_content in detect_chapters_from_file_boundaries(file_boundaries)
     ]
+    warnings.extend(build_duplicate_title_warnings("chapters-dir", chapter_rows))
 
     if not chapter_rows:
         raise make_ingestion_http_error(
@@ -570,7 +578,9 @@ def append_chapter(
     )
 
     warning = build_encoding_warning("append-chapter", encoding, confidence)
-    warnings = [warning] if warning is not None else []
+    warnings: list[dict[str, object]] = [warning] if warning is not None else []
+    combined_titles = [(row[1], row[2]) for row in existing_chapters] + [(chapter_title, chapter_content)]
+    warnings.extend(build_duplicate_title_warnings("append-chapter", combined_titles))
     affected_range = calculate_delta_affected_range(
         changed_chapter_indices=[next_chapter_index],
         total_chapter_count=len(existing_chapters) + 1,

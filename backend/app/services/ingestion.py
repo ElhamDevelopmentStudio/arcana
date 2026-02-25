@@ -295,3 +295,45 @@ def is_likely_unsupported_encoding(
     replacement_ratio = decoded_text.count("\ufffd") / length
     null_ratio = decoded_text.count("\x00") / length
     return replacement_ratio >= replacement_threshold or null_ratio >= null_byte_threshold
+
+
+def detect_duplicate_chapter_titles(chapters: list[tuple[str, str]]) -> list[dict[str, object]]:
+    seen: dict[str, dict[str, object]] = {}
+    for index, (title, _content) in enumerate(chapters, start=1):
+        normalized = _normalize_for_overlap(title)
+        if not normalized:
+            continue
+        if normalized not in seen:
+            seen[normalized] = {"title": title.strip(), "occurrences": [index]}
+            continue
+        seen[normalized]["occurrences"].append(index)
+
+    duplicates: list[dict[str, object]] = []
+    for entry in seen.values():
+        occurrences = entry["occurrences"]
+        if isinstance(occurrences, list) and len(occurrences) > 1:
+            duplicates.append(
+                {
+                    "title": entry["title"],
+                    "occurrences": occurrences,
+                    "count": len(occurrences),
+                }
+            )
+    return duplicates
+
+
+def build_duplicate_title_warnings(source: str, chapters: list[tuple[str, str]]) -> list[dict[str, object]]:
+    warnings: list[dict[str, object]] = []
+    for duplicate in detect_duplicate_chapter_titles(chapters):
+        title = str(duplicate["title"])
+        warnings.append(
+            {
+                "source": source,
+                "level": "warning",
+                "type": "duplicate_chapter_title",
+                "title": title,
+                "occurrences": duplicate["occurrences"],
+                "message": f"Detected duplicate chapter title '{title}'",
+            }
+        )
+    return warnings

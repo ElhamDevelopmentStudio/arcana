@@ -93,7 +93,7 @@ Definition of done for each task:
 - [x] [NORM-001] Implement chapter detection from file boundaries.
 - [x] [NORM-002] Implement chapter detection from header patterns.
 - [x] [NORM-003] Implement fallback chapter heuristics for ambiguous text.
-- [ ] [NORM-004] Add duplicate chapter-title detector.
+- [x] [NORM-004] Add duplicate chapter-title detector.
 - [ ] [NORM-005] Add unique internal chapter ID assignment while preserving original title.
 - [ ] [NORM-006] Log chapter-title deduplication actions.
 - [ ] [NORM-007] Normalize whitespace consistently.
