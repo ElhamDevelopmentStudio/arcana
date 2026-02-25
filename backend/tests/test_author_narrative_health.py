@@ -6,6 +6,7 @@ from app.services.export import (
     _build_author_narrative_health_report,
     _build_character_dominance_findings,
     _build_disappearing_character_findings,
+    _build_dialogue_density_anomaly_findings,
     _build_emotional_monotony_findings,
     _build_chapter_level_character_dominance,
     _build_monotony_risk_findings,
@@ -91,6 +92,64 @@ def _build_segments_for_disappearance_test(
             }
         )
     return result
+
+
+def _build_segments_for_dialogue_density_test(
+    chapters: list[tuple[int, int, int]],
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    segment_count = 0
+    for chapter_id, total_segments, dialogue_segments in chapters:
+        for index in range(1, total_segments + 1):
+            segment_count += 1
+            segment_type = "dialogue" if index <= dialogue_segments else "narration"
+            result.append(
+                {
+                    "chapter_id": chapter_id,
+                    "segment_index": index,
+                    "segment_id": f"segment-{segment_count}",
+                    "type": segment_type,
+                }
+            )
+    return result
+
+
+def test_unit_build_dialogue_density_anomaly_findings_detects_sustained_anomaly() -> None:
+    segments = _build_segments_for_dialogue_density_test(
+        [
+            (1, 8, 4),
+            (2, 8, 4),
+            (3, 8, 8),
+            (4, 8, 8),
+            (5, 8, 4),
+        ]
+    )
+    findings = _build_dialogue_density_anomaly_findings(segments)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["requirement_id"] == "ADR-006"
+    assert finding["requirement_name"] == "dialogue_density_anomaly_detector"
+    assert finding["trigger_metric"] == "elevated_dialogue_density"
+    assert finding["location"]["start_chapter"] == 3
+    assert finding["location"]["end_chapter"] == 4
+    assert finding["evidence_trace"]["anomaly_direction"] == "dialogue_heavy"
+    assert finding["evidence_trace"]["chapter_window"] == 2
+    assert finding["severity"] > 0.5
+
+
+def test_unit_build_dialogue_density_anomaly_findings_rejects_uniform_dialogue_distribution() -> None:
+    segments = _build_segments_for_dialogue_density_test(
+        [
+            (1, 8, 4),
+            (2, 8, 4),
+            (3, 8, 4),
+            (4, 8, 4),
+            (5, 8, 4),
+        ]
+    )
+    findings = _build_dialogue_density_anomaly_findings(segments)
+    assert findings == []
 
 
 def test_unit_build_character_dominance_findings_detects_over_dominant_character() -> None:
@@ -336,11 +395,14 @@ def test_unit_narrative_health_report_includes_emotional_monotony_findings() -> 
     assert requirement_lookup["ADR-002"].status == "implemented"
     assert requirement_lookup["ADR-003"].status == "implemented"
     assert requirement_lookup["ADR-005"].status == "implemented"
+    assert requirement_lookup["ADR-006"].status == "implemented"
     assert requirement_lookup["ADR-003"].finding_count == 0
     assert requirement_lookup["ADR-005"].finding_count == 0
+    assert requirement_lookup["ADR-006"].finding_count == 0
     assert len(requirement_lookup["ADR-002"].findings) == 2
     assert len(requirement_lookup["ADR-003"].findings) == 0
     assert len(requirement_lookup["ADR-005"].findings) == 0
+    assert len(requirement_lookup["ADR-006"].findings) == 0
     assert len(parsed_report.findings) == 2
     assert parsed_report.findings[0].requirement_id == "ADR-002"
     possible_severities = {monotony_findings[0]["severity"], emotional_findings[0]["severity"]}

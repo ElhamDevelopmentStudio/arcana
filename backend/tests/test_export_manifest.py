@@ -216,7 +216,7 @@ def test_export_json_includes_narrative_health_report_schema() -> None:
         assert status_by_requirement["ADR-003"] == "implemented"
         assert status_by_requirement["ADR-005"] == "implemented"
         assert status_by_requirement["ADR-004"] == "not_implemented"
-        assert status_by_requirement["ADR-006"] == "not_implemented"
+        assert status_by_requirement["ADR-006"] == "implemented"
         assert all(entry.finding_count == len(entry.findings) for entry in parsed_report.requirements)
 
 
