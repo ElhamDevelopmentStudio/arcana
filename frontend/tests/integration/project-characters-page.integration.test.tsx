@@ -17,6 +17,7 @@ const saveArtifactPronunciationDictionaryMutationTrigger = vi.fn();
 const saveInventedPronunciationDictionaryMutationTrigger = vi.fn();
 const saveGlobalPronunciationDictionaryMutationTrigger = vi.fn();
 const savePlacePronunciationDictionaryMutationTrigger = vi.fn();
+const saveCharacterPronunciationDictionaryMutationTrigger = vi.fn();
 const pronunciationPreviewMutationTrigger = vi.fn();
 const finalizeCharactersMutationTrigger = vi.fn();
 const defaultCharacterMapQueryData = {
@@ -163,6 +164,23 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     error: null,
     mutate: vi.fn(),
   }),
+  useCharacterPronunciationDictionaryQuery: () => ({
+    data: {
+      project_id: 101,
+      scope: 'character',
+      entries: [
+        {
+          term: 'Kai',
+          verbalized_form: 'KAI',
+          source: 'user',
+          confidence: 1.0,
+        },
+      ],
+    },
+    isLoading: false,
+    error: null,
+    mutate: vi.fn(),
+  }),
   useSaveCharacterMapMutation: () => ({
     isMutating: false,
     trigger: saveCharactersMutationTrigger,
@@ -202,6 +220,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useSavePlacePronunciationDictionaryMutation: () => ({
     isMutating: false,
     trigger: savePlacePronunciationDictionaryMutationTrigger,
+  }),
+  useSaveCharacterPronunciationDictionaryMutation: () => ({
+    isMutating: false,
+    trigger: saveCharacterPronunciationDictionaryMutationTrigger,
   }),
   useFinalizeCharacterMapMutation: () => ({
     isMutating: false,
@@ -245,6 +267,7 @@ describe('project characters page manual editor', () => {
     saveInventedPronunciationDictionaryMutationTrigger.mockReset();
     saveGlobalPronunciationDictionaryMutationTrigger.mockReset();
     savePlacePronunciationDictionaryMutationTrigger.mockReset();
+    saveCharacterPronunciationDictionaryMutationTrigger.mockReset();
     pronunciationPreviewMutationTrigger.mockReset();
     finalizeCharactersMutationTrigger.mockReset();
     saveCharactersMutationTrigger.mockResolvedValue({
@@ -347,6 +370,18 @@ describe('project characters page manual editor', () => {
         {
           term: 'Niflheim',
           verbalized_form: 'NIFL-hime',
+          source: 'user',
+          confidence: 1.0,
+        },
+      ],
+    });
+    saveCharacterPronunciationDictionaryMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      scope: 'character',
+      entries: [
+        {
+          term: 'Kai',
+          verbalized_form: 'KAI',
           source: 'user',
           confidence: 1.0,
         },
@@ -509,6 +544,27 @@ describe('project characters page manual editor', () => {
         {
           term: 'Niflheim',
           verbalized_form: 'NIFL-hime',
+          source: 'user',
+          confidence: 1,
+        },
+      ],
+    });
+  });
+
+  it('saves character pronunciation dictionary scope through utility panel', async () => {
+    const user = userEvent.setup();
+    renderCharacterPage();
+
+    await user.selectOptions(screen.getByTestId('pronunciation-character-target'), 'Kai');
+    await user.clear(screen.getByTestId('pronunciation-character-textarea'));
+    await user.type(screen.getByTestId('pronunciation-character-textarea'), 'Kai|KAI');
+    await user.click(screen.getByTestId('pronunciation-character-save-button'));
+
+    expect(saveCharacterPronunciationDictionaryMutationTrigger).toHaveBeenCalledWith({
+      entries: [
+        {
+          term: 'Kai',
+          verbalized_form: 'KAI',
           source: 'user',
           confidence: 1,
         },

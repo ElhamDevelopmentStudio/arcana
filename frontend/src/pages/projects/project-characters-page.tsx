@@ -30,6 +30,7 @@ import {
   useInventedPronunciationDictionaryQuery,
   useGlobalPronunciationDictionaryQuery,
   usePlacePronunciationDictionaryQuery,
+  useCharacterPronunciationDictionaryQuery,
   useScrapeCharactersMutation,
   useMergeCharactersMutation,
   useInferCharacterGendersMutation,
@@ -38,6 +39,7 @@ import {
   useSaveInventedPronunciationDictionaryMutation,
   useSaveGlobalPronunciationDictionaryMutation,
   useSavePlacePronunciationDictionaryMutation,
+  useSaveCharacterPronunciationDictionaryMutation,
   useImportCharactersMutation,
   useSaveCharacterMapMutation,
   useFinalizeCharacterMapMutation,
@@ -190,6 +192,9 @@ export function ProjectCharactersPage() {
   const [globalDictionarySavedCount, setGlobalDictionarySavedCount] = useState<number | null>(null);
   const [placesDictionaryDraft, setPlacesDictionaryDraft] = useState<string>('');
   const [placesDictionarySavedCount, setPlacesDictionarySavedCount] = useState<number | null>(null);
+  const [characterDictionaryTargetName, setCharacterDictionaryTargetName] = useState<string>('');
+  const [characterDictionaryDraft, setCharacterDictionaryDraft] = useState<string>('');
+  const [characterDictionarySavedCount, setCharacterDictionarySavedCount] = useState<number | null>(null);
   const [pronunciationPreviewText, setPronunciationPreviewText] = useState<string>('');
   const [includeGlobalPronunciationScope, setIncludeGlobalPronunciationScope] = useState<boolean>(true);
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
@@ -211,6 +216,11 @@ export function ProjectCharactersPage() {
   const inventedPronunciationDictionaryQuery = useInventedPronunciationDictionaryQuery(projectId);
   const globalPronunciationDictionaryQuery = useGlobalPronunciationDictionaryQuery(projectId);
   const placePronunciationDictionaryQuery = usePlacePronunciationDictionaryQuery(projectId);
+  const characterDictionaryTargetNameNormalized = characterDictionaryTargetName.trim();
+  const characterPronunciationDictionaryQuery = useCharacterPronunciationDictionaryQuery(
+    projectId,
+    characterDictionaryTargetNameNormalized.length > 0 ? characterDictionaryTargetNameNormalized : null,
+  );
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
   const genderComparisonRows = useMemo(() => {
     const mapped: Record<string, string> = {};
@@ -283,6 +293,19 @@ export function ProjectCharactersPage() {
       .sort((a, b) => a.localeCompare(b));
   }, [characterMapQuery.data]);
 
+  useEffect(() => {
+    if (characterNameOptions.length === 0) {
+      setCharacterDictionaryTargetName('');
+      return;
+    }
+    setCharacterDictionaryTargetName((currentValue) => {
+      if (currentValue && characterNameOptions.includes(currentValue)) {
+        return currentValue;
+      }
+      return characterNameOptions[0];
+    });
+  }, [characterNameOptions]);
+
   const saveCharactersMutation = useSaveCharacterMapMutation(projectId);
   const autoExtractCharactersMutation = useAutoExtractCharactersMutation(projectId);
   const scrapeCharactersMutation = useScrapeCharactersMutation(projectId);
@@ -293,6 +316,10 @@ export function ProjectCharactersPage() {
   const saveInventedPronunciationDictionaryMutation = useSaveInventedPronunciationDictionaryMutation(projectId);
   const saveGlobalPronunciationDictionaryMutation = useSaveGlobalPronunciationDictionaryMutation(projectId);
   const savePlacePronunciationDictionaryMutation = useSavePlacePronunciationDictionaryMutation(projectId);
+  const saveCharacterPronunciationDictionaryMutation = useSaveCharacterPronunciationDictionaryMutation(
+    projectId,
+    characterDictionaryTargetNameNormalized.length > 0 ? characterDictionaryTargetNameNormalized : null,
+  );
   const finalizeCharactersMutation = useFinalizeCharacterMapMutation(projectId);
   const pronunciationPreviewMutation = usePronunciationPreviewMutation(projectId);
   const isCharacterMapFinalized = characterMapQuery.data?.character_map_finalized ?? false;
@@ -358,6 +385,18 @@ export function ProjectCharactersPage() {
     );
     setPlacesDictionarySavedCount(placePronunciationDictionaryQuery.data.entries.length);
   }, [placePronunciationDictionaryQuery.data]);
+
+  useEffect(() => {
+    if (!characterPronunciationDictionaryQuery.data) {
+      return;
+    }
+    setCharacterDictionaryDraft(
+      characterPronunciationDictionaryQuery.data.entries
+        .map((entry) => `${entry.term}|${entry.verbalized_form}`)
+        .join('\n'),
+    );
+    setCharacterDictionarySavedCount(characterPronunciationDictionaryQuery.data.entries.length);
+  }, [characterPronunciationDictionaryQuery.data]);
 
   async function handleImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -774,6 +813,44 @@ export function ProjectCharactersPage() {
       toast.success(`Saved ${response.entries.length} place pronunciation entries.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Place pronunciation dictionary save failed.');
+    }
+  }
+
+  async function handleSaveCharacterPronunciationDictionary(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    if (!characterDictionaryTargetNameNormalized) {
+      toast.error('Select a character name first.');
+      return;
+    }
+
+    try {
+      const lines = characterDictionaryDraft
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      const entries = lines.map((line) => {
+        const [term, verbalized] = line.split('|').map((value) => value.trim());
+        if (!term || !verbalized) {
+          throw new Error('Each character entry must follow: term|verbalized_form');
+        }
+        return {
+          term,
+          verbalized_form: verbalized,
+          source: 'user',
+          confidence: 1.0,
+        };
+      });
+      const response = await saveCharacterPronunciationDictionaryMutation.trigger({ entries });
+      setCharacterDictionaryDraft(response.entries.map((entry) => `${entry.term}|${entry.verbalized_form}`).join('\n'));
+      setCharacterDictionarySavedCount(response.entries.length);
+      toast.success(`Saved ${response.entries.length} character pronunciation entries for ${characterDictionaryTargetNameNormalized}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Character pronunciation dictionary save failed.');
     }
   }
 
@@ -1557,6 +1634,70 @@ export function ProjectCharactersPage() {
                   variant="outline"
                 >
                   {savePlacePronunciationDictionaryMutation.isMutating ? 'Saving...' : 'Save place scope'}
+                </Button>
+              </div>
+            </form>
+            <form
+              className="space-y-2 rounded-md border border-panel-border/70 bg-muted/30 px-3 py-3"
+              data-testid="pronunciation-character-panel"
+              onSubmit={handleSaveCharacterPronunciationDictionary}
+            >
+              <p className="text-sm font-medium text-foreground">Character pronunciation dictionary scope</p>
+              <div className="space-y-1">
+                <Label htmlFor="pronunciation-character-target">Character</Label>
+                <NativeSelect
+                  id="pronunciation-character-target"
+                  data-testid="pronunciation-character-target"
+                  value={characterDictionaryTargetName}
+                  onChange={(event) => setCharacterDictionaryTargetName(event.target.value)}
+                  disabled={characterNameOptions.length === 0}
+                >
+                  {characterNameOptions.length === 0 ? (
+                    <option value="">No characters available</option>
+                  ) : (
+                    characterNameOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))
+                  )}
+                </NativeSelect>
+              </div>
+              {characterPronunciationDictionaryQuery.isLoading ? (
+                <p className="text-xs text-muted-foreground" data-testid="pronunciation-character-loading">
+                  Loading character scope entries...
+                </p>
+              ) : null}
+              {characterPronunciationDictionaryQuery.error ? (
+                <p className="text-xs text-destructive" data-testid="pronunciation-character-error">
+                  {characterPronunciationDictionaryQuery.error.message}
+                </p>
+              ) : null}
+              <Textarea
+                data-testid="pronunciation-character-textarea"
+                onChange={(event) => setCharacterDictionaryDraft(event.target.value)}
+                placeholder="One entry per line: term|verbalized_form"
+                rows={4}
+                value={characterDictionaryDraft}
+              />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground" data-testid="pronunciation-character-state">
+                  {characterDictionarySavedCount === null
+                    ? 'No character entries saved yet.'
+                    : `Saved entries: ${characterDictionarySavedCount}`}
+                </p>
+                <Button
+                  data-testid="pronunciation-character-save-button"
+                  disabled={
+                    saveCharacterPronunciationDictionaryMutation.isMutating
+                    || projectId === null
+                    || characterNameOptions.length === 0
+                  }
+                  size="sm"
+                  type="submit"
+                  variant="outline"
+                >
+                  {saveCharacterPronunciationDictionaryMutation.isMutating ? 'Saving...' : 'Save character scope'}
                 </Button>
               </div>
             </form>
