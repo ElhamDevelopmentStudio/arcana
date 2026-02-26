@@ -370,7 +370,7 @@ Definition of done for each task:
 ## 6. Data Persistence Requirements (Ref: SRS.md §6)
 - [X] [DR-001] Persist raw corpus blobs with project linkage.
 - [X] [DR-002] Persist normalized corpus blobs with run linkage.
-- [ ] [DR-003] Persist chapterized representation with stable IDs.
+- [x] [DR-003] Persist chapterized representation with stable IDs.
 - [ ] [DR-004] Persist versioned character map snapshots.
 - [ ] [DR-005] Persist versioned pronunciation dictionary snapshots.
 - [ ] [DR-006] Persist versioned voice map snapshots.
