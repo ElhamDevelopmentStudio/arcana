@@ -102,6 +102,9 @@ Set provider credentials in `backend/.env` (copied from `.env.example`) before r
 Multi-key formats:
 - Comma-separated: `OPENROUTER_API_KEYS=key_a,key_b,key_c`
 - JSON-style array: `OPENROUTER_API_KEYS=["key_a","key_b","key_c"]`
+- Provider priority order also accepts either format:
+  - `LLM_PROVIDER_PRIORITY_ORDER=openrouter,siliconflow,groq`
+  - `LLM_PROVIDER_PRIORITY_ORDER=["openrouter","siliconflow","groq"]`
 
 Parsing behavior:
 - If `*_API_KEYS` is present and non-empty, it is used as the ordered key list.

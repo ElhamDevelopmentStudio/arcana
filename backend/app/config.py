@@ -1,9 +1,9 @@
 from functools import lru_cache
 import json
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -13,23 +13,32 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://postgres@localhost:5432/nipe_poc",
         alias="DATABASE_URL",
     )
-    llm_provider_priority_order: list[str] = Field(
-        default=("openrouter", "siliconflow", "groq"),
+    llm_provider_priority_order: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["openrouter", "siliconflow", "groq"],
         alias="LLM_PROVIDER_PRIORITY_ORDER",
     )
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
-    openrouter_api_keys: list[str] | None = Field(default=None, alias="OPENROUTER_API_KEYS")
+    openrouter_api_keys: Annotated[list[str] | None, NoDecode] = Field(
+        default=None,
+        alias="OPENROUTER_API_KEYS",
+    )
     openrouter_model: str = Field(default="openai/gpt-4o-mini", alias="OPENROUTER_MODEL")
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1",
         alias="OPENROUTER_BASE_URL",
     )
     siliconflow_api_key: str | None = Field(default=None, alias="SILICONFLOW_API_KEY")
-    siliconflow_api_keys: list[str] | None = Field(default=None, alias="SILICONFLOW_API_KEYS")
+    siliconflow_api_keys: Annotated[list[str] | None, NoDecode] = Field(
+        default=None,
+        alias="SILICONFLOW_API_KEYS",
+    )
     siliconflow_model: str = Field(default="deepseek-ai/DeepSeek-V3", alias="SILICONFLOW_MODEL")
     siliconflow_base_url: str = Field(default="https://api.siliconflow.cn/v1", alias="SILICONFLOW_BASE_URL")
     groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
-    groq_api_keys: list[str] | None = Field(default=None, alias="GROQ_API_KEYS")
+    groq_api_keys: Annotated[list[str] | None, NoDecode] = Field(
+        default=None,
+        alias="GROQ_API_KEYS",
+    )
     data_encryption_key: str | None = Field(default=None, alias="DATA_ENCRYPTION_KEY")
     saas_mode: bool = Field(default=False, alias="SAAS_MODE")
 
@@ -57,7 +66,10 @@ class Settings(BaseSettings):
             return None
 
         if text.startswith("[") and text.endswith("]"):
-            parsed = json.loads(text)
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
             if isinstance(parsed, list):
                 keys = [str(item).strip() for item in parsed]
                 return [key for key in keys if key]
@@ -72,19 +84,25 @@ class Settings(BaseSettings):
             return ["openrouter", "siliconflow", "groq"]
 
         if isinstance(value, (list, tuple)):
-            return [str(item).strip() for item in value if str(item).strip()]
+            parsed = [str(item).strip().lower() for item in value if str(item).strip()]
+            return parsed or ["openrouter", "siliconflow", "groq"]
 
         text = str(value).strip()
         if not text:
             return ["openrouter", "siliconflow", "groq"]
 
         if text.startswith("[") and text.endswith("]"):
-            parsed = json.loads(text)
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
             if isinstance(parsed, list):
-                return [str(item).strip() for item in parsed if str(item).strip()]
+                normalized = [str(item).strip().lower() for item in parsed if str(item).strip()]
+                return normalized or ["openrouter", "siliconflow", "groq"]
             return ["openrouter", "siliconflow", "groq"]
 
-        return [item.strip() for item in text.split(",") if item.strip()]
+        normalized = [item.strip().lower() for item in text.split(",") if item.strip()]
+        return normalized or ["openrouter", "siliconflow", "groq"]
     groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
     groq_base_url: str = Field(default="https://api.groq.com/openai/v1", alias="GROQ_BASE_URL")
     enable_epub_ingestion: bool = Field(default=False, alias="ENABLE_EPUB_INGESTION")
