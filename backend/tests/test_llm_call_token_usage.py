@@ -107,6 +107,68 @@ def test_pipeline_llm_probe_persists_token_usage_estimate(monkeypatch: object) -
         session.close()
 
 
+def test_pipeline_llm_probe_persists_run_model_metadata(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="LLM Model Metadata Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        class _FakeLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier="gpt-demo:preview",
+                    raw_output="ok",
+                    parsed_output={"sentiment": "neutral", "confidence": 0.91},
+                    confidence=0.91,
+                    token_usage_estimate=256,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "openai/gpt-4", "api-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _FakeLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "OpenRouter", "max_calls_per_day": 10},
+            input_text="The lantern flickered as the night wind rose.",
+        )
+
+        session.refresh(run)
+        assert run.llm_provider_name == "openrouter"
+        assert run.llm_model_identifier == "gpt-demo:preview"
+        assert run.llm_model_version == "preview"
+    finally:
+        session.close()
+
+
 def test_pipeline_rate_limit_updates_provider_quota_status(monkeypatch: object) -> None:
     session = _new_session()
     try:
@@ -771,6 +833,55 @@ def test_pipeline_records_deterministic_replay_warning_when_provider_fallback_oc
         assert warning["requested_provider"] == "openrouter"
         assert warning["actual_provider"] == "siliconflow"
         assert warning["level"] == "warning"
+    finally:
+        session.close()
+
+
+def test_pipeline_marks_rule_only_mode_when_all_providers_unavailable(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Rule-Only Fallback Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_priority_order",
+            lambda **kwargs: ("openrouter", "siliconflow", "groq"),
+        )
+        monkeypatch.setattr(
+            pipeline.llm_router,
+            "is_provider_requestable",
+            lambda **kwargs: (False, "quota_reached"),
+        )
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="The wind arrived before the storm.",
+        )
+
+        session.refresh(run)
+        rule_only_state = (run.config_json or {}).get("llm_execution_mode")
+        assert isinstance(rule_only_state, dict)
+        assert rule_only_state["mode"] == "rule_only"
+        assert rule_only_state["reason"] == "quota_reached"
+        assert rule_only_state["provider"] == "groq"
+
+        call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
+        assert call.success is False
+        assert call.provider == "groq"
+        assert call.detail == "quota_reached"
     finally:
         session.close()
 

@@ -420,11 +420,11 @@ Definition of done for each task:
 ### NFR-6 Compliance and Copyright Guardrails
 - [x] [NFR6-001] Keep user-upload flow as default ingestion path.
 - [x] [NFR6-002] Add explicit legal warning UI for scraping mode.
-- [ ] [NFR6-003] Add “do not store source text” project option.
-- [ ] [NFR6-004] Implement derived-metrics-only persistence mode.
+- [x] [NFR6-003] Add “do not store source text” project option.
+- [x] [NFR6-004] Implement derived-metrics-only persistence mode.
 
 ### NFR-7 LLM Reliability
-- [ ] [NFR7-001] Implement rule-only continuation when all providers unavailable.
+- [x] [NFR7-001] Implement rule-only continuation when all providers unavailable.
 - [ ] [NFR7-002] Mark segments refined by LLM vs rule-only.
 - [ ] [NFR7-003] Add degraded-mode banner when LLM unavailable.
 - [ ] [NFR7-004] Add tests for complete provider outage scenarios.
