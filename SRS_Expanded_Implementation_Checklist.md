@@ -479,7 +479,7 @@ Definition of done for each task:
 - [x] [MVP-004] Verify dual gender system with inference + contradiction flags.
 - [x] [MVP-005] Verify pronunciation overrides and preview.
 - [x] [MVP-006] Verify TTS segmentation target <=255.
-- [ ] [MVP-007] Verify tagging includes structural + emotion + speaker + confidence.
+- [x] [MVP-007] Verify tagging includes structural + emotion + speaker + confidence.
 - [ ] [MVP-008] Verify voice mapping includes character + defaults + narrator.
 - [ ] [MVP-009] Verify audiobook JSON + CSV exports.
 - [ ] [MVP-010] Verify basic dashboards (tension/polarity/prominence).
