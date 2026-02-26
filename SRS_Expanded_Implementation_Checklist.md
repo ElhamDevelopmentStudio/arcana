@@ -346,7 +346,7 @@ Definition of done for each task:
 - [x] [PAL-012] Ensure core modules never import provider SDKs directly.
 - [x] [PAL-013] Add architecture test to detect forbidden direct provider imports.
 - [x] [PAL-014] Add extension interface for self-hosted local models.
-- [ ] [PAL-015] Add extension interface for user-supplied provider keys.
+- [x] [PAL-015] Add extension interface for user-supplied provider keys.
 - [ ] [PAL-016] Add per-project provider configuration support.
 
 ## 5. Visualization Requirements (Ref: SRS.md §5)
