@@ -448,6 +448,15 @@ source .venv311/bin/activate
 pytest -q
 ```
 
+Backend module-level unit coverage thresholds:
+
+```bash
+cd backend
+source .venv311/bin/activate
+pytest tests -q --cov=app --cov-report=json:coverage.unit.json
+python scripts_validate_unit_coverage_thresholds.py --coverage-json coverage.unit.json --thresholds unit_coverage_thresholds.json
+```
+
 Docs glossary key lint (same check used in CI):
 
 ```bash
@@ -568,6 +577,13 @@ Frontend unit/integration tests:
 ```bash
 cd frontend
 npm run test:vitest
+```
+
+Frontend unit coverage thresholds by module:
+
+```bash
+cd frontend
+npm run test:unit:coverage:thresholds
 ```
 
 Frontend Playwright visual/e2e tests:

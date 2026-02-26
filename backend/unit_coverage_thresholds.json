@@ -1,0 +1,8 @@
+{
+  "modules": {
+    "app/main.py": 20,
+    "app/services/": 35,
+    "app/schemas.py": 40,
+    "app/models.py": 35
+  }
+}

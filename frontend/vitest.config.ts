@@ -12,7 +12,7 @@ export default mergeConfig(
       include: ['tests/**/*.test.{ts,tsx}'],
       coverage: {
         provider: 'v8',
-        reporter: ['text', 'html'],
+        reporter: ['text', 'html', 'json-summary'],
       },
     },
   }),
