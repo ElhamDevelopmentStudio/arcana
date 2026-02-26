@@ -249,6 +249,12 @@ Release rollback plan template validation (`X-018`):
 python scripts_validate_release_rollback_plan.py
 ```
 
+Release security review checklist validation (`X-019`):
+
+```bash
+python scripts_validate_release_security_checklist.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash
