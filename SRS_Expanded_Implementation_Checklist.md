@@ -427,7 +427,7 @@ Definition of done for each task:
 - [x] [NFR7-001] Implement rule-only continuation when all providers unavailable.
 - [x] [NFR7-002] Mark segments refined by LLM vs rule-only.
 - [x] [NFR7-003] Add degraded-mode banner when LLM unavailable.
-- [ ] [NFR7-004] Add tests for complete provider outage scenarios.
+- [x] [NFR7-004] Add tests for complete provider outage scenarios.
 
 ### NFR-8 API Key Security
 - [ ] [NFR8-001] Store API keys server-side only.
