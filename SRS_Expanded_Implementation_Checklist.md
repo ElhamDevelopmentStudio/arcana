@@ -329,7 +329,7 @@ Definition of done for each task:
 - [x] [DET-003] Pin model identifier/version in deterministic runs.
 - [x] [DET-004] Persist deterministic seed and randomization config.
 - [x] [DET-005] Add repeat-run equivalence tests for deterministic mode.
-- [ ] [DET-006] Emit explicit warning when provider nondeterminism may break exact replay.
+- [x] [DET-006] Emit explicit warning when provider nondeterminism may break exact replay.
 
 ## 4.13 Provider Abstraction Layer (Ref: SRS.md §4.13)
 - [ ] [PAL-001] Define `LLMRouter` as sole provider access point.

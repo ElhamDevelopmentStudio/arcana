@@ -673,6 +673,108 @@ def test_pipeline_falls_back_to_next_provider_after_all_keys_exhausted(monkeypat
         session.close()
 
 
+def test_pipeline_records_deterministic_replay_warning_when_provider_fallback_occurs(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Deterministic Replay Warning Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        calls: list[tuple[str, str | None]] = []
+
+        class _ProviderFallbackLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                calls.append((provider_name, api_key))
+                if provider_name == "openrouter":
+                    return llm_router.LLMResponse(
+                        provider_used=provider_name,
+                        model_identifier=model_identifier,
+                        raw_output="",
+                        parsed_output={},
+                        confidence=None,
+                        token_usage_estimate=None,
+                        success_flag=False,
+                        error_code="rate_limit",
+                        rate_limit_reset_at=None,
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    )
+
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="ok",
+                    parsed_output={"raw": "ok"},
+                    confidence=None,
+                    token_usage_estimate=32,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        def _fake_provider_api_keys(*, settings: object, provider_name: str) -> list[str]:
+            if provider_name == "openrouter":
+                return ["openrouter-key-a", "openrouter-key-b"]
+            if provider_name == "siliconflow":
+                return ["siliconflow-key"]
+            return []
+
+        monkeypatch.setattr(pipeline, "get_provider_api_keys", _fake_provider_api_keys)
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "fallback-key"),
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _ProviderFallbackLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10, "deterministic_mode": True},
+            input_text="Probe should emit replay warning after fallback.",
+        )
+
+        call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
+        assert call.success is True
+        assert call.provider == "siliconflow"
+        assert calls == [
+            ("openrouter", "openrouter-key-a"),
+            ("openrouter", "openrouter-key-b"),
+            ("siliconflow", "siliconflow-key"),
+        ]
+
+        session.refresh(run)
+        warnings = run.config_json.get("deterministic_warnings")
+        assert isinstance(warnings, list)
+        assert len(warnings) == 1
+        warning = warnings[0]
+        assert warning["type"] == "deterministic_replay_warning"
+        assert warning["source"] == "llm_provider_fallback"
+        assert warning["requested_provider"] == "openrouter"
+        assert warning["actual_provider"] == "siliconflow"
+        assert warning["level"] == "warning"
+    finally:
+        session.close()
+
+
 def test_run_detail_and_export_expose_token_usage_estimate() -> None:
     session = _new_session()
     try:
