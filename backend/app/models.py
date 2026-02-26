@@ -18,6 +18,7 @@ class Project(Base):
     llm_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     configuration_snapshot_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     voice_config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    llm_provider_config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     default_narrator_voice: Mapped[str] = mapped_column(String(255), default="narrator_default", nullable=False)
     default_male_voice: Mapped[str] = mapped_column(String(255), default="male_default", nullable=False)
     default_female_voice: Mapped[str] = mapped_column(String(255), default="female_default", nullable=False)

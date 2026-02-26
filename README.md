@@ -115,6 +115,46 @@ Failover order:
 
 Manual provider toggles are supported and tracked via provider availability rules already configured in the backend.
 
+### Per-project provider configuration
+
+Projects now support per-provider runtime overrides via:
+
+- `PUT /api/projects/{project_id}/llm`
+- Response/request body field `provider_config`
+
+`provider_config` supports an object map keyed by provider name (case-insensitive). Supported keys for each provider:
+
+- `base_url` – overrides provider base URL for runs
+- `model` – overrides provider default model id for runs
+- `api_key` – single fallback key for that provider
+- `api_keys` – preferred ordered list (comma-separated string or array) for per-provider failover
+
+Format examples:
+
+- JSON object key-per-provider:
+
+```json
+{
+  "openrouter": {
+    "base_url": "https://api.openrouter.ai/v1",
+    "model": "openai/gpt-4o-mini",
+    "api_keys": ["or-key-a", "or-key-b"]
+  },
+  "groq": {
+    "base_url": "https://api.groq.com/openai/v1",
+    "model": "llama-3.3-70b-versatile",
+    "api_key": "groq-key"
+  }
+}
+```
+
+Behavior and precedence:
+
+- Project-level `provider_config` is included in each run config snapshot.
+- `provider_api_keys` in a run payload (if present) overrides any configured key list for that provider.
+- Run-time routing still follows global provider priority and failover behavior.
+- The provider field values are normalized/trimmed and empty entries are dropped before storage.
+
 ### LLM cache invalidation policy
 
 LLM responses are cached in the `llm_cache` table and reused only when all cache-key dimensions match exactly:

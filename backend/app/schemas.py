@@ -24,11 +24,68 @@ class ProjectResponse(BaseModel):
 
 class ProjectLLMSettingsRequest(BaseModel):
     llm_enabled: bool
+    provider_config: dict[str, dict[str, object] | object] | None = None
+
+    @field_validator("provider_config", mode="before")
+    @classmethod
+    def normalize_provider_config(cls, value: dict[str, object] | None) -> dict[str, dict[str, object]] | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError("provider_config must be an object map")
+
+        normalized: dict[str, dict[str, object]] = {}
+        for provider_name, provider_config in value.items():
+            normalized_provider_name = str(provider_name).strip().lower()
+            if not normalized_provider_name:
+                continue
+            if provider_config is None:
+                continue
+            if not isinstance(provider_config, dict):
+                raise ValueError("provider_config values must be provider configuration objects")
+
+            normalized_config: dict[str, object] = {}
+            base_url = provider_config.get("base_url")
+            if isinstance(base_url, str):
+                normalized_base_url = base_url.strip()
+                if normalized_base_url:
+                    normalized_config["base_url"] = normalized_base_url
+
+            model = provider_config.get("model")
+            if isinstance(model, str):
+                normalized_model = model.strip()
+                if normalized_model:
+                    normalized_config["model"] = normalized_model
+
+            api_key = provider_config.get("api_key")
+            if isinstance(api_key, str):
+                normalized_api_key = api_key.strip()
+                if normalized_api_key:
+                    normalized_config["api_key"] = normalized_api_key
+
+            api_keys = provider_config.get("api_keys")
+            if api_keys is not None:
+                if isinstance(api_keys, str):
+                    parsed_api_keys = [entry.strip() for entry in api_keys.split(",")]
+                elif isinstance(api_keys, (list, tuple, set)):
+                    parsed_api_keys = [str(item).strip() for item in api_keys]
+                else:
+                    parsed_api_keys = [str(api_keys).strip()]
+
+                normalized_api_keys = [item for item in parsed_api_keys if item]
+                if normalized_api_keys:
+                    normalized_config["api_keys"] = normalized_api_keys
+
+            if normalized_config:
+                normalized[normalized_provider_name] = normalized_config
+
+        return normalized if normalized else None
 
 
 class ProjectLLMSettingsResponse(BaseModel):
     project_id: int
     llm_enabled: bool
+    provider_config: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 
 class LLMProviderStatus(BaseModel):
@@ -649,6 +706,57 @@ class ComparisonWorkspaceResponse(BaseModel):
     created_at: datetime
     run_count: int
     runs: list[ComparisonWorkspaceRunDescriptor]
+
+
+class TensionGraphPoint(BaseModel):
+    position: int = Field(ge=1)
+    smoothed_tension: float = Field(ge=0.0, le=1.0)
+    chapter_id: int | None = None
+    segment_index: int | None = Field(default=None, ge=1)
+    segment_id: str | None = None
+
+
+class TensionGraphPeakMarker(BaseModel):
+    position: int | None = None
+    segment_id: str | None = None
+    chapter_id: int | None = None
+    segment_index: int | None = Field(default=None, ge=1)
+    peak_type: str = Field(min_length=1)
+    severity: str = Field(pattern=r"^(major|minor)$")
+    prominence: float = Field(ge=0.0)
+    previous_tension: float = Field(ge=0.0, le=1.0)
+    next_tension: float = Field(ge=0.0, le=1.0)
+    tension_value: float = Field(ge=0.0, le=1.0)
+
+
+class TensionGraphValueRange(BaseModel):
+    min: float = Field(ge=0.0, le=1.0)
+    max: float = Field(ge=0.0, le=1.0)
+    delta: float = Field(ge=0.0)
+
+
+class TensionGraphPlateauRegion(BaseModel):
+    region_type: str = Field(min_length=1)
+    start_position: int | None = None
+    end_position: int | None = None
+    length: int = Field(ge=1)
+    segment_count: int = Field(ge=1)
+    segment_ids: list[str] = Field(default_factory=list)
+    segment_indices: list[int] = Field(default_factory=list)
+    chapter_ids: list[int] = Field(default_factory=list)
+    average_tension: float = Field(ge=0.0, le=1.0)
+    tension_value_range: TensionGraphValueRange
+
+
+class TensionGraphContractResponse(BaseModel):
+    metric_id: str = Field(pattern=r"^smoothed_tension_curve$")
+    metric_label: str = Field(min_length=1)
+    source_path: list[str]
+    value_key: str = Field(pattern=r"^smoothed_tension$")
+    points: list[TensionGraphPoint]
+    peak_markers: list[TensionGraphPeakMarker]
+    plateau_regions: list[TensionGraphPlateauRegion]
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class ComparisonAlignedCurvePoint(BaseModel):

@@ -62,6 +62,27 @@ class Settings(BaseSettings):
 
         keys = [entry.strip() for entry in text.split(",")]
         return [entry for entry in keys if entry]
+
+    @field_validator("llm_provider_priority_order", mode="before")
+    @classmethod
+    def _coerce_provider_priority_order(cls, value: Any) -> list[str]:
+        if value is None or value == "":
+            return ["openrouter", "siliconflow", "groq"]
+
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
+
+        text = str(value).strip()
+        if not text:
+            return ["openrouter", "siliconflow", "groq"]
+
+        if text.startswith("[") and text.endswith("]"):
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+            return ["openrouter", "siliconflow", "groq"]
+
+        return [item.strip() for item in text.split(",") if item.strip()]
     groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
     groq_base_url: str = Field(default="https://api.groq.com/openai/v1", alias="GROQ_BASE_URL")
     enable_epub_ingestion: bool = Field(default=False, alias="ENABLE_EPUB_INGESTION")

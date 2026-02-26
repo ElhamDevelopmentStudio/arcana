@@ -1060,7 +1060,11 @@ def get_project_llm_settings(
     session: Session = Depends(get_session),
 ) -> ProjectLLMSettingsResponse:
     project = _get_project_or_404(session, project_id)
-    return ProjectLLMSettingsResponse(project_id=project.id, llm_enabled=project.llm_enabled)
+    return ProjectLLMSettingsResponse(
+        project_id=project.id,
+        llm_enabled=project.llm_enabled,
+        provider_config=project.llm_provider_config_json,
+    )
 
 
 @app.put(
@@ -1075,11 +1079,19 @@ def update_project_llm_settings(
 ) -> ProjectLLMSettingsResponse:
     project = _get_project_or_404(session, project_id)
     project.llm_enabled = payload.llm_enabled
+    if payload.provider_config is not None:
+        merged_provider_config: dict[str, dict[str, object]] = dict(project.llm_provider_config_json or {})
+        merged_provider_config.update(payload.provider_config)
+        project.llm_provider_config_json = merged_provider_config
     session.add(project)
     session.commit()
     session.refresh(project)
 
-    return ProjectLLMSettingsResponse(project_id=project.id, llm_enabled=project.llm_enabled)
+    return ProjectLLMSettingsResponse(
+        project_id=project.id,
+        llm_enabled=project.llm_enabled,
+        provider_config=project.llm_provider_config_json,
+    )
 
 
 @app.get(
@@ -2721,6 +2733,9 @@ def create_run(
 
     explicit_overrides = payload.model_dump(exclude={"mode"}, exclude_unset=True)
     explicit_overrides.setdefault("llm_enabled", project.llm_enabled)
+    project_provider_config = dict(project.llm_provider_config_json or {})
+    if project_provider_config:
+        explicit_overrides.setdefault("provider_config", project_provider_config)
     _coalesce_internal_thought_policy(project=project, explicit_overrides=explicit_overrides)
     run_config = build_run_config_snapshot(
         mode=payload.mode,

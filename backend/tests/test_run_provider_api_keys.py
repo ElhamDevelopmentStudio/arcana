@@ -91,6 +91,62 @@ def test_pipeline_prefers_user_supplied_provider_api_keys_for_run() -> None:
     )[2] == "run-openrouter-a"
 
 
+def test_pipeline_prefers_project_provider_config_over_global_env() -> None:
+    settings = SimpleNamespace(
+        openrouter_base_url="https://api.openrouter.ai/v1",
+        openrouter_model="openai/gpt-4o-mini",
+        openrouter_api_key="global-openrouter",
+        openrouter_api_keys=["global-openrouter"],
+        groq_base_url="https://api.groq.com/openai/v1",
+        groq_model="llama-3.3-70b-versatile",
+        groq_api_key="global-groq",
+        groq_api_keys=None,
+    )
+
+    run_config = {
+        "provider_config": {
+            "OPENROUTER": {
+                "base_url": "https://project.example.com/openrouter",
+                "model": "project/openrouter/model",
+                "api_key": "project-openrouter-key",
+                "api_keys": ["project-or-a", "", None, "project-or-b"],
+            },
+            "groq": {
+                "base_url": "https://project.example.com/groq",
+                "model": "project/groq/model",
+                "api_key": "project-groq-key",
+            },
+            "": {"api_key": "ignored"},
+        }
+    }
+
+    scoped_settings = pipeline._build_run_scoped_llm_settings(
+        settings=settings,
+        run_config=run_config,
+    )
+
+    assert llm_router.get_provider_runtime_settings(
+        settings=scoped_settings,
+        provider_name="openrouter",
+    ) == (
+        "https://project.example.com/openrouter",
+        "project/openrouter/model",
+        "project-or-a",
+    )
+    assert llm_router.get_provider_api_keys(
+        settings=scoped_settings,
+        provider_name="openrouter",
+    ) == ["project-or-a", "project-or-b"]
+    assert llm_router.get_provider_runtime_settings(
+        settings=scoped_settings,
+        provider_name="groq",
+    ) == (
+        "https://project.example.com/groq",
+        "project/groq/model",
+        "project-groq-key",
+    )
+
+
 def test_run_create_endpoints_store_user_supplied_provider_keys_in_config() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Run Provider Key Support"})
@@ -126,3 +182,68 @@ def test_run_create_endpoints_store_user_supplied_provider_keys_in_config() -> N
             "openrouter": ["run-key-a", "run-key-b"],
             "groq": ["run-groq-key"],
         }
+
+
+def test_project_llm_provider_config_is_stored_and_inherited_by_runs() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Project Provider Config Inheritance"})
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        update_resp = client.put(
+            f"/api/projects/{project_id}/llm",
+            json={
+                "llm_enabled": True,
+                "provider_config": {
+                    "openrouter": {
+                        "base_url": "https://project.example.com/openrouter",
+                        "model": "project/openrouter/model",
+                        "api_keys": ["project-or-a", "", "project-or-b"],
+                    },
+                    "groq": {
+                        "model": "project/groq/model",
+                        "api_key": "project-groq-key",
+                    },
+                },
+            },
+        )
+    assert update_resp.status_code == 200
+    llm_settings = update_resp.json()
+    assert llm_settings["provider_config"]["openrouter"]["base_url"] == "https://project.example.com/openrouter"
+    assert llm_settings["provider_config"]["openrouter"]["model"] == "project/openrouter/model"
+    assert llm_settings["provider_config"]["openrouter"]["api_keys"] == ["project-or-a", "project-or-b"]
+    assert llm_settings["provider_config"]["groq"]["api_key"] == "project-groq-key"
+    assert llm_settings["provider_config"]["groq"]["model"] == "project/groq/model"
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("provider-config-sample.txt", io.BytesIO(b"Chapter 1\n\nSample text."), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "llm_enabled": False,
+                "allow_unfinalized_character_map": True,
+            },
+        )
+    assert run_resp.status_code == 200
+    run_id = run_resp.json()["run_id"]
+
+    with TestClient(app) as client:
+        run_detail = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+    assert run_detail.status_code == 200
+    run_config = run_detail.json()["config"]
+
+    assert run_config["provider_config"]["openrouter"]["base_url"] == "https://project.example.com/openrouter"
+    assert run_config["provider_config"]["openrouter"]["model"] == "project/openrouter/model"
+    assert run_config["provider_config"]["openrouter"]["api_keys"] == ["project-or-a", "project-or-b"]
+    assert run_config["provider_config"]["groq"]["model"] == "project/groq/model"

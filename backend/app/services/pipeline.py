@@ -73,27 +73,73 @@ class _RunScopedLLMSettings:
         return getattr(self._base_settings, key)
 
 
+def _coerce_provider_config_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _coerce_provider_config_api_keys(value: object) -> list[str]:
+    if isinstance(value, str):
+        raw_entries = value.split(",")
+    elif isinstance(value, (list, tuple, set)):
+        raw_entries = [str(item) for item in value if item is not None]
+    elif value is None:
+        return []
+    else:
+        raw_entries = [str(value)]
+
+    normalized = [entry.strip() for entry in raw_entries]
+    return [entry for entry in normalized if entry]
+
+
 def _build_run_scoped_llm_settings(settings: object, run_config: dict[str, Any]) -> object:
     if not isinstance(run_config, dict):
         return settings
 
+    provider_overrides: dict[str, object] = {}
+
+    raw_provider_config = run_config.get("provider_config")
+    if isinstance(raw_provider_config, dict):
+        for provider_name, provider_config in raw_provider_config.items():
+            normalized_provider = str(provider_name).strip().lower()
+            if not normalized_provider or not isinstance(provider_config, dict):
+                continue
+
+            base_url = _coerce_provider_config_string(provider_config.get("base_url"))
+            if base_url is not None:
+                provider_overrides[f"{normalized_provider}_base_url"] = base_url
+
+            model = _coerce_provider_config_string(provider_config.get("model"))
+            if model is not None:
+                provider_overrides[f"{normalized_provider}_model"] = model
+
+            api_key = _coerce_provider_config_string(provider_config.get("api_key"))
+            if api_key is not None:
+                provider_overrides[f"{normalized_provider}_api_key"] = api_key
+
+            api_keys = provider_config.get("api_keys")
+            normalized_api_keys = _coerce_provider_config_api_keys(api_keys)
+            if normalized_api_keys:
+                provider_overrides[f"{normalized_provider}_api_keys"] = normalized_api_keys
+
     raw_provider_api_keys = run_config.get("provider_api_keys")
     if not isinstance(raw_provider_api_keys, dict):
-        return settings
+        return _RunScopedLLMSettings(base_settings=settings, provider_api_key_overrides=provider_overrides)
 
-    provider_api_key_overrides: dict[str, object] = {}
     for provider_name, provider_api_keys in raw_provider_api_keys.items():
         normalized_provider = str(provider_name).strip().lower()
         if not normalized_provider:
             continue
-        provider_api_key_overrides[f"{normalized_provider}_api_keys"] = provider_api_keys
+        provider_overrides[f"{normalized_provider}_api_keys"] = provider_api_keys
 
-    if not provider_api_key_overrides:
+    if not provider_overrides:
         return settings
 
     return _RunScopedLLMSettings(
         base_settings=settings,
-        provider_api_key_overrides=provider_api_key_overrides,
+        provider_api_key_overrides=provider_overrides,
     )
 
 
