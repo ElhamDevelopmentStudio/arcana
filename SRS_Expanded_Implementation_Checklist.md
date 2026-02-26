@@ -372,9 +372,9 @@ Definition of done for each task:
 - [X] [DR-002] Persist normalized corpus blobs with run linkage.
 - [x] [DR-003] Persist chapterized representation with stable IDs.
 - [x] [DR-004] Persist versioned character map snapshots.
-- [ ] [DR-005] Persist versioned pronunciation dictionary snapshots.
-- [ ] [DR-006] Persist versioned voice map snapshots.
-- [ ] [DR-007] Persist tagging outputs and sub-segment outputs.
+- [x] [DR-005] Persist versioned pronunciation dictionary snapshots.
+- [x] [DR-006] Persist versioned voice map snapshots.
+- [x] [DR-007] Persist tagging outputs and sub-segment outputs.
 - [ ] [DR-008] Persist time-series metric outputs for all modes.
 - [ ] [DR-009] Persist configuration snapshot per run.
 - [ ] [DR-010] Persist model/version metadata per run.
