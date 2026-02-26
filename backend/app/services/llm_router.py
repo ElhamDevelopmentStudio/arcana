@@ -267,6 +267,7 @@ class LLMRequest:
     input_text: str
     expected_schema: dict[str, Any]
     configuration_snapshot_id: str
+    max_tokens: int | None = None
 
 
 @dataclass
@@ -449,7 +450,7 @@ class LLMRouter:
                 },
             ],
             "temperature": 0,
-            "max_tokens": 60,
+            "max_tokens": request.max_tokens if request.max_tokens is not None else 60,
         }
 
         headers = {
