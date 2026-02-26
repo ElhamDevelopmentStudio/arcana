@@ -118,6 +118,28 @@ def test_e2e_run_config_uses_overrides_without_mutating_profile_snapshot() -> No
         assert config["mode_profile_snapshot"]["provider_name"] == "openrouter"
 
 
+def test_e2e_run_config_accepts_segmentation_target_length_alias() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Segmentation Target Alias")
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "academic",
+                "segmentation_target_length": 95,
+                "allow_unfinalized_character_map": True,
+            },
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_id}")
+        assert detail_resp.status_code == 200
+        config = detail_resp.json()["config"]
+        assert config["max_segment_chars"] == 95
+        assert config["mode"] == "academic"
+
+
 def test_regression_custom_mode_snapshot_payload_shape() -> None:
     assert build_run_config_snapshot("custom") == {
         "mode": "custom",

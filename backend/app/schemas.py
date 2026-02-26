@@ -547,7 +547,12 @@ class VoiceConfigResponse(BaseModel):
 class RunCreateRequest(BaseModel):
     mode: str = Field(default=DEFAULT_MODE)
     pipeline_chunk_max_chars: int | None = Field(default=None, ge=1024, le=2_000_000)
-    max_segment_chars: int = Field(default=255, ge=80, le=255)
+    max_segment_chars: int = Field(
+        default=255,
+        ge=80,
+        le=255,
+        validation_alias=AliasChoices("max_segment_chars", "segmentation_target_length"),
+    )
     llm_enabled: bool = False
     provider_name: str = "openrouter"
     deep_semantic_refinement: bool = False
