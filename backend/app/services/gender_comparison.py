@@ -155,3 +155,38 @@ def compare_manual_and_inferred_gender_fields(
 
     payloads.sort(key=lambda value: value["name"].casefold())
     return payloads
+
+
+def build_manual_inferred_gender_contradiction_warnings(
+    character_rows: Iterable[Mapping[str, Any] | object],
+    *,
+    source: str = "character-gender-comparison",
+) -> list[dict[str, object]]:
+    warnings: list[dict[str, object]] = []
+
+    for payload in compare_manual_and_inferred_gender_fields(
+        character_rows,
+        include_only_conflicts=True,
+    ):
+        severity = round(float(payload["contradiction_severity"]), 4)
+        warnings.append(
+            {
+                "type": "manual_inferred_gender_contradiction",
+                "level": "warning",
+                "source": source,
+                "character_name": payload["name"],
+                "manual_gender": payload["manual_gender"],
+                "inferred_gender": payload["inferred_gender"],
+                "manual_confidence": payload["manual_confidence"],
+                "inferred_confidence": payload["inferred_confidence"],
+                "contradiction_severity": severity,
+                "requires_review": payload["requires_review"],
+                "message": (
+                    f"Manual gender '{payload['manual_gender']}' for '{payload['name']}' "
+                    f"contradicts inferred gender '{payload['inferred_gender']}' "
+                    f"(severity {severity})."
+                ),
+            }
+        )
+
+    return warnings

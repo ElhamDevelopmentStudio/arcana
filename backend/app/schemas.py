@@ -12,6 +12,7 @@ ALLOWED_PROJECT_ACCESS_PRINCIPAL_TYPES = frozenset({"user", "service", "system"}
 
 class ProjectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
+    do_not_store_source_text: bool = False
 
 
 class ProjectResponse(BaseModel):
@@ -20,6 +21,7 @@ class ProjectResponse(BaseModel):
     selected_mode: str
     selected_modes: list[str]
     llm_enabled: bool
+    do_not_store_source_text: bool = False
     configuration_snapshot_id: str | None
     character_map_finalized: bool
     ingestion_timestamp: datetime | None
@@ -308,11 +310,36 @@ class CharacterGenderComparisonItem(BaseModel):
         return _normalize_gender_or_raise(value)
 
 
+class CharacterGenderWarningItem(BaseModel):
+    type: str = Field(min_length=1)
+    level: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+    character_name: str = Field(min_length=1)
+    manual_gender: str = Field(min_length=1, max_length=50)
+    inferred_gender: str = Field(min_length=1, max_length=50)
+    manual_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    inferred_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    contradiction_severity: float = Field(default=0.0, ge=0.0, le=1.0)
+    requires_review: bool
+    message: str = Field(min_length=1)
+
+    @field_validator("manual_gender")
+    @classmethod
+    def manual_gender_normalized(cls, value: str) -> str:
+        return _normalize_gender_or_raise(value)
+
+    @field_validator("inferred_gender")
+    @classmethod
+    def inferred_gender_normalized(cls, value: str) -> str:
+        return _normalize_gender_or_raise(value)
+
+
 class CharacterGenderComparisonResponse(BaseModel):
     project_id: int
     comparison_count: int
     contradiction_count: int
     comparisons: list[CharacterGenderComparisonItem]
+    warnings: list[CharacterGenderWarningItem] = Field(default_factory=list)
 
 
 class CharacterMapUpdateRequest(BaseModel):
@@ -463,6 +490,18 @@ class CanonicalNameMergeSuggestion(BaseModel):
     reason: str = Field(min_length=1, max_length=200)
 
 
+class CharacterWarning(BaseModel):
+    type: str = Field(min_length=1, max_length=120)
+    level: str = Field(default="warning", min_length=1, max_length=20)
+    source: str = Field(default="character", min_length=1, max_length=120)
+    alias: str = Field(min_length=1, max_length=255)
+    canonical_names: list[str] = Field(default_factory=list)
+    message: str = Field(min_length=1, max_length=400)
+    candidate_name: str | None = Field(default=None, min_length=0, max_length=255)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
 class CharacterExtractionResponse(BaseModel):
     project_id: int
     status: str
@@ -470,6 +509,7 @@ class CharacterExtractionResponse(BaseModel):
     candidates: list[CharacterMapItem]
     proposed_characters: list[CharacterMapItem] = Field(default_factory=list)
     canonical_merge_suggestions: list[CanonicalNameMergeSuggestion] = Field(default_factory=list)
+    warnings: list[CharacterWarning] = Field(default_factory=list)
 
 
 class VoiceConfigRequest(BaseModel):

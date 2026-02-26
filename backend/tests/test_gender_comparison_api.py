@@ -74,6 +74,18 @@ def test_integration_gender_comparison_endpoint_reports_conflicts() -> None:
         assert body["project_id"] == project_id
         assert body["comparison_count"] == 3
         assert body["contradiction_count"] == 1
+        assert isinstance(body.get("warnings"), list)
+        assert len(body["warnings"]) == 1
+
+        warning = body["warnings"][0]
+        assert warning["type"] == "manual_inferred_gender_contradiction"
+        assert warning["source"] == "characters.gender-comparison"
+        assert warning["character_name"] == "Nia"
+        assert warning["manual_gender"] == "male"
+        assert warning["inferred_gender"] == "female"
+        assert warning["requires_review"] is True
+        assert warning["contradiction_severity"] == 0.955
+        assert warning["message"].startswith("Manual gender 'male' for 'Nia' contradicts inferred gender 'female'")
 
         by_name = {entry["name"]: entry for entry in body["comparisons"]}
         assert by_name["Nia"]["comparison"] == "conflict"
