@@ -421,6 +421,14 @@ export const runConfigDiffResponseSchema = z.object({
   target_only_fields: z.array(z.string()),
 });
 
+export const runConfigPresetResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  run_id: z.number().int().positive(),
+  preset_schema_version: z.string().min(1),
+  generated_at: z.string().min(1),
+  run_config: runRequestSchema.partial(),
+});
+
 export type LLMTaskType = z.infer<typeof llmTaskTypeSchema>;
 
 export const exportSchema = z.object({
@@ -657,6 +665,7 @@ export type RunResponseDto = z.infer<typeof runResponseSchema>;
 export type RunDetailDto = z.infer<typeof runDetailSchema>;
 export type RunConfigFieldDiffDto = z.infer<typeof runConfigFieldDiffSchema>;
 export type RunConfigDiffResponseDto = z.infer<typeof runConfigDiffResponseSchema>;
+export type RunConfigPresetResponseDto = z.infer<typeof runConfigPresetResponseSchema>;
 export type ExportDto = z.infer<typeof exportSchema>;
 export type TensionGraphPointDto = z.infer<typeof tensionGraphPointSchema>;
 export type TensionGraphPeakMarkerDto = z.infer<typeof tensionGraphPeakMarkerSchema>;

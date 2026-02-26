@@ -8,12 +8,15 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useRunDetailQueryMock = vi.fn();
 const useRunConfigDiffQueryMock = vi.fn();
+const useRunConfigPresetMutationMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) =>
     useRunDetailQueryMock(...args),
   useRunConfigDiffQuery: (...args: Parameters<typeof useRunConfigDiffQueryMock>) =>
     useRunConfigDiffQueryMock(...args),
+  useRunConfigPresetMutation: (...args: Parameters<typeof useRunConfigPresetMutationMock>) =>
+    useRunConfigPresetMutationMock(...args),
 }));
 
 function renderRunMonitorPage() {
@@ -58,10 +61,16 @@ describe('project run monitor page', () => {
     });
     useRunDetailQueryMock.mockReset();
     useRunConfigDiffQueryMock.mockReset();
+    useRunConfigPresetMutationMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
+    });
+    useRunConfigPresetMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: vi.fn(),
     });
   });
 
