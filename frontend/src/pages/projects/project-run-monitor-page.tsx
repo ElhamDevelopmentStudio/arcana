@@ -52,6 +52,13 @@ export function ProjectRunMonitorPage() {
               <ShieldAlert className="size-4" />
               Review low-confidence regions
             </Button>
+            <Button
+              disabled={runId === null}
+              onClick={() => navigate(projectRoute(projectId, 'guide/low-confidence-review'))}
+              variant="outline"
+            >
+              How to review low-confidence outputs
+            </Button>
             <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>
               Continue to Export <ChevronRight className="size-4" />
             </Button>

@@ -50,6 +50,21 @@ const ROUTE_META: Array<{ pattern: RegExp; title: string; description: string }>
     description: 'Optionally review low-confidence speaker tags before export.',
   },
   {
+    pattern: /\/projects\/[^/]+\/guide\/low-confidence-review$/,
+    title: 'Low-Confidence Review Guide',
+    description: 'Learn how to efficiently validate low-confidence tagging output.',
+  },
+  {
+    pattern: /\/projects\/[^/]+\/review\/emotions$/,
+    title: 'Emotion Review',
+    description: 'Optionally review low-confidence emotion tags before export.',
+  },
+  {
+    pattern: /\/projects\/[^/]+\/review\/low-confidence$/,
+    title: 'Low-Confidence Review',
+    description: 'Review uncertain outputs before finalizing and export.',
+  },
+  {
     pattern: /\/projects\/[^/]+\/export$/,
     title: 'Export Delivery',
     description: 'Review readiness and package outputs for downstream consumers.',
