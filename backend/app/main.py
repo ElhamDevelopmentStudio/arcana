@@ -89,6 +89,7 @@ from app.schemas import (
     TensionGraphContractResponse,
     PolarityGraphResponse,
     RunDetailResponse,
+    RunConfigDiffResponse,
     RunResponse,
     VoiceConfigRequest,
     VoiceConfigResponse,
@@ -323,6 +324,67 @@ def _sanitize_run_config_for_frontend(run_config: object) -> dict[str, object]:
         sanitized.pop("provider_api_keys")
 
     return sanitized
+
+
+_RUN_CONFIG_DIFF_EXCLUDED_FIELDS: frozenset[str] = frozenset(
+    {
+        "idempotency_key",
+        "idempotency_signature",
+        "configuration_snapshot_id",
+        "configuration_snapshot_version",
+        "character_map_snapshot_id",
+        "character_map_snapshot_version",
+        "pronunciation_dictionary_snapshot_id",
+        "pronunciation_dictionary_snapshot_version",
+        "voice_map_snapshot_id",
+        "voice_map_snapshot_version",
+        "time_series_snapshot_id",
+        "time_series_snapshot_version",
+        "pipeline_recovery",
+    }
+)
+
+
+def _prepare_run_config_for_diff(run_config: object) -> dict[str, object]:
+    prepared = _sanitize_run_config_for_frontend(run_config)
+    for field_name in _RUN_CONFIG_DIFF_EXCLUDED_FIELDS:
+        prepared.pop(field_name, None)
+    return prepared
+
+
+def _build_run_config_diff(
+    *,
+    base_run_config: object,
+    target_run_config: object,
+) -> dict[str, object]:
+    base_config = _prepare_run_config_for_diff(base_run_config)
+    target_config = _prepare_run_config_for_diff(target_run_config)
+    base_keys = set(base_config.keys())
+    target_keys = set(target_config.keys())
+
+    changed_fields: list[dict[str, object | None]] = []
+    for key in sorted(base_keys & target_keys):
+        if base_config.get(key) != target_config.get(key):
+            changed_fields.append(
+                {
+                    "field": key,
+                    "base_value": base_config.get(key),
+                    "target_value": target_config.get(key),
+                }
+            )
+
+    return {
+        "base_config_schema_version": str(base_config.get("config_schema_version", RUN_CONFIG_SCHEMA_VERSION)),
+        "target_config_schema_version": str(target_config.get("config_schema_version", RUN_CONFIG_SCHEMA_VERSION)),
+        "is_identical": (
+            len(changed_fields) == 0
+            and len(base_keys - target_keys) == 0
+            and len(target_keys - base_keys) == 0
+        ),
+        "changed_fields": changed_fields,
+        "base_only_fields": sorted(base_keys - target_keys),
+        "target_only_fields": sorted(target_keys - base_keys),
+    }
 
 
 def _has_required_project_access(
@@ -5026,6 +5088,43 @@ def recover_run(
         project_id=project.id,
         status=run.status,
         segment_count=segment_count,
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/runs/config-diff",
+    response_model=RunConfigDiffResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_run_config_diff(
+    project_id: int,
+    base_run_id: int = Query(..., ge=1),
+    target_run_id: int = Query(..., ge=1),
+    session: Session = Depends(get_session),
+) -> RunConfigDiffResponse:
+    _get_project_or_404(session, project_id)
+    if base_run_id == target_run_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="base_run_id and target_run_id must be different.",
+        )
+
+    base_run = _get_run_or_404(session, project_id, base_run_id)
+    target_run = _get_run_or_404(session, project_id, target_run_id)
+    diff_payload = _build_run_config_diff(
+        base_run_config=base_run.config_json,
+        target_run_config=target_run.config_json,
+    )
+    return RunConfigDiffResponse(
+        project_id=project_id,
+        base_run_id=base_run.id,
+        target_run_id=target_run.id,
+        base_config_schema_version=diff_payload["base_config_schema_version"],
+        target_config_schema_version=diff_payload["target_config_schema_version"],
+        is_identical=bool(diff_payload["is_identical"]),
+        changed_fields=diff_payload["changed_fields"],
+        base_only_fields=diff_payload["base_only_fields"],
+        target_only_fields=diff_payload["target_only_fields"],
     )
 
 

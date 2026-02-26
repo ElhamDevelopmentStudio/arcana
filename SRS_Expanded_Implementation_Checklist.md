@@ -465,7 +465,7 @@ Definition of done for each task:
 - [x] [CFG-009] Add deterministic mode toggles config.
 - [x] [CFG-010] Define config schema versioning field.
 - [x] [CFG-011] Persist immutable config snapshot per run.
-- [ ] [CFG-012] Add config diff viewer between runs.
+- [x] [CFG-012] Add config diff viewer between runs.
 - [ ] [CFG-013] Add config validation error messages with field-level details.
 - [ ] [CFG-014] Add config preset import/export tooling.
 - [ ] [CFG-015] Add integration tests for config compatibility across releases.

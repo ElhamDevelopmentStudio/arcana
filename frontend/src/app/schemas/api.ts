@@ -403,6 +403,24 @@ export const runDetailSchema = z.object({
   llm_cache_metrics: llmCacheMetricsSchema.default({}),
 });
 
+export const runConfigFieldDiffSchema = z.object({
+  field: z.string().min(1),
+  base_value: z.unknown().nullable().optional(),
+  target_value: z.unknown().nullable().optional(),
+});
+
+export const runConfigDiffResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  base_run_id: z.number().int().positive(),
+  target_run_id: z.number().int().positive(),
+  base_config_schema_version: z.string().min(1),
+  target_config_schema_version: z.string().min(1),
+  is_identical: z.boolean(),
+  changed_fields: z.array(runConfigFieldDiffSchema),
+  base_only_fields: z.array(z.string()),
+  target_only_fields: z.array(z.string()),
+});
+
 export type LLMTaskType = z.infer<typeof llmTaskTypeSchema>;
 
 export const exportSchema = z.object({
@@ -637,6 +655,8 @@ export type VoiceConfigDto = z.infer<typeof voiceConfigSchema>;
 export type RunRequestDto = z.infer<typeof runRequestSchema>;
 export type RunResponseDto = z.infer<typeof runResponseSchema>;
 export type RunDetailDto = z.infer<typeof runDetailSchema>;
+export type RunConfigFieldDiffDto = z.infer<typeof runConfigFieldDiffSchema>;
+export type RunConfigDiffResponseDto = z.infer<typeof runConfigDiffResponseSchema>;
 export type ExportDto = z.infer<typeof exportSchema>;
 export type TensionGraphPointDto = z.infer<typeof tensionGraphPointSchema>;
 export type TensionGraphPeakMarkerDto = z.infer<typeof tensionGraphPeakMarkerSchema>;
