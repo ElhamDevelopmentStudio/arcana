@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 import app.services.llm_router as llm_router
@@ -34,6 +35,122 @@ def test_is_supported_provider_includes_siliconflow() -> None:
     assert llm_router.is_supported_provider("siliconflow") is True
     assert llm_router.is_supported_provider("openrouter") is True
     assert llm_router.is_supported_provider("groq") is True
+
+
+def test_local_provider_extension_can_be_registered_and_used_without_api_key(monkeypatch: object) -> None:
+    provider_name = "local-self-hosted"
+    previous_registration = llm_router._LLM_PROVIDER_REGISTRY.get(provider_name)
+    metadata = llm_router.LLMProviderMetadata(
+        settings_base_url_key="local_self_hosted_base_url",
+        settings_model_key="local_self_hosted_model",
+        settings_key_key="local_self_hosted_api_key",
+        requires_api_key=False,
+        request_header_factory=lambda api_key: {"X-Local-Model": "demo"},
+        request_payload_builder=lambda model_identifier, system_prompt, user_prompt, max_tokens: {
+            "model": model_identifier,
+            "prompt": f"{system_prompt}\n{user_prompt}",
+            "max_tokens": max_tokens or 60,
+        },
+    )
+
+    llm_router.register_llm_provider(
+        provider_name=provider_name,
+        metadata=metadata,
+        overwrite=True,
+    )
+
+    try:
+        assert llm_router.is_supported_provider(provider_name) is True
+
+        observed: dict[str, object] = {}
+
+        class DummyResponse:
+            status_code = 200
+
+            @property
+            def headers(self) -> dict[str, str]:
+                return {}
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {
+                    "choices": [{"message": {"content": "{\"sentiment\":\"neutral\",\"confidence\":0.77}"}}],
+                    "usage": {"total_tokens": 6},
+                }
+
+        def fake_post(url: str, *args: object, **kwargs: object) -> DummyResponse:
+            observed["url"] = url
+            observed["headers"] = kwargs["headers"]
+            observed["payload"] = kwargs["json"]
+            return DummyResponse()
+
+        monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+        router = llm_router.LLMRouter("http://localhost:8000/v1")
+        response = router.call(
+            request=llm_router.LLMRequest(
+                request_id="local-extension-call",
+                project_id=1,
+                task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+                input_text="A test sentence for a local model.",
+                expected_schema={"sentiment": "string", "confidence": "number"},
+                configuration_snapshot_id="local-extension-call",
+            ),
+            provider_name=provider_name,
+            model_identifier="local-model:latest",
+            api_key=None,
+            )
+
+        assert response.success_flag is True
+        assert response.provider_used == provider_name
+        assert response.parsed_output["sentiment"] == "neutral"
+        assert response.error_code is None
+
+        observed_headers = observed["headers"]
+        assert isinstance(observed_headers, dict)
+        assert observed_headers.get("X-Local-Model") == "demo"
+        assert "Authorization" not in observed_headers
+        assert observed["url"] == "http://localhost:8000/v1/chat/completions"
+        assert observed["payload"]["model"] == "local-model:latest"
+        assert (
+            observed["payload"]["prompt"]
+            == "You are a classifier. Respond with JSON only: {\"sentiment\":\"positive|negative|neutral\",\"confidence\":0.0-1.0}\nClassify this text for valence only: A test sentence for a local model."
+        )
+        assert observed["payload"]["max_tokens"] == 60
+    finally:
+        if previous_registration is None:
+            llm_router._LLM_PROVIDER_REGISTRY.pop(provider_name, None)
+        else:
+            llm_router._LLM_PROVIDER_REGISTRY[provider_name] = previous_registration
+
+
+def test_register_llm_provider_rejects_duplicates_without_overwrite() -> None:
+    provider_name = "local-self-hosted"
+    previous_registration = llm_router._LLM_PROVIDER_REGISTRY.get(provider_name)
+    metadata = llm_router.LLMProviderMetadata(
+        settings_base_url_key="base",
+        settings_model_key="model",
+        settings_key_key="api_key",
+    )
+
+    llm_router.register_llm_provider(
+        provider_name=provider_name,
+        metadata=metadata,
+        overwrite=True,
+    )
+    try:
+        with pytest.raises(ValueError, match="already registered"):
+            llm_router.register_llm_provider(
+                provider_name=provider_name,
+                metadata=metadata,
+            )
+    finally:
+        if previous_registration is None:
+            llm_router._LLM_PROVIDER_REGISTRY.pop(provider_name, None)
+        else:
+            llm_router._LLM_PROVIDER_REGISTRY[provider_name] = previous_registration
 
 
 def test_select_probe_provider_candidates_prefers_requested_then_priority() -> None:

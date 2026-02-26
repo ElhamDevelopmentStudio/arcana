@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable, Mapping
 from typing import Any
+from typing import Any, Callable, Mapping
 
 import requests
 from sqlalchemy.orm import Session
@@ -266,7 +266,10 @@ class LLMProviderMetadata:
     settings_base_url_key: str
     settings_model_key: str
     settings_key_key: str
+    requires_api_key: bool = True
     settings_key_list_key: str | None = None
+    request_header_factory: Callable[[str | None], dict[str, str]] | None = None
+    request_payload_builder: Callable[[str, str, str, int | None], dict[str, Any]] | None = None
 
 
 _LLM_PROVIDER_REGISTRY: dict[str, LLMProviderMetadata] = {
@@ -289,6 +292,22 @@ _LLM_PROVIDER_REGISTRY: dict[str, LLMProviderMetadata] = {
         settings_key_list_key="groq_api_keys",
     ),
 }
+
+
+def register_llm_provider(
+    provider_name: str,
+    metadata: LLMProviderMetadata,
+    *,
+    overwrite: bool = False,
+) -> None:
+    normalized = _normalize_provider_name(provider_name)
+    if not normalized:
+        raise ValueError("provider_name must be provided")
+
+    if not overwrite and normalized in _LLM_PROVIDER_REGISTRY:
+        raise ValueError(f"Provider '{normalized}' is already registered.")
+
+    _LLM_PROVIDER_REGISTRY[normalized] = metadata
 
 
 @dataclass
@@ -562,7 +581,22 @@ class LLMRouter:
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
-        if not api_key:
+        metadata = _LLM_PROVIDER_REGISTRY.get(provider)
+        if metadata is None:
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_UNSUPPORTED_PROVIDER_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if metadata.requires_api_key and not api_key:
             return LLMResponse(
                 provider_used=provider,
                 model_identifier=model_identifier,
@@ -578,26 +612,14 @@ class LLMRouter:
 
         system_prompt, user_prompt = _build_task_prompts(task_type=task_type, input_text=request.input_text)
         endpoint = f"{base_url.rstrip('/')}/chat/completions"
-        payload = {
-            "model": model_identifier,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": user_prompt,
-                },
-            ],
-            "temperature": 0,
-            "max_tokens": request.max_tokens if request.max_tokens is not None else 60,
-        }
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        payload_builder = metadata.request_payload_builder or _build_default_request_payload
+        payload = payload_builder(
+            model_identifier=model_identifier,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=request.max_tokens,
+        )
+        headers = _build_default_request_headers(api_key=api_key, metadata=metadata)
 
         dispatch_request = LLMDispatchRequest(endpoint=endpoint, payload=payload, headers=headers)
         attempt = 0
@@ -1219,3 +1241,39 @@ def _build_task_prompts(task_type: str, input_text: str) -> tuple[str, str]:
         "You are a classifier. Respond with JSON only.",
         f"Classify this text: {input_text}",
     )
+
+
+def _build_default_request_payload(
+    model_identifier: str,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int | None,
+) -> dict[str, Any]:
+    return {
+        "model": model_identifier,
+        "messages": [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": user_prompt,
+            },
+        ],
+        "temperature": 0,
+        "max_tokens": max_tokens if max_tokens is not None else 60,
+    }
+
+
+def _build_default_request_headers(api_key: str | None, metadata: LLMProviderMetadata) -> dict[str, str]:
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if metadata.request_header_factory is not None:
+        headers.update(metadata.request_header_factory(api_key))
+
+    if metadata.requires_api_key:
+        if api_key is None:
+            return headers
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    return headers
