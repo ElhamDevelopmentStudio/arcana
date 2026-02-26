@@ -15,6 +15,7 @@ const useRecoverRunMutationMock = vi.fn();
 const useCancelRunMutationMock = vi.fn();
 const useAudiobookPrepDashboardQueryMock = vi.fn();
 const useCharacterAnalyticsQueryMock = vi.fn();
+const useCharacterCooccurrenceGraphQueryMock = vi.fn();
 const usePipelineStageDurationsDashboardQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
@@ -34,6 +35,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useAudiobookPrepDashboardQueryMock(...args),
   useCharacterAnalyticsQuery: (...args: Parameters<typeof useCharacterAnalyticsQueryMock>) =>
     useCharacterAnalyticsQueryMock(...args),
+  useCharacterCooccurrenceGraphQuery: (...args: Parameters<typeof useCharacterCooccurrenceGraphQueryMock>) =>
+    useCharacterCooccurrenceGraphQueryMock(...args),
   usePipelineStageDurationsDashboardQuery: (...args: Parameters<typeof usePipelineStageDurationsDashboardQueryMock>) =>
     usePipelineStageDurationsDashboardQueryMock(...args),
 }));
@@ -86,6 +89,7 @@ describe('project run monitor page', () => {
     useCancelRunMutationMock.mockReset();
     useAudiobookPrepDashboardQueryMock.mockReset();
     useCharacterAnalyticsQueryMock.mockReset();
+    useCharacterCooccurrenceGraphQueryMock.mockReset();
     usePipelineStageDurationsDashboardQueryMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
       data: null,
@@ -103,6 +107,11 @@ describe('project run monitor page', () => {
       error: null,
     });
     useCharacterAnalyticsQueryMock.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    useCharacterCooccurrenceGraphQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
@@ -388,5 +397,27 @@ describe('project run monitor page', () => {
     renderRunMonitorPage();
     expect(screen.getByText(/Character Analytics Dashboard/i)).toBeInTheDocument();
     expect(screen.getByText(/top_characters/i)).toBeInTheDocument();
+  });
+
+  it('renders character co-occurrence graph payload when available', () => {
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+    useCharacterCooccurrenceGraphQueryMock.mockReturnValue({
+      data: {
+        project_id: 303,
+        run_id: 303,
+        nodes: [{ id: 'Alice' }, { id: 'Bob' }],
+        edges: [{ source: 'Alice', target: 'Bob', weight: 7 }],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    expect(screen.getByText(/Character Co-occurrence Graph/i)).toBeInTheDocument();
+    expect(screen.getByText(/\"source\": \"Alice\"/i)).toBeInTheDocument();
   });
 });
