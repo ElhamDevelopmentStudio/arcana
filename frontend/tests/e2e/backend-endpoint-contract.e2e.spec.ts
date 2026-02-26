@@ -2004,6 +2004,112 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(presetPayload.run_id).toBe(runPayload.run_id);
   });
 
+  test('projects/:project_id/run-monitor route requests config diff through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-run-monitor-config-diff-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runOneResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runOneResponse.status()).toBe(200);
+    const runOnePayload = (await runOneResponse.json()) as { run_id: number };
+
+    const runTwoResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 160,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runTwoResponse.status()).toBe(200);
+    const runTwoPayload = (await runTwoResponse.json()) as { run_id: number };
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: 'Run monitor diff project',
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: runTwoPayload.run_id },
+    );
+
+    await page.goto(`/projects/${projectId}/run-monitor`);
+    await expect(page.getByText('Run Config Diff Viewer')).toBeVisible();
+
+    const diffGetRequestPromise = page.waitForRequest((networkRequest) => {
+      if (networkRequest.method() !== 'GET') {
+        return false;
+      }
+      const requestUrl = new URL(networkRequest.url());
+      return (
+        requestUrl.pathname.endsWith(`/api/projects/${projectId}/runs/config-diff`) &&
+        requestUrl.searchParams.get('base_run_id') === String(runTwoPayload.run_id) &&
+        requestUrl.searchParams.get('target_run_id') === String(runOnePayload.run_id)
+      );
+    });
+    const diffGetResponsePromise = page.waitForResponse((networkResponse) => {
+      if (networkResponse.request().method() !== 'GET') {
+        return false;
+      }
+      const responseUrl = new URL(networkResponse.url());
+      return (
+        responseUrl.pathname.endsWith(`/api/projects/${projectId}/runs/config-diff`) &&
+        responseUrl.searchParams.get('base_run_id') === String(runTwoPayload.run_id) &&
+        responseUrl.searchParams.get('target_run_id') === String(runOnePayload.run_id)
+      );
+    });
+
+    await page.getByPlaceholder('Enter comparison run ID').fill(String(runOnePayload.run_id));
+
+    await diffGetRequestPromise;
+    const diffGetResponse = await diffGetResponsePromise;
+    expect(diffGetResponse.status()).toBe(200);
+    const diffPayload = (await diffGetResponse.json()) as {
+      project_id: number;
+      base_run_id: number;
+      target_run_id: number;
+    };
+    expect(diffPayload.project_id).toBe(projectId);
+    expect(diffPayload.base_run_id).toBe(runTwoPayload.run_id);
+    expect(diffPayload.target_run_id).toBe(runOnePayload.run_id);
+  });
+
   test('projects/:project_id/pipeline-setup route updates voice configuration through backend endpoint', async ({
     page,
     request,

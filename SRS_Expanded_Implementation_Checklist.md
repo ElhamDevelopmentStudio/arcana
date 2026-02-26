@@ -658,7 +658,7 @@ Definition of done for each task:
 - [x] [FE-155] Build recover flow using `POST /api/projects/{project_id}/runs/{run_id}/recover`.
 - [x] [FE-156] Build cancel flow using `POST /api/projects/{project_id}/runs/{run_id}/cancel`.
 - [x] [FE-157] Build run config preset panel using `GET /api/projects/{project_id}/runs/{run_id}/config-preset`.
-- [ ] [FE-158] Build run config diff panel using `GET /api/projects/{project_id}/runs/config-diff`.
+- [x] [FE-158] Build run config diff panel using `GET /api/projects/{project_id}/runs/config-diff`.
 - [ ] [FE-159] Build stage durations dashboard from `GET /api/projects/{project_id}/runs/{run_id}/pipeline-stage-durations-dashboard`.
 - [ ] [FE-160] Build audiobook prep dashboard from `GET /api/projects/{project_id}/runs/{run_id}/audiobook-prep-dashboard`.
 - [ ] [FE-161] Build character analytics dashboard from `GET /api/projects/{project_id}/runs/{run_id}/character-analytics`.
