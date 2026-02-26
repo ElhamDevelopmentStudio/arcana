@@ -23,6 +23,7 @@ import {
   pipelineStageDurationsDashboardResponseSchema,
   exportSchema,
   tensionGraphResponseSchema,
+  polarityGraphResponseSchema,
   ingestResponseSchema,
   modeCatalogSchema,
   healthSchema,
@@ -109,6 +110,7 @@ import {
   type AudiobookPrepDashboardResponseDto,
   type PipelineStageDurationsDashboardResponseDto,
   type TensionGraphResponseDto,
+  type PolarityGraphResponseDto,
   characterExtractionSchema,
 } from '@/app/schemas/api';
 
@@ -828,6 +830,15 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/tension-graph`);
       return tensionGraphResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getPolarityGraph(projectId: number, runId: number): Promise<PolarityGraphResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/polarity-graph`);
+      return polarityGraphResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

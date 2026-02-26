@@ -26,6 +26,7 @@ export const workspaceKeys = {
     ['run-config-diff', projectId, baseRunId, targetRunId] as const,
   exportPayload: (projectId: number, runId: number) => ['export-payload', projectId, runId] as const,
   tensionGraph: (projectId: number, runId: number) => ['tension-graph', projectId, runId] as const,
+  polarityGraph: (projectId: number, runId: number) => ['polarity-graph', projectId, runId] as const,
   characterAnalytics: (projectId: number, runId: number) => ['character-analytics', projectId, runId] as const,
   characterCooccurrenceGraph: (projectId: number, runId: number) => [
     'character-cooccurrence-graph',
@@ -45,6 +46,7 @@ const runScopedKeyPrefixes = new Set<string>([
   'run-config-diff',
   'export-payload',
   'tension-graph',
+  'polarity-graph',
   'character-analytics',
   'character-cooccurrence-graph',
   'audiobook-prep-dashboard',

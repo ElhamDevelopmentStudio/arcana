@@ -664,7 +664,7 @@ Definition of done for each task:
 - [x] [FE-161] Build character analytics dashboard from `GET /api/projects/{project_id}/runs/{run_id}/character-analytics`.
 - [x] [FE-162] Build co-occurrence graph view from `GET /api/projects/{project_id}/runs/{run_id}/character-cooccurrence-graph`.
 - [x] [FE-163] Build tension graph view from `GET /api/projects/{project_id}/runs/{run_id}/tension-graph`.
-- [ ] [FE-164] Build polarity graph view from `GET /api/projects/{project_id}/runs/{run_id}/polarity-graph`.
+- [x] [FE-164] Build polarity graph view from `GET /api/projects/{project_id}/runs/{run_id}/polarity-graph`.
 - [ ] [FE-165] Build JSON export center path using `GET /api/projects/{project_id}/exports/{run_id}.json`.
 - [ ] [FE-166] Build CSV export center path using `GET /api/projects/{project_id}/exports/{run_id}.csv`.
 - [ ] [FE-167] Add export availability gating UX from project/run state and backend format restrictions.

@@ -197,6 +197,13 @@ export function useTensionGraphQuery(projectId: number | null, runId: number | n
   );
 }
 
+export function usePolarityGraphQuery(projectId: number | null, runId: number | null) {
+  return useSWR(
+    projectId !== null && runId !== null ? workspaceKeys.polarityGraph(projectId, runId) : null,
+    async ([, currentProjectId, currentRunId]) => nipeApiClient.getPolarityGraph(currentProjectId, currentRunId),
+  );
+}
+
 export function useCharacterAnalyticsQuery(projectId: number | null, runId: number | null) {
   return useSWR(
     projectId !== null && runId !== null ? workspaceKeys.characterAnalytics(projectId, runId) : null,

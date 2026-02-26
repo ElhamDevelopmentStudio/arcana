@@ -13,6 +13,7 @@ import {
   useCharacterAnalyticsQuery,
   useCharacterCooccurrenceGraphQuery,
   usePipelineStageDurationsDashboardQuery,
+  usePolarityGraphQuery,
   useRecoverRunMutation,
   useRerunRunMutation,
   useRunConfigDiffQuery,
@@ -42,6 +43,7 @@ export function ProjectRunMonitorPage() {
   const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
   const characterCooccurrenceGraphQuery = useCharacterCooccurrenceGraphQuery(projectId, runId);
   const tensionGraphQuery = useTensionGraphQuery(projectId, runId);
+  const polarityGraphQuery = usePolarityGraphQuery(projectId, runId);
   const pipelineStageDurationsDashboardQuery = usePipelineStageDurationsDashboardQuery(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
@@ -399,6 +401,23 @@ export function ProjectRunMonitorPage() {
             </pre>
           ) : (
             <p>No tension graph yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Polarity Graph</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          {polarityGraphQuery.isLoading ? <p>Loading polarity graph...</p> : null}
+          {polarityGraphQuery.error ? <p className="text-destructive">{polarityGraphQuery.error.message}</p> : null}
+          {polarityGraphQuery.data ? (
+            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
+              {JSON.stringify(polarityGraphQuery.data, null, 2)}
+            </pre>
+          ) : (
+            <p>No polarity graph yet.</p>
           )}
         </CardContent>
       </Card>
