@@ -10,6 +10,7 @@ from typing import Any
 from typing import Iterator
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.services import llm_router
 from app.config import get_settings
@@ -621,11 +622,14 @@ def _build_chunk_segment_payloads(
             }
 
             segment_payloads.append(segment_payload)
-            if llm_probe_text is None and _should_escalate_to_llm(
+            llm_refinement_needed = _should_escalate_to_llm(
                 segment_payload,
                 confidence_threshold=llm_confidence_threshold,
                 deep_semantic_refinement=deep_semantic_refinement,
-            ):
+            )
+            segment_payload["llm_refinement_needed"] = bool(llm_refinement_needed)
+
+            if llm_probe_text is None and llm_refinement_needed:
                 llm_probe_text = original_text
 
             boundary_payloads: list[dict[str, object]] = []
@@ -1488,6 +1492,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     ):
         new_segment_payloads: list[dict[str, object]] = []
         new_sub_segment_payloads: list[list[dict[str, object]]] = []
+        persisted_segment_records: list[tuple[Segment, dict[str, object]]] = []
         for chunk_payload in chunk_payloads:
             new_segment_payloads.extend(chunk_payload.get("segment_payloads", []))
             new_sub_segment_payloads.extend(chunk_payload.get("sub_segment_payloads", []))
@@ -1534,9 +1539,10 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                         tags=boundary_payload.get("tags", {}),
                         evidence=boundary_payload.get("evidence", {}),
                     )
-                )
+            )
 
             total_segments += 1
+            persisted_segment_records.append((segment, segment_payload))
 
         chapter_content_integrity = _build_chapter_content_integrity_report(
             chapters=chapters,
@@ -1553,19 +1559,28 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             )
 
     llm_enabled = bool(run_config.get("llm_enabled", False))
+    llm_probe_success = False
     with _record_pipeline_stage(
         step_records=step_records,
         stage_name="run_llm_probe",
         completed_stages=completed_stages,
     ):
         if llm_enabled and llm_probe_text:
-            _run_llm_probe(
+            llm_probe_success = _run_llm_probe(
                 session=session,
                 project=project,
                 run=run,
                 run_config=run_config,
                 input_text=llm_probe_text,
             )
+
+        for persisted_segment, segment_payload in persisted_segment_records:
+            needs_llm_refinement = bool(segment_payload.get("llm_refinement_needed"))
+            segment_payload["refinement_source"] = (
+                "llm" if (needs_llm_refinement and llm_probe_success) else "rule_only"
+            )
+            persisted_segment.segment_json = dict(segment_payload)
+            flag_modified(persisted_segment, "segment_json")
 
     with _record_pipeline_stage(
         step_records=step_records,
@@ -1614,7 +1629,13 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     }
 
 
-def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dict, input_text: str) -> None:
+def _run_llm_probe(
+    session: Session,
+    project: Project,
+    run: Run,
+    run_config: dict,
+    input_text: str,
+) -> bool:
     provider = _normalize_provider_name_for_llm(run_config.get("provider_name", "openrouter"))
     requested_provider = provider
     pinned_model_identifier = str(run_config.get("deterministic_model_identifier") or "").strip()
@@ -1641,7 +1662,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             )
         )
         session.flush()
-        return
+        return False
 
     if not is_provider_enabled(session=session, provider=provider):
         _persist_run_llm_model_metadata(
@@ -1664,7 +1685,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             )
         )
         session.flush()
-        return
+        return False
 
     max_calls_per_day = int(run_config.get("max_calls_per_day", 25))
     settings = get_settings()
@@ -1764,7 +1785,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 )
             )
             session.flush()
-            return
+            return success
 
         runtime_api_keys = get_provider_api_keys(
             settings=run_scoped_settings,
@@ -1931,6 +1952,8 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             reason=fallback_reason,
         )
         session.flush()
+
+    return success
 
 
 def _assert_pipeline_stage_order(

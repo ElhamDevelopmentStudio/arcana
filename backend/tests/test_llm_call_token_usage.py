@@ -8,6 +8,7 @@ from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
 from app.models import LLMCall, LLMCache, Project, ProviderApiKeyQuota, ProviderQuota, ProviderToggle, Run
+from app.models import Chapter, Segment
 from app.services import llm_router, pipeline, quota as quota_service
 from app.services.llm_task_types import LLMTaskType
 
@@ -1465,5 +1466,158 @@ def test_run_detail_reports_cache_hit_and_miss_metrics_per_task_type(monkeypatch
 
             call_flags = [call["is_cache_hit"] for call in payload["llm_calls"]]
             assert call_flags == [False, True, False]
+    finally:
+        session.close()
+
+
+def _fake_chunk_payload_builder(
+    *,
+    chunk_index: int,
+    chunk_count: int,
+    chapter_batch: list[object],
+    **kwargs: object,
+) -> dict[str, object]:
+    _ = (chunk_count, kwargs)
+    chapter_index = int(getattr(chapter_batch[0], "chapter_index", 1)) if chapter_batch else 1
+    chapter_internal_id = str(getattr(chapter_batch[0], "chapter_internal_id", "c001"))
+
+    segment_payloads = [
+        {
+            "chapter_id": chapter_index,
+            "chapter_internal_id": chapter_internal_id,
+            "segment_id": "001-001",
+            "segment_index": 1,
+            "original_text": "The first segment ",
+            "normalized_text": "The first segment ",
+            "type": "dialogue",
+            "speaker": "narrator",
+            "speaker_id": None,
+            "llm_refinement_needed": True,
+            "original_span_pointer": {
+                "normalized_start_char": 0,
+                "normalized_end_char": 18,
+            },
+        },
+        {
+            "chapter_id": chapter_index,
+            "chapter_internal_id": chapter_internal_id,
+            "segment_id": "001-002",
+            "segment_index": 2,
+            "original_text": "is reliable.",
+            "normalized_text": "is reliable.",
+            "type": "narration",
+            "speaker": "narrator",
+            "speaker_id": None,
+            "llm_refinement_needed": False,
+            "original_span_pointer": {
+                "normalized_start_char": 18,
+                "normalized_end_char": 30,
+            },
+        },
+    ]
+
+    return {
+        "chunk_index": chunk_index,
+        "chunk_count": 1,
+        "segment_payloads": segment_payloads,
+        "sub_segment_payloads": [[], []],
+        "llm_probe_text": "The first segment ",
+    }
+
+
+def _run_pipeline_with_stubbed_payloads(
+    session,
+    run_probe_succeeds: bool,
+    monkeypatch: object,
+) -> list[dict[str, object]]:
+    project = Project(
+        title="Segment Provenance Probe Project",
+        configuration_snapshot_id="snapshot-provenance",
+    )
+    session.add(project)
+    session.flush()
+
+    session.add(
+        Chapter(
+            project_id=project.id,
+            chapter_index=1,
+            chapter_internal_id="c001",
+            chapter_title="Intro",
+            raw_text="The first segment is reliable.",
+            original_text_snapshot="The first segment is reliable.",
+            normalized_text="The first segment is reliable.",
+            normalized_text_snapshot="The first segment is reliable.",
+            original_to_normalized_offset_map=[],
+        )
+    )
+    session.flush()
+
+    run = Run(
+        project_id=project.id,
+        status="running",
+        started_at=datetime.now(timezone.utc),
+    )
+    session.add(run)
+    session.flush()
+
+    def _fake_run_llm_probe(
+        *,
+        session: object,
+        project: Project,
+        run: Run,
+        run_config: dict,
+        input_text: str,
+    ) -> bool:
+        return run_probe_succeeds
+
+    run_config = {
+        "llm_enabled": True,
+        "provider_name": "openrouter",
+        "max_calls_per_day": 10,
+    }
+
+    monkeypatch.setattr(pipeline, "_build_chunk_segment_payloads", _fake_chunk_payload_builder)
+    monkeypatch.setattr(pipeline, "_run_llm_probe", _fake_run_llm_probe)
+    pipeline.execute_pipeline(
+        session=session,
+        project=project,
+        run=run,
+        run_config=run_config,
+    )
+
+    session.flush()
+    session.expire_all()
+
+    return [segment.segment_json for segment in session.query(Segment).filter(Segment.run_id == run.id).order_by(Segment.segment_index).all()]
+
+
+def test_execute_pipeline_marks_refinement_source_as_llm_for_probe_needed_segment(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        segment_rows = _run_pipeline_with_stubbed_payloads(
+            session=session,
+            run_probe_succeeds=True,
+            monkeypatch=monkeypatch,
+        )
+        assert len(segment_rows) == 2
+        assert segment_rows[0]["refinement_source"] == "llm"
+        assert segment_rows[1]["refinement_source"] == "rule_only"
+        assert segment_rows[0]["llm_refinement_needed"] is True
+        assert segment_rows[1]["llm_refinement_needed"] is False
+    finally:
+        session.close()
+
+
+def test_execute_pipeline_marks_refinement_source_as_rule_only_when_llm_probe_fails(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        segment_rows = _run_pipeline_with_stubbed_payloads(
+            session=session,
+            run_probe_succeeds=False,
+            monkeypatch=monkeypatch,
+        )
+        assert len(segment_rows) == 2
+        assert segment_rows[0]["refinement_source"] == "rule_only"
+        assert segment_rows[1]["refinement_source"] == "rule_only"
     finally:
         session.close()
