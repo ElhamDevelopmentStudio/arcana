@@ -358,7 +358,7 @@ Definition of done for each task:
 - [x] [VR-006] Implement polarity graph API payload endpoint.
 - [x] [VR-007] Add rolling-window control for polarity graph.
 - [x] [VR-008] Define character dashboard data contracts.
-- [ ] [VR-009] Implement character prominence and trend widgets.
+- [x] [VR-009] Implement character prominence and trend widgets.
 - [ ] [VR-010] Implement co-occurrence graph viewer payload and render.
 - [ ] [VR-011] Define audiobook prep dashboard data contracts.
 - [ ] [VR-012] Show unresolved speaker count in audiobook dashboard.

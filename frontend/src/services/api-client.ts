@@ -3,6 +3,7 @@ import axios, { AxiosError, type AxiosInstance } from 'axios';
 import { appEnv } from '@/app/config/env';
 import {
   characterImportSchema,
+  characterAnalyticsResponseSchema,
   characterMapSchema,
   characterMapUpdateSchema,
   characterMapFinalizeSchema,
@@ -31,6 +32,7 @@ import {
   type CharacterMapFinalizeDto,
   type CharacterScrapeRequestDto,
   type CharacterCandidatesMergeRequestDto,
+  type CharacterAnalyticsResponseDto,
   type CharacterExtractionDto,
   type PronunciationDictionaryPreviewRequestDto,
   type PronunciationDictionaryPreviewResponseDto,
@@ -327,6 +329,15 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/tension-graph`);
       return tensionGraphResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getCharacterAnalytics(projectId: number, runId: number): Promise<CharacterAnalyticsResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/character-analytics`);
+      return characterAnalyticsResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

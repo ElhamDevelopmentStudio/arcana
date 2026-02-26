@@ -3,12 +3,12 @@ import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { useExportPayloadQuery, useTensionGraphQuery } from '@/features/workflow/api/workflow-hooks';
+import { useCharacterAnalyticsQuery, useExportPayloadQuery, useTensionGraphQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
-import type { TensionGraphPeakMarkerDto, TensionGraphPlateauRegionDto } from '@/app/schemas/api';
+import type { CharacterAnalyticsResponseDto, TensionGraphPeakMarkerDto, TensionGraphPlateauRegionDto } from '@/app/schemas/api';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CartesianGrid, Line, LineChart, ReferenceArea, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, Legend, ReferenceArea, Tooltip, XAxis, YAxis } from 'recharts';
 
 type DashboardPoint = {
   chapter: string;
@@ -37,6 +37,20 @@ type PlateauOverlay = {
 };
 
 type ExportSegment = Record<string, unknown>;
+type CharacterTrendSeriesPoint = {
+  chapterLabel: string;
+  chapterIndex: number;
+  [characterName: string]: string | number;
+};
+
+type CharacterProminenceRow = {
+  name: string;
+  mentionsPer1000Words: number;
+  totalMentions: number;
+  firstAppearanceChapter: number | null;
+  lastAppearanceChapter: number | null;
+  dialogueLineCount: number;
+};
 
 function toStringValue(value: unknown): string | null {
   if (value == null) {
@@ -91,6 +105,69 @@ function buildFallbackPoints(): DashboardPoint[] {
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
+
+function buildCharacterTotalsByName(analytics: CharacterAnalyticsResponseDto | null): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const record of analytics?.character_mentions_by_chapter ?? []) {
+    for (const [name, count] of Object.entries(record.mention_counts)) {
+      const previous = totals.get(name) ?? 0;
+      totals.set(name, previous + count);
+    }
+  }
+
+  for (const name of Object.keys(analytics?.character_first_appearance_chapter_index ?? {})) {
+    totals.set(name, totals.get(name) ?? 0);
+  }
+
+  return totals;
+}
+
+function buildCharacterProminenceRows(analytics: CharacterAnalyticsResponseDto | null): CharacterProminenceRow[] {
+  const totals = buildCharacterTotalsByName(analytics);
+
+  const rows = Array.from(totals.entries()).map(([name, totalMentions]) => ({
+    name,
+    mentionsPer1000Words: analytics?.character_mentions_per_1000_words[name] ?? 0,
+    totalMentions,
+    firstAppearanceChapter: analytics?.character_first_appearance_chapter_index[name] ?? null,
+    lastAppearanceChapter: analytics?.character_last_appearance_chapter_index[name] ?? null,
+    dialogueLineCount: analytics?.character_dialogue_line_counts[name] ?? 0,
+  }));
+
+  rows.sort((left, right) => {
+    if (right.mentionsPer1000Words !== left.mentionsPer1000Words) {
+      return right.mentionsPer1000Words - left.mentionsPer1000Words;
+    }
+    return right.totalMentions - left.totalMentions;
+  });
+  return rows;
+}
+
+function buildCharacterTrendSeries(
+  analytics: CharacterAnalyticsResponseDto | null,
+  trendCharacters: string[],
+): CharacterTrendSeriesPoint[] {
+  if (!analytics) {
+    return [];
+  }
+
+  const sortedChapters = [...analytics.character_mentions_by_chapter].sort(
+    (left, right) => left.chapter_index - right.chapter_index,
+  );
+
+  return sortedChapters.map((record) => {
+    const point: CharacterTrendSeriesPoint = {
+      chapterLabel: `Ch ${record.chapter_index}`,
+      chapterIndex: record.chapter_index,
+    };
+    for (const name of trendCharacters) {
+      point[name] = record.mention_counts[name] ?? 0;
+    }
+    return point;
+  });
+}
+
+const CHARACTER_TREND_PALETTE = ['#0ea5e9', '#8b5cf6', '#f97316', '#22c55e', '#ec4899'];
 
 function computeMax(values: DashboardPoint[]) {
   const max = Math.max(0, ...values.map((item) => item.tension));
@@ -198,6 +275,7 @@ export function ProjectDashboardsPage() {
   const projectId = routeProjectId ?? storeProjectId;
   const exportPayloadQuery = useExportPayloadQuery(projectId, runId);
   const tensionGraphQuery = useTensionGraphQuery(projectId, runId);
+  const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
   const [showSmoothed, setShowSmoothed] = useState(true);
 
   const rawSeries = useMemo(() => {
@@ -291,6 +369,15 @@ export function ProjectDashboardsPage() {
 
   const maxTension = computeMax(chartData);
   const avgTension = computeAverage(chartData);
+  const characterProminenceRows = useMemo(
+    () => buildCharacterProminenceRows(characterAnalyticsQuery.data ?? null),
+    [characterAnalyticsQuery.data],
+  );
+  const trendCharacters = useMemo(() => characterProminenceRows.slice(0, 3).map((item) => item.name), [characterProminenceRows]);
+  const trendSeries = useMemo(
+    () => buildCharacterTrendSeries(characterAnalyticsQuery.data ?? null, trendCharacters),
+    [characterAnalyticsQuery.data, trendCharacters],
+  );
 
   const dataSourceLabel = showSmoothed
     ? tensionGraphQuery.data
@@ -406,6 +493,77 @@ export function ProjectDashboardsPage() {
               </div>
             </div>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Character Prominence</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">Top characters by mentions per 1,000 words and key appearance stats.</p>
+          <div className="space-y-2 text-sm">
+            {characterProminenceRows.slice(0, 5).map((character) => (
+              <div
+                key={character.name}
+                className="grid gap-1 rounded border border-panel-border/50 bg-panel/40 px-3 py-2 sm:grid-cols-[1.5fr_1fr_1fr_1fr] sm:grid"
+                data-testid={`dashboards-character-prominence-${character.name.replace(/\s+/g, '-')}`}
+              >
+                <p className="font-medium text-foreground sm:col-span-1">{character.name}</p>
+                <p className="text-muted-foreground">Prominence: {character.mentionsPer1000Words.toFixed(2)}</p>
+                <p className="text-muted-foreground">
+                  Total mentions: <span className="font-medium text-foreground">{character.totalMentions}</span>
+                </p>
+                <p className="text-muted-foreground">
+                  Dialogue lines: <span className="font-medium text-foreground">{character.dialogueLineCount}</span>
+                </p>
+              </div>
+            ))}
+            {characterProminenceRows.length === 0 ? <p className="text-sm text-muted-foreground">No character analytics available.</p> : null}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Character Mention Trends</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {trendSeries.length > 0 && trendCharacters.length > 0 ? (
+            <>
+              <p className="text-sm text-muted-foreground">Per-chapter mention trajectory for top characters.</p>
+              <div className="h-[20rem]">
+                <LineChart width={900} height={280} data={trendSeries}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="chapterLabel" />
+                  <YAxis allowDecimals />
+                  <Tooltip />
+                  <Legend />
+                  {trendCharacters.map((name, index) => (
+                    <Line
+                      key={name}
+                      dataKey={name}
+                      name={name}
+                      type="monotone"
+                      stroke={CHARACTER_TREND_PALETTE[index % CHARACTER_TREND_PALETTE.length]}
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  ))}
+                </LineChart>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">No character trend data available.</p>
+          )}
+          <div className="grid gap-1 text-xs text-muted-foreground">
+            {characterProminenceRows.slice(0, 3).map((character, index) => (
+              <p key={`${character.name}-trend-${index}`}>
+                {character.name}: first appears in chapter {character.firstAppearanceChapter ?? '—'}, last appears in chapter{' '}
+                {character.lastAppearanceChapter ?? '—'}.
+              </p>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
