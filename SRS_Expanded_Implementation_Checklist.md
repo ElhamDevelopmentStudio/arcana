@@ -90,6 +90,11 @@ Definition of done for each task:
 - [x] [ING-014] Add “affected range” calculator for delta reprocessing.
 - [x] [ING-015] Add ingestion error types for unsupported format/encoding/missing chapters.
 - [x] [ING-016] Add tests for TXT/dir/md/encoding/incremental append paths.
+- [x] [ING-017] Add explicit project lifecycle state model (`draft`, `ingested`, `configured`, `running`, `completed`, `failed`, `archived`) with transition guards.
+- [ ] [ING-018] Add backend endpoint to create a draft project without uploading corpus content.
+- [ ] [ING-019] Add backend endpoint to attach first ingestion source to an existing draft project.
+- [ ] [ING-020] Add backend endpoint to update project metadata (`title`, `description`, `tags`) without re-ingestion.
+- [ ] [ING-021] Add integration tests for draft -> ingest -> metadata edit lifecycle continuity on one `project_id`.
 
 ## 4.2 Deep Normalization (Ref: SRS.md §4.2)
 - [x] [NORM-001] Implement chapter detection from file boundaries.
@@ -368,6 +373,11 @@ Definition of done for each task:
 - [x] [VR-014] Show low-confidence region count in audiobook dashboard.
 - [x] [VR-015] Show export readiness indicator with blocking reasons.
 - [x] [VR-016] Add dashboard snapshot export capability.
+- [ ] [VR-017] Define backend project-control-panel summary contract (project counts by state, active runs, blocked exports, recent failures).
+- [ ] [VR-018] Implement backend dashboard summary endpoint returning control-panel aggregate metrics.
+- [ ] [VR-019] Define backend project list contract for dashboard rows (`project_id`, status, selected mode, last run status, updated timestamp, next required action).
+- [ ] [VR-020] Implement paginated/filterable backend project list endpoint for dashboard consumption.
+- [ ] [VR-021] Add integration tests for dashboard summary and project-list contract stability.
 
 ## 6. Data Persistence Requirements (Ref: SRS.md §6)
 - [X] [DR-001] Persist raw corpus blobs with project linkage.
@@ -384,6 +394,10 @@ Definition of done for each task:
 - [x] [DR-012] Persist run ID + timestamp + changelog entries.
 - [x] [DR-013] Ensure every tag/metric can resolve back to chapter and segment.
 - [x] [DR-014] Ensure evidence traces include original text offsets.
+- [ ] [DR-015] Persist project lifecycle transition history with `from_state`, `to_state`, actor, and timestamp.
+- [ ] [DR-016] Persist project activity events (`ingest`, `mode_change`, `run_start`, `run_complete`, `export`, `manual_edit`, `rerun`) for timeline rendering.
+- [ ] [DR-017] Add indexed projection fields for project dashboard queries (`last_run_status`, `last_export_at`, `next_required_action`).
+- [ ] [DR-018] Add migration/backfill to initialize lifecycle and activity records for existing projects.
 
 ## 7. Non-Functional Requirements (Ref: SRS.md §7)
 
@@ -529,6 +543,10 @@ Definition of done for each task:
 - [x] [X-018] Add rollback plan template for failed releases.
 - [x] [X-019] Add security review checklist per release.
 - [x] [X-020] Add performance regression gate in CI for core pipelines.
+- [ ] [X-021] Add backend endpoint that returns allowed project actions (`ingest`, `select_mode`, `configure`, `run`, `rerun`, `export`, `archive`, `restore`) based on current state.
+- [ ] [X-022] Add backend rerun endpoint that clones prior run configuration snapshot and enqueues a new run with lineage metadata.
+- [ ] [X-023] Add backend project activity timeline endpoint for project detail views.
+- [ ] [X-024] Add regression tests for action gating and rerun permission rules across lifecycle states.
 
 ## 13. Frontend Parallel Delivery Track (Ref: SRS.md §§2–11)
 
