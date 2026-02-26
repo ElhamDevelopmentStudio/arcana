@@ -38,6 +38,11 @@ cd backend
 python scripts_run_migration.py
 ```
 
+Migration naming convention:
+- Pattern: `NNN_snake_case_description.sql`
+- Sequence starts at `001` and must be contiguous with no gaps.
+- Files live in `backend/migrations/`.
+
 ## API Summary
 
 - `GET /api/modes`
@@ -136,6 +141,12 @@ Acceptance KPI validation (`SRS.md §1.3` criteria mapping vs `docs/acceptance_k
 
 ```bash
 python scripts_validate_acceptance_kpis.py
+```
+
+Migration framework validation (`backend/migrations` ordering + naming convention):
+
+```bash
+python scripts_validate_migration_framework.py
 ```
 
 Persona flow validation (`SRS.md §2.1` vs `docs/persona_end_to_end_flows.md`):
