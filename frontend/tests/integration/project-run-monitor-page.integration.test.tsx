@@ -13,6 +13,7 @@ const useRunConfigPresetMutationMock = vi.fn();
 const useRerunRunMutationMock = vi.fn();
 const useRecoverRunMutationMock = vi.fn();
 const useCancelRunMutationMock = vi.fn();
+const usePipelineStageDurationsDashboardQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) =>
@@ -27,6 +28,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useRecoverRunMutationMock(...args),
   useCancelRunMutation: (...args: Parameters<typeof useCancelRunMutationMock>) =>
     useCancelRunMutationMock(...args),
+  usePipelineStageDurationsDashboardQuery: (...args: Parameters<typeof usePipelineStageDurationsDashboardQueryMock>) =>
+    usePipelineStageDurationsDashboardQueryMock(...args),
 }));
 
 function renderRunMonitorPage() {
@@ -75,7 +78,13 @@ describe('project run monitor page', () => {
     useRerunRunMutationMock.mockReset();
     useRecoverRunMutationMock.mockReset();
     useCancelRunMutationMock.mockReset();
+    usePipelineStageDurationsDashboardQueryMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    usePipelineStageDurationsDashboardQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
@@ -292,5 +301,29 @@ describe('project run monitor page', () => {
     await user.click(screen.getByRole('button', { name: 'Load run config preset' }));
 
     expect(presetTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders pipeline stage durations dashboard payload when available', () => {
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+    usePipelineStageDurationsDashboardQueryMock.mockReturnValue({
+      data: {
+        project_id: 303,
+        run_id: 303,
+        stage_durations: [
+          { stage: 'load_and_validate_source_data', duration_ms: 3 },
+          { stage: 'run_llm_probe', duration_ms: 1244 },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    expect(screen.getByText(/Pipeline Stage Durations Dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/run_llm_probe/i)).toBeInTheDocument();
   });
 });
