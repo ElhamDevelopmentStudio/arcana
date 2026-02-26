@@ -302,3 +302,15 @@ export function useRunPipelineMutation(projectId: number | null) {
     },
   );
 }
+
+export function useCancelRunMutation(projectId: number | null, runId: number | null) {
+  return useSWRMutation(
+    projectId !== null && runId !== null ? ['cancel-run', projectId, runId] : null,
+    async () => {
+      if (projectId === null || runId === null) {
+        throw new Error('Project and run are required before cancelling a run.');
+      }
+      return nipeApiClient.cancelRun(projectId, runId);
+    },
+  );
+}

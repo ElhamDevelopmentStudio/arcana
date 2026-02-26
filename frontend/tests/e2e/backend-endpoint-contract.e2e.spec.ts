@@ -566,6 +566,13 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(typeof runDetailPayload.config.configuration_snapshot_version).toBe('number');
     expect(Number(runDetailPayload.config.configuration_snapshot_version)).toBeGreaterThanOrEqual(1);
 
+    const cancelCompletedRunResponse = await request.post(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/cancel`,
+    );
+    expect(cancelCompletedRunResponse.status()).toBe(409);
+    const cancelCompletedRunPayload = (await cancelCompletedRunResponse.json()) as { detail: string };
+    expect(cancelCompletedRunPayload.detail).toContain('Only queued or running runs can be cancelled');
+
     const runConfigPresetResponse = await request.get(
       `${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/config-preset`,
     );
