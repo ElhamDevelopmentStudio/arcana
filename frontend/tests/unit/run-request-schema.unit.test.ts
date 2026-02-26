@@ -18,6 +18,7 @@ describe('runRequestSchema', () => {
     expect(parsed.high_ambiguity_dialogue_flag_threshold).toBe(2);
     expect(parsed.unstable_emotion_shift_transition_threshold).toBe(4);
     expect(parsed.unstable_emotion_shift_density_threshold).toBe(0.5);
+    expect(parsed.contradiction_review_required).toBe(true);
   });
 
   it('allows explicit web scraping toggle overrides', () => {
@@ -88,6 +89,20 @@ describe('runRequestSchema', () => {
     expect(parsed.high_ambiguity_dialogue_flag_threshold).toBe(3);
     expect(parsed.unstable_emotion_shift_transition_threshold).toBe(6);
     expect(parsed.unstable_emotion_shift_density_threshold).toBe(0.4);
+    expect(parsed.contradiction_review_required).toBe(true);
+  });
+
+  it('accepts explicit contradiction_review_required false', () => {
+    const parsed = runRequestSchema.parse({
+      mode: 'academic',
+      max_segment_chars: 120,
+      llm_enabled: false,
+      provider_name: 'openrouter',
+      max_calls_per_day: 25,
+      contradiction_review_required: false,
+    });
+
+    expect(parsed.contradiction_review_required).toBe(false);
   });
 
   it('validates warning thresholds are in expected ranges', () => {
