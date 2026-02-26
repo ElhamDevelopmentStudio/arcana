@@ -82,6 +82,8 @@ from app.schemas import (
     ProjectResponse,
     ProjectIngestionSourceAttachRequest,
     ProjectIngestionSourceAttachResponse,
+    ProjectMetadataUpdateRequest,
+    ProjectMetadataUpdateResponse,
     ProjectLLMSettingsRequest,
     ProjectLLMSettingsResponse,
     LLMProviderStatus,
@@ -3122,6 +3124,8 @@ def _build_character_extraction_warnings(
 def create_project(payload: ProjectCreate, session: Session = Depends(get_session)) -> ProjectResponse:
     project = Project(
         title=payload.title.strip(),
+        description=None,
+        tags=[],
         lifecycle_state=PROJECT_LIFECYCLE_DRAFT,
         selected_mode=DEFAULT_MODE,
         selected_modes=[DEFAULT_MODE],
@@ -3208,6 +3212,40 @@ def attach_initial_ingestion_source(
         source=payload.source,
         source_filename=payload.source_filename,
         attached_at=attached_at,
+    )
+
+
+@app.patch(
+    "/api/projects/{project_id}/metadata",
+    response_model=ProjectMetadataUpdateResponse,
+    status_code=status.HTTP_200_OK,
+)
+def update_project_metadata(
+    project_id: int,
+    payload: ProjectMetadataUpdateRequest,
+    session: Session = Depends(get_session),
+) -> ProjectMetadataUpdateResponse:
+    project = _get_project_or_404(session, project_id)
+    provided_fields = set(payload.model_fields_set)
+
+    if "title" in provided_fields and payload.title is not None:
+        project.title = payload.title
+    if "description" in provided_fields:
+        project.description = payload.description
+    if "tags" in provided_fields:
+        project.tags = list(payload.tags or [])
+
+    updated_at = datetime.now(timezone.utc)
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+
+    return ProjectMetadataUpdateResponse(
+        project_id=project.id,
+        title=project.title,
+        description=project.description,
+        tags=list(project.tags or []),
+        updated_at=updated_at,
     )
 
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from app.services.tagging import (
     TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
     TAG_LOW_CONFIDENCE_THRESHOLD,
@@ -69,6 +69,62 @@ class ProjectIngestionSourceAttachResponse(BaseModel):
     source: str
     source_filename: str | None = None
     attached_at: datetime
+
+
+class ProjectMetadataUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    tags: list[str] | None = None
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError("title must not be blank")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_tag in value:
+            trimmed = str(raw_tag).strip()
+            if not trimmed:
+                continue
+            canonical = trimmed.lower()
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            normalized.append(trimmed)
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_non_empty_payload(self) -> "ProjectMetadataUpdateRequest":
+        if not self.model_fields_set:
+            raise ValueError("at least one metadata field must be provided")
+        return self
+
+
+class ProjectMetadataUpdateResponse(BaseModel):
+    project_id: int
+    title: str
+    description: str | None
+    tags: list[str]
+    updated_at: datetime
 
 
 class ProjectAccessGrantRequest(BaseModel):
