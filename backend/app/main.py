@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from bisect import bisect_right
 from collections.abc import Mapping
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
@@ -81,7 +81,11 @@ from app.services.character_merge import build_canonical_name_merge_suggestions,
 from app.services.character_merge import normalize_candidate_key
 from app.services.character_merge import detect_alias_conflicts
 from app.services.character_merge import resolve_alias_to_canonical_name
-from app.services.export import build_run_export, build_run_export_csv
+from app.services.export import (
+    _build_rolling_emotional_curves,
+    build_run_export,
+    build_run_export_csv,
+)
 from app.services.export import build_run_export_graph_json
 from app.services.export import build_run_export_academic_csv
 from app.services.ingestion_errors import IngestionErrorType, make_ingestion_http_error
@@ -3003,6 +3007,12 @@ def get_run_tension_graph(
 def get_run_polarity_graph(
     project_id: int,
     run_id: int,
+    window_size: int = Query(
+        default=5,
+        ge=1,
+        le=100,
+        description="Rolling window size for emotional polarity smoothing",
+    ),
     session: Session = Depends(get_session),
 ) -> PolarityGraphResponse:
     project = _get_project_or_404(session, project_id)
@@ -3026,11 +3036,31 @@ def get_run_polarity_graph(
             detail="Run academic_reports block is missing.",
         )
 
+    segments = export_payload.get("segments")
     time_series = export_payload.get("time_series")
-    if isinstance(time_series, Mapping):
-        return build_polarity_graph_contract(academic_reports, time_series)
+    if not isinstance(segments, list):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Run export segments are missing.",
+        )
 
-    return build_polarity_graph_contract(academic_reports)
+    filtered_segments = []
+    for segment in segments:
+        if isinstance(segment, dict):
+            filtered_segments.append(segment)
+
+    rolling_window_curves = _build_rolling_emotional_curves(
+        segments=filtered_segments,
+        window_size=window_size,
+    )
+
+    adapted_academic_reports = dict(academic_reports)
+    adapted_academic_reports["rolling_window_emotional_curves"] = rolling_window_curves
+
+    if isinstance(time_series, Mapping):
+        return build_polarity_graph_contract(adapted_academic_reports, time_series)
+
+    return build_polarity_graph_contract(adapted_academic_reports)
 
 
 @app.get("/api/projects/{project_id}/exports/{run_id}.json", status_code=status.HTTP_200_OK)
