@@ -28,6 +28,7 @@ def test_unit_build_normalization_report_aggregates_counts_and_flags() -> None:
 
     assert report["counts"]["chapters_detected"] == 2
     assert report["counts"]["suspected_duplicates"] == 1
+    assert report["counts"]["suspected_duplicate_content"] == 0
     assert report["counts"]["quote_repair_count"] == 1
     assert report["counts"]["encoding_issues"] == 2
     assert report["lossy_transform_flags"]["unicode_normalization"] is True

@@ -8,6 +8,7 @@ _CUSTOM_GENDER = "custom"
 _UNKNOWN_GENDER = "unknown"
 _MIN_SEVERITY = 0.0
 _MAX_SEVERITY = 1.0
+_INSUFFICIENT_INFERENCE_CONFIDENCE_THRESHOLD = 0.1
 
 
 def _normalize_gender(value: Any) -> str:
@@ -112,9 +113,11 @@ def compare_manual_and_inferred_gender_fields(
     character_rows: Iterable[Mapping[str, Any] | object],
     *,
     include_only_conflicts: bool = False,
+    contradiction_review_required: bool = True,
     contradiction_review_threshold: float = 0.75,
 ) -> list[dict[str, Any]]:
     review_threshold = _coerce_review_threshold(contradiction_review_threshold, default=0.75)
+    should_require_review = bool(contradiction_review_required)
     payloads: list[dict[str, Any]] = []
 
     for row in character_rows:
@@ -146,7 +149,9 @@ def compare_manual_and_inferred_gender_fields(
             comparison=comparison,
             contradiction_severity=contradiction_severity,
             is_contradiction=is_contradiction,
-            requires_review=is_contradiction and contradiction_severity >= review_threshold,
+            requires_review=(
+                should_require_review and is_contradiction and contradiction_severity >= review_threshold
+            ),
         )
         payload = result.to_payload()
         if include_only_conflicts and not is_contradiction:
@@ -161,12 +166,16 @@ def build_manual_inferred_gender_contradiction_warnings(
     character_rows: Iterable[Mapping[str, Any] | object],
     *,
     source: str = "character-gender-comparison",
+    contradiction_review_required: bool = True,
+    contradiction_review_threshold: float = 0.75,
 ) -> list[dict[str, object]]:
     warnings: list[dict[str, object]] = []
 
     for payload in compare_manual_and_inferred_gender_fields(
         character_rows,
         include_only_conflicts=True,
+        contradiction_review_required=contradiction_review_required,
+        contradiction_review_threshold=contradiction_review_threshold,
     ):
         severity = round(float(payload["contradiction_severity"]), 4)
         warnings.append(
@@ -185,6 +194,45 @@ def build_manual_inferred_gender_contradiction_warnings(
                     f"Manual gender '{payload['manual_gender']}' for '{payload['name']}' "
                     f"contradicts inferred gender '{payload['inferred_gender']}' "
                     f"(severity {severity})."
+                ),
+            }
+        )
+
+    return warnings
+
+
+def build_insufficient_inference_evidence_warnings(
+    character_rows: Iterable[Mapping[str, Any] | object],
+    *,
+    source: str = "character-gender-comparison",
+    inferred_confidence_threshold: float = _INSUFFICIENT_INFERENCE_CONFIDENCE_THRESHOLD,
+) -> list[dict[str, object]]:
+    threshold = _coerce_review_threshold(inferred_confidence_threshold, default=_INSUFFICIENT_INFERENCE_CONFIDENCE_THRESHOLD)
+
+    warnings: list[dict[str, object]] = []
+    for payload in compare_manual_and_inferred_gender_fields(character_rows):
+        if payload["inferred_gender"] != _UNKNOWN_GENDER:
+            continue
+
+        if payload["inferred_confidence"] > threshold:
+            continue
+
+        warnings.append(
+            {
+                "type": "inferred_gender_insufficient_evidence",
+                "level": "warning",
+                "source": source,
+                "character_name": payload["name"],
+                "manual_gender": payload["manual_gender"],
+                "inferred_gender": payload["inferred_gender"],
+                "manual_confidence": payload["manual_confidence"],
+                "inferred_confidence": payload["inferred_confidence"],
+                "contradiction_severity": 0.0,
+                "requires_review": False,
+                "message": (
+                    f"Insufficient evidence to confidently infer gender for '{payload['name']}'. "
+                    f"Inferred gender remains '{payload['inferred_gender']}' "
+                    f"(confidence {round(payload['inferred_confidence'], 4)})."
                 ),
             }
         )

@@ -31,6 +31,7 @@ EXPECTED_MODE_PAYLOAD = {
             "deep_semantic_refinement": False,
             "deterministic_mode": False,
             "web_scraping_enabled": False,
+            "contradiction_review_required": True,
             "profile_intent": "tts-ready segmentation and stable narration defaults",
         },
         "academic": {
@@ -46,6 +47,7 @@ EXPECTED_MODE_PAYLOAD = {
             "deep_semantic_refinement": False,
             "deterministic_mode": False,
             "web_scraping_enabled": False,
+            "contradiction_review_required": True,
             "profile_intent": "longer analytical segments for metric-friendly aggregation",
         },
         "author": {
@@ -61,6 +63,7 @@ EXPECTED_MODE_PAYLOAD = {
             "deep_semantic_refinement": False,
             "deterministic_mode": False,
             "web_scraping_enabled": False,
+            "contradiction_review_required": True,
             "profile_intent": "balanced segmentation for narrative-health diagnostics",
         },
         "custom": {
@@ -76,6 +79,7 @@ EXPECTED_MODE_PAYLOAD = {
             "deep_semantic_refinement": False,
             "deterministic_mode": False,
             "web_scraping_enabled": False,
+            "contradiction_review_required": True,
             "profile_intent": "user-tuned baseline with conservative defaults",
         },
     },
@@ -128,6 +132,7 @@ def test_unit_mode_default_profiles_cover_every_mode_and_required_fields() -> No
         "unstable_emotion_shift_density_threshold",
         "deep_semantic_refinement",
         "deterministic_mode",
+        "contradiction_review_required",
         "web_scraping_enabled",
         "profile_intent",
     }

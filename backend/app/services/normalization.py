@@ -75,6 +75,7 @@ def build_normalization_report(
     chapter_count: int,
     chapter_reports: list[dict[str, object]],
     suspected_duplicate_title_count: int,
+    suspected_duplicate_content_count: int = 0,
     encoding_issue_count: int,
 ) -> dict[str, object]:
     lossy_transform_flags: dict[str, bool] = {
@@ -99,6 +100,7 @@ def build_normalization_report(
         "counts": {
             "chapters_detected": chapter_count,
             "suspected_duplicates": suspected_duplicate_title_count,
+            "suspected_duplicate_content": suspected_duplicate_content_count,
             "quote_repair_count": total_quote_repair_count,
             "encoding_issues": encoding_issue_count,
             "copy_artifact_removed_lines": total_copy_artifact_removed_lines,

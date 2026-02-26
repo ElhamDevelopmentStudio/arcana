@@ -71,6 +71,7 @@ describe('project new page directory ingestion', () => {
       title: 'Shadow Slave PoC',
       selected_mode: 'audiobook',
       selected_modes: ['audiobook'],
+      do_not_store_source_text: false,
       configuration_snapshot_id: 'project-101-config-initial',
       ingestion_timestamp: null,
       created_at: '2026-02-25T00:00:00Z',
@@ -103,6 +104,12 @@ describe('project new page directory ingestion', () => {
 
     await user.click(screen.getByTestId('create-project-button'));
 
+    expect(createProjectTrigger).toHaveBeenCalledTimes(1);
+    expect(createProjectTrigger).toHaveBeenCalledWith({
+      title: 'Shadow Slave PoC',
+      do_not_store_source_text: false,
+    });
+
     expect(screen.getByTestId('ingestion-source-select')).toHaveValue('txt');
     const txtFile = new File(['chapter one'], 'novel.txt', { type: 'text/plain' });
     await user.upload(screen.getByTestId('txt-upload-input'), txtFile);
@@ -112,6 +119,22 @@ describe('project new page directory ingestion', () => {
     expect(ingestTxtTrigger).toHaveBeenCalledTimes(1);
     expect(ingestTxtTrigger).toHaveBeenCalledWith({ file: txtFile });
     expect(screen.getByTestId('chapter-count-state')).toHaveTextContent('Detected chapters: 2');
+  });
+
+  it('sends do_not_store_source_text flag when enabled', async () => {
+    const user = userEvent.setup();
+    renderProjectNewPage();
+
+    const doNotStoreCheckbox = screen.getByRole('checkbox', { name: /do not store source text/i });
+    await user.click(doNotStoreCheckbox);
+
+    await user.click(screen.getByTestId('create-project-button'));
+
+    expect(createProjectTrigger).toHaveBeenCalledTimes(1);
+    expect(createProjectTrigger).toHaveBeenCalledWith({
+      title: 'Shadow Slave PoC',
+      do_not_store_source_text: true,
+    });
   });
 
   it('uses chapter-directory ingestion mutation when source type is directory', async () => {

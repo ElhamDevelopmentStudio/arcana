@@ -525,6 +525,71 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(Array.isArray(analyticsPayload.character_mentions_by_chapter)).toBe(true);
     expect(typeof analyticsPayload.character_mentions_per_1000_words).toBe('object');
 
+    const audiobookPrepDashboardResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/audiobook-prep-dashboard`,
+    );
+    expect(audiobookPrepDashboardResponse.status()).toBe(200);
+    const audiobookPrepDashboardPayload = (await audiobookPrepDashboardResponse.json()) as {
+      schema_version: string;
+      output_schema: string;
+      output_format: string;
+      output_id: string;
+      output_name: string;
+      project_id: number;
+      run_id: number;
+      run_status: string;
+      generated_at: string;
+      unresolved_speaker_count: number;
+      unresolved_voice_mapping_count: number;
+      low_confidence_region_count: number;
+      export_readiness: {
+        is_ready: boolean;
+        blocking_reasons: string[];
+        warning_reasons: string[];
+      };
+    };
+    expect(audiobookPrepDashboardPayload.schema_version).toBe('1.0.0');
+    expect(audiobookPrepDashboardPayload.output_schema).toBe('audiobook_prep_dashboard_json');
+    expect(audiobookPrepDashboardPayload.output_format).toBe('json');
+    expect(audiobookPrepDashboardPayload.output_id).toBe('AB-001');
+    expect(audiobookPrepDashboardPayload.output_name).toBe('audiobook_prep_dashboard');
+    expect(audiobookPrepDashboardPayload.project_id).toBe(projectId);
+    expect(audiobookPrepDashboardPayload.run_id).toBe(runId);
+    expect(audiobookPrepDashboardPayload.run_status).toBe('completed');
+    expect(typeof audiobookPrepDashboardPayload.generated_at).toBe('string');
+    expect(audiobookPrepDashboardPayload.unresolved_speaker_count).toBeGreaterThanOrEqual(0);
+    expect(audiobookPrepDashboardPayload.unresolved_voice_mapping_count).toBeGreaterThanOrEqual(0);
+    expect(audiobookPrepDashboardPayload.low_confidence_region_count).toBeGreaterThanOrEqual(0);
+    expect(typeof audiobookPrepDashboardPayload.export_readiness.is_ready).toBe('boolean');
+    expect(Array.isArray(audiobookPrepDashboardPayload.export_readiness.blocking_reasons)).toBe(true);
+    expect(Array.isArray(audiobookPrepDashboardPayload.export_readiness.warning_reasons)).toBe(true);
+
+    const cooccurrenceGraphResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/character-cooccurrence-graph`,
+    );
+    expect(cooccurrenceGraphResponse.status()).toBe(200);
+    const cooccurrenceGraphPayload = (await cooccurrenceGraphResponse.json()) as {
+      project_id: number;
+      run_id: number;
+      graph: {
+        nodes: unknown[];
+        edges: unknown[];
+        metadata: {
+          node_count: number;
+          edge_count: number;
+        };
+      };
+      character_cooccurrence_centrality: {
+        metrics_table: unknown[];
+      };
+    };
+    expect(cooccurrenceGraphPayload.project_id).toBe(projectId);
+    expect(cooccurrenceGraphPayload.run_id).toBe(runId);
+    expect(Array.isArray(cooccurrenceGraphPayload.graph.nodes)).toBe(true);
+    expect(Array.isArray(cooccurrenceGraphPayload.graph.edges)).toBe(true);
+    expect(cooccurrenceGraphPayload.graph.nodes.length).toBe(cooccurrenceGraphPayload.graph.metadata.node_count);
+    expect(cooccurrenceGraphPayload.character_cooccurrence_centrality.metrics_table).toBeInstanceOf(Array);
+
     const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runId}.json`);
     expect(exportResponse.status()).toBe(200);
     const exportPayload = (await exportResponse.json()) as { project_id: number; run_id: number; status: string; segments: unknown[] };

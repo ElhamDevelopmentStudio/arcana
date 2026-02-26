@@ -199,6 +199,7 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
         "deep_semantic_refinement": False,
         "deterministic_mode": False,
         "web_scraping_enabled": False,
+        "contradiction_review_required": True,
         "mode_profile_snapshot": {
             "max_segment_chars": 255,
             "llm_enabled": False,
@@ -212,6 +213,7 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
             "deep_semantic_refinement": False,
             "deterministic_mode": False,
             "web_scraping_enabled": False,
+            "contradiction_review_required": True,
             "profile_intent": "user-tuned baseline with conservative defaults",
         },
     }

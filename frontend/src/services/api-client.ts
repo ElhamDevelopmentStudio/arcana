@@ -4,6 +4,7 @@ import { appEnv } from '@/app/config/env';
 import {
   characterImportSchema,
   characterAnalyticsResponseSchema,
+  characterCooccurrenceGraphResponseSchema,
   characterMapSchema,
   characterMapUpdateSchema,
   characterMapFinalizeSchema,
@@ -11,6 +12,7 @@ import {
   characterScrapeRequestSchema,
   pronunciationDictionaryPreviewRequestSchema,
   pronunciationDictionaryPreviewResponseSchema,
+  audiobookPrepDashboardResponseSchema,
   exportSchema,
   tensionGraphResponseSchema,
   ingestResponseSchema,
@@ -22,6 +24,7 @@ import {
   runDetailSchema,
   runRequestSchema,
   runResponseSchema,
+  characterGenderComparisonResponseSchema,
   voiceConfigResponseSchema,
   type RunRequestDto,
   type ProjectLLMSettingsRequestDto,
@@ -33,9 +36,12 @@ import {
   type CharacterScrapeRequestDto,
   type CharacterCandidatesMergeRequestDto,
   type CharacterAnalyticsResponseDto,
+  type CharacterCooccurrenceGraphResponseDto,
   type CharacterExtractionDto,
+  type CharacterGenderComparisonResponseDto,
   type PronunciationDictionaryPreviewRequestDto,
   type PronunciationDictionaryPreviewResponseDto,
+  type AudiobookPrepDashboardResponseDto,
   type TensionGraphResponseDto,
   characterExtractionSchema,
 } from '@/app/schemas/api';
@@ -77,9 +83,12 @@ export class NipeApiClient {
     }
   }
 
-  async createProject(title: string) {
+  async createProject(title: string, doNotStoreSourceText: boolean = false) {
     try {
-      const response = await this.client.post('/api/projects', { title });
+      const response = await this.client.post('/api/projects', {
+        title,
+        do_not_store_source_text: doNotStoreSourceText,
+      });
       return projectSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
@@ -230,6 +239,21 @@ export class NipeApiClient {
     }
   }
 
+  async getCharacterGenderComparison(
+    projectId: number,
+    includeOnlyConflicts: boolean = false,
+  ): Promise<CharacterGenderComparisonResponseDto> {
+    const response = await this.client.get(`/api/projects/${projectId}/characters/gender-comparison`, {
+      params: includeOnlyConflicts ? { include_only_conflicts: true } : undefined,
+    });
+
+    try {
+      return characterGenderComparisonResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async finalizeCharacterMap(projectId: number): Promise<CharacterMapFinalizeDto> {
     try {
       const response = await this.client.post(`/api/projects/${projectId}/characters/finalize`);
@@ -338,6 +362,26 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/character-analytics`);
       return characterAnalyticsResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getCharacterCooccurrenceGraph(projectId: number, runId: number): Promise<CharacterCooccurrenceGraphResponseDto> {
+    try {
+      const response = await this.client.get(
+        `/api/projects/${projectId}/runs/${runId}/character-cooccurrence-graph`,
+      );
+      return characterCooccurrenceGraphResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getAudiobookPrepDashboard(projectId: number, runId: number): Promise<AudiobookPrepDashboardResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/audiobook-prep-dashboard`);
+      return audiobookPrepDashboardResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

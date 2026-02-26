@@ -15,7 +15,14 @@ export const workspaceKeys = {
   exportPayload: (projectId: number, runId: number) => ['export-payload', projectId, runId] as const,
   tensionGraph: (projectId: number, runId: number) => ['tension-graph', projectId, runId] as const,
   characterAnalytics: (projectId: number, runId: number) => ['character-analytics', projectId, runId] as const,
+  characterCooccurrenceGraph: (projectId: number, runId: number) => [
+    'character-cooccurrence-graph',
+    projectId,
+    runId,
+  ] as const,
+  audiobookPrepDashboard: (projectId: number, runId: number) => ['audiobook-prep-dashboard', projectId, runId] as const,
   characterMap: (projectId: number) => ['character-map', projectId] as const,
+  characterGenderComparison: (projectId: number) => ['character-gender-comparison', projectId] as const,
 };
 
 export function useModeCatalogQuery(enabled: boolean) {
@@ -50,10 +57,26 @@ export function useCharacterAnalyticsQuery(projectId: number | null, runId: numb
   );
 }
 
+export function useCharacterCooccurrenceGraphQuery(projectId: number | null, runId: number | null) {
+  return useSWR(
+    projectId !== null && runId !== null ? workspaceKeys.characterCooccurrenceGraph(projectId, runId) : null,
+    async ([, currentProjectId, currentRunId]) =>
+      nipeApiClient.getCharacterCooccurrenceGraph(currentProjectId, currentRunId),
+  );
+}
+
+export function useAudiobookPrepDashboardQuery(projectId: number | null, runId: number | null) {
+  return useSWR(
+    projectId !== null && runId !== null ? workspaceKeys.audiobookPrepDashboard(projectId, runId) : null,
+    async ([, currentProjectId, currentRunId]) => nipeApiClient.getAudiobookPrepDashboard(currentProjectId, currentRunId),
+  );
+}
+
 export function useCreateProjectMutation() {
   return useSWRMutation(
     ['create-project'],
-    async (_, { arg }: { arg: { title: string } }) => nipeApiClient.createProject(arg.title),
+    async (_, { arg }: { arg: { title: string; do_not_store_source_text: boolean } }) =>
+      nipeApiClient.createProject(arg.title, arg.do_not_store_source_text),
   );
 }
 
@@ -145,6 +168,13 @@ export function useCharacterMapQuery(projectId: number | null) {
   return useSWR(
     projectId !== null ? workspaceKeys.characterMap(projectId) : null,
     async ([, currentProjectId]) => nipeApiClient.getCharacters(currentProjectId),
+  );
+}
+
+export function useCharacterGenderComparisonQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? workspaceKeys.characterGenderComparison(projectId) : null,
+    async ([, currentProjectId]) => nipeApiClient.getCharacterGenderComparison(currentProjectId),
   );
 }
 

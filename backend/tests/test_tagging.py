@@ -181,6 +181,32 @@ def test_tag_segment_emotion_outputs_default_to_neutral_for_no_signal_words() ->
     assert tags["emotion_confidence"] == 0.4
 
 
+def test_tag_segment_supports_expanded_emotion_taxonomy() -> None:
+    basic_tags = tag_segment("Cold dark threat," " and danger", emotion_taxonomy="basic")
+    expanded_tags = tag_segment("Cold dark threat," " and danger", emotion_taxonomy="expanded")
+
+    assert basic_tags["emotion_primary_label"] == "negative"
+    assert basic_tags["emotion_secondary_label"] == "angry"
+    assert expanded_tags["emotion_primary_label"] == "fearful"
+    assert expanded_tags["emotion_primary_label"] != basic_tags["emotion_primary_label"]
+    assert expanded_tags["emotion_secondary_label"] == "fearful"
+
+
+def test_detect_emotion_shift_respects_expanded_emotion_taxonomy() -> None:
+    text = "Cold and dark winds rose, but hope returned with the dawn."
+    basic_shift = detect_emotion_shift(text, emotion_taxonomy="basic")
+    expanded_shift = detect_emotion_shift(text, emotion_taxonomy="expanded")
+
+    assert basic_shift["has_shift"] is True
+    assert expanded_shift["has_shift"] is True
+    assert isinstance(basic_shift["from"], dict)
+    assert isinstance(expanded_shift["from"], dict)
+    assert basic_shift["from"]["label"] == "negative"
+    assert expanded_shift["from"]["label"] == "fearful"
+    assert basic_shift["to"]["label"] == "positive"
+    assert expanded_shift["to"]["label"] in {"hopeful", "joyful", "gratitude", "calm"}
+
+
 def test_detect_emotion_shift_identifies_positive_to_negative_transition() -> None:
     shift = detect_emotion_shift("He was happy, but fear and despair arrived.")
     assert shift["has_shift"] is True

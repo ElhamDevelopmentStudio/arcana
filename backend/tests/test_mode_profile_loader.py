@@ -24,6 +24,7 @@ EXPECTED_CUSTOM_PROFILE = {
     "unstable_emotion_shift_transition_threshold": 4,
     "unstable_emotion_shift_density_threshold": 0.5,
     "web_scraping_enabled": False,
+    "contradiction_review_required": True,
     "profile_intent": "user-tuned baseline with conservative defaults",
 }
 

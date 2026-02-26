@@ -1,6 +1,8 @@
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Download } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -413,6 +415,45 @@ export function ProjectDashboardsPage() {
     }).slice(0, 5);
   }, [cooccurrenceGraphPayload]);
 
+  const canExportDashboardSnapshot =
+    projectId !== null &&
+    runId !== null &&
+    !exportPayloadQuery.isLoading &&
+    !tensionGraphQuery.isLoading &&
+    !characterAnalyticsQuery.isLoading &&
+    !cooccurrenceGraphQuery.isLoading &&
+    !audiobookPrepDashboardQuery.isLoading &&
+    !exportPayloadQuery.error &&
+    !tensionGraphQuery.error &&
+    !characterAnalyticsQuery.error &&
+    !cooccurrenceGraphQuery.error &&
+    !audiobookPrepDashboardQuery.error;
+
+  function downloadDashboardSnapshot() {
+    if (!canExportDashboardSnapshot || projectId === null || runId === null) {
+      return;
+    }
+
+    const snapshotPayload = {
+      generated_at: new Date().toISOString(),
+      project_id: projectId,
+      run_id: runId,
+      tension_graph: tensionGraphQuery.data ?? null,
+      character_analytics: characterAnalyticsQuery.data ?? null,
+      cooccurrence_graph: cooccurrenceGraphPayload,
+      audiobook_prep_dashboard: audiobookPrepDashboardQuery.data ?? null,
+      show_smoothed_graph: showSmoothed,
+    };
+
+    const blob = new Blob([JSON.stringify(snapshotPayload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `project-${projectId}-run-${runId}-dashboard-snapshot.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   const dataSourceLabel = showSmoothed
     ? tensionGraphQuery.data
       ? 'Data source: run tension graph endpoint'
@@ -424,7 +465,21 @@ export function ProjectDashboardsPage() {
       step="Step 07"
       title="Dashboards"
       description="Explore visual analytics: tension, emotional polarity, dominance, and character trends."
-      action={<p className="text-sm text-muted-foreground">{dataSourceLabel}</p>}
+      action={
+        <div className="flex gap-2">
+          <Button
+            onClick={downloadDashboardSnapshot}
+            disabled={!canExportDashboardSnapshot}
+            data-testid="dashboards-snapshot-export-button"
+            variant="outline"
+            size="sm"
+          >
+            <Download className="size-4" />
+            Download snapshot
+          </Button>
+          <p className="text-sm text-muted-foreground">{dataSourceLabel}</p>
+        </div>
+      }
     >
       <Card>
         <CardHeader>
