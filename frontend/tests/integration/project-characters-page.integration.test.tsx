@@ -13,17 +13,39 @@ const scrapeCharactersMutationTrigger = vi.fn();
 const mergeCharactersMutationTrigger = vi.fn();
 const pronunciationPreviewMutationTrigger = vi.fn();
 const finalizeCharactersMutationTrigger = vi.fn();
-const characterMapQueryData = {
+const defaultCharacterMapQueryData = {
   project_id: 101,
   characters: [
     {
       name: 'Kai',
       verbalized_form: 'Kai',
       gender: 'male',
+      inferred_gender: 'female',
+      inferred_confidence: 0.84,
+      inferred_source_trace: [],
       aliases: ['K'],
       notes: 'Initial',
       source: 'import',
       confidence: 1.0,
+    },
+  ],
+};
+let characterMapQueryData = structuredClone(defaultCharacterMapQueryData);
+const characterGenderComparisonQueryData = {
+  project_id: 101,
+  comparison_count: 1,
+  contradiction_count: 1,
+  comparisons: [
+    {
+      name: 'Kai',
+      manual_gender: 'male',
+      inferred_gender: 'female',
+      manual_confidence: 1.0,
+      inferred_confidence: 0.84,
+      comparison: 'conflict',
+      contradiction_severity: 0.84,
+      is_contradiction: true,
+      requires_review: true,
     },
   ],
 };
@@ -38,6 +60,12 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isLoading: false,
     error: null,
     mutate: mutateCharacterMap,
+  }),
+  useCharacterGenderComparisonQuery: () => ({
+    data: characterGenderComparisonQueryData,
+    isLoading: false,
+    error: null,
+    mutate: vi.fn(),
   }),
   useSaveCharacterMapMutation: () => ({
     isMutating: false,
@@ -84,6 +112,7 @@ function renderCharacterPage() {
 
 describe('project characters page manual editor', () => {
   beforeEach(() => {
+    characterMapQueryData = structuredClone(defaultCharacterMapQueryData);
     importTrigger.mockReset();
     mutateCharacterMap.mockReset();
     saveCharactersMutationTrigger.mockReset();
@@ -99,6 +128,9 @@ describe('project characters page manual editor', () => {
           name: 'Lio',
           verbalized_form: 'Lee-o',
           gender: 'female',
+          inferred_gender: 'unknown',
+          inferred_confidence: 1.0,
+          inferred_source_trace: [],
           aliases: [],
           notes: null,
           source_trace: [],
@@ -216,6 +248,21 @@ describe('project characters page manual editor', () => {
     });
   });
 
+  it('shows manual/inferred gender contradictions in the manual editor', async () => {
+    const user = userEvent.setup();
+    renderCharacterPage();
+
+    const contradictionBanner = screen.getByTestId('character-gender-contradiction-state');
+    expect(contradictionBanner).toHaveTextContent('1 manual gender override contradiction(s) detected.');
+    expect(screen.getAllByText(/manual=male,\s*inferred=female/)).toHaveLength(1);
+
+    const selectFields = screen.getAllByRole('combobox');
+    await user.selectOptions(selectFields[0], 'female');
+
+    expect(screen.queryByTestId('character-gender-contradiction-state')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('character-gender-contradiction-state')).not.toBeInTheDocument();
+  });
+
   it('displays canonical merge suggestions when merge endpoint returns them', async () => {
     const user = userEvent.setup();
     mergeCharactersMutationTrigger.mockResolvedValue({
@@ -279,6 +326,116 @@ describe('project characters page manual editor', () => {
     expect(screen.getByTestId('proposed-character-mire')).toBeInTheDocument();
     expect(screen.getByText('Mire → Mira')).toBeInTheDocument();
     expect(screen.getByText('Reason: name_similarity')).toBeInTheDocument();
+  });
+
+  it('applies and undoes canonical merge suggestions in the manual editor', async () => {
+    const user = userEvent.setup();
+    characterMapQueryData = {
+      ...structuredClone(defaultCharacterMapQueryData),
+      characters: [
+        ...structuredClone(defaultCharacterMapQueryData.characters),
+        {
+          name: 'Mira',
+          verbalized_form: 'Mira',
+          gender: 'female',
+          inferred_gender: 'female',
+          inferred_confidence: 0.91,
+          inferred_source_trace: [],
+          aliases: ['Ria'],
+          notes: 'Imported canonical',
+          source: 'import',
+          confidence: 1.0,
+          source_trace: [],
+        },
+        {
+          name: 'Mire',
+          verbalized_form: 'Mire',
+          gender: 'female',
+          inferred_gender: 'female',
+          inferred_confidence: 0.85,
+          inferred_source_trace: [],
+          aliases: ['M'],
+          notes: 'Imported alias',
+          source: 'auto',
+          confidence: 0.93,
+          source_trace: [],
+        },
+      ],
+    };
+    mergeCharactersMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      status: 'complete',
+      candidate_count: 2,
+      proposed_characters: [],
+      candidates: [
+        {
+          name: 'Mira',
+          verbalized_form: 'Mira',
+          gender: 'female',
+          aliases: ['Ria'],
+          notes: null,
+          source: 'merged:auto|user_import',
+          confidence: 1.0,
+          source_trace: [],
+        },
+        {
+          name: 'Mire',
+          verbalized_form: 'Mire',
+          gender: 'female',
+          aliases: ['M'],
+          notes: null,
+          source: 'auto',
+          confidence: 0.93,
+          source_trace: [],
+        },
+      ],
+      canonical_merge_suggestions: [
+        {
+          canonical_name: 'Mira',
+          alias_name: 'Mire',
+          score: 0.88,
+          candidate_source: 'auto',
+          canonical_source: 'user_import',
+          reason: 'name_similarity',
+        },
+      ],
+    });
+
+    renderCharacterPage();
+
+    await user.click(screen.getByRole('button', { name: 'Merge user + auto + scraped candidates' }));
+    expect(screen.getByTestId('character-merge-suggestions-state')).toHaveTextContent('1 suggestion(s).');
+
+    const applyButton = screen.getByRole('button', { name: 'Apply' });
+    await user.click(applyButton);
+
+    expect(screen.getByTestId('character-merge-suggestions-state')).toHaveTextContent('No suggestions yet.');
+    expect(screen.getByTestId('character-merge-suggestions-undo')).toBeInTheDocument();
+
+    const nameInputs = screen.getAllByPlaceholderText('Character name');
+    const aliasInputs = screen.getAllByPlaceholderText('Aliases (comma-separated)');
+    expect(nameInputs).toHaveLength(2);
+
+    const miraNameInputIndex = nameInputs.findIndex((input) => input.getAttribute('value') === 'Mira');
+    expect(miraNameInputIndex).toBeGreaterThan(-1);
+    const miraAliasInput = aliasInputs[miraNameInputIndex];
+    expect((miraAliasInput as HTMLInputElement).value).toContain('Ria');
+    expect((miraAliasInput as HTMLInputElement).value).toContain('Mire');
+    expect((miraAliasInput as HTMLInputElement).value).toContain('M');
+    expect(nameInputs).not.toContainEqual(expect.objectContaining({ value: 'Mire' }));
+
+    await user.click(screen.getByTestId('character-merge-suggestions-undo'));
+    expect(screen.getByTestId('character-merge-suggestions-state')).toHaveTextContent('1 suggestion(s).');
+    expect(screen.queryByTestId('character-merge-suggestions-undo')).not.toBeInTheDocument();
+
+    const undoNameInputs = screen.getAllByPlaceholderText('Character name');
+    expect(undoNameInputs).toHaveLength(3);
+    expect(undoNameInputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'Mira' }),
+        expect.objectContaining({ value: 'Mire' }),
+      ]),
+    );
   });
 
   it('allows approving and rejecting proposed characters', async () => {

@@ -401,8 +401,8 @@ Definition of done for each task:
 
 ### NFR-3 Usability
 - [x] [NFR3-001] Add pronunciation override UX with inline validation.
-- [ ] [NFR3-002] Add gender override UX with contradiction visibility.
-- [ ] [NFR3-003] Add character merge UX with undo support.
+- [x] [NFR3-002] Add gender override UX with contradiction visibility.
+- [x] [NFR3-003] Add character merge UX with undo support.
 - [ ] [NFR3-004] Add voice mapping UX with default fallback preview.
 - [ ] [NFR3-005] Add docs page “How to review low-confidence outputs”.
 

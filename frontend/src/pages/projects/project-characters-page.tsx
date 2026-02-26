@@ -23,6 +23,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   useAutoExtractCharactersMutation,
   useCharacterMapQuery,
+  useCharacterGenderComparisonQuery,
   useScrapeCharactersMutation,
   useMergeCharactersMutation,
   useImportCharactersMutation,
@@ -33,17 +34,49 @@ import {
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { Checkbox } from '@/components/ui/checkbox';
 
+const STANDARD_GENDERS = new Set(['male', 'female', 'neutral']);
+
+function normalizeCharacterName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeGender(value: string | null | undefined): string {
+  if (typeof value !== 'string') {
+    return 'unknown';
+  }
+  return value.trim().toLowerCase() || 'unknown';
+}
+
+function isGenderContradiction(manualGender: string, inferredGender: string): boolean {
+  const normalizedManual = normalizeGender(manualGender);
+  const normalizedInferred = normalizeGender(inferredGender);
+
+  if (!STANDARD_GENDERS.has(normalizedManual) || !STANDARD_GENDERS.has(normalizedInferred)) {
+    return false;
+  }
+
+  return normalizedManual !== normalizedInferred;
+}
+
 type ManualCharacterRow = {
   id: string;
   name: string;
   verbalized: string;
   gender: string;
   aliases: string;
+  inferredGender: string;
 };
 
 type ManualCharacterRowError = {
   name?: string;
   verbalized?: string;
+};
+
+type CharacterMergeUndoEntry = {
+  previousManualRows: ManualCharacterRow[];
+  previousMergeSuggestions: CharacterExtractionDto['canonical_merge_suggestions'];
+  canonicalName: string;
+  aliasName: string;
 };
 
 function createRow(): ManualCharacterRow {
@@ -53,6 +86,7 @@ function createRow(): ManualCharacterRow {
     verbalized: '',
     gender: 'unknown',
     aliases: '',
+    inferredGender: 'unknown',
   };
 }
 
@@ -67,6 +101,7 @@ function toManualRows(map: CharacterMapDto | undefined): ManualCharacterRow[] {
     verbalized: item.verbalized_form,
     gender: item.gender,
     aliases: item.aliases.join(', '),
+    inferredGender: item.inferred_gender,
   }));
 }
 
@@ -76,6 +111,37 @@ function parseAliases(rawAliases: string): string[] {
     .map((alias) => alias.trim())
     .filter(Boolean);
   return [...new Set(normalized)];
+}
+
+function mergeManualRows(
+  rows: ManualCharacterRow[],
+  canonicalName: string,
+  aliasName: string,
+): ManualCharacterRow[] | null {
+  const canonicalIndex = rows.findIndex(
+    (row) => normalizeCharacterName(row.name) === normalizeCharacterName(canonicalName),
+  );
+  const aliasIndex = rows.findIndex((row) => normalizeCharacterName(row.name) === normalizeCharacterName(aliasName));
+
+  if (canonicalIndex < 0 || aliasIndex < 0 || canonicalIndex === aliasIndex) {
+    return null;
+  }
+
+  const canonicalRow = rows[canonicalIndex];
+  const aliasRow = rows[aliasIndex];
+
+  const aliasSet = new Set([...parseAliases(canonicalRow.aliases), aliasRow.name.trim(), ...parseAliases(aliasRow.aliases)]);
+  aliasSet.delete(canonicalRow.name.trim());
+
+  const mergedCanonicalRow: ManualCharacterRow = {
+    ...canonicalRow,
+    aliases: [...aliasSet].join(', '),
+  };
+
+  const nextRows = rows.filter((_, index) => index !== aliasIndex);
+  const canonicalAdjustedIndex = canonicalIndex > aliasIndex ? canonicalIndex - 1 : canonicalIndex;
+  nextRows[canonicalAdjustedIndex] = mergedCanonicalRow;
+  return nextRows;
 }
 
 export function ProjectCharactersPage() {
@@ -96,6 +162,7 @@ export function ProjectCharactersPage() {
   const [mergeCandidates, setMergeCandidates] = useState<CharacterMapDto['characters']>([]);
   const [proposedCandidates, setProposedCandidates] = useState<CharacterMapDto['characters']>([]);
   const [mergeSuggestions, setMergeSuggestions] = useState<CharacterExtractionDto['canonical_merge_suggestions']>([]);
+  const [mergeUndoHistory, setMergeUndoHistory] = useState<CharacterMergeUndoEntry[]>([]);
   const [mergeScrapeUrl, setMergeScrapeUrl] = useState<string>('');
   const [mergeScrapeAcknowledged, setMergeScrapeAcknowledged] = useState<boolean>(false);
   const [pronunciationPreviewText, setPronunciationPreviewText] = useState<string>('');
@@ -113,7 +180,35 @@ export function ProjectCharactersPage() {
   >(null);
 
   const characterMapQuery = useCharacterMapQuery(projectId);
+  const characterGenderComparisonQuery = useCharacterGenderComparisonQuery(projectId);
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
+  const genderComparisonRows = useMemo(() => {
+    const mapped: Record<string, string> = {};
+
+    for (const comparison of characterGenderComparisonQuery.data?.comparisons ?? []) {
+      const name = comparison.name.trim().toLowerCase();
+      if (!name) {
+        continue;
+      }
+      mapped[name] = comparison.inferred_gender;
+    }
+    return mapped;
+  }, [characterGenderComparisonQuery.data]);
+  const genderContradictionRows = useMemo(() => {
+    return manualRows.reduce<string[]>((acc, row) => {
+      const rowName = row.name.trim();
+      if (!rowName) {
+        return acc;
+      }
+      const inferredGender = genderComparisonRows[rowName.toLowerCase()] ?? row.inferredGender;
+
+      if (!isGenderContradiction(row.gender, inferredGender)) {
+        return acc;
+      }
+      acc.push(rowName);
+      return acc;
+    }, []);
+  }, [manualRows, genderComparisonRows]);
   const manualRowErrors = useMemo<Record<string, ManualCharacterRowError>>(() => {
     return manualRows.reduce<Record<string, ManualCharacterRowError>>((acc, row) => {
       const hasName = row.name.trim().length > 0;
@@ -163,6 +258,7 @@ export function ProjectCharactersPage() {
       return;
     }
     setManualRows(toManualRows(characterMapQuery.data));
+    setMergeUndoHistory([]);
   }, [characterMapQuery.data]);
 
   useEffect(() => {
@@ -295,6 +391,7 @@ export function ProjectCharactersPage() {
       setMergeCandidates(merged.candidates);
       setProposedCandidates(merged.proposed_characters);
       setMergeSuggestions(merged.canonical_merge_suggestions);
+      setMergeUndoHistory([]);
       toast.success(`Merged ${merged.candidate_count} candidate records.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Character merge failed.');
@@ -353,6 +450,45 @@ export function ProjectCharactersPage() {
 
   function handleRejectProposedCandidate(index: number) {
     setProposedCandidates((prev) => prev.filter((_, candidateIndex) => candidateIndex !== index));
+  }
+
+  function handleApplyCanonicalMergeSuggestion(index: number) {
+    const suggestion = mergeSuggestions[index];
+    if (!suggestion || !suggestion.alias_name || !suggestion.canonical_name) {
+      return;
+    }
+
+    const nextRows = mergeManualRows(manualRows, suggestion.canonical_name, suggestion.alias_name);
+    if (nextRows === null) {
+      toast.error(
+        `Could not apply merge for ${suggestion.alias_name} → ${suggestion.canonical_name}; ensure both characters are present.`,
+      );
+      return;
+    }
+
+    setMergeUndoHistory((prev) => [
+      ...prev,
+      {
+        previousManualRows: manualRows,
+        previousMergeSuggestions: mergeSuggestions,
+        canonicalName: suggestion.canonical_name,
+        aliasName: suggestion.alias_name,
+      },
+    ]);
+    setManualRows(nextRows);
+    setMergeSuggestions((prev) => prev.filter((_, suggestionIndex) => suggestionIndex !== index));
+    toast.success(`Merged "${suggestion.alias_name}" into "${suggestion.canonical_name}".`);
+  }
+
+  function handleUndoLastMergeSuggestion() {
+    const previous = mergeUndoHistory[mergeUndoHistory.length - 1];
+    if (!previous) {
+      return;
+    }
+
+    setManualRows(previous.previousManualRows);
+    setMergeSuggestions(previous.previousMergeSuggestions);
+    setMergeUndoHistory((prev) => prev.slice(0, -1));
   }
 
   async function handleFinalizeCharacterMap() {
@@ -644,12 +780,25 @@ export function ProjectCharactersPage() {
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">Canonical-name merge suggestions</p>
               <p className="text-xs">Candidates that look similar to existing canonicals and may be merged.</p>
-              <p data-testid="character-merge-suggestions-state" className="text-xs">
-                {mergeSuggestions.length === 0 ? 'No suggestions yet.' : `${mergeSuggestions.length} suggestion(s).`}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p data-testid="character-merge-suggestions-state" className="text-xs">
+                  {mergeSuggestions.length === 0 ? 'No suggestions yet.' : `${mergeSuggestions.length} suggestion(s).`}
+                </p>
+                {mergeUndoHistory.length === 0 ? null : (
+                  <Button
+                    data-testid="character-merge-suggestions-undo"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleUndoLastMergeSuggestion}
+                    type="button"
+                  >
+                    Undo last merge
+                  </Button>
+                )}
+              </div>
               {mergeSuggestions.length === 0 ? null : (
                 <ul className="space-y-1 text-xs text-muted-foreground">
-                  {mergeSuggestions.map((suggestion) => (
+                  {mergeSuggestions.map((suggestion, index) => (
                     <li
                       key={`merge-suggestion-${suggestion.alias_name}-${suggestion.canonical_name}`}
                       className="space-y-0.5"
@@ -660,6 +809,13 @@ export function ProjectCharactersPage() {
                         </span>
                         <span>{Math.round(suggestion.score * 100)}% similar</span>
                       </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleApplyCanonicalMergeSuggestion(index)}
+                        type="button"
+                      >
+                        Apply
+                      </Button>
                       <p className="text-[11px] text-muted-foreground/90">Reason: {suggestion.reason}</p>
                     </li>
                   ))}
@@ -736,49 +892,71 @@ export function ProjectCharactersPage() {
             <CardDescription>Add, adjust, and remove rows and persist them immediately to this project.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {genderContradictionRows.length === 0 ? null : (
+              <p
+                data-testid="character-gender-contradiction-state"
+                className="rounded border border-amber-300/70 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+              >
+                {genderContradictionRows.length} manual gender override contradiction(s) detected.
+              </p>
+            )}
             <div className="grid max-h-[28rem] gap-1 overflow-auto pr-1">
               {manualRows.map((row) => (
                 <div
                   key={row.id}
                   className="grid gap-2 px-1 py-1.5 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-panel-border/60"
                 >
-                  <div className="space-y-1">
-                    <Input
-                      placeholder="Character name"
-                      value={row.name}
-                      onChange={(event) => updateRow(row.id, 'name', event.target.value)}
-                      className={manualRowErrors[row.id]?.name ? 'border-destructive' : undefined}
-                    />
-                    {manualRowErrors[row.id]?.name ? (
-                      <p className="text-xs text-destructive">{manualRowErrors[row.id]!.name}</p>
-                    ) : null}
-                  </div>
-                  <div className="grid gap-2 lg:grid-cols-[1fr_1fr_1.3fr_160px_auto]">
-                    <Input
-                      placeholder="Verbalized form"
-                      value={row.verbalized}
-                      onChange={(event) => updateRow(row.id, 'verbalized', event.target.value)}
-                      className={manualRowErrors[row.id]?.verbalized ? 'border-destructive' : undefined}
-                    />
-                    {manualRowErrors[row.id]?.verbalized ? (
-                      <p className="text-xs text-destructive">{manualRowErrors[row.id]!.verbalized}</p>
-                    ) : null}
-                    <Input
-                      placeholder="Aliases (comma-separated)"
-                      value={row.aliases}
-                      onChange={(event) => updateRow(row.id, 'aliases', event.target.value)}
-                    />
-                    <NativeSelect value={row.gender} onChange={(event) => updateRow(row.id, 'gender', event.target.value)}>
-                      <option value="male">male</option>
-                      <option value="female">female</option>
-                      <option value="neutral">neutral</option>
-                      <option value="unknown">unknown</option>
-                      <option value="custom">custom</option>
-                    </NativeSelect>
-                    <Button variant="outline" onClick={() => removeRow(row.id)} type="button">
-                      Remove
-                    </Button>
-                  </div>
+                  {(() => {
+                    const inferredGender = genderComparisonRows[row.name.trim().toLowerCase()] ?? row.inferredGender;
+
+                    return (
+                      <>
+                        <div className="space-y-1">
+                          <Input
+                            placeholder="Character name"
+                            value={row.name}
+                            onChange={(event) => updateRow(row.id, 'name', event.target.value)}
+                            className={manualRowErrors[row.id]?.name ? 'border-destructive' : undefined}
+                          />
+                          {manualRowErrors[row.id]?.name ? (
+                            <p className="text-xs text-destructive">{manualRowErrors[row.id]!.name}</p>
+                          ) : null}
+                        </div>
+                        <div className="grid gap-2 lg:grid-cols-[1fr_1fr_1.3fr_160px_auto]">
+                          <Input
+                            placeholder="Verbalized form"
+                            value={row.verbalized}
+                            onChange={(event) => updateRow(row.id, 'verbalized', event.target.value)}
+                            className={manualRowErrors[row.id]?.verbalized ? 'border-destructive' : undefined}
+                          />
+                          {manualRowErrors[row.id]?.verbalized ? (
+                            <p className="text-xs text-destructive">{manualRowErrors[row.id]!.verbalized}</p>
+                          ) : null}
+                          <Input
+                            placeholder="Aliases (comma-separated)"
+                            value={row.aliases}
+                            onChange={(event) => updateRow(row.id, 'aliases', event.target.value)}
+                          />
+                          <NativeSelect value={row.gender} onChange={(event) => updateRow(row.id, 'gender', event.target.value)}>
+                            <option value="male">male</option>
+                            <option value="female">female</option>
+                            <option value="neutral">neutral</option>
+                            <option value="unknown">unknown</option>
+                            <option value="custom">custom</option>
+                          </NativeSelect>
+                          {isGenderContradiction(row.gender, inferredGender) ? (
+                            <p className="col-span-full text-xs text-amber-900">
+                              <span className="font-medium">Contradiction:</span> manual={normalizeGender(row.gender)},
+                              inferred={normalizeGender(inferredGender)}.
+                            </p>
+                          ) : null}
+                          <Button variant="outline" onClick={() => removeRow(row.id)} type="button">
+                            Remove
+                          </Button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
