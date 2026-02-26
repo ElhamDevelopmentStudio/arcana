@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Mapping
@@ -21,6 +22,7 @@ _DEFAULT_ERROR_RETRY_ATTEMPTS: dict[str, int] = {
 _DEFAULT_FAILOVER_ERROR_CODES = {"rate_limit", "quota", "timeout", "service_unavailable", "other"}
 _UNSUPPORTED_PROVIDER_ERROR_CODE = "unsupported_provider"
 _INVALID_REQUEST_ERROR_CODE = "invalid_request"
+_INVALID_RESPONSE_ERROR_CODE = "invalid_response"
 LLM_STANDARD_RESPONSE_FIELDS: tuple[str, ...] = (
     "provider_used",
     "model_identifier",
@@ -219,12 +221,30 @@ class LLMResponseParser:
             raw_output = message.get("content", "") if isinstance(message, dict) else ""
 
         token_usage = body.get("usage", {}).get("total_tokens") if isinstance(body.get("usage", {}), dict) else None
+        parsed_output, confidence = _extract_and_validate_payload(
+            raw_output=raw_output,
+            expected_schema=request.expected_schema,
+        )
+        if parsed_output is None:
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output=raw_output,
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=token_usage,
+                success_flag=False,
+                error_code=_INVALID_RESPONSE_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
         return LLMResponse(
             provider_used=provider,
             model_identifier=model_identifier,
             raw_output=raw_output,
-            parsed_output={"raw": raw_output},
-            confidence=None,
+            parsed_output=parsed_output,
+            confidence=confidence,
             token_usage_estimate=token_usage,
             success_flag=True,
             error_code=None,
@@ -677,6 +697,98 @@ def _validate_llm_request(request: LLMRequest) -> str | None:
     return None
 
 
+def _extract_and_validate_payload(
+    raw_output: str,
+    expected_schema: dict[str, Any],
+) -> tuple[dict[str, Any] | None, float | None]:
+    parsed_output = _coerce_json_payload(raw_output)
+    if parsed_output is None:
+        return None, None
+
+    if not _payload_matches_expected_schema(parsed_output=parsed_output, expected_schema=expected_schema):
+        return None, None
+
+    return parsed_output, _extract_confidence(parsed_output=parsed_output)
+
+
+def _coerce_json_payload(raw_output: str) -> dict[str, Any] | None:
+    candidate = raw_output.strip()
+    if not candidate:
+        return None
+
+    parsed = _try_parse_json_text(candidate)
+    if parsed is not None and isinstance(parsed, dict):
+        return parsed
+
+    fenced = _strip_fenced_json(candidate)
+    if fenced != candidate:
+        parsed = _try_parse_json_text(fenced)
+        if parsed is not None and isinstance(parsed, dict):
+            return parsed
+
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start == -1 or end <= start:
+        return None
+
+    parsed = _try_parse_json_text(candidate[start : end + 1])
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _strip_fenced_json(candidate: str) -> str:
+    if not candidate.startswith("```"):
+        return candidate
+
+    unwrapped = candidate.replace("```", "").strip()
+    if unwrapped.startswith("json"):
+        unwrapped = unwrapped[4:].strip()
+    return unwrapped
+
+
+def _try_parse_json_text(candidate: str) -> Any | None:
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+
+
+def _payload_matches_expected_schema(
+    parsed_output: dict[str, Any],
+    expected_schema: dict[str, Any],
+) -> bool:
+    for key, expected_type in expected_schema.items():
+        if key not in parsed_output:
+            return False
+
+        actual = parsed_output[key]
+        if not _value_matches_expected_type(value=actual, expected_type=expected_type):
+            return False
+
+    return True
+
+
+def _value_matches_expected_type(value: Any, expected_type: Any) -> bool:
+    normalized_type = str(expected_type).strip().lower()
+    if normalized_type == "string":
+        return isinstance(value, str)
+    if normalized_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if normalized_type == "boolean":
+        return isinstance(value, bool)
+    if normalized_type == "object":
+        return isinstance(value, dict)
+    if normalized_type == "array":
+        return isinstance(value, list)
+    return True
+
+
+def _extract_confidence(parsed_output: dict[str, Any]) -> float | None:
+    confidence = parsed_output.get("confidence")
+    if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+        return None
+    return float(confidence)
+
+
 def _coerce_json_response(response: object) -> dict[str, Any] | None:
     if response is None:
         return None
@@ -699,6 +811,23 @@ def _classify_provider_error(
     headers: dict[str, str],
     body: dict[str, Any],
 ) -> tuple[str, datetime | None]:
+    if status_code in (400, 422):
+        if _contains_indicator(
+            body=body,
+            headers=headers,
+            indicators=(
+                "invalid_request",
+                "invalid request",
+                "bad request",
+                "malformed",
+                "validation",
+                "validation failed",
+                "missing",
+                "required",
+            ),
+        ):
+            return "invalid_request", None
+
     if status_code == 408:
         return "timeout", None
 
@@ -708,7 +837,54 @@ def _classify_provider_error(
     if status_code in (401, 402, 403):
         if _contains_indicator(body=body, headers=headers, indicators=("quota", "limit", "billing", "credit")):
             return "quota", None
+        if _contains_indicator(
+            body=body,
+            headers=headers,
+            indicators=(
+                "invalid_request",
+                "invalid request",
+                "bad request",
+                "unsupported",
+                "malformed",
+            ),
+        ):
+            return "invalid_request", None
+        if _contains_indicator(
+            body=body,
+            headers=headers,
+            indicators=("rate limit", "too many requests", "requests per minute", "rps"),
+        ):
+            return "rate_limit", None
         return "other", None
+
+    if _contains_indicator(
+        body=body,
+        headers=headers,
+        indicators=(
+            "invalid_request",
+            "invalid request",
+            "bad request",
+            "validation",
+            "malformed",
+            "required",
+            "missing",
+        ),
+    ):
+        return "invalid_request", None
+
+    if _contains_indicator(
+        body=body,
+        headers=headers,
+        indicators=("rate limit", "too many requests", "requests per minute", "rps"),
+    ):
+        return "rate_limit", None
+
+    if _contains_indicator(
+        body=body,
+        headers=headers,
+        indicators=("quota", "limit", "billing", "credit"),
+    ):
+        return "quota", None
 
     if status_code >= 500:
         return "service_unavailable", None

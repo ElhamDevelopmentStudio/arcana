@@ -1241,7 +1241,7 @@ def test_response_parser_extracts_raw_payload_on_success() -> None:
 
     assert response.success_flag is True
     assert response.raw_output == '{"sentiment": "neutral", "confidence": 0.95}'
-    assert response.parsed_output == {"raw": '{"sentiment": "neutral", "confidence": 0.95}'}
+    assert response.parsed_output == {"sentiment": "neutral", "confidence": 0.95}
     assert response.token_usage_estimate == 44
 
 
@@ -1404,6 +1404,115 @@ def test_response_parser_classifies_other_errors() -> None:
     )
 
     assert response.error_code == "other"
+
+
+def test_response_parser_flags_invalid_json_response_as_invalid_response() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-invalid-json",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-invalid-json",
+        ),
+        provider_name="openrouter",
+        model_identifier="openai/gpt-4o-mini",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=200,
+            headers={"x-test": "ok"},
+            body={
+                "choices": [{"message": {"content": "{\"sentiment\": \"neutral\", \"confidence\": 0.95"}}],
+                "usage": {"total_tokens": 44},
+            },
+        ),
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "invalid_response"
+    assert response.parsed_output == {}
+    assert response.raw_output == '{"sentiment": "neutral", "confidence": 0.95'
+
+
+def test_response_parser_flags_missing_schema_key_as_invalid_response() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-missing-key",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-missing-key",
+        ),
+        provider_name="openrouter",
+        model_identifier="openai/gpt-4o-mini",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=200,
+            headers={"x-test": "ok"},
+            body={
+                "choices": [{"message": {"content": '{"sentiment": "neutral"}'}}],
+                "usage": {"total_tokens": 32},
+            },
+        ),
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "invalid_response"
+    assert response.raw_output == '{"sentiment": "neutral"}'
+
+
+def test_response_parser_flags_schema_type_mismatch_as_invalid_response() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-type-mismatch",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-type-mismatch",
+        ),
+        provider_name="openrouter",
+        model_identifier="openai/gpt-4o-mini",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=200,
+            headers={"x-test": "ok"},
+            body={
+                "choices": [{"message": {"content": '{"sentiment": "neutral", "confidence": "not-a-number"}'}}],
+                "usage": {"total_tokens": 33},
+            },
+        ),
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "invalid_response"
+    assert response.raw_output == '{"sentiment": "neutral", "confidence": "not-a-number"}'
+
+
+def test_response_parser_classifies_invalid_request_from_provider_body() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-invalid-request",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-invalid-request",
+        ),
+        provider_name="groq",
+        model_identifier="llama",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=400,
+            headers={},
+            body={"error": {"message": "Invalid request body: missing required field", "type": "invalid_request_error"}},
+        ),
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "invalid_request"
 
 
 def test_dispatcher_maps_timeout_to_transport_error(monkeypatch: object) -> None:
