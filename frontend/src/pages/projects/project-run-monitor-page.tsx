@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import {
   useAudiobookPrepDashboardQuery,
   useCancelRunMutation,
+  useCharacterAnalyticsQuery,
   usePipelineStageDurationsDashboardQuery,
   useRecoverRunMutation,
   useRerunRunMutation,
@@ -36,6 +37,7 @@ export function ProjectRunMonitorPage() {
   const recoverRunMutation = useRecoverRunMutation(projectId, runId);
   const cancelRunMutation = useCancelRunMutation(projectId, runId);
   const audiobookPrepDashboardQuery = useAudiobookPrepDashboardQuery(projectId, runId);
+  const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
   const pipelineStageDurationsDashboardQuery = usePipelineStageDurationsDashboardQuery(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
@@ -340,6 +342,23 @@ export function ProjectRunMonitorPage() {
             </pre>
           ) : (
             <p>No audiobook prep metrics yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Character Analytics Dashboard</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          {characterAnalyticsQuery.isLoading ? <p>Loading character analytics...</p> : null}
+          {characterAnalyticsQuery.error ? <p className="text-destructive">{characterAnalyticsQuery.error.message}</p> : null}
+          {characterAnalyticsQuery.data ? (
+            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
+              {JSON.stringify(characterAnalyticsQuery.data, null, 2)}
+            </pre>
+          ) : (
+            <p>No character analytics yet.</p>
           )}
         </CardContent>
       </Card>
