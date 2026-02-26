@@ -89,6 +89,19 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
+### Local smoke test (one command)
+
+From repository root:
+
+```bash
+python3 backend/scripts_run_local_smoke.py
+```
+
+Default behavior:
+- Starts a temporary backend instance on `127.0.0.1:8010` using local SQLite (`test_nipe_local_smoke.db`).
+- Runs backend smoke API test (`backend/tests/test_api_smoke.py`).
+- Runs a stable frontend Playwright live-backend contract smoke (`frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts`, `--grep` contract baseline case).
+
 ### LLM provider keys and failover behavior
 
 Set provider credentials in `backend/.env` (copied from `.env.example`) before running LLM-dependent features.
