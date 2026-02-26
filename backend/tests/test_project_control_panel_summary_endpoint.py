@@ -12,6 +12,9 @@ from app.main import app
 
 
 def setup_module() -> None:
+    db_file = Path("test_nipe_project_control_panel_summary_endpoint.db")
+    if db_file.exists():
+        db_file.unlink()
     clear_settings_cache()
     reset_engine()
     init_db()
