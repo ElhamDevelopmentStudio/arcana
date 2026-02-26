@@ -84,6 +84,7 @@ from app.schemas import (
     ProjectIngestionSourceAttachResponse,
     ProjectMetadataUpdateRequest,
     ProjectMetadataUpdateResponse,
+    ProjectControlPanelSummaryResponse,
     ProjectLLMSettingsRequest,
     ProjectLLMSettingsResponse,
     LLMProviderStatus,
@@ -182,6 +183,7 @@ from app.services.run_status import (
     RUN_STATUS_RUNNING,
 )
 from app.services.project_lifecycle import (
+    PROJECT_LIFECYCLE_ARCHIVED,
     PROJECT_LIFECYCLE_COMPLETED,
     PROJECT_LIFECYCLE_CONFIGURED,
     PROJECT_LIFECYCLE_DRAFT,
@@ -212,6 +214,16 @@ _PROJECT_ACCESS_HEADER_ID = "x-principal-id"
 _PROJECT_ACCESS_SCOPE_READ = "read"
 _PROJECT_ACCESS_SCOPE_RUN_EXEC = "run_execute"
 _PROJECT_ACCESS_SCOPE_WRITE = "project_write"
+_CONTROL_PANEL_RECENT_FAILURE_LIMIT = 20
+_CONTROL_PANEL_STATE_ORDER = (
+    PROJECT_LIFECYCLE_DRAFT,
+    PROJECT_LIFECYCLE_INGESTED,
+    PROJECT_LIFECYCLE_CONFIGURED,
+    PROJECT_LIFECYCLE_RUNNING,
+    PROJECT_LIFECYCLE_COMPLETED,
+    PROJECT_LIFECYCLE_FAILED,
+    PROJECT_LIFECYCLE_ARCHIVED,
+)
 
 _PROJECT_SERVICE_ROLE_SCOPE_MATRIX: dict[str, dict[str, set[str]]] = {
     "service": {
@@ -3246,6 +3258,81 @@ def update_project_metadata(
         description=project.description,
         tags=list(project.tags or []),
         updated_at=updated_at,
+    )
+
+
+@app.get(
+    "/api/dashboard/project-control-panel/summary",
+    response_model=ProjectControlPanelSummaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_control_panel_summary(session: Session = Depends(get_session)) -> ProjectControlPanelSummaryResponse:
+    generated_at = datetime.now(timezone.utc).isoformat()
+    projects = session.query(Project).all()
+    runs = session.query(Run).all()
+    project_title_by_id = {project.id: project.title for project in projects}
+
+    state_counts = {state: 0 for state in _CONTROL_PANEL_STATE_ORDER}
+    blocked_project_ids: set[int] = set()
+    for project in projects:
+        lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+        if lifecycle_state in state_counts:
+            state_counts[lifecycle_state] += 1
+        if lifecycle_state != PROJECT_LIFECYCLE_COMPLETED:
+            blocked_project_ids.add(project.id)
+
+    active_run_count = 0
+    blocked_export_run_count = 0
+    failed_runs: list[Run] = []
+    for run in runs:
+        if run.status in {RUN_STATUS_QUEUED, RUN_STATUS_RUNNING}:
+            active_run_count += 1
+        if run.status != RUN_STATUS_COMPLETED:
+            blocked_export_run_count += 1
+            blocked_project_ids.add(run.project_id)
+        if run.status == RUN_STATUS_FAILED:
+            failed_runs.append(run)
+
+    failed_runs.sort(
+        key=lambda run: (
+            run.finished_at
+            or run.started_at
+            or datetime.min.replace(tzinfo=timezone.utc)
+        ),
+        reverse=True,
+    )
+
+    recent_failures: list[dict[str, object]] = []
+    for run in failed_runs[:_CONTROL_PANEL_RECENT_FAILURE_LIMIT]:
+        raw_config = run.config_json if isinstance(run.config_json, dict) else {}
+        raw_recovery = raw_config.get(_PIPELINE_RECOVERY_CONFIG_KEY)
+        recovery_state = raw_recovery if isinstance(raw_recovery, dict) else {}
+        reason = recovery_state.get("reason")
+        reason_text = str(reason).strip() if reason is not None else ""
+        error_message = reason_text if reason_text else None
+        recent_failures.append(
+            {
+                "project_id": run.project_id,
+                "project_title": project_title_by_id.get(run.project_id, f"Project {run.project_id}"),
+                "run_id": run.id,
+                "failed_at": _serialize_datetime_to_utc_iso(run.finished_at) or _serialize_datetime_to_utc_iso(run.started_at) or generated_at,
+                "error_code": "pipeline_failed",
+                "error_message": error_message,
+            }
+        )
+
+    return ProjectControlPanelSummaryResponse(
+        generated_at=generated_at,
+        total_projects=len(projects),
+        project_counts_by_state=[
+            {"lifecycle_state": lifecycle_state, "project_count": state_counts[lifecycle_state]}
+            for lifecycle_state in _CONTROL_PANEL_STATE_ORDER
+        ],
+        active_run_count=active_run_count,
+        blocked_export_project_count=len(blocked_project_ids),
+        blocked_export_run_count=blocked_export_run_count,
+        recent_failure_count=len(failed_runs),
+        recent_failures=recent_failures,
     )
 
 
