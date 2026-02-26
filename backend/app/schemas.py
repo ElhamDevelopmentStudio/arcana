@@ -416,6 +416,7 @@ class RunCreateRequest(BaseModel):
     deterministic_mode: bool = False
     max_calls_per_day: int = Field(default=25, ge=1, le=10000)
     llm_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    deterministic_model_identifier: str | None = None
     allow_unfinalized_character_map: bool = False
     internal_thought_voice_policy: str = "character"
     internal_thought_voice: str | None = None
@@ -448,6 +449,18 @@ class RunCreateRequest(BaseModel):
             return None
         if len(trimmed) > 255:
             raise ValueError("internal_thought_voice must be 255 characters or fewer")
+        return trimmed
+
+    @field_validator("deterministic_model_identifier")
+    @classmethod
+    def deterministic_model_identifier_must_be_trimmed(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 255:
+            raise ValueError("deterministic_model_identifier must be 255 characters or fewer")
         return trimmed
 
 

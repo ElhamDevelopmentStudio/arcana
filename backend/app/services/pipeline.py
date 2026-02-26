@@ -593,6 +593,8 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
 
 def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dict, input_text: str) -> None:
     provider = _normalize_provider_name_for_llm(run_config.get("provider_name", "openrouter"))
+    pinned_model_identifier = str(run_config.get("deterministic_model_identifier") or "").strip()
+    pinned_model = pinned_model_identifier if run_config.get("deterministic_mode") else None
 
     if not is_supported_provider(provider):
         session.add(
@@ -667,6 +669,8 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             settings=settings,
             provider_name=active_provider,
         )
+        if pinned_model and active_provider == provider:
+            runtime_model_identifier = pinned_model
         cached_response = _get_cached_llm_response(
             session=session,
             input_text=input_text,
