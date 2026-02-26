@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS llm_cache (
     id SERIAL PRIMARY KEY,
     input_text_hash CHAR(64) NOT NULL,
     task_type VARCHAR(100) NOT NULL,
+    configuration_snapshot_id VARCHAR(120) NOT NULL,
     response_payload JSON NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_llm_cache_input_text_hash_task_type UNIQUE (input_text_hash, task_type)
+    CONSTRAINT uq_llm_cache_input_text_hash_task_type_configuration_snapshot UNIQUE (input_text_hash, task_type, configuration_snapshot_id)
 );

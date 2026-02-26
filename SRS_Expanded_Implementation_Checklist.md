@@ -316,7 +316,7 @@ Definition of done for each task:
 ## 4.12.6 Caching (Ref: SRS.md §4.12.6)
 - [X] [CACHE-001] Add LLM cache table keyed by input text hash.
 - [X] [CACHE-002] Include task type in cache key.
-- [ ] [CACHE-003] Include configuration snapshot ID in cache key.
+- [X] [CACHE-003] Include configuration snapshot ID in cache key.
 - [ ] [CACHE-004] Include model identifier in cache key.
 - [ ] [CACHE-005] Return cached result without provider call on exact key hit.
 - [ ] [CACHE-006] Track cache hit/miss metrics per task type.
