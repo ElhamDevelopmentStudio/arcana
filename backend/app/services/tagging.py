@@ -139,6 +139,8 @@ ShiftMarkerDetector = tuple[str, Callable[[str], dict[str, object]]]
 TAG_LOW_CONFIDENCE_THRESHOLD = 0.6
 TAG_VERY_LOW_CONFIDENCE_THRESHOLD = 0.3
 TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD = 2
+TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD = 4
+TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY = 0.5
 HIGH_AMBIGUITY_DIALOGUE_WARNING_FLAGS = {
     "ambiguous_speaker_attribution",
     "low_speaker_confidence",
@@ -485,6 +487,64 @@ def build_high_ambiguity_dialogue_block_warnings(
                 ),
             }
         )
+
+    return warnings
+
+
+def build_unstable_rapid_emotion_shift_warnings(
+    segment_payloads: list[dict[str, object]],
+    *,
+    source: str = "tagging",
+    transition_threshold: int = TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
+    density_threshold: float = TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
+) -> list[dict[str, object]]:
+    warnings: list[dict[str, object]] = []
+
+    min_transitions = max(1, int(transition_threshold))
+    min_density = max(0.0, float(density_threshold))
+
+    for payload in segment_payloads:
+        emotion_shift = payload.get("emotion_shift")
+        if not isinstance(emotion_shift, dict) or not bool(emotion_shift.get("has_shift", False)):
+            continue
+
+        evidence = emotion_shift.get("evidence")
+        if not isinstance(evidence, dict):
+            continue
+
+        transition_count = int(evidence.get("transition_count", evidence.get("shift_count", 0)))
+        unit_count = int(evidence.get("unit_count", 0))
+        if unit_count <= 0:
+            continue
+
+        if transition_count < min_transitions:
+            continue
+
+        shift_density = transition_count / unit_count
+        if shift_density < min_density:
+            continue
+
+        warning_entry = {
+            "type": "unstable_rapid_emotion_shift",
+            "level": "warning",
+            "source": source,
+            "segment_id": payload.get("segment_id"),
+            "segment_index": payload.get("segment_index"),
+            "chapter_id": payload.get("chapter_id"),
+            "emotion_shift_confidence": float(emotion_shift.get("confidence", 0.0)),
+            "emotion_shift_density": round(shift_density, 4),
+            "transition_count": transition_count,
+            "unit_count": unit_count,
+            "threshold": {
+                "transition_threshold": min_transitions,
+                "density_threshold": min_density,
+            },
+            "message": (
+                f"Unstable rapid emotion shift pattern detected in segment '{payload.get('segment_id')}' "
+                f"(transitions={transition_count}, units={unit_count}, density={round(shift_density, 4)})."
+            ),
+        }
+        warnings.append(warning_entry)
 
     return warnings
 

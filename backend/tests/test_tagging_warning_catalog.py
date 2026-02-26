@@ -1,6 +1,7 @@
 from app.services.tagging import (
     build_high_ambiguity_dialogue_block_warnings,
     build_low_confidence_speaker_attribution_warnings,
+    build_unstable_rapid_emotion_shift_warnings,
 )
 
 
@@ -141,4 +142,76 @@ def test_build_high_ambiguity_dialogue_block_warnings_ignores_insufficient_ambig
     ]
 
     warnings = build_high_ambiguity_dialogue_block_warnings(payloads, ambiguity_flag_threshold=2)
+    assert not warnings
+
+
+def test_build_unstable_rapid_emotion_shift_warnings() -> None:
+    payloads = [
+        {
+            "segment_id": "seg-009",
+            "segment_index": 9,
+            "chapter_id": 1,
+            "type": "narration",
+            "emotion_shift": {
+                "has_shift": True,
+                "confidence": 0.93,
+                "evidence": {
+                    "transition_count": 5,
+                    "unit_count": 10,
+                },
+            },
+        },
+        {
+            "segment_id": "seg-010",
+            "segment_index": 10,
+            "chapter_id": 1,
+            "type": "narration",
+            "emotion_shift": {
+                "has_shift": True,
+                "confidence": 0.95,
+                "evidence": {
+                    "transition_count": 2,
+                    "unit_count": 10,
+                },
+            },
+        },
+    ]
+
+    warnings = build_unstable_rapid_emotion_shift_warnings(payloads)
+
+    assert len(warnings) == 1
+    warning = warnings[0]
+    assert warning["type"] == "unstable_rapid_emotion_shift"
+    assert warning["level"] == "warning"
+    assert warning["source"] == "tagging"
+    assert warning["segment_id"] == "seg-009"
+    assert warning["transition_count"] == 5
+    assert warning["unit_count"] == 10
+    assert isinstance(warning["emotion_shift_density"], float)
+    assert warning["emotion_shift_density"] > 0
+
+
+def test_build_unstable_rapid_emotion_shift_warnings_ignores_sparse_shifts() -> None:
+    payloads = [
+        {
+            "segment_id": "seg-011",
+            "segment_index": 11,
+            "chapter_id": 1,
+            "type": "narration",
+            "emotion_shift": {
+                "has_shift": True,
+                "confidence": 0.83,
+                "evidence": {
+                    "transition_count": 2,
+                    "unit_count": 12,
+                },
+            },
+        },
+    ]
+
+    warnings = build_unstable_rapid_emotion_shift_warnings(
+        payloads,
+        transition_threshold=4,
+        density_threshold=0.5,
+    )
     assert not warnings
