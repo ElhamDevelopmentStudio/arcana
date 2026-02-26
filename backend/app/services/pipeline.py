@@ -18,6 +18,8 @@ from app.services.export import build_run_export
 from app.services.llm_router import (
     LLMRequest,
     LLMRouter,
+    get_provider_api_keys,
+    get_provider_priority_order,
     get_provider_runtime_settings,
     is_supported_provider,
 )
@@ -30,7 +32,11 @@ from app.services.llm_task_types import LLMTaskType
 from app.services.phonetics import replace_pronunciations
 from app.services.quota import (
     consume_quota,
+    consume_api_key_quota,
     mark_provider_available,
+    mark_api_key_rate_limited,
+    mark_api_key_reset_at,
+    mark_api_key_successful_call,
     mark_provider_rate_limited,
     mark_provider_reset_at,
     mark_provider_successful_call,
@@ -76,6 +82,30 @@ def _coerce_confidence_threshold(value: object) -> float:
     if threshold > 1.0:
         return 1.0
     return round(threshold, 4)
+
+
+def _coerce_call_timestamp(value: str | None) -> datetime:
+    if not value:
+        return datetime.now(timezone.utc)
+
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return datetime.now(timezone.utc)
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _build_probe_provider_order(requested_provider: str, settings: object) -> tuple[str, ...]:
+    requested_provider_normalized = _normalize_provider_name_for_llm(requested_provider)
+    ordered: list[str] = [requested_provider_normalized]
+    for provider in get_provider_priority_order(settings=settings):
+        normalized = _normalize_provider_name_for_llm(provider)
+        if normalized and normalized not in ordered:
+            ordered.append(normalized)
+    return tuple(ordered)
 
 
 def _normalize_provider_name_for_llm(value: object) -> str:
@@ -525,6 +555,8 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 request_count=0,
                 token_usage_estimate=None,
                 detail="unsupported_provider",
+                model_identifier=None,
+                called_at=datetime.now(timezone.utc),
             )
         )
         session.flush()
@@ -540,40 +572,17 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 request_count=0,
                 token_usage_estimate=None,
                 detail="provider_disabled",
+                model_identifier=None,
+                called_at=datetime.now(timezone.utc),
             )
         )
         session.flush()
         return
 
     max_calls_per_day = int(run_config.get("max_calls_per_day", 25))
-
-    allowed, request_count = consume_quota(
-        session=session,
-        provider=provider,
-        max_calls_per_day=max_calls_per_day,
-    )
-
-    if not allowed:
-        session.add(
-            LLMCall(
-                run_id=run.id,
-                provider=provider,
-                task_type=LLMTaskType.SENTIMENT_PROBE.value,
-                success=False,
-                request_count=request_count,
-                token_usage_estimate=None,
-                detail="quota_reached",
-            )
-        )
-        session.flush()
-        return
-
     settings = get_settings()
-    runtime_base_url, runtime_model_identifier, runtime_api_key = get_provider_runtime_settings(
-        settings=settings,
-        provider_name=provider,
-    )
-    router = LLMRouter(openrouter_base_url=runtime_base_url)
+    provider_candidates = _build_probe_provider_order(requested_provider=provider, settings=settings)
+
     request = LLMRequest(
         request_id=str(uuid4()),
         project_id=project.id,
@@ -583,36 +592,152 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         configuration_snapshot_id=f"run-{run.id}",
     )
 
-    response = router.call(
-        request=request,
-        provider_name=provider,
-        model_identifier=runtime_model_identifier,
-        api_key=runtime_api_key,
-    )
+    final_provider = provider
+    final_request_count = 0
+    final_token_usage = None
+    final_detail = None
+    final_model_identifier = None
+    final_called_at = None
+    success = False
 
-    detail = response.raw_output if response.success_flag else response.error_code
+    for active_provider in provider_candidates:
+        if not is_supported_provider(active_provider):
+            continue
 
-    if response.success_flag:
-        mark_provider_available(session=session, provider=provider)
-        mark_provider_successful_call(session=session, provider=provider)
-    elif response.error_code in {"rate_limit", "quota"}:
-        mark_provider_rate_limited(session=session, provider=provider)
-        if response.error_code == "rate_limit":
-            mark_provider_reset_at(
+        if not is_provider_enabled(session=session, provider=active_provider):
+            if active_provider == provider:
+                final_detail = "provider_disabled"
+                final_provider = active_provider
+                break
+            continue
+
+        runtime_base_url, runtime_model_identifier, runtime_api_key = get_provider_runtime_settings(
+            settings=settings,
+            provider_name=active_provider,
+        )
+        runtime_api_keys = get_provider_api_keys(
+            settings=settings,
+            provider_name=active_provider,
+        )
+        if not runtime_api_keys and runtime_api_key:
+            runtime_api_keys = [runtime_api_key]
+
+        if not runtime_api_keys:
+            runtime_api_keys = [None]
+
+        router = LLMRouter(openrouter_base_url=runtime_base_url)
+        provider_failure_detail: str | None = None
+
+        for index, api_key in enumerate(runtime_api_keys):
+            if api_key is not None:
+                key_allowed, _ = consume_api_key_quota(
+                    session=session,
+                    provider=active_provider,
+                    provider_api_key=api_key,
+                    max_calls_per_day=max_calls_per_day,
+                )
+                if not key_allowed:
+                    provider_failure_detail = "quota_reached"
+                    continue
+            else:
+                pass
+
+            allowed, request_count = consume_quota(
                 session=session,
-                provider=provider,
-                reset_at=response.rate_limit_reset_at,
+                provider=active_provider,
+                max_calls_per_day=max_calls_per_day,
             )
+            if not allowed:
+                provider_failure_detail = "quota_reached"
+                final_request_count = request_count
+                break
+
+            provider_attempted = True
+            final_request_count = request_count
+            response = router.call(
+                request=request,
+                provider_name=active_provider,
+                model_identifier=runtime_model_identifier,
+                api_key=api_key,
+            )
+
+            if response.success_flag:
+                mark_provider_available(session=session, provider=active_provider)
+                mark_provider_successful_call(session=session, provider=active_provider)
+                if api_key is not None:
+                    mark_api_key_successful_call(
+                        session=session,
+                        provider=active_provider,
+                        provider_api_key=api_key,
+                    )
+                final_provider = active_provider
+                final_token_usage = response.token_usage_estimate
+                final_detail = response.raw_output
+                final_model_identifier = response.model_identifier
+                final_called_at = _coerce_call_timestamp(response.timestamp)
+                success = True
+                break
+
+            provider_failure_detail = response.error_code or "provider_error"
+            final_detail = provider_failure_detail
+            final_token_usage = response.token_usage_estimate
+            final_model_identifier = response.model_identifier
+            final_called_at = _coerce_call_timestamp(response.timestamp)
+
+            if response.error_code in {"rate_limit", "quota"}:
+                if api_key is not None:
+                    mark_api_key_rate_limited(session=session, provider=active_provider, provider_api_key=api_key)
+                    if response.error_code == "rate_limit":
+                        mark_api_key_reset_at(
+                            session=session,
+                            provider=active_provider,
+                            provider_api_key=api_key,
+                            reset_at=response.rate_limit_reset_at,
+                        )
+                is_last_key = index + 1 >= len(runtime_api_keys)
+                if not is_last_key:
+                    continue
+
+                mark_provider_rate_limited(session=session, provider=active_provider)
+                if response.error_code == "rate_limit":
+                    mark_provider_reset_at(
+                        session=session,
+                        provider=active_provider,
+                        reset_at=response.rate_limit_reset_at,
+                    )
+
+            else:
+                break
+        if success:
+            break
+
+        if final_detail is None:
+            final_detail = provider_failure_detail
+
+        final_provider = active_provider
+        if provider_failure_detail in {"rate_limit", "quota", "quota_reached"}:
+            if active_provider != provider_candidates[-1]:
+                continue
+            break
+
+        if provider_failure_detail is not None:
+            break
 
     session.add(
         LLMCall(
             run_id=run.id,
-            provider=provider,
+            provider=final_provider,
             task_type=LLMTaskType.SENTIMENT_PROBE.value,
-            success=response.success_flag,
-            request_count=request_count,
-            token_usage_estimate=response.token_usage_estimate,
-            detail=detail,
+            success=success,
+            request_count=final_request_count,
+            token_usage_estimate=final_token_usage,
+            detail=(None if success else final_detail),
+            model_identifier=final_model_identifier,
+            called_at=(
+                _coerce_call_timestamp(None)
+                if final_called_at is None
+                else final_called_at
+            ),
         )
     )
     session.flush()

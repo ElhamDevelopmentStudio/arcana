@@ -1,7 +1,8 @@
 from functools import lru_cache
-from typing import Literal
+import json
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +30,38 @@ class Settings(BaseSettings):
     siliconflow_base_url: str = Field(default="https://api.siliconflow.cn/v1", alias="SILICONFLOW_BASE_URL")
     groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
     groq_api_keys: list[str] | None = Field(default=None, alias="GROQ_API_KEYS")
+
+    @field_validator(
+        "openrouter_api_keys",
+        "siliconflow_api_keys",
+        "groq_api_keys",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_api_key_list(cls, value: Any) -> Any:
+        if value is None or value == "":
+            return None
+
+        if isinstance(value, list):
+            keys = [str(item).strip() for item in value]
+            return [key for key in keys if key]
+
+        if isinstance(value, tuple):
+            keys = [str(item).strip() for item in value]
+            return [key for key in keys if key]
+
+        text = str(value).strip()
+        if not text:
+            return None
+
+        if text.startswith("[") and text.endswith("]"):
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                keys = [str(item).strip() for item in parsed]
+                return [key for key in keys if key]
+
+        keys = [entry.strip() for entry in text.split(",")]
+        return [entry for entry in keys if entry]
     groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
     groq_base_url: str = Field(default="https://api.groq.com/openai/v1", alias="GROQ_BASE_URL")
     enable_epub_ingestion: bool = Field(default=False, alias="ENABLE_EPUB_INGESTION")

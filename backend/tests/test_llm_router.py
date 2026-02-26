@@ -143,6 +143,39 @@ def test_get_provider_runtime_settings_uses_comma_separated_key_list() -> None:
     assert api_key == "first-openrouter-key"
 
 
+def test_get_provider_api_keys_prefers_multikey_list() -> None:
+    settings = SimpleNamespace(
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_model="openai/gpt-4o-mini",
+        openrouter_api_key="fallback-key",
+        openrouter_api_keys=["primary-key", "secondary-key", "tertiary-key"],
+    )
+
+    api_keys = llm_router.get_provider_api_keys(
+        settings=settings,
+        provider_name="openrouter",
+    )
+
+    assert api_keys == ["primary-key", "secondary-key", "tertiary-key"]
+
+
+def test_get_provider_api_keys_uses_comma_string_list() -> None:
+    settings = SimpleNamespace(
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_model="openai/gpt-4o-mini",
+        openrouter_api_key="fallback-key",
+        openrouter_api_keys="a-key, b-key, c-key",
+    )
+
+    api_keys = llm_router.get_provider_api_keys(
+        settings=settings,
+        provider_name="openrouter",
+    )
+
+    assert api_keys == ["a-key", "b-key", "c-key"]
+
+
+
 def test_llm_router_call_hits_provider_base_url_and_model(monkeypatch: object) -> None:
     observed = {}
 

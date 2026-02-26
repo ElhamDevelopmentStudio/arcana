@@ -8,7 +8,7 @@ from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
 from app.models import LLMCall, Project, ProviderApiKeyQuota, ProviderQuota, ProviderToggle, Run
-from app.services import llm_router, pipeline
+from app.services import llm_router, pipeline, quota as quota_service
 
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_llm_call_token_usage.db"
@@ -722,5 +722,137 @@ def test_run_detail_and_export_expose_token_usage_estimate() -> None:
             detail_calls = detail_resp.json()["llm_calls"]
             assert detail_calls[0]["model_identifier"] == "gpt-test"
             assert detail_calls[0]["called_at"] == "2024-01-01T00:00:00+00:00"
+    finally:
+        session.close()
+
+
+def test_pipeline_stops_after_provider_quota_reached_and_recovers_next_day(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="Provider Quota Exhaustion Recovery Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        calls: list[str | None] = []
+
+        class _SimpleLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                calls.append(api_key)
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="ok",
+                    parsed_output={"raw": "ok"},
+                    confidence=None,
+                    token_usage_estimate=5,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        fixed_day = datetime(2024, 1, 1, tzinfo=timezone.utc).date()
+
+        class _TestDate:
+            @staticmethod
+            def today() -> object:
+                return fixed_day
+
+        monkeypatch.setattr(quota_service, "date", _TestDate)
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-test", "openrouter-key-a"),
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_priority_order",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_api_keys",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _SimpleLLMRouter)
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 1},
+            input_text="The tide rolled in.",
+        )
+
+        assert calls == ["openrouter-key-a"]
+
+        quota_rows = session.query(ProviderQuota).filter(ProviderQuota.provider == "openrouter").all()
+        assert len(quota_rows) == 1
+        assert quota_rows[0].calls_used == 1
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 1},
+            input_text="The tide rolled out.",
+        )
+
+        assert calls == ["openrouter-key-a"]
+
+        call_records = (
+            session.query(LLMCall)
+            .filter(LLMCall.run_id == run.id)
+            .order_by(LLMCall.id.asc())
+            .all()
+        )
+        assert len(call_records) == 2
+        assert call_records[0].success is True
+        assert call_records[1].success is False
+        assert call_records[1].detail == "quota_reached"
+
+        class _NextDayDate:
+            @staticmethod
+            def today() -> object:
+                return fixed_day + timedelta(days=1)
+
+        monkeypatch.setattr(quota_service, "date", _NextDayDate)
+        calls.clear()
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 1},
+            input_text="The tide rolled again.",
+        )
+
+        assert calls == ["openrouter-key-a"]
+        call_records = (
+            session.query(LLMCall)
+            .filter(LLMCall.run_id == run.id)
+            .order_by(LLMCall.id.asc())
+            .all()
+        )
+        assert len(call_records) == 3
+        assert call_records[2].success is True
+        assert call_records[2].detail is None
     finally:
         session.close()

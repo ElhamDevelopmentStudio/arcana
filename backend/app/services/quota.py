@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
-from app.models import ProviderQuota
+from app.models import ProviderApiKeyQuota, ProviderQuota
 
 
 _RATE_LIMIT_STATUS_QUOTA_REACHED = "quota_reached"
@@ -70,6 +70,183 @@ def consume_quota(session: Session, provider: str, max_calls_per_day: int) -> tu
         _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_AVAILABLE)
     session.flush()
     return True, quota.calls_used
+
+
+def consume_api_key_quota(
+    session: Session,
+    provider: str,
+    provider_api_key: str,
+    max_calls_per_day: int,
+) -> tuple[bool, int]:
+    day_key = date.today().isoformat()
+    now = datetime.now(timezone.utc)
+    api_key = str(provider_api_key).strip()
+    if not api_key:
+        return False, 0
+
+    quota = (
+        session.query(ProviderApiKeyQuota)
+        .filter(
+            ProviderApiKeyQuota.provider == provider,
+            ProviderApiKeyQuota.provider_api_key == api_key,
+            ProviderApiKeyQuota.day_key == day_key,
+        )
+        .one_or_none()
+    )
+
+    if quota is None:
+        quota = ProviderApiKeyQuota(
+            provider=provider,
+            provider_api_key=api_key,
+            day_key=day_key,
+            calls_used=0,
+            max_calls_per_day=max_calls_per_day,
+            blocked=False,
+        )
+        session.add(quota)
+        session.flush()
+
+    quota.max_calls_per_day = max_calls_per_day
+
+    if (
+        quota.blocked
+        and quota.last_rate_limit_status == _RATE_LIMIT_STATUS_TEMPORARILY_UNAVAILABLE
+        and _ensure_utc(quota.last_rate_limit_reset_at) is not None
+        and now >= _ensure_utc(quota.last_rate_limit_reset_at)
+    ):
+        quota.blocked = False
+        _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_AVAILABLE)
+
+    if quota.blocked or quota.calls_used >= quota.max_calls_per_day:
+        quota.blocked = True
+        if not quota.last_rate_limit_status:
+            _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_QUOTA_REACHED)
+        session.flush()
+        return False, quota.calls_used
+
+    quota.calls_used += 1
+    quota.blocked = quota.calls_used >= quota.max_calls_per_day
+    if not quota.blocked:
+        _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_AVAILABLE)
+    session.flush()
+    return True, quota.calls_used
+
+
+def mark_api_key_rate_limited(
+    session: Session,
+    provider: str,
+    provider_api_key: str,
+    day_key: str | None = None,
+) -> None:
+    if day_key is None:
+        day_key = date.today().isoformat()
+
+    api_key = str(provider_api_key).strip()
+    if not api_key:
+        return
+
+    quota = (
+        session.query(ProviderApiKeyQuota)
+        .filter(
+            ProviderApiKeyQuota.provider == provider,
+            ProviderApiKeyQuota.provider_api_key == api_key,
+            ProviderApiKeyQuota.day_key == day_key,
+        )
+        .one_or_none()
+    )
+    if quota is None:
+        return
+
+    _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_TEMPORARILY_UNAVAILABLE)
+    quota.blocked = True
+    quota.last_rate_limit_reset_at = None
+    session.flush()
+
+
+def mark_api_key_reset_at(
+    session: Session,
+    provider: str,
+    provider_api_key: str,
+    reset_at: datetime | None,
+    day_key: str | None = None,
+) -> None:
+    if reset_at is None:
+        return
+    if day_key is None:
+        day_key = date.today().isoformat()
+
+    api_key = str(provider_api_key).strip()
+    if not api_key:
+        return
+
+    quota = (
+        session.query(ProviderApiKeyQuota)
+        .filter(
+            ProviderApiKeyQuota.provider == provider,
+            ProviderApiKeyQuota.provider_api_key == api_key,
+            ProviderApiKeyQuota.day_key == day_key,
+        )
+        .one_or_none()
+    )
+    if quota is None:
+        return
+
+    quota.last_rate_limit_reset_at = _ensure_utc(reset_at)
+    session.flush()
+
+
+def mark_api_key_available(session: Session, provider: str, provider_api_key: str, day_key: str | None = None) -> None:
+    if day_key is None:
+        day_key = date.today().isoformat()
+
+    api_key = str(provider_api_key).strip()
+    if not api_key:
+        return
+
+    quota = (
+        session.query(ProviderApiKeyQuota)
+        .filter(
+            ProviderApiKeyQuota.provider == provider,
+            ProviderApiKeyQuota.provider_api_key == api_key,
+            ProviderApiKeyQuota.day_key == day_key,
+        )
+        .one_or_none()
+    )
+    if quota is None:
+        return
+
+    _refresh_rate_limit_status(quota=quota, status=_RATE_LIMIT_STATUS_AVAILABLE)
+    quota.blocked = False
+    session.flush()
+
+
+def mark_api_key_successful_call(
+    session: Session,
+    provider: str,
+    provider_api_key: str,
+    day_key: str | None = None,
+) -> None:
+    if day_key is None:
+        day_key = date.today().isoformat()
+
+    api_key = str(provider_api_key).strip()
+    if not api_key:
+        return
+
+    quota = (
+        session.query(ProviderApiKeyQuota)
+        .filter(
+            ProviderApiKeyQuota.provider == provider,
+            ProviderApiKeyQuota.provider_api_key == api_key,
+            ProviderApiKeyQuota.day_key == day_key,
+        )
+        .one_or_none()
+    )
+    if quota is None:
+        return
+
+    quota.last_successful_call_at = datetime.now(timezone.utc)
+    session.flush()
 
 
 def mark_provider_rate_limited(session: Session, provider: str, day_key: str | None = None) -> None:
