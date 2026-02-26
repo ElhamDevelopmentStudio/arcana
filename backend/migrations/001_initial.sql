@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     task_type VARCHAR(100) NOT NULL,
     success BOOLEAN NOT NULL,
     request_count INTEGER NOT NULL,
+    is_cache_hit BOOLEAN NOT NULL DEFAULT FALSE,
     detail TEXT,
     model_identifier VARCHAR(255),
     called_at TIMESTAMPTZ,
@@ -64,6 +65,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 
 ALTER TABLE llm_calls ADD COLUMN IF NOT EXISTS model_identifier VARCHAR(255);
 ALTER TABLE llm_calls ADD COLUMN IF NOT EXISTS called_at TIMESTAMPTZ;
+ALTER TABLE llm_calls ADD COLUMN IF NOT EXISTS is_cache_hit BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS provider_quota (
     id SERIAL PRIMARY KEY,

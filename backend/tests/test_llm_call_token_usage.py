@@ -950,11 +950,123 @@ def test_pipeline_probe_uses_cache_on_exact_input_and_skips_provider_call(monkey
         assert llm_calls[1].token_usage_estimate == 256
         assert llm_calls[1].detail is None
 
-        cache_rows = session.query(LLMCache).all()
+        input_text_hash = pipeline._build_llm_cache_key(input_text)
+        cache_rows = (
+            session.query(LLMCache)
+            .filter(
+                LLMCache.input_text_hash == input_text_hash,
+                LLMCache.task_type == LLMTaskType.SENTIMENT_PROBE.value,
+                LLMCache.configuration_snapshot_id == project.configuration_snapshot_id,
+            )
+            .all()
+        )
         assert len(cache_rows) == 1
-        assert cache_rows[0].input_text_hash == pipeline._build_llm_cache_key(input_text)
-        assert cache_rows[0].task_type == LLMTaskType.SENTIMENT_PROBE.value
-        assert cache_rows[0].configuration_snapshot_id == project.configuration_snapshot_id
+        assert cache_rows[0].input_text_hash == input_text_hash
         assert cache_rows[0].model_identifier == "gpt-4-mini"
+    finally:
+        session.close()
+
+
+def test_run_detail_reports_cache_hit_and_miss_metrics_per_task_type(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="LLM Cache Metrics Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        call_keys: list[str | None] = []
+
+        class _CountingLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                call_keys.append(api_key)
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="probe-result",
+                    parsed_output={"sentiment": "positive", "confidence": 0.99},
+                    confidence=None,
+                    token_usage_estimate=100,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-4-mini", "openrouter-key-a"),
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_priority_order",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_api_keys",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _CountingLLMRouter)
+
+        run_config = {
+            "provider_name": "openrouter",
+            "max_calls_per_day": 10,
+            "llm_enabled": True,
+        }
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config=run_config,
+            input_text="The same input should hit cache on second call.",
+        )
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config=run_config,
+            input_text="The same input should hit cache on second call.",
+        )
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config=run_config,
+            input_text="The different input should miss cache.",
+        )
+
+        session.commit()
+
+        assert call_keys == ["openrouter-key-a", "openrouter-key-a"]
+
+        with TestClient(app) as client:
+            detail = client.get(f"/api/projects/{project.id}/runs/{run.id}")
+            assert detail.status_code == 200
+            payload = detail.json()
+
+            assert payload["llm_cache_metrics"][LLMTaskType.SENTIMENT_PROBE.value]["hits"] == 1
+            assert payload["llm_cache_metrics"][LLMTaskType.SENTIMENT_PROBE.value]["misses"] == 2
+
+            call_flags = [call["is_cache_hit"] for call in payload["llm_calls"]]
+            assert call_flags == [False, True, False]
     finally:
         session.close()

@@ -277,6 +277,7 @@ class LLMCall(Base):
     token_usage_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_cache_hit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
