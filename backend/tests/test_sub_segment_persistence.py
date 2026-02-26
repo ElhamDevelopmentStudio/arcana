@@ -77,6 +77,12 @@ def test_segment_shift_boundaries_are_stored_in_sub_segment_table() -> None:
             assert len(tag_rows) == len(expected_boundaries)
 
             for tag_row in tag_rows:
+                segment = session.get(Segment, tag_row.segment_id)
+                assert segment is not None
+                assert segment.chapter_id == tag_row.chapter_id
+                assert isinstance(tag_row.segment_id, int)
+                assert tag_row.segment_id == segment.id
+                assert tag_row.chapter_id >= 1
                 assert tag_row.sub_segment_id
                 assert tag_row.sub_segment_index >= 1
                 assert tag_row.run_id == run_id
