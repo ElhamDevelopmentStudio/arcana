@@ -57,8 +57,13 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     success BOOLEAN NOT NULL,
     request_count INTEGER NOT NULL,
     detail TEXT,
+    model_identifier VARCHAR(255),
+    called_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE llm_calls ADD COLUMN IF NOT EXISTS model_identifier VARCHAR(255);
+ALTER TABLE llm_calls ADD COLUMN IF NOT EXISTS called_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS provider_quota (
     id SERIAL PRIMARY KEY,
@@ -68,4 +73,12 @@ CREATE TABLE IF NOT EXISTS provider_quota (
     max_calls_per_day INTEGER NOT NULL,
     blocked BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT uq_provider_day UNIQUE (provider, day_key)
+);
+
+CREATE TABLE IF NOT EXISTS llm_cache (
+    id SERIAL PRIMARY KEY,
+    input_text_hash CHAR(64) NOT NULL,
+    response_payload JSON NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_llm_cache_input_text_hash UNIQUE (input_text_hash)
 );

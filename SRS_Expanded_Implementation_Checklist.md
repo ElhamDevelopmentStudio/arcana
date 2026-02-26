@@ -310,11 +310,11 @@ Definition of done for each task:
 - [x] [LLM-020] Add provider priority ordering config.
 - [x] [LLM-021] Add manual provider enable/disable toggles.
 - [X] [LLM-022] Implement failover to next provider when one is unavailable.
-- [ ] [LLM-023] Add deterministic mode logs: provider/model/timestamp/token usage.
-- [ ] [LLM-024] Add tests for quota exhaustion and recovery behavior.
+- [X] [LLM-023] Add deterministic mode logs: provider/model/timestamp/token usage.
+- [X] [LLM-024] Add tests for quota exhaustion and recovery behavior.
 
 ## 4.12.6 Caching (Ref: SRS.md §4.12.6)
-- [ ] [CACHE-001] Add LLM cache table keyed by input text hash.
+- [X] [CACHE-001] Add LLM cache table keyed by input text hash.
 - [ ] [CACHE-002] Include task type in cache key.
 - [ ] [CACHE-003] Include configuration snapshot ID in cache key.
 - [ ] [CACHE-004] Include model identifier in cache key.
