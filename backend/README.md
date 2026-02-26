@@ -237,6 +237,12 @@ Contributor guide validation for evolving export schema safely (`X-016`):
 python scripts_validate_export_schema_contributor_doc.py
 ```
 
+Release checklist validation for migrations and backward compatibility (`X-017`):
+
+```bash
+python scripts_validate_release_migration_checklist.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash

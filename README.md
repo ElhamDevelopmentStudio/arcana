@@ -56,6 +56,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/contributor_add_tag_type.md`: contributor guide for adding a new tag type safely
 - `docs/contributor_add_llm_provider_adapter.md`: contributor guide for adding a new LLM provider adapter safely
 - `docs/contributor_evolve_export_schema_safely.md`: contributor guide for evolving export schema safely
+- `docs/release_migration_backward_compatibility_checklist.md`: release checklist for migrations and backward compatibility
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `docs/error_warning_catalog.md`: error and warning catalog with remediation guidance
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
