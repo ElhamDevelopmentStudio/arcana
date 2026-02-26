@@ -89,6 +89,7 @@ from app.schemas import (
     CharacterOccurrenceAnalyticsResponse,
     CharacterCooccurrenceGraphResponse,
     AudiobookPrepDashboardResponse,
+    PipelineStageDurationsDashboardResponse,
     TensionGraphContractResponse,
     PolarityGraphResponse,
     RunDetailResponse,
@@ -5565,6 +5566,133 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
             for entry in changelog_entries
         ],
     )
+
+
+def _coerce_dashboard_non_negative_int(value: object, *, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
+def _coerce_dashboard_non_negative_optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _coerce_dashboard_optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_pipeline_stage_duration_items(
+    raw_items: object,
+    *,
+    total_duration_ms: int,
+) -> list[dict[str, object]]:
+    if not isinstance(raw_items, list):
+        return []
+
+    normalized_items: list[dict[str, object]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, Mapping):
+            continue
+
+        raw_stage_name = raw_item.get("name")
+        if not isinstance(raw_stage_name, str):
+            continue
+        stage_name = raw_stage_name.strip()
+        if not stage_name:
+            continue
+
+        duration_ms = _coerce_dashboard_non_negative_int(raw_item.get("duration_ms"), default=0)
+        share_of_total = 0.0
+        if total_duration_ms > 0:
+            share_of_total = min(1.0, max(0.0, float(duration_ms) / float(total_duration_ms)))
+
+        normalized_items.append(
+            {
+                "stage_name": stage_name,
+                "duration_ms": duration_ms,
+                "memory_bytes_start": _coerce_dashboard_non_negative_optional_int(raw_item.get("memory_bytes_start")),
+                "memory_bytes_end": _coerce_dashboard_non_negative_optional_int(raw_item.get("memory_bytes_end")),
+                "memory_bytes_delta": _coerce_dashboard_optional_int(raw_item.get("memory_bytes_delta")),
+                "share_of_total": round(share_of_total, 6),
+            }
+        )
+
+    return normalized_items
+
+
+def _build_pipeline_stage_durations_dashboard(
+    *,
+    project_id: int,
+    run: Run,
+) -> PipelineStageDurationsDashboardResponse:
+    run_config = run.config_json if isinstance(run.config_json, Mapping) else {}
+    performance_telemetry = run_config.get("performance_telemetry")
+
+    raw_steps: object = []
+    total_duration_ms = 0
+    if isinstance(performance_telemetry, Mapping):
+        raw_steps = performance_telemetry.get("steps", [])
+        total_duration_ms = _coerce_dashboard_non_negative_int(
+            performance_telemetry.get("total_duration_ms"),
+            default=0,
+        )
+
+    stage_rows = _normalize_pipeline_stage_duration_items(raw_steps, total_duration_ms=total_duration_ms)
+    if total_duration_ms <= 0 and stage_rows:
+        total_duration_ms = sum(int(row.get("duration_ms", 0)) for row in stage_rows)
+        stage_rows = _normalize_pipeline_stage_duration_items(raw_steps, total_duration_ms=total_duration_ms)
+
+    if total_duration_ms <= 0 and run.started_at is not None and run.finished_at is not None:
+        total_duration_ms = max(0, int((run.finished_at - run.started_at).total_seconds() * 1000))
+
+    slowest_stage_name: str | None = None
+    slowest_stage_duration_ms: int | None = None
+    if stage_rows:
+        slowest_stage = max(stage_rows, key=lambda row: int(row.get("duration_ms", 0)))
+        slowest_stage_name = str(slowest_stage["stage_name"])
+        slowest_stage_duration_ms = int(slowest_stage["duration_ms"])
+
+    generated_at = (run.finished_at or run.started_at or datetime.now(timezone.utc)).isoformat()
+    return PipelineStageDurationsDashboardResponse(
+        project_id=project_id,
+        run_id=run.id,
+        run_status=run.status,
+        generated_at=generated_at,
+        total_duration_ms=total_duration_ms,
+        stage_count=len(stage_rows),
+        slowest_stage_name=slowest_stage_name,
+        slowest_stage_duration_ms=slowest_stage_duration_ms,
+        stages=stage_rows,
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/runs/{run_id}/pipeline-stage-durations-dashboard",
+    response_model=PipelineStageDurationsDashboardResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_run_pipeline_stage_durations_dashboard(
+    project_id: int,
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> PipelineStageDurationsDashboardResponse:
+    _get_project_or_404(session, project_id)
+    run = _get_run_or_404(session, project_id, run_id)
+    return _build_pipeline_stage_durations_dashboard(project_id=project_id, run=run)
 
 
 @app.get(

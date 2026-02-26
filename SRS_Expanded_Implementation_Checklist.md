@@ -514,7 +514,7 @@ Definition of done for each task:
 - [x] [X-005] Add cancellation API for running jobs.
 - [x] [X-006] Add structured log schema across all services.
 - [x] [X-007] Add correlation ID propagation across API -> worker -> export.
-- [ ] [X-008] Add observability dashboards for pipeline stage durations.
+- [x] [X-008] Add observability dashboards for pipeline stage durations.
 - [ ] [X-009] Add unit-test coverage thresholds by module.
 - [ ] [X-010] Add integration test suite per mode.
 - [ ] [X-011] Add end-to-end golden dataset snapshots for regression.

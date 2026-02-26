@@ -248,6 +248,44 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isLoading: false,
     error: null,
   }),
+  usePipelineStageDurationsDashboardQuery: () => ({
+    data: {
+      schema_version: '1.0.0',
+      output_schema: 'pipeline_stage_durations_dashboard_json',
+      output_format: 'json',
+      output_id: 'OBS-001',
+      output_name: 'pipeline_stage_durations_dashboard',
+      project_id: 202,
+      run_id: 88,
+      run_status: 'completed',
+      generated_at: '2025-01-01T00:00:00Z',
+      generated_by: 'build_pipeline_stage_durations_dashboard',
+      total_duration_ms: 1400,
+      stage_count: 2,
+      slowest_stage_name: 'merge_segment_payloads',
+      slowest_stage_duration_ms: 800,
+      stages: [
+        {
+          stage_name: 'load_and_validate_source_data',
+          duration_ms: 600,
+          memory_bytes_start: 1000,
+          memory_bytes_end: 1200,
+          memory_bytes_delta: 200,
+          share_of_total: 0.428571,
+        },
+        {
+          stage_name: 'merge_segment_payloads',
+          duration_ms: 800,
+          memory_bytes_start: 1200,
+          memory_bytes_end: 1500,
+          memory_bytes_delta: 300,
+          share_of_total: 0.571429,
+        },
+      ],
+    },
+    isLoading: false,
+    error: null,
+  }),
 }));
 
 function renderDashboardPage() {
@@ -306,6 +344,22 @@ describe('project dashboards page', () => {
     expect(screen.getByTestId('dashboards-audiobook-blocking-reasons')).toHaveTextContent('Some speaker assignments are still unresolved.');
     expect(screen.getByTestId('dashboards-audiobook-warning-reasons')).toHaveTextContent(
       'Some regions were tagged as low confidence and should be reviewed.',
+    );
+  });
+
+  it('renders pipeline stage durations dashboard using stage telemetry', () => {
+    renderDashboardPage();
+
+    expect(screen.getByText('Pipeline Stage Durations')).toBeInTheDocument();
+    expect(screen.getByTestId('dashboards-stage-duration-total')).toHaveTextContent('Total pipeline time: 1400 ms');
+    expect(screen.getByTestId('dashboards-stage-duration-slowest')).toHaveTextContent(
+      'Slowest stage: merge_segment_payloads (800 ms)',
+    );
+    expect(screen.getByTestId('dashboards-stage-duration-load_and_validate_source_data')).toHaveTextContent(
+      'load_and_validate_source_data',
+    );
+    expect(screen.getByTestId('dashboards-stage-duration-merge_segment_payloads')).toHaveTextContent(
+      'merge_segment_payloads',
     );
   });
 
@@ -389,6 +443,7 @@ describe('project dashboards page', () => {
         character_analytics: expect.any(Object),
         cooccurrence_graph: expect.any(Object),
         audiobook_prep_dashboard: expect.any(Object),
+        pipeline_stage_durations_dashboard: expect.any(Object),
       });
 
       expect(snapshotData.tension_graph).toMatchObject({
@@ -413,6 +468,11 @@ describe('project dashboards page', () => {
       expect(snapshotData.audiobook_prep_dashboard).toMatchObject({
         unresolved_speaker_count: 3,
         export_readiness: expect.objectContaining({ is_ready: false }),
+      });
+      expect(snapshotData.pipeline_stage_durations_dashboard).toMatchObject({
+        total_duration_ms: 1400,
+        stage_count: 2,
+        slowest_stage_name: 'merge_segment_payloads',
       });
 
       expect(anchorDownload).toBe('project-202-run-88-dashboard-snapshot.json');

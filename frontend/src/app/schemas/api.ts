@@ -640,6 +640,33 @@ export const audiobookPrepDashboardResponseSchema = z.object({
   export_readiness: audiobookPrepDashboardReadinessSchema,
 });
 
+export const pipelineStageDurationItemSchema = z.object({
+  stage_name: z.string().min(1),
+  duration_ms: z.number().int().nonnegative(),
+  memory_bytes_start: z.number().int().nonnegative().nullable().optional().default(null),
+  memory_bytes_end: z.number().int().nonnegative().nullable().optional().default(null),
+  memory_bytes_delta: z.number().int().nullable().optional().default(null),
+  share_of_total: z.number().min(0).max(1),
+});
+
+export const pipelineStageDurationsDashboardResponseSchema = z.object({
+  schema_version: z.string(),
+  output_schema: z.string(),
+  output_format: z.string(),
+  output_id: z.string(),
+  output_name: z.string(),
+  project_id: z.number().int().nonnegative(),
+  run_id: z.number().int().nonnegative(),
+  run_status: runStatusSchema,
+  generated_at: z.string(),
+  generated_by: z.string(),
+  total_duration_ms: z.number().int().nonnegative(),
+  stage_count: z.number().int().nonnegative(),
+  slowest_stage_name: z.string().nullable().optional().default(null),
+  slowest_stage_duration_ms: z.number().int().nonnegative().nullable().optional().default(null),
+  stages: z.array(pipelineStageDurationItemSchema),
+});
+
 export type ModeCatalogDto = z.infer<typeof modeCatalogSchema>;
 export type ProjectDto = z.infer<typeof projectSchema>;
 export type ProjectLLMSettingsRequestDto = z.infer<typeof projectLLMSettingsRequestSchema>;
@@ -677,6 +704,8 @@ export type PolarityGraphVolatilityMarkerDto = z.infer<typeof polarityGraphVolat
 export type PolarityGraphResponseDto = z.infer<typeof polarityGraphResponseSchema>;
 export type AudiobookPrepDashboardReadinessDto = z.infer<typeof audiobookPrepDashboardReadinessSchema>;
 export type AudiobookPrepDashboardResponseDto = z.infer<typeof audiobookPrepDashboardResponseSchema>;
+export type PipelineStageDurationItemDto = z.infer<typeof pipelineStageDurationItemSchema>;
+export type PipelineStageDurationsDashboardResponseDto = z.infer<typeof pipelineStageDurationsDashboardResponseSchema>;
 export type CharacterMentionsByChapterItemDto = z.infer<typeof characterMentionsByChapterItemSchema>;
 export type CharacterAnalyticsResponseDto = z.infer<typeof characterAnalyticsResponseSchema>;
 export type CharacterCooccurrenceGraphNodeDto = z.infer<typeof characterCooccurrenceGraphNodeSchema>;

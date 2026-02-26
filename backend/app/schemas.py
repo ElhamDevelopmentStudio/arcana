@@ -999,6 +999,33 @@ class AudiobookPrepDashboardResponse(BaseModel):
     export_readiness: AudiobookPrepDashboardReadiness
 
 
+class PipelineStageDurationItem(BaseModel):
+    stage_name: str = Field(min_length=1)
+    duration_ms: int = Field(ge=0)
+    memory_bytes_start: int | None = Field(default=None, ge=0)
+    memory_bytes_end: int | None = Field(default=None, ge=0)
+    memory_bytes_delta: int | None = None
+    share_of_total: float = Field(ge=0.0, le=1.0)
+
+
+class PipelineStageDurationsDashboardResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="pipeline_stage_durations_dashboard_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="OBS-001")
+    output_name: str = Field(default="pipeline_stage_durations_dashboard")
+    project_id: int
+    run_id: int
+    run_status: RunStatus
+    generated_at: str
+    generated_by: str = Field(default="build_pipeline_stage_durations_dashboard")
+    total_duration_ms: int = Field(ge=0)
+    stage_count: int = Field(ge=0)
+    slowest_stage_name: str | None = None
+    slowest_stage_duration_ms: int | None = Field(default=None, ge=0)
+    stages: list[PipelineStageDurationItem] = Field(default_factory=list)
+
+
 
 class ComparisonWorkspaceCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)

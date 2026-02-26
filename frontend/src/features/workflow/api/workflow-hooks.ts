@@ -24,6 +24,8 @@ export const workspaceKeys = {
     runId,
   ] as const,
   audiobookPrepDashboard: (projectId: number, runId: number) => ['audiobook-prep-dashboard', projectId, runId] as const,
+  pipelineStageDurationsDashboard: (projectId: number, runId: number) =>
+    ['pipeline-stage-durations-dashboard', projectId, runId] as const,
   characterMap: (projectId: number) => ['character-map', projectId] as const,
   characterGenderComparison: (projectId: number) => ['character-gender-comparison', projectId] as const,
 };
@@ -98,6 +100,14 @@ export function useAudiobookPrepDashboardQuery(projectId: number | null, runId: 
   return useSWR(
     projectId !== null && runId !== null ? workspaceKeys.audiobookPrepDashboard(projectId, runId) : null,
     async ([, currentProjectId, currentRunId]) => nipeApiClient.getAudiobookPrepDashboard(currentProjectId, currentRunId),
+  );
+}
+
+export function usePipelineStageDurationsDashboardQuery(projectId: number | null, runId: number | null) {
+  return useSWR(
+    projectId !== null && runId !== null ? workspaceKeys.pipelineStageDurationsDashboard(projectId, runId) : null,
+    async ([, currentProjectId, currentRunId]) =>
+      nipeApiClient.getPipelineStageDurationsDashboard(currentProjectId, currentRunId),
   );
 }
 

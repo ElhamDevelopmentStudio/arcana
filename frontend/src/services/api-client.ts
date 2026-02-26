@@ -13,6 +13,7 @@ import {
   pronunciationDictionaryPreviewRequestSchema,
   pronunciationDictionaryPreviewResponseSchema,
   audiobookPrepDashboardResponseSchema,
+  pipelineStageDurationsDashboardResponseSchema,
   exportSchema,
   tensionGraphResponseSchema,
   ingestResponseSchema,
@@ -46,6 +47,7 @@ import {
   type PronunciationDictionaryPreviewRequestDto,
   type PronunciationDictionaryPreviewResponseDto,
   type AudiobookPrepDashboardResponseDto,
+  type PipelineStageDurationsDashboardResponseDto,
   type TensionGraphResponseDto,
   characterExtractionSchema,
 } from '@/app/schemas/api';
@@ -441,6 +443,20 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/audiobook-prep-dashboard`);
       return audiobookPrepDashboardResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getPipelineStageDurationsDashboard(
+    projectId: number,
+    runId: number,
+  ): Promise<PipelineStageDurationsDashboardResponseDto> {
+    try {
+      const response = await this.client.get(
+        `/api/projects/${projectId}/runs/${runId}/pipeline-stage-durations-dashboard`,
+      );
+      return pipelineStageDurationsDashboardResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
