@@ -1345,6 +1345,297 @@ def _prepare_run_recovery_config(run_config: dict[str, object], *, attempt: int)
     return {**run_config, _PIPELINE_RECOVERY_CONFIG_KEY: recovery_state}
 
 
+def _coerce_non_negative_int(value: object) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _build_run_artifact_integrity_report(
+    *,
+    session: Session,
+    run: Run,
+) -> dict[str, object]:
+    run_config = run.config_json
+    if not isinstance(run_config, dict):
+        run_config = {}
+
+    checks: list[dict[str, object]] = []
+
+    def _record_check(name: str, passed: bool, details: dict[str, object] | None = None) -> None:
+        checks.append(
+            {
+                "artifact": name,
+                "passed": passed,
+                "details": dict(details or {}),
+            },
+        )
+
+    normalized_corpus_blobs = (
+        session.query(RunNormalizedCorpusBlob)
+        .filter(RunNormalizedCorpusBlob.run_id == run.id)
+        .all()
+    )
+    if len(normalized_corpus_blobs) != 1:
+        _record_check(
+            "run_normalized_corpus_blob",
+            False,
+            {
+                "observed_count": len(normalized_corpus_blobs),
+                "expected_count": 1,
+            },
+        )
+    else:
+        normalized_corpus_blob = normalized_corpus_blobs[0]
+        blob_bytes = normalized_corpus_blob.normalized_corpus_blob or b""
+        observed_corpus_sha256 = hashlib.sha256(blob_bytes).hexdigest()
+        corpus_integrity_ok = observed_corpus_sha256 == normalized_corpus_blob.corpus_sha256
+        _record_check(
+            "run_normalized_corpus_blob",
+            corpus_integrity_ok,
+            {
+                "blob_id": normalized_corpus_blob.id,
+                "expected_sha256": normalized_corpus_blob.corpus_sha256,
+                "observed_sha256": observed_corpus_sha256,
+                "size_bytes": len(blob_bytes),
+                "reason": "hash_mismatch" if not corpus_integrity_ok else "ok",
+            },
+        )
+
+    expected_run_configuration_snapshot = run.run_configuration_snapshot
+    if expected_run_configuration_snapshot is None:
+        _record_check("run_configuration_snapshot", False, {"reason": "run_configuration_snapshot_not_found"})
+    else:
+        run_configuration_snapshot_version = _coerce_non_negative_int(
+            run_config.get("configuration_snapshot_version")
+        )
+        if run_configuration_snapshot_version is not None:
+            expected_snapshot_id = _build_run_configuration_snapshot_id(
+                run_id=run.id,
+                version=run_configuration_snapshot_version,
+            )
+            observed_snapshot_id = str(
+                (
+                    expected_run_configuration_snapshot.snapshot_json or {}
+                ).get("configuration_snapshot_id", "")
+            )
+            if observed_snapshot_id != expected_snapshot_id:
+                _record_check(
+                    "run_configuration_snapshot",
+                    False,
+                    {
+                        "reason": "configuration_snapshot_id_mismatch",
+                        "expected_snapshot_id": expected_snapshot_id,
+                        "observed_snapshot_id": observed_snapshot_id,
+                    },
+                )
+            elif run_configuration_snapshot_version != expected_run_configuration_snapshot.version:
+                _record_check(
+                    "run_configuration_snapshot",
+                    False,
+                    {
+                        "reason": "configuration_snapshot_version_mismatch",
+                        "expected_version": run_configuration_snapshot_version,
+                        "observed_version": expected_run_configuration_snapshot.version,
+                    },
+                )
+            elif not isinstance(expected_run_configuration_snapshot.snapshot_json, dict):
+                _record_check(
+                    "run_configuration_snapshot",
+                    False,
+                    {
+                        "reason": "configuration_snapshot_payload_corrupted",
+                    },
+                )
+            else:
+                _record_check("run_configuration_snapshot", True, {})
+        else:
+            _record_check(
+                "run_configuration_snapshot",
+                False,
+                {"reason": "configuration_snapshot_version_missing"},
+            )
+
+    character_map_snapshot = run.character_map_snapshot
+    if character_map_snapshot is None:
+        _record_check("character_map_snapshot", False, {"reason": "character_map_snapshot_not_found"})
+    else:
+        expected_character_map_snapshot_id = _coerce_non_negative_int(
+            run_config.get("character_map_snapshot_id")
+        )
+        expected_character_map_snapshot_version = _coerce_non_negative_int(
+            run_config.get("character_map_snapshot_version")
+        )
+        snapshot_integrity_ok = (
+            character_map_snapshot.run_id == run.id
+            and (expected_character_map_snapshot_id is None or character_map_snapshot.id == expected_character_map_snapshot_id)
+            and (
+                expected_character_map_snapshot_version is None
+                or character_map_snapshot.version == expected_character_map_snapshot_version
+            )
+            and isinstance(character_map_snapshot.snapshot_json, dict)
+        )
+        if snapshot_integrity_ok:
+            _record_check(
+                "character_map_snapshot",
+                True,
+                {
+                    "snapshot_id": character_map_snapshot.id,
+                    "snapshot_version": character_map_snapshot.version,
+                },
+            )
+        else:
+            _record_check(
+                "character_map_snapshot",
+                False,
+                {
+                    "snapshot_id": character_map_snapshot.id,
+                    "snapshot_version": character_map_snapshot.version,
+                    "expected_snapshot_id": expected_character_map_snapshot_id,
+                    "expected_snapshot_version": expected_character_map_snapshot_version,
+                },
+            )
+
+    pronunciation_dictionary_snapshot = run.pronunciation_dictionary_snapshot
+    if pronunciation_dictionary_snapshot is None:
+        _record_check(
+            "pronunciation_dictionary_snapshot",
+            False,
+            {"reason": "pronunciation_dictionary_snapshot_not_found"},
+        )
+    else:
+        expected_pronunciation_dictionary_snapshot_id = _coerce_non_negative_int(
+            run_config.get("pronunciation_dictionary_snapshot_id")
+        )
+        expected_pronunciation_dictionary_snapshot_version = _coerce_non_negative_int(
+            run_config.get("pronunciation_dictionary_snapshot_version")
+        )
+        snapshot_integrity_ok = (
+            pronunciation_dictionary_snapshot.run_id == run.id
+            and (
+                expected_pronunciation_dictionary_snapshot_id is None
+                or pronunciation_dictionary_snapshot.id == expected_pronunciation_dictionary_snapshot_id
+            )
+            and (
+                expected_pronunciation_dictionary_snapshot_version is None
+                or pronunciation_dictionary_snapshot.version == expected_pronunciation_dictionary_snapshot_version
+            )
+            and isinstance(pronunciation_dictionary_snapshot.snapshot_json, dict)
+        )
+        if snapshot_integrity_ok:
+            _record_check(
+                "pronunciation_dictionary_snapshot",
+                True,
+                {
+                    "snapshot_id": pronunciation_dictionary_snapshot.id,
+                    "snapshot_version": pronunciation_dictionary_snapshot.version,
+                },
+            )
+        else:
+            _record_check(
+                "pronunciation_dictionary_snapshot",
+                False,
+                {
+                    "snapshot_id": pronunciation_dictionary_snapshot.id,
+                    "snapshot_version": pronunciation_dictionary_snapshot.version,
+                    "expected_snapshot_id": expected_pronunciation_dictionary_snapshot_id,
+                    "expected_snapshot_version": expected_pronunciation_dictionary_snapshot_version,
+                },
+            )
+
+    voice_map_snapshot = run.voice_map_snapshot
+    if voice_map_snapshot is None:
+        _record_check("voice_map_snapshot", False, {"reason": "voice_map_snapshot_not_found"})
+    else:
+        expected_voice_map_snapshot_id = _coerce_non_negative_int(run_config.get("voice_map_snapshot_id"))
+        expected_voice_map_snapshot_version = _coerce_non_negative_int(run_config.get("voice_map_snapshot_version"))
+        snapshot_integrity_ok = (
+            voice_map_snapshot.run_id == run.id
+            and (
+                expected_voice_map_snapshot_id is None
+                or voice_map_snapshot.id == expected_voice_map_snapshot_id
+            )
+            and (
+                expected_voice_map_snapshot_version is None
+                or voice_map_snapshot.version == expected_voice_map_snapshot_version
+            )
+            and isinstance(voice_map_snapshot.snapshot_json, dict)
+        )
+        if snapshot_integrity_ok:
+            _record_check(
+                "voice_map_snapshot",
+                True,
+                {
+                    "snapshot_id": voice_map_snapshot.id,
+                    "snapshot_version": voice_map_snapshot.version,
+                },
+            )
+        else:
+            _record_check(
+                "voice_map_snapshot",
+                False,
+                {
+                    "snapshot_id": voice_map_snapshot.id,
+                    "snapshot_version": voice_map_snapshot.version,
+                    "expected_snapshot_id": expected_voice_map_snapshot_id,
+                    "expected_snapshot_version": expected_voice_map_snapshot_version,
+                },
+            )
+
+    time_series_snapshot = (
+        session.query(TimeSeriesSnapshot)
+        .filter(TimeSeriesSnapshot.run_id == run.id)
+        .order_by(TimeSeriesSnapshot.id.desc())
+        .first()
+    )
+    if time_series_snapshot is None:
+        _record_check("time_series_snapshot", False, {"reason": "time_series_snapshot_not_found"})
+    else:
+        expected_time_series_snapshot_id = _coerce_non_negative_int(
+            run_config.get("time_series_snapshot_id")
+        )
+        expected_time_series_snapshot_version = _coerce_non_negative_int(
+            run_config.get("time_series_snapshot_version")
+        )
+        snapshot_integrity_ok = (
+            (expected_time_series_snapshot_id is None or time_series_snapshot.id == expected_time_series_snapshot_id)
+            and (
+                expected_time_series_snapshot_version is None
+                or time_series_snapshot.version == expected_time_series_snapshot_version
+            )
+            and isinstance(time_series_snapshot.snapshot_json, dict)
+        )
+        if snapshot_integrity_ok:
+            _record_check(
+                "time_series_snapshot",
+                True,
+                {
+                    "snapshot_id": time_series_snapshot.id,
+                    "snapshot_version": time_series_snapshot.version,
+                },
+            )
+        else:
+            _record_check(
+                "time_series_snapshot",
+                False,
+                {
+                    "snapshot_id": time_series_snapshot.id,
+                    "snapshot_version": time_series_snapshot.version,
+                    "expected_snapshot_id": expected_time_series_snapshot_id,
+                    "expected_snapshot_version": expected_time_series_snapshot_version,
+                },
+            )
+
+    return {
+        "is_artifact_integrity_intact": all(check["passed"] for check in checks),
+        "checks": checks,
+    }
+
+
 def _execute_pipeline_and_finalize_run(
     session: Session,
     project: Project,
@@ -1396,6 +1687,16 @@ def _execute_pipeline_and_finalize_run(
             event_message="Pipeline completed",
             event_metadata={"segment_count": int(result["segment_count"])},
         )
+        artifact_integrity_report = _build_run_artifact_integrity_report(session=session, run=run)
+        run_config_with_snapshot = dict(run.config_json or {})
+        run_config_with_snapshot["artifact_integrity"] = artifact_integrity_report
+        run.config_json = run_config_with_snapshot
+        session.add(run)
+        if not bool(artifact_integrity_report.get("is_artifact_integrity_intact")):
+            raise PipelineError(
+                "artifact integrity check failed after pipeline completion",
+                metadata={"artifact_integrity": artifact_integrity_report},
+            )
         session.commit()
         return int(result["segment_count"])
     except PipelineError as exc:
@@ -3839,13 +4140,14 @@ def create_run(
     )
     recovery_state = _coerce_recovery_state(run.config_json).get(_PIPELINE_RECOVERY_CONFIG_KEY)
     if not isinstance(recovery_state, dict) or not recovery_state:
-        run_config["pipeline_recovery"] = {
+        run_config_with_recovery = dict(run.config_json or {})
+        run_config_with_recovery[_PIPELINE_RECOVERY_CONFIG_KEY] = {
             "status": "running",
             "attempt": 0,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "reason": "initial_execution",
         }
-        run.config_json = run_config
+        run.config_json = run_config_with_recovery
     session.commit()
     session.refresh(run)
     segment_count = _execute_pipeline_and_finalize_run(session=session, project=project, run=run)
