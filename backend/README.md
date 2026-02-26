@@ -243,6 +243,12 @@ Release checklist validation for migrations and backward compatibility (`X-017`)
 python scripts_validate_release_migration_checklist.py
 ```
 
+Release rollback plan template validation (`X-018`):
+
+```bash
+python scripts_validate_release_rollback_plan.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash
