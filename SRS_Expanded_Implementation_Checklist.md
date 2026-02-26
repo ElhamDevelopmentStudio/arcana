@@ -344,7 +344,7 @@ Definition of done for each task:
 - [x] [PAL-010] Define standardized response object fields exactly per SRS.
 - [x] [PAL-011] Enforce response validation and error mapping.
 - [x] [PAL-012] Ensure core modules never import provider SDKs directly.
-- [ ] [PAL-013] Add architecture test to detect forbidden direct provider imports.
+- [x] [PAL-013] Add architecture test to detect forbidden direct provider imports.
 - [ ] [PAL-014] Add extension interface for self-hosted local models.
 - [ ] [PAL-015] Add extension interface for user-supplied provider keys.
 - [ ] [PAL-016] Add per-project provider configuration support.
