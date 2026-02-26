@@ -7,7 +7,10 @@ from app.database import get_session_factory, init_db, reset_engine
 from app.models import ProviderQuota
 from app.services.quota import (
     consume_quota,
+    consume_api_key_quota,
     get_provider_request_count,
+    is_api_key_available_for_request,
+    is_provider_available_for_request,
     mark_provider_available,
     mark_provider_rate_limited,
     mark_provider_reset_at,
@@ -133,5 +136,43 @@ def test_mark_provider_available_clears_temporary_unavailability() -> None:
         quota = session.query(ProviderQuota).filter(ProviderQuota.provider == provider).one()
         assert quota.blocked is False
         assert quota.last_rate_limit_status == "available"
+    finally:
+        session.close()
+
+
+def test_is_provider_available_for_request_is_false_after_limit_reached() -> None:
+    session_factory = get_session_factory()
+    session = session_factory()
+
+    try:
+        allowed_once, _ = consume_quota(session=session, provider="openrouter", max_calls_per_day=1)
+        allowed_twice, _ = consume_quota(session=session, provider="openrouter", max_calls_per_day=1)
+
+        assert allowed_once is True
+        assert allowed_twice is False
+        assert is_provider_available_for_request(session=session, provider="openrouter", max_calls_per_day=1) is False
+    finally:
+        session.close()
+
+
+def test_is_api_key_available_for_request_is_false_when_key_is_exhausted() -> None:
+    session_factory = get_session_factory()
+    session = session_factory()
+
+    try:
+        provider = "groq"
+        key = "quota-key"
+
+        first, _ = consume_api_key_quota(session=session, provider=provider, provider_api_key=key, max_calls_per_day=1)
+        second, _ = consume_api_key_quota(session=session, provider=provider, provider_api_key=key, max_calls_per_day=1)
+
+        assert first is True
+        assert second is False
+        assert is_api_key_available_for_request(
+            session=session,
+            provider=provider,
+            provider_api_key=key,
+            max_calls_per_day=1,
+        ) is False
     finally:
         session.close()

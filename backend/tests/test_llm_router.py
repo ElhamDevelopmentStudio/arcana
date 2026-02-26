@@ -1,12 +1,241 @@
+import os
+from pathlib import Path
 from types import SimpleNamespace
 
+from app.config import clear_settings_cache
+from app.database import get_session_factory, init_db, reset_engine
 import app.services.llm_router as llm_router
+from app.models import ProviderToggle
+from app.services.quota import consume_api_key_quota, consume_quota
+
+os.environ["DATABASE_URL"] = "sqlite:///./test_nipe_llm_router.db"
+
+
+def setup_module() -> None:
+    clear_settings_cache()
+    reset_engine()
+    init_db()
+
+
+def teardown_module() -> None:
+    reset_engine()
+    clear_settings_cache()
+
+    db_file = Path("test_nipe_llm_router.db")
+    if db_file.exists():
+        db_file.unlink()
+
+
+def _new_session():
+    return get_session_factory()()
 
 
 def test_is_supported_provider_includes_siliconflow() -> None:
     assert llm_router.is_supported_provider("siliconflow") is True
     assert llm_router.is_supported_provider("openrouter") is True
     assert llm_router.is_supported_provider("groq") is True
+
+
+def test_select_probe_provider_candidates_prefers_requested_then_priority() -> None:
+    session = _new_session()
+    try:
+        settings = SimpleNamespace(
+            llm_provider_priority_order=["groq", "openrouter", "siliconflow"],
+            openrouter_base_url="https://api.openrouter.ai/v1",
+            openrouter_model="openrouter-model",
+            openrouter_api_key="openrouter-key",
+            groq_base_url="https://api.groq.com/openai/v1",
+            groq_model="groq-model",
+            groq_api_key="groq-key",
+            siliconflow_base_url="https://api.siliconflow.cn/v1",
+            siliconflow_model="siliconflow-model",
+            siliconflow_api_key="siliconflow-key",
+        )
+
+        candidates = llm_router.select_probe_provider_candidates(
+            session=session,
+            settings=settings,
+            requested_provider="openrouter",
+            max_calls_per_day=10,
+        )
+
+        assert candidates == ("openrouter", "groq", "siliconflow")
+    finally:
+        session.close()
+
+
+def test_select_probe_provider_candidates_skips_disabled_provider_and_uses_next_priority() -> None:
+    session = _new_session()
+    try:
+        session.query(ProviderToggle).filter(ProviderToggle.provider == "openrouter").delete()
+        session.add(ProviderToggle(provider="openrouter", enabled=False))
+        session.flush()
+
+        settings = SimpleNamespace(
+            llm_provider_priority_order=["openrouter", "siliconflow", "groq"],
+            openrouter_base_url="https://api.openrouter.ai/v1",
+            openrouter_model="openrouter-model",
+            openrouter_api_key="openrouter-key",
+            groq_base_url="https://api.groq.com/openai/v1",
+            groq_model="groq-model",
+            groq_api_key="groq-key",
+            siliconflow_base_url="https://api.siliconflow.cn/v1",
+            siliconflow_model="siliconflow-model",
+            siliconflow_api_key="siliconflow-key",
+        )
+
+        candidates = llm_router.select_probe_provider_candidates(
+            session=session,
+            settings=settings,
+            requested_provider="openrouter",
+            max_calls_per_day=10,
+        )
+
+        assert candidates == ("siliconflow", "groq")
+    finally:
+        session.close()
+
+
+def test_select_probe_provider_candidates_skips_quota_exhausted_provider() -> None:
+    session = _new_session()
+    try:
+        _, _ = consume_quota(session=session, provider="openrouter", max_calls_per_day=1)
+        _, _ = consume_quota(session=session, provider="openrouter", max_calls_per_day=1)
+
+        settings = SimpleNamespace(
+            llm_provider_priority_order=["openrouter", "groq", "siliconflow"],
+            openrouter_base_url="https://api.openrouter.ai/v1",
+            openrouter_model="openrouter-model",
+            openrouter_api_key="openrouter-key",
+            groq_base_url="https://api.groq.com/openai/v1",
+            groq_model="groq-model",
+            groq_api_key="groq-key",
+            siliconflow_base_url="https://api.siliconflow.cn/v1",
+            siliconflow_model="siliconflow-model",
+            siliconflow_api_key="siliconflow-key",
+        )
+
+        candidates = llm_router.select_probe_provider_candidates(
+            session=session,
+            settings=settings,
+            requested_provider="openrouter",
+            max_calls_per_day=1,
+        )
+
+        assert candidates == ("groq", "siliconflow")
+    finally:
+        session.close()
+
+
+def test_select_probe_provider_candidates_uses_next_provider_when_requested_api_keys_are_quota_reached() -> None:
+    session = _new_session()
+    try:
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-a", max_calls_per_day=1)
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-a", max_calls_per_day=1)
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-b", max_calls_per_day=1)
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-b", max_calls_per_day=1)
+
+        settings = SimpleNamespace(
+            llm_provider_priority_order=["openrouter", "groq", "siliconflow"],
+            openrouter_base_url="https://api.openrouter.ai/v1",
+            openrouter_model="openrouter-model",
+            openrouter_api_key="or-key-legacy",
+            openrouter_api_keys="or-key-a, or-key-b",
+            groq_base_url="https://api.groq.com/openai/v1",
+            groq_model="groq-model",
+            groq_api_key="groq-key",
+            siliconflow_base_url="https://api.siliconflow.cn/v1",
+            siliconflow_model="siliconflow-model",
+            siliconflow_api_key="siliconflow-key",
+        )
+
+        candidates = llm_router.select_probe_provider_candidates(
+            session=session,
+            settings=settings,
+            requested_provider="openrouter",
+            max_calls_per_day=1,
+        )
+
+        assert candidates == ("groq", "siliconflow")
+    finally:
+        session.close()
+
+
+def test_is_provider_requestable_returns_quota_reached_when_all_api_keys_exhausted() -> None:
+    session = _new_session()
+    try:
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-a", max_calls_per_day=1)
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-a", max_calls_per_day=1)
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-b", max_calls_per_day=1)
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-b", max_calls_per_day=1)
+
+        settings = SimpleNamespace(
+            openrouter_api_keys="or-key-a, or-key-b",
+            openrouter_api_key="or-key-legacy",
+            openrouter_base_url="https://api.openrouter.ai/v1",
+            openrouter_model="openrouter-model",
+            groq_base_url="https://api.groq.com/openai/v1",
+            groq_model="groq-model",
+            groq_api_key="groq-key",
+        )
+
+        requestable, reason = llm_router.is_provider_requestable(
+            session=session,
+            settings=settings,
+            provider_name="openrouter",
+            max_calls_per_day=1,
+        )
+
+        assert requestable is False
+        assert reason == "quota_reached"
+    finally:
+        session.close()
+
+
+def test_is_provider_requestable_reports_disabled_provider() -> None:
+    session = _new_session()
+    try:
+        session.query(ProviderToggle).filter(ProviderToggle.provider == "openrouter").delete()
+        session.add(ProviderToggle(provider="openrouter", enabled=False))
+        settings = SimpleNamespace(openrouter_base_url="https://api.openrouter.ai/v1", openrouter_model="openrouter-model")
+
+        requestable, reason = llm_router.is_provider_requestable(
+            session=session,
+            settings=settings,
+            provider_name="openrouter",
+            max_calls_per_day=10,
+        )
+
+        assert requestable is False
+        assert reason == "provider_disabled"
+    finally:
+        session.close()
+
+
+def test_is_provider_requestable_reports_true_when_one_of_multiple_keys_is_available() -> None:
+    session = _new_session()
+    try:
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-a", max_calls_per_day=1)
+        consume_api_key_quota(session=session, provider="openrouter", provider_api_key="or-key-a", max_calls_per_day=1)
+
+        settings = SimpleNamespace(
+            openrouter_api_keys="or-key-a, or-key-b",
+            openrouter_api_key="or-key-b",
+            openrouter_base_url="https://api.openrouter.ai/v1",
+            openrouter_model="openrouter-model",
+        )
+
+        requestable, reason = llm_router.is_provider_requestable(
+            session=session,
+            settings=settings,
+            provider_name="openrouter",
+            max_calls_per_day=1,
+        )
+
+        assert requestable is True
+        assert reason is None
+    finally:
+        session.close()
 
 
 def test_get_provider_runtime_settings_uses_openrouter_settings() -> None:

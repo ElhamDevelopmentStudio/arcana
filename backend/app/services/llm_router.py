@@ -3,8 +3,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 import requests
+from sqlalchemy.orm import Session
 
 from app.services.llm_task_types import LLMTaskType, LLMTaskTypeError, normalize_task_type
+from app.services import quota
 
 
 _SILICONFLOW_BASE_URL_DEFAULT = "https://api.siliconflow.cn/v1"
@@ -353,6 +355,77 @@ def get_provider_api_keys(settings: Any, provider_name: str) -> list[str]:
         return []
 
     return _resolve_api_key_list(settings=settings, metadata=metadata)
+
+
+def is_provider_requestable(
+    session: Session,
+    settings: Any,
+    provider_name: str,
+    max_calls_per_day: int,
+) -> tuple[bool, str | None]:
+    provider = _normalize_provider_name(provider_name)
+    if not is_supported_provider(provider):
+        return False, "unsupported_provider"
+
+    from app.services.provider_toggle import is_provider_enabled
+
+    if not is_provider_enabled(session=session, provider=provider):
+        return False, "provider_disabled"
+
+    if not quota.is_provider_available_for_request(session=session, provider=provider, max_calls_per_day=max_calls_per_day):
+        return False, "quota_reached"
+
+    _, _, runtime_api_key = get_provider_runtime_settings(settings=settings, provider_name=provider)
+    api_keys = get_provider_api_keys(settings=settings, provider_name=provider)
+    if not api_keys and runtime_api_key:
+        api_keys = [runtime_api_key]
+
+    if not api_keys:
+        return True, None
+
+    for key in api_keys:
+        if not quota.is_api_key_available_for_request(
+            session=session,
+            provider=provider,
+            provider_api_key=key,
+            max_calls_per_day=max_calls_per_day,
+        ):
+            continue
+        return True, None
+
+    return False, "quota_reached"
+
+
+def select_probe_provider_candidates(
+    session: Session,
+    settings: Any,
+    requested_provider: str,
+    max_calls_per_day: int,
+) -> tuple[str, ...]:
+    requested = _normalize_provider_name(requested_provider)
+    candidate_order = [requested]
+    for provider in get_provider_priority_order(settings=settings):
+        normalized = _normalize_provider_name(provider)
+        if normalized and normalized not in candidate_order:
+            candidate_order.append(normalized)
+
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    for provider in candidate_order:
+        if not provider or provider in seen:
+            continue
+        seen.add(provider)
+        requestable, _ = is_provider_requestable(
+            session=session,
+            settings=settings,
+            provider_name=provider,
+            max_calls_per_day=max_calls_per_day,
+        )
+        if requestable:
+            selected.append(provider)
+
+    return tuple(selected)
 
 
 def get_provider_runtime_settings(settings: Any, provider_name: str) -> tuple[str, str, str | None]:
