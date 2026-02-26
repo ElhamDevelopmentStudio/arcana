@@ -647,6 +647,31 @@ export class NipeApiClient {
     }
   }
 
+  async getPlacePronunciationDictionary(projectId: number): Promise<PronunciationDictionaryResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/pronunciation-dictionary/places`);
+      return pronunciationDictionaryResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async updatePlacePronunciationDictionary(
+    projectId: number,
+    payload: PronunciationDictionaryUpdateRequestDto,
+  ): Promise<PronunciationDictionaryResponseDto> {
+    try {
+      const parsedPayload = pronunciationDictionaryUpdateRequestSchema.parse(payload);
+      const response = await this.client.put(
+        `/api/projects/${projectId}/pronunciation-dictionary/places`,
+        parsedPayload,
+      );
+      return pronunciationDictionaryResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async inferCharacterGenders(projectId: number): Promise<CharacterMapDto> {
     try {
       const response = await this.client.post(`/api/projects/${projectId}/characters/infer`);
