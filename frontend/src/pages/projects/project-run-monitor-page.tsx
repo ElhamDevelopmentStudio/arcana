@@ -7,7 +7,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { useRunConfigDiffQuery, useRunConfigPresetMutation, useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
+import {
+  useRerunRunMutation,
+  useRunConfigDiffQuery,
+  useRunConfigPresetMutation,
+  useRunDetailQuery,
+} from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, LineChart, ShieldAlert, TriangleAlert, Waves } from 'lucide-react';
@@ -18,10 +23,12 @@ export function ProjectRunMonitorPage() {
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const runId = useWorkspaceStore((state) => state.runId);
+  const setRunId = useWorkspaceStore((state) => state.setRunId);
 
   const projectId = routeProjectId ?? storeProjectId;
   const runDetailQuery = useRunDetailQuery(projectId, runId);
   const runConfigPresetMutation = useRunConfigPresetMutation(projectId, runId);
+  const rerunRunMutation = useRerunRunMutation(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
     const trimmed = comparisonRunIdInput.trim();
@@ -77,6 +84,18 @@ export function ProjectRunMonitorPage() {
     }
   }
 
+  async function handleRerunRun() {
+    if (projectId === null || runId === null) {
+      return;
+    }
+    try {
+      const rerun = await rerunRunMutation.trigger();
+      setRunId(rerun.run_id);
+    } catch {
+      // surfaced via mutation event bus
+    }
+  }
+
   return (
     <WorkflowPageShell
       step="Step 05"
@@ -86,6 +105,13 @@ export function ProjectRunMonitorPage() {
       action={
         projectId !== null ? (
           <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={runId === null || rerunRunMutation.isMutating}
+              onClick={handleRerunRun}
+              variant="outline"
+            >
+              {rerunRunMutation.isMutating ? 'Rerunning...' : 'Rerun run'}
+            </Button>
             <Button
               disabled={runId === null}
               onClick={() => navigate(projectRoute(projectId, 'review/speakers'))}
@@ -168,6 +194,7 @@ export function ProjectRunMonitorPage() {
             {runDetailQuery.isLoading ? <p>Loading run detail...</p> : null}
             {runDetailQuery.error ? <p className="text-destructive">{runDetailQuery.error.message}</p> : null}
             {runConfigPresetMutation.error ? <p className="text-destructive">{runConfigPresetMutation.error.message}</p> : null}
+            {rerunRunMutation.error ? <p className="text-destructive">{rerunRunMutation.error.message}</p> : null}
 
             {runDetailQuery.data ? (
               <pre className="max-h-72 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">

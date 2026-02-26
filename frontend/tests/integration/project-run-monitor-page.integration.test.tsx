@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +10,7 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 const useRunDetailQueryMock = vi.fn();
 const useRunConfigDiffQueryMock = vi.fn();
 const useRunConfigPresetMutationMock = vi.fn();
+const useRerunRunMutationMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) =>
@@ -17,6 +19,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useRunConfigDiffQueryMock(...args),
   useRunConfigPresetMutation: (...args: Parameters<typeof useRunConfigPresetMutationMock>) =>
     useRunConfigPresetMutationMock(...args),
+  useRerunRunMutation: (...args: Parameters<typeof useRerunRunMutationMock>) =>
+    useRerunRunMutationMock(...args),
 }));
 
 function renderRunMonitorPage() {
@@ -62,6 +66,7 @@ describe('project run monitor page', () => {
     useRunDetailQueryMock.mockReset();
     useRunConfigDiffQueryMock.mockReset();
     useRunConfigPresetMutationMock.mockReset();
+    useRerunRunMutationMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
@@ -71,6 +76,16 @@ describe('project run monitor page', () => {
       isMutating: false,
       error: null,
       trigger: vi.fn(),
+    });
+    useRerunRunMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: vi.fn().mockResolvedValue({
+        run_id: 304,
+        project_id: 303,
+        status: 'completed',
+        segment_count: 8,
+      }),
     });
   });
 
@@ -143,5 +158,31 @@ describe('project run monitor page', () => {
     expect(screen.getByText(/Run Config Diff Viewer/i)).toBeInTheDocument();
     expect(screen.getByText(/"author" → "academic"/i)).toBeInTheDocument();
     expect(screen.getByText(/deterministic_seed/i)).toBeInTheDocument();
+  });
+
+  it('triggers rerun mutation from run monitor action bar', async () => {
+    const user = userEvent.setup();
+    const rerunTrigger = vi.fn().mockResolvedValue({
+      run_id: 404,
+      project_id: 303,
+      status: 'completed',
+      segment_count: 6,
+    });
+    useRerunRunMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: rerunTrigger,
+    });
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    await user.click(screen.getByRole('button', { name: 'Rerun run' }));
+
+    expect(rerunTrigger).toHaveBeenCalledTimes(1);
+    expect(useWorkspaceStore.getState().runId).toBe(404);
   });
 });

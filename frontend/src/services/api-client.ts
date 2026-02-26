@@ -769,6 +769,15 @@ export class NipeApiClient {
     }
   }
 
+  async rerunRun(projectId: number, runId: number) {
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/runs/${runId}/rerun`);
+      return runResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async getRunConfigDiff(
     projectId: number,
     baseRunId: number,
