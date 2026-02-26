@@ -13,6 +13,7 @@ from app.main import app
 from app.services.ingestion_errors import (
     IngestionErrorType,
     UnsupportedEncodingIngestionError,
+    MissingChaptersIngestionError,
     UnsupportedFormatIngestionError,
     make_ingestion_http_error,
 )
@@ -62,6 +63,13 @@ def test_unit_unsupported_encoding_error_is_http_exception_with_header() -> None
     assert error.status_code == 400
     assert error.headers == {"X-NIPE-Error-Type": "unsupported_encoding"}
     assert error.detail == "Unable to decode TXT content reliably with supported encodings"
+
+
+def test_unit_missing_chapters_error_is_http_exception_with_header() -> None:
+    error = MissingChaptersIngestionError(detail="No non-empty chapters found in TXT input")
+    assert error.status_code == 400
+    assert error.headers == {"X-NIPE-Error-Type": "missing_chapters"}
+    assert error.detail == "No non-empty chapters found in TXT input"
 
 
 def test_integration_unsupported_format_sets_error_type_header() -> None:
