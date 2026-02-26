@@ -286,7 +286,12 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     if not chapters:
         raise PipelineError("No chapters available. Upload and ingest a TXT file first.")
 
-    characters = session.query(Character).filter(Character.project_id == project.id).all()
+    characters = (
+        session.query(Character)
+        .filter(Character.project_id == project.id)
+        .order_by(Character.name.asc(), Character.id.asc())
+        .all()
+    )
 
     global_pronunciations = {
         entry.term.strip(): entry.verbalized_form.strip()
@@ -296,6 +301,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             PronunciationDictionary.scope == "global",
             PronunciationDictionary.character_name == "",
         )
+        .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
         .all()
     }
     place_pronunciations = {
@@ -306,6 +312,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             PronunciationDictionary.scope == "place",
             PronunciationDictionary.character_name == "",
         )
+        .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
         .all()
     }
     invented_pronunciations = {
@@ -316,6 +323,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             PronunciationDictionary.scope == "invented",
             PronunciationDictionary.character_name == "",
         )
+        .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
         .all()
     }
     artifact_pronunciations = {
@@ -326,12 +334,22 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             PronunciationDictionary.scope == "artifact",
             PronunciationDictionary.character_name == "",
         )
+        .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
         .all()
     }
-    character_scope_entries = session.query(PronunciationDictionary).filter(
-        PronunciationDictionary.project_id == project.id,
-        PronunciationDictionary.scope == "character",
-    ).all()
+    character_scope_entries = (
+        session.query(PronunciationDictionary)
+        .filter(
+            PronunciationDictionary.project_id == project.id,
+            PronunciationDictionary.scope == "character",
+        )
+        .order_by(
+            PronunciationDictionary.character_name.asc(),
+            PronunciationDictionary.term.asc(),
+            PronunciationDictionary.id.asc(),
+        )
+        .all()
+    )
     character_pronunciations = {}
     for entry in character_scope_entries:
         normalized_name = entry.character_name.strip().lower()

@@ -49,6 +49,58 @@ def _ingest_text(client: TestClient, project_id: int) -> None:
     assert ingest_resp.json()["chapter_count"] == 2
 
 
+def _run_collision_scope_case(client: TestClient, character_rows: list[tuple[str, str]]) -> str:
+    project_id = _create_project(client)
+
+    collision_payload = (
+        'Chapter 1\n'
+        '"signal," kai said.\n'
+    )
+    ingest_resp = client.post(
+        f"/api/projects/{project_id}/ingest/txt",
+        files={"file": ("collision.txt", io.BytesIO(collision_payload.encode("utf-8")), "text/plain")},
+    )
+    assert ingest_resp.status_code == 200
+    assert ingest_resp.json()["chapter_count"] == 1
+
+    character_payload = {
+        "characters": [
+            {
+                "name": name,
+                "verbalized_form": name,
+                "gender": "female",
+                "aliases": [],
+            }
+            for name, _ in character_rows
+        ]
+    }
+    character_resp = client.put(f"/api/projects/{project_id}/characters", json=character_payload)
+    assert character_resp.status_code == 200
+
+    for name, verbalized in character_rows:
+        dictionary_resp = client.put(
+            f"/api/projects/{project_id}/pronunciation-dictionary/character/{name}",
+            json={"entries": [{"term": "signal", "verbalized_form": verbalized}]},
+        )
+        assert dictionary_resp.status_code == 200
+
+    run_payload = {
+        "max_segment_chars": 255,
+        "llm_enabled": False,
+        "provider_name": "openrouter",
+        "max_calls_per_day": 2,
+        "allow_unfinalized_character_map": True,
+    }
+    run_resp = client.post(f"/api/projects/{project_id}/runs", json=run_payload)
+    assert run_resp.status_code == 200
+    run_id = run_resp.json()["run_id"]
+
+    export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+    assert export_resp.status_code == 200
+    payload = export_resp.json()
+    return payload["segments"][0]["phonetic_text"]
+
+
 def test_export_segments_are_ordered_across_chapters_then_segments() -> None:
     with TestClient(app) as client:
         project_id = _create_project(client)
@@ -85,3 +137,18 @@ def test_export_segments_are_ordered_across_chapters_then_segments() -> None:
 
         for segment_indexes in ordered_by_chapter.values():
             assert segment_indexes == list(range(1, len(segment_indexes) + 1))
+
+
+def test_pipeline_character_scope_lookup_is_deterministic_with_normalized_name_collisions() -> None:
+    with TestClient(app) as client:
+        forward_phonetic = _run_collision_scope_case(
+            client,
+            character_rows=[("Kai", "alpha-signal"), ("kai", "beta-signal")],
+        )
+        reverse_phonetic = _run_collision_scope_case(
+            client,
+            character_rows=[("kai", "beta-signal"), ("Kai", "alpha-signal")],
+        )
+
+        assert forward_phonetic == reverse_phonetic
+        assert ("alpha-signal" in forward_phonetic) or ("beta-signal" in forward_phonetic)

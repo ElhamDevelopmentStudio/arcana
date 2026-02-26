@@ -325,7 +325,7 @@ Definition of done for each task:
 
 ## 4.12.7 Deterministic Mode (Ref: SRS.md §4.12.7)
 - [x] [DET-001] Add deterministic mode flag to run config.
-- [ ] [DET-002] Force deterministic processing order across all stages.
+- [x] [DET-002] Force deterministic processing order across all stages.
 - [ ] [DET-003] Pin model identifier/version in deterministic runs.
 - [ ] [DET-004] Persist deterministic seed and randomization config.
 - [ ] [DET-005] Add repeat-run equivalence tests for deterministic mode.
