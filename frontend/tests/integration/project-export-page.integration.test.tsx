@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,6 +40,19 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
             dominance: 0.61,
           },
           summary_tag: { confidence: 0.9 },
+        },
+        {
+          segment_id: '333-003',
+          chapter_id: 2,
+          speaker: 'Editor',
+          confidence: {
+            speaker: 0.99,
+            emotion: 0.97,
+            type: 0.95,
+            tension: 0.95,
+            dominance: 0.96,
+          },
+          summary_tag: { confidence: 0.95 },
         },
       ],
     },
@@ -104,5 +117,25 @@ describe('project export page', () => {
 
     await driver.click(screen.getByRole('button', { name: 'Continue to Dashboards' }));
     expect(screen.getByTestId('project-dashboards')).toBeInTheDocument();
+  });
+
+  it('filters confidence rows by configurable threshold and orientation', async () => {
+    const user = userEvent.setup();
+    renderExportPage();
+
+    expect(screen.getByText('Showing 2 rows where min confidence is below 80%')).toBeInTheDocument();
+    expect(screen.getByTestId('export-confidence-row-333-001')).toBeInTheDocument();
+    expect(screen.getByTestId('export-confidence-row-333-002')).toBeInTheDocument();
+    expect(screen.queryByTestId('export-confidence-row-333-003')).not.toBeInTheDocument();
+
+    const threshold = screen.getByTestId('export-confidence-threshold');
+    fireEvent.change(threshold, { target: { value: '0.9' } });
+
+    expect(screen.getByText('Showing 2 rows where min confidence is below 90%')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show at or above threshold' }));
+    expect(screen.getByText('Showing 1 rows where min confidence is at least 90%')).toBeInTheDocument();
+    expect(screen.getByTestId('export-confidence-row-333-003')).toBeInTheDocument();
+    expect(screen.queryByTestId('export-confidence-row-333-001')).not.toBeInTheDocument();
   });
 });
