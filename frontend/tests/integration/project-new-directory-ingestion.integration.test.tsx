@@ -75,6 +75,10 @@ describe('project new page directory ingestion', () => {
       ingestion_timestamp: null,
       created_at: '2026-02-25T00:00:00Z',
     });
+    ingestTxtTrigger.mockResolvedValue({
+      project_id: 101,
+      chapter_count: 2,
+    });
     ingestDirectoryTrigger.mockResolvedValue({
       project_id: 101,
       chapter_count: 2,
@@ -91,6 +95,23 @@ describe('project new page directory ingestion', () => {
       project_id: 101,
       chapter_count: 3,
     });
+  });
+
+  it('defaults to user-upload TXT ingestion path', async () => {
+    const user = userEvent.setup();
+    renderProjectNewPage();
+
+    await user.click(screen.getByTestId('create-project-button'));
+
+    expect(screen.getByTestId('ingestion-source-select')).toHaveValue('txt');
+    const txtFile = new File(['chapter one'], 'novel.txt', { type: 'text/plain' });
+    await user.upload(screen.getByTestId('txt-upload-input'), txtFile);
+
+    await user.click(screen.getByTestId('upload-txt-button'));
+
+    expect(ingestTxtTrigger).toHaveBeenCalledTimes(1);
+    expect(ingestTxtTrigger).toHaveBeenCalledWith({ file: txtFile });
+    expect(screen.getByTestId('chapter-count-state')).toHaveTextContent('Detected chapters: 2');
   });
 
   it('uses chapter-directory ingestion mutation when source type is directory', async () => {
