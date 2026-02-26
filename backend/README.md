@@ -219,6 +219,12 @@ Checklist frontend+Playwright coverage validation (parallel delivery guardrail):
 python scripts_validate_checklist_frontend_coverage.py
 ```
 
+Contributor guide validation for adding a new tag type (`X-014`):
+
+```bash
+python scripts_validate_tag_type_contributor_doc.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash

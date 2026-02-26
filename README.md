@@ -53,6 +53,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/academic_outputs_export_mapping.md`: USE-003 mapping from academic flow to outputs and export formats
 - `docs/author_diagnostic_requirements_mapping.md`: USE-004 mapping from author flow to diagnostic report requirements
 - `docs/community_reader_readonly_dashboard_flow.md`: USE-005 read-only dashboard flow for community reader
+- `docs/contributor_add_tag_type.md`: contributor guide for adding a new tag type safely
 - `docs/reference_feature_overlap.md`: overlap map to the external read-only reference project
 - `docs/error_warning_catalog.md`: error and warning catalog with remediation guidance
 - `AGENTS.md`: repository execution rules for small-task delivery and testing discipline
