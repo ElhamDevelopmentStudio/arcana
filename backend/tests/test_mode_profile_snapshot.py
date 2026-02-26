@@ -113,6 +113,27 @@ def test_integration_run_create_validation_errors_include_field_level_details() 
         )
 
 
+def test_integration_run_create_rejects_segmentation_target_above_255() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Segmentation Target Above 255")
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "audiobook",
+                "max_segment_chars": 256,
+            },
+        )
+        assert run_resp.status_code == 422
+        payload = run_resp.json()
+        assert payload["detail"] == "Run configuration validation failed."
+        assert any(
+            str(field_error.get("field", "")).startswith("max_segment_chars")
+            and "less than or equal to 255" in str(field_error.get("message", ""))
+            for field_error in payload.get("field_errors", [])
+        )
+
+
 def test_unit_run_create_request_rejects_empty_export_formats() -> None:
     with pytest.raises(ValueError, match="export_formats must contain at least one value"):
         RunCreateRequest(mode="audiobook", export_formats=["  "])

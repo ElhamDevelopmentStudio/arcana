@@ -340,6 +340,30 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     const refreshedAliceRow = refreshedCharacterMapPayload.characters.find((entry) => entry.name === 'Alice');
     expect(refreshedAliceRow?.aliases).toEqual(expect.arrayContaining(['Al']));
 
+    const invalidSegmentationTargetResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 256,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(invalidSegmentationTargetResponse.status()).toBe(422);
+    const invalidSegmentationTargetPayload = (await invalidSegmentationTargetResponse.json()) as {
+      detail: string;
+      field_errors?: Array<{ field?: string; message?: string }>;
+    };
+    expect(invalidSegmentationTargetPayload.detail).toBe('Run configuration validation failed.');
+    expect(
+      invalidSegmentationTargetPayload.field_errors?.some(
+        (fieldError) =>
+          String(fieldError.field ?? '').startsWith('max_segment_chars') &&
+          String(fieldError.message ?? '').includes('less than or equal to 255'),
+      ),
+    ).toBeTruthy();
+
     const runBlockedResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
       data: {
         mode: 'author',
