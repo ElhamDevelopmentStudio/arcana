@@ -5,6 +5,8 @@ import hashlib
 import json
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
+from fastapi.exception_handlers import request_validation_exception_handler as fastapi_request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
@@ -326,6 +328,30 @@ def _sanitize_run_config_for_frontend(run_config: object) -> dict[str, object]:
     return sanitized
 
 
+def _build_field_level_validation_errors(exc: RequestValidationError) -> list[dict[str, str]]:
+    field_errors: list[dict[str, str]] = []
+    for issue in exc.errors():
+        location = issue.get("loc", ())
+        if not isinstance(location, (tuple, list)):
+            continue
+
+        normalized_location = [str(part).strip() for part in location if str(part).strip()]
+        if normalized_location and normalized_location[0] in {"body", "query"}:
+            normalized_location = normalized_location[1:]
+        field_name = ".".join(normalized_location) if normalized_location else "request"
+        message = str(issue.get("msg", "Invalid value")).strip() or "Invalid value"
+        code = str(issue.get("type", "value_error")).strip() or "value_error"
+        field_errors.append(
+            {
+                "field": field_name,
+                "message": message,
+                "code": code,
+            }
+        )
+
+    return field_errors
+
+
 _RUN_CONFIG_DIFF_EXCLUDED_FIELDS: frozenset[str] = frozenset(
     {
         "idempotency_key",
@@ -440,6 +466,20 @@ def _has_required_project_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Project role is insufficient for this operation.",
         )
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation_error(request: Request, exc: RequestValidationError):
+    request_path = request.url.path.strip().lower()
+    if request.method.upper() == "POST" and request_path.startswith("/api/projects/") and request_path.endswith("/runs"):
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={
+                "detail": "Run configuration validation failed.",
+                "field_errors": _build_field_level_validation_errors(exc),
+            },
+        )
+    return await fastapi_request_validation_exception_handler(request, exc)
 
 
 @app.middleware("http")
