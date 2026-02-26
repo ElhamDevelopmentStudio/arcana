@@ -9,6 +9,7 @@ PROFILE_CONFIG_KEYS: tuple[str, ...] = (
     "max_segment_chars",
     "llm_enabled",
     "export_formats",
+    "export_chunk_size",
     "provider_name",
     "max_calls_per_day",
     "llm_confidence_threshold",

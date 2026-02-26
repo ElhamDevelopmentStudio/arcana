@@ -2092,6 +2092,67 @@ def test_export_json_supports_resumable_cursor() -> None:
         assert len(resumed["segments"]) == max(len(full_payload["segments"]) - 1, 0)
 
 
+def test_export_json_respects_run_level_export_chunk_size() -> None:
+    source_text = (
+        "Chapter 1\n"
+        "In the beginning there was a lantern and a hallway and a door and another door and a hallway "
+        "that stretched beyond the edge of sight. The moon rose high and the rain whispered across the "
+        "roof while footsteps echoed in distant corridors and voices floated from somewhere else. "
+        "No one answered when called, and yet each room seemed to keep listening, collecting each word "
+        "like a promise. The narrator counted every breath, every shadow. "
+        "The mystery deepened with every step, and the wind carried paper across the tile floor. "
+        "Then came the storm, and all the candles in the corridor flared into life, one after another, "
+        "as if someone had already made their decision. "
+    )
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest Export Chunk Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(source_text.encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "max_segment_chars": 80,
+                "allow_unfinalized_character_map": True,
+                "export_chunk_size": 1,
+            },
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        first_page_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert first_page_resp.status_code == 200
+        first_page = first_page_resp.json()
+
+        assert first_page["cursor"]["export_chunk_size"] == 1
+        assert first_page["cursor"]["returned_segment_count"] == 1
+        assert first_page["cursor"]["has_more_segments"] is True
+        assert first_page["cursor"]["total_segment_count"] > 1
+        assert len(first_page["segments"]) == 1
+
+        resume_from = first_page["cursor"]["next_resume_from"]
+        second_page_resp = client.get(
+            f"/api/projects/{project_id}/exports/{run_id}.json",
+            params={
+                "from_chapter_index": resume_from["chapter_index"],
+                "from_segment_index": resume_from["segment_index"],
+            },
+        )
+        assert second_page_resp.status_code == 200
+        second_page = second_page_resp.json()
+
+        assert second_page["cursor"]["export_chunk_size"] == 1
+        assert second_page["cursor"]["returned_segment_count"] == 1
+        assert len(second_page["segments"]) == 1
+        assert second_page["segments"][0]["segment_id"] != first_page["segments"][0]["segment_id"]
+
+
 def test_export_segment_ids_stable_across_equivalent_reruns() -> None:
     source_text = (
         "Chapter 1\nA lantern glowed in the study as rain traced silver lines across the windows. "

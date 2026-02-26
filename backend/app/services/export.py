@@ -46,6 +46,9 @@ ALLOWED_ACADEMIC_EXPORT_FORMATS: tuple[str, ...] = (
     "time_series_json",
     "graph_json",
 )
+MIN_EXPORT_CHUNK_SIZE = 1
+MAX_EXPORT_CHUNK_SIZE = 10000
+DEFAULT_EXPORT_CHUNK_SIZE = 500
 
 
 def _resolve_allowed_export_formats_from_run_config(run_config: Mapping[str, Any] | None) -> list[str]:
@@ -74,6 +77,24 @@ def _resolve_allowed_export_formats_from_run_config(run_config: Mapping[str, Any
 
 def resolve_run_allowed_export_formats(run: Run) -> list[str]:
     return _resolve_allowed_export_formats_from_run_config(run.config_json)
+
+
+def _resolve_export_chunk_size_from_run_config(run_config: Mapping[str, Any] | None) -> int:
+    if not isinstance(run_config, Mapping):
+        return DEFAULT_EXPORT_CHUNK_SIZE
+
+    raw_chunk_size = run_config.get("export_chunk_size")
+    if isinstance(raw_chunk_size, bool):
+        return DEFAULT_EXPORT_CHUNK_SIZE
+    if isinstance(raw_chunk_size, float) and not raw_chunk_size.is_integer():
+        return DEFAULT_EXPORT_CHUNK_SIZE
+    if not isinstance(raw_chunk_size, (int, float)):
+        return DEFAULT_EXPORT_CHUNK_SIZE
+
+    resolved_chunk_size = int(raw_chunk_size)
+    if resolved_chunk_size < MIN_EXPORT_CHUNK_SIZE or resolved_chunk_size > MAX_EXPORT_CHUNK_SIZE:
+        return DEFAULT_EXPORT_CHUNK_SIZE
+    return resolved_chunk_size
 
 
 def _serialize_datetime_to_utc_iso(value: datetime | None) -> str | None:
@@ -1315,7 +1336,12 @@ def _build_academic_export_manifest(
     }
 
 
-def _build_segment_rows_query(run_id: int, from_chapter_index: int | None, from_segment_index: int | None):
+def _build_segment_rows_query(
+    run_id: int,
+    from_chapter_index: int | None,
+    from_segment_index: int | None,
+    export_chunk_size: int | None = None,
+):
     base_query = (
         select(Segment.segment_json)
         .join(Chapter, Chapter.id == Segment.chapter_id)
@@ -1323,12 +1349,14 @@ def _build_segment_rows_query(run_id: int, from_chapter_index: int | None, from_
         .order_by(Chapter.chapter_index.asc(), Segment.segment_index.asc())
     )
     if from_chapter_index is None and from_segment_index is None:
+        if export_chunk_size is not None:
+            return base_query.limit(export_chunk_size)
         return base_query
 
     if from_chapter_index is None or from_segment_index is None:
         raise ValueError("from_chapter_index and from_segment_index must be provided together")
 
-    return base_query.where(
+    filtered_query = base_query.where(
         or_(
             Chapter.chapter_index > from_chapter_index,
             and_(
@@ -1337,6 +1365,9 @@ def _build_segment_rows_query(run_id: int, from_chapter_index: int | None, from_
             ),
         )
     )
+    if export_chunk_size is not None:
+        return filtered_query.limit(export_chunk_size)
+    return filtered_query
 
 
 def _to_number(value: Any) -> float | None:
@@ -2900,9 +2931,20 @@ def build_run_export_csv(
     run: Run,
     from_chapter_index: int | None = None,
     from_segment_index: int | None = None,
+    apply_export_chunk_size: bool = False,
 ) -> str:
+    export_chunk_size = (
+        _resolve_export_chunk_size_from_run_config(run.config_json)
+        if apply_export_chunk_size
+        else None
+    )
     rows = session.execute(
-        _build_segment_rows_query(run.id, from_chapter_index, from_segment_index)
+        _build_segment_rows_query(
+            run.id,
+            from_chapter_index,
+            from_segment_index,
+            export_chunk_size=export_chunk_size,
+        )
     ).scalars()
 
     segments = [_normalize_segment_for_export(row) for row in list(rows)]
@@ -2967,12 +3009,23 @@ def build_run_export(
     run: Run,
     from_chapter_index: int | None = None,
     from_segment_index: int | None = None,
+    apply_export_chunk_size: bool = False,
 ) -> dict:
     generated_at = run.finished_at or run.started_at or datetime.now(timezone.utc)
     academic_export_formats = _resolve_allowed_export_formats_from_run_config(run.config_json)
+    export_chunk_size = (
+        _resolve_export_chunk_size_from_run_config(run.config_json)
+        if apply_export_chunk_size
+        else None
+    )
     total_segments = session.query(Segment).filter(Segment.run_id == run.id).count()
     rows = session.execute(
-        _build_segment_rows_query(run.id, from_chapter_index, from_segment_index)
+        _build_segment_rows_query(
+            run.id,
+            from_chapter_index,
+            from_segment_index,
+            export_chunk_size=export_chunk_size,
+        )
     ).scalars()
 
     segments = [_normalize_segment_for_export(row) for row in list(rows)]
@@ -3100,6 +3153,7 @@ def build_run_export(
         "cursor": {
             "from_chapter_index": from_chapter_index,
             "from_segment_index": from_segment_index,
+            "export_chunk_size": export_chunk_size,
             "returned_segment_count": len(segments),
             "total_segment_count": total_segments,
             "has_more_segments": len(segments) < total_segments,

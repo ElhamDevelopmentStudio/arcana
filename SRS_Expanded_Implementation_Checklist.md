@@ -460,8 +460,8 @@ Definition of done for each task:
 - [x] [CFG-004] Add web scraping enable/disable config.
 - [x] [CFG-005] Add contradiction-review-required toggle config.
 - [x] [CFG-006] Add internal thought voice policy config.
-- [ ] [CFG-007] Add export formats config.
-- [ ] [CFG-008] Add export chunk-size config.
+- [x] [CFG-007] Add export formats config.
+- [x] [CFG-008] Add export chunk-size config.
 - [ ] [CFG-009] Add deterministic mode toggles config.
 - [ ] [CFG-010] Define config schema versioning field.
 - [ ] [CFG-011] Persist immutable config snapshot per run.

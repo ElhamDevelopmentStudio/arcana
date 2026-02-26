@@ -59,6 +59,32 @@ describe('runRequestSchema', () => {
     expect(parsed.export_formats).toEqual(['csv', 'json', 'time_series_json', 'graph_json']);
   });
 
+  it('accepts export chunk size in valid range', () => {
+    const parsed = runRequestSchema.parse({
+      mode: 'academic',
+      max_segment_chars: 120,
+      llm_enabled: false,
+      provider_name: 'openrouter',
+      max_calls_per_day: 25,
+      export_chunk_size: 250,
+    });
+
+    expect(parsed.export_chunk_size).toBe(250);
+  });
+
+  it('rejects export chunk size outside valid range', () => {
+    expect(() =>
+      runRequestSchema.parse({
+        mode: 'academic',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        export_chunk_size: 0,
+      }),
+    ).toThrow(z.ZodError);
+  });
+
   it('requires export formats when explicitly provided', () => {
     expect(() =>
       runRequestSchema.parse({

@@ -41,11 +41,13 @@ DEFAULT_EXPORT_FORMATS: tuple[str, ...] = (
     "time_series_json",
     "graph_json",
 )
+DEFAULT_EXPORT_CHUNK_SIZE: int = 500
 
 
 class ModeDefaultProfile(TypedDict):
     max_segment_chars: int
     export_formats: list[str]
+    export_chunk_size: int
     llm_enabled: bool
     provider_name: str
     max_calls_per_day: int
@@ -65,6 +67,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
     ProjectMode.AUDIOBOOK.value: {
         "max_segment_chars": 120,
         "export_formats": list(DEFAULT_EXPORT_FORMATS),
+        "export_chunk_size": DEFAULT_EXPORT_CHUNK_SIZE,
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
@@ -82,6 +85,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
     ProjectMode.ACADEMIC.value: {
         "max_segment_chars": 220,
         "export_formats": list(DEFAULT_EXPORT_FORMATS),
+        "export_chunk_size": DEFAULT_EXPORT_CHUNK_SIZE,
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
@@ -99,6 +103,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
     ProjectMode.AUTHOR.value: {
         "max_segment_chars": 160,
         "export_formats": list(DEFAULT_EXPORT_FORMATS),
+        "export_chunk_size": DEFAULT_EXPORT_CHUNK_SIZE,
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
@@ -116,6 +121,7 @@ MODE_DEFAULT_PROFILES: dict[str, ModeDefaultProfile] = {
     ProjectMode.CUSTOM.value: {
         "max_segment_chars": 255,
         "export_formats": list(DEFAULT_EXPORT_FORMATS),
+        "export_chunk_size": DEFAULT_EXPORT_CHUNK_SIZE,
         "llm_enabled": False,
         "provider_name": "openrouter",
         "max_calls_per_day": 25,
