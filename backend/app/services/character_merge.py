@@ -152,6 +152,115 @@ def detect_alias_conflicts(canonical_rows: list[dict[str, Any]]) -> list[dict[st
     return conflicts
 
 
+def build_ambiguous_alias_collision_warnings(
+    canonical_rows: list[dict[str, Any]],
+    source: str = "character",
+) -> list[dict[str, object]]:
+    warnings: list[dict[str, object]] = []
+    for conflict in detect_alias_conflicts(canonical_rows):
+        alias = str(conflict.get("alias") or "").strip()
+        canonical_names = conflict.get("canonical_names")
+        if not alias or not isinstance(canonical_names, list):
+            continue
+
+        warnings.append(
+            {
+                "type": "ambiguous_alias_collision",
+                "level": "warning",
+                "source": source,
+                "alias": alias,
+                "canonical_names": canonical_names,
+                "message": f"Alias '{alias}' is used by multiple canonical names: {', '.join(canonical_names)}.",
+            }
+        )
+    return warnings
+
+
+def build_duplicate_canonical_candidate_warnings(
+    candidate_payloads: list[dict[str, Any]],
+    source: str = "character",
+) -> list[dict[str, object]]:
+    duplicates: dict[str, list[str]] = {}
+
+    for row in candidate_payloads:
+        candidate_name = str(row.get("name") or "").strip()
+        if not candidate_name:
+            continue
+
+        normalized_name = normalize_candidate_key(candidate_name)
+        if not normalized_name:
+            continue
+
+        duplicates.setdefault(normalized_name, []).append(candidate_name)
+
+    warnings: list[dict[str, object]] = []
+    for normalized_name, names in duplicates.items():
+        if len(names) <= 1:
+            continue
+
+        canonical_names = list(dict.fromkeys(names))
+        canonical_label = canonical_names[0]
+        warnings.append(
+            {
+                "type": "duplicate_canonical_candidates",
+                "level": "warning",
+                "source": source,
+                "alias": canonical_label,
+                "canonical_names": canonical_names,
+                "candidate_name": canonical_label,
+                "message": (
+                    f"Duplicate canonical candidate '{canonical_label}' appeared "
+                    f"{len(names)} times from source '{source}'."
+                ),
+            }
+        )
+
+    return warnings
+
+
+def build_low_confidence_extracted_character_warnings(
+    candidate_payloads: list[dict[str, Any]],
+    source: str = "character",
+    confidence_threshold: float = 0.7,
+) -> list[dict[str, object]]:
+    if not candidate_payloads:
+        return []
+
+    warnings: list[dict[str, object]] = []
+    for payload in candidate_payloads:
+        candidate_name = str(payload.get("name") or "").strip()
+        if not candidate_name:
+            continue
+
+        try:
+            confidence = float(payload.get("confidence"))
+        except (TypeError, ValueError):
+            continue
+
+        if confidence >= confidence_threshold:
+            continue
+
+        confidence_rounded = round(confidence, 4)
+        warnings.append(
+            {
+                "type": "low_confidence_character_candidate",
+                "level": "warning",
+                "source": source,
+                "alias": candidate_name,
+                "canonical_names": [],
+                "candidate_name": candidate_name,
+                "confidence": confidence_rounded,
+                "threshold": round(confidence_threshold, 4),
+                "message": (
+                    f"Low-confidence extracted character '{candidate_name}' (confidence "
+                    f"{round(confidence * 100, 2)}%) from source '{source}'."
+                ),
+            }
+        )
+
+    return warnings
+
+
 def resolve_alias_to_canonical_name(
     alias_text: str,
     canonical_rows: list[dict[str, Any]],

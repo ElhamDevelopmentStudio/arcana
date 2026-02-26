@@ -440,12 +440,12 @@ Definition of done for each task:
 - [x] [ER-001] Implement ingestion error class: unsupported format.
 - [x] [ER-002] Implement ingestion error class: encoding failure.
 - [x] [ER-003] Implement ingestion error class: missing chapter content.
-- [ ] [ER-004] Implement normalization warning: ambiguous chapter boundaries.
-- [ ] [ER-005] Implement normalization warning: uncertain quote repair.
-- [ ] [ER-006] Implement normalization warning: suspected duplicate content.
-- [ ] [ER-007] Implement character warning: ambiguous alias collisions.
-- [ ] [ER-008] Implement character warning: low-confidence extracted characters.
-- [ ] [ER-009] Implement character warning: duplicate canonical candidates.
+- [x] [ER-004] Implement normalization warning: ambiguous chapter boundaries.
+- [x] [ER-005] Implement normalization warning: uncertain quote repair.
+- [x] [ER-006] Implement normalization warning: suspected duplicate content.
+- [x] [ER-007] Implement character warning: ambiguous alias collisions.
+- [x] [ER-008] Implement character warning: low-confidence extracted characters.
+- [x] [ER-009] Implement character warning: duplicate canonical candidates.
 - [ ] [ER-010] Implement gender warning: manual vs inferred contradiction.
 - [ ] [ER-011] Implement gender warning: insufficient inference evidence.
 - [ ] [ER-012] Implement tagging warning: low-confidence speaker attribution.

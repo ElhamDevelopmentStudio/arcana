@@ -576,3 +576,197 @@ def test_integration_character_merge_candidates_endpoint_returns_canonical_merge
         assert len(proposed) == 2
         proposed_names = {entry["name"] for entry in proposed}
         assert proposed_names == {"Miran", "Lio"}
+
+
+def test_integration_character_merge_candidates_reports_ambiguous_alias_collision_warning() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Merge Candidate Collision Warning")
+
+        existing_import = client.post(
+            f"/api/projects/{project_id}/characters/import",
+            files={
+                "file": (
+                    "characters.json",
+                    io.BytesIO(
+                        b'{'
+                        b'"Kai":{"verbalized_form":"Kai","gender":"male","aliases":["Captain","K."],"source":"manual","confidence":1.0},'
+                        b'"Lio":{"verbalized_form":"Lio","gender":"female","aliases":["captain","A."],"source":"manual","confidence":1.0}'
+                        b'}'
+                    ),
+                    "application/json",
+                )
+            },
+        )
+        assert existing_import.status_code == 200
+
+        merged_resp = client.post(
+            f"/api/projects/{project_id}/characters/merged-candidates",
+            json={"include_auto": False},
+        )
+        assert merged_resp.status_code == 200
+
+        merged_payload = merged_resp.json()
+        assert merged_payload["status"] == "complete"
+        warnings = merged_payload.get("warnings", [])
+        assert isinstance(warnings, list)
+        assert len(warnings) == 1
+
+        warning = warnings[0]
+        assert warning["type"] == "ambiguous_alias_collision"
+        assert warning["source"] == "characters.merged-candidates"
+        assert warning["alias"].lower() == "captain"
+        assert set(warning["canonical_names"]) == {"Kai", "Lio"}
+
+
+def test_integration_character_auto_extraction_reports_low_confidence_warning(monkeypatch) -> None:
+    def _fake_extract_character_candidates_from_texts(
+        _: object,
+        known_names: set[str] | None = None,  # noqa: ARG001
+    ) -> list[CandidateEvidence]:
+        return [
+            CandidateEvidence(
+                name="Mira",
+                confidence=0.58,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="dialogue_attribution",
+                        chapter_index=1,
+                        span_start=0,
+                        span_end=4,
+                        excerpt="Mira said.",
+                        weight=0.6,
+                    )
+                ],
+            ),
+            CandidateEvidence(
+                name="Jalen",
+                confidence=0.82,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="dialogue_attribution",
+                        chapter_index=1,
+                        span_start=20,
+                        span_end=25,
+                        excerpt="Jalen shouted.",
+                        weight=1.0,
+                    )
+                ],
+            ),
+        ]
+
+    monkeypatch.setattr(app_main, "extract_character_candidates_from_texts", _fake_extract_character_candidates_from_texts)
+
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Auto Extract Low Confidence Warning")
+
+        extract_resp = client.post(f"/api/projects/{project_id}/characters/extract")
+        assert extract_resp.status_code == 200
+        payload = extract_resp.json()
+        warnings = payload.get("warnings", [])
+        assert any(
+            item["type"] == "low_confidence_character_candidate"
+            and item["alias"] == "Mira"
+            and item["source"] == "characters.extract"
+            for item in warnings
+        )
+
+
+def test_integration_character_auto_extraction_reports_duplicate_canonical_candidates_warning(monkeypatch) -> None:
+    def _fake_extract_character_candidates_from_texts(
+        _: object,
+        known_names: set[str] | None = None,  # noqa: ARG001
+    ) -> list[CandidateEvidence]:
+        return [
+            CandidateEvidence(
+                name="Mira",
+                confidence=0.91,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="dialogue_attribution",
+                        chapter_index=1,
+                        span_start=0,
+                        span_end=4,
+                        excerpt="Mira said.",
+                        weight=1.0,
+                    )
+                ],
+            ),
+            CandidateEvidence(
+                name="mira",
+                confidence=0.82,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="narrative_attribution",
+                        chapter_index=2,
+                        span_start=20,
+                        span_end=25,
+                        excerpt="Mira appeared.",
+                        weight=0.8,
+                    )
+                ],
+            ),
+        ]
+
+    monkeypatch.setattr(app_main, "extract_character_candidates_from_texts", _fake_extract_character_candidates_from_texts)
+
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Auto Extract Duplicate Canonical Warning")
+
+        extract_resp = client.post(f"/api/projects/{project_id}/characters/extract")
+        assert extract_resp.status_code == 200
+        payload = extract_resp.json()
+        warnings = payload.get("warnings", [])
+
+        duplicate_warnings = [
+            item
+            for item in warnings
+            if item["type"] == "duplicate_canonical_candidates"
+            and item["source"] == "characters.extract"
+        ]
+        assert len(duplicate_warnings) == 1
+        warning = duplicate_warnings[0]
+        assert warning["alias"] == "Mira"
+        assert set(warning["canonical_names"]) == {"Mira", "mira"}
+        assert warning["message"].startswith("Duplicate canonical candidate 'Mira' appeared")
+
+
+def test_integration_character_merge_candidates_reports_low_confidence_warning(monkeypatch) -> None:
+    def _fake_extract_character_candidates_from_texts(
+        _: object,
+        known_names: set[str] | None = None,  # noqa: ARG001
+    ) -> list[CandidateEvidence]:
+        return [
+            CandidateEvidence(
+                name="Mira",
+                confidence=0.49,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="narrative_attribution",
+                        chapter_index=1,
+                        span_start=2,
+                        span_end=6,
+                        excerpt="Looked and smiled.",
+                        weight=0.6,
+                    )
+                ],
+            ),
+        ]
+
+    monkeypatch.setattr(app_main, "extract_character_candidates_from_texts", _fake_extract_character_candidates_from_texts)
+
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Merged Candidates Low Confidence Warning")
+
+        merged_resp = client.post(
+            f"/api/projects/{project_id}/characters/merged-candidates",
+            json={"include_auto": True},
+        )
+        assert merged_resp.status_code == 200
+        merged_payload = merged_resp.json()
+        warnings = merged_payload.get("warnings", [])
+        assert any(
+            item["type"] == "low_confidence_character_candidate"
+            and item["alias"] == "Mira"
+            and item["source"] == "characters.merged-candidates"
+            for item in warnings
+        )
