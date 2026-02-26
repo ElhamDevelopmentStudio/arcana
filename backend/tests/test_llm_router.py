@@ -577,3 +577,160 @@ def test_response_parser_marks_rate_limit_from_dispatch() -> None:
     assert response.error_code == "rate_limit"
     assert response.rate_limit_reset_at is not None
     assert int(response.rate_limit_reset_at.timestamp()) > 0
+
+
+def test_response_parser_classifies_provider_rate_limit_from_status_code() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-rate-limit-code",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-rate-limit-code",
+        ),
+        provider_name="openrouter",
+        model_identifier="openai/gpt-4o-mini",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=429,
+            headers={"retry-after": "1"},
+            body={},
+        ),
+    )
+
+    assert response.error_code == "rate_limit"
+
+
+def test_response_parser_classifies_provider_quota_from_http_and_body() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-quota",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-quota",
+        ),
+        provider_name="groq",
+        model_identifier="llama",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=403,
+            headers={},
+            body={"error": {"message": "quota has been exceeded for this month"}},
+        ),
+    )
+
+    assert response.error_code == "quota"
+
+
+def test_response_parser_classifies_timeout_from_status_or_transport_error() -> None:
+    parser = llm_router.LLMResponseParser()
+    transport_timeout_response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-timeout-transport",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-timeout-transport",
+        ),
+        provider_name="groq",
+        model_identifier="llama",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=None,
+            headers={},
+            body=None,
+            transport_error="timeout",
+        ),
+    )
+
+    http_timeout_response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-timeout-http",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-timeout-http",
+        ),
+        provider_name="groq",
+        model_identifier="llama",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=408,
+            headers={},
+            body={},
+        ),
+    )
+
+    assert transport_timeout_response.error_code == "timeout"
+    assert http_timeout_response.error_code == "timeout"
+
+
+def test_response_parser_classifies_service_unavailable() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-service-unavailable",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-service-unavailable",
+        ),
+        provider_name="openrouter",
+        model_identifier="openai/gpt-4o-mini",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=503,
+            headers={},
+            body={},
+        ),
+    )
+
+    assert response.error_code == "service_unavailable"
+
+
+def test_response_parser_classifies_other_errors() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-other",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="test input",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-other",
+        ),
+        provider_name="siliconflow",
+        model_identifier="deepseek-ai/DeepSeek-V3",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=418,
+            headers={},
+            body={},
+        ),
+    )
+
+    assert response.error_code == "other"
+
+
+def test_dispatcher_maps_timeout_to_transport_error(monkeypatch: object) -> None:
+    class DummyTimeoutResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_post(*_args: object, **_kwargs: object) -> object:
+        raise llm_router.requests.Timeout()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    dispatch_response = llm_router.LLMDispatcher().dispatch(
+        request=llm_router.LLMDispatchRequest(
+            endpoint="https://api.example.com/chat/completions",
+            payload={},
+            headers={},
+        )
+    )
+
+    assert dispatch_response.status_code is None
+    assert dispatch_response.transport_error == "timeout"
