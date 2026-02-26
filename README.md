@@ -140,6 +140,16 @@ Deterministic run model pinning:
 - If a value is provided, it is pinned in that run config and used for primary provider requests during that run.
 - The pinned model value is included in `run.config` and in LLM call logs (`model_identifier`).
 
+Deterministic seed + randomization metadata:
+
+- `POST /api/projects/{project_id}/runs` also accepts:
+  - `deterministic_seed` (integer, defaults to `0` when omitted in deterministic mode)
+  - `randomization_config` (an object; defaults to a stable preset when omitted)
+- In deterministic mode, these values are persisted in `run.config` as:
+  - `deterministic_seed`
+  - `randomization_config` (defaults: `{"seed": <deterministic_seed>, "strategy": "stable", "shuffle_enabled": false}`)
+- Outside deterministic mode, these fields are not persisted to avoid coupling seed-sensitive settings into non-replay runs.
+
 ### Frontend
 
 ```bash

@@ -327,7 +327,7 @@ Definition of done for each task:
 - [x] [DET-001] Add deterministic mode flag to run config.
 - [x] [DET-002] Force deterministic processing order across all stages.
 - [x] [DET-003] Pin model identifier/version in deterministic runs.
-- [ ] [DET-004] Persist deterministic seed and randomization config.
+- [x] [DET-004] Persist deterministic seed and randomization config.
 - [ ] [DET-005] Add repeat-run equivalence tests for deterministic mode.
 - [ ] [DET-006] Emit explicit warning when provider nondeterminism may break exact replay.
 
