@@ -38,6 +38,39 @@ class ProjectResponse(BaseModel):
     created_at: datetime
 
 
+ALLOWED_INITIAL_INGESTION_SOURCES = frozenset({"txt", "markdown", "epub", "chapters-dir"})
+
+
+class ProjectIngestionSourceAttachRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=40)
+    source_filename: str | None = Field(default=None, max_length=255)
+
+    @field_validator("source")
+    @classmethod
+    def normalize_source(cls, value: str) -> str:
+        normalized = str(value).strip().lower()
+        if normalized not in ALLOWED_INITIAL_INGESTION_SOURCES:
+            raise ValueError("source must be one of: txt, markdown, epub, chapters-dir")
+        return normalized
+
+    @field_validator("source_filename")
+    @classmethod
+    def normalize_source_filename(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        return normalized
+
+
+class ProjectIngestionSourceAttachResponse(BaseModel):
+    project_id: int
+    source: str
+    source_filename: str | None = None
+    attached_at: datetime
+
+
 class ProjectAccessGrantRequest(BaseModel):
     principal_id: str = Field(min_length=1, max_length=255)
     principal_type: str = Field(default="user", min_length=1, max_length=40)

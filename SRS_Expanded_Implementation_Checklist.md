@@ -92,7 +92,7 @@ Definition of done for each task:
 - [x] [ING-016] Add tests for TXT/dir/md/encoding/incremental append paths.
 - [x] [ING-017] Add explicit project lifecycle state model (`draft`, `ingested`, `configured`, `running`, `completed`, `failed`, `archived`) with transition guards.
 - [x] [ING-018] Add backend endpoint to create a draft project without uploading corpus content.
-- [ ] [ING-019] Add backend endpoint to attach first ingestion source to an existing draft project.
+- [x] [ING-019] Add backend endpoint to attach first ingestion source to an existing draft project.
 - [ ] [ING-020] Add backend endpoint to update project metadata (`title`, `description`, `tags`) without re-ingestion.
 - [ ] [ING-021] Add integration tests for draft -> ingest -> metadata edit lifecycle continuity on one `project_id`.
 

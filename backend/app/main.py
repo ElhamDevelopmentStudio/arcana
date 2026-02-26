@@ -80,6 +80,8 @@ from app.schemas import (
     ALLOWED_PROJECT_ACCESS_PRINCIPAL_TYPES,
     ALLOWED_PROJECT_ACCESS_ROLES,
     ProjectResponse,
+    ProjectIngestionSourceAttachRequest,
+    ProjectIngestionSourceAttachResponse,
     ProjectLLMSettingsRequest,
     ProjectLLMSettingsResponse,
     LLMProviderStatus,
@@ -3157,6 +3159,56 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
 @app.post("/api/projects/drafts", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project_draft(payload: ProjectCreate, session: Session = Depends(get_session)) -> ProjectResponse:
     return create_project(payload=payload, session=session)
+
+
+@app.post(
+    "/api/projects/{project_id}/ingest/source",
+    response_model=ProjectIngestionSourceAttachResponse,
+    status_code=status.HTTP_200_OK,
+)
+def attach_initial_ingestion_source(
+    project_id: int,
+    payload: ProjectIngestionSourceAttachRequest,
+    session: Session = Depends(get_session),
+) -> ProjectIngestionSourceAttachResponse:
+    project = _get_project_or_404(session, project_id)
+    if project.lifecycle_state != PROJECT_LIFECYCLE_DRAFT:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="First ingestion source can only be attached while project is in draft state.",
+        )
+
+    chapter_count = session.query(Chapter).filter(Chapter.project_id == project.id).count()
+    if chapter_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="First ingestion source cannot be attached after ingestion has started.",
+        )
+
+    log_json = dict(project.ingestion_log_json or {})
+    existing_first_source = str(log_json.get("first_source", "")).strip().lower()
+    if existing_first_source:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"First ingestion source already attached: {existing_first_source}",
+        )
+
+    attached_at = datetime.now(timezone.utc)
+    log_json["first_source"] = payload.source
+    log_json["first_source_attached_at"] = attached_at.isoformat()
+    if payload.source_filename is not None:
+        log_json["first_source_filename"] = payload.source_filename
+    project.ingestion_log_json = log_json
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+
+    return ProjectIngestionSourceAttachResponse(
+        project_id=project.id,
+        source=payload.source,
+        source_filename=payload.source_filename,
+        attached_at=attached_at,
+    )
 
 
 @app.get(
