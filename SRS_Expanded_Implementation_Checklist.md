@@ -412,7 +412,7 @@ Definition of done for each task:
 - [x] [NFR4-003] Add filtering by confidence thresholds in UI.
 
 ### NFR-5 Security and Privacy (SaaS)
-- [ ] [NFR5-001] Implement project-level access control model.
+- [x] [NFR5-001] Implement project-level access control model.
 - [ ] [NFR5-002] Add project data isolation checks in data access layer.
 - [ ] [NFR5-003] Encrypt sensitive uploaded text at rest in SaaS mode.
 - [ ] [NFR5-004] Add least-privilege service role matrix for storage and DB.

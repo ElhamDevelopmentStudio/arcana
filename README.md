@@ -19,6 +19,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Voice resolution
 - JSON export
 - Project-level mode persistence (`projects.selected_mode`) with per-run mode snapshots
+- Project-level access-control model scaffold (`project_accesses`) with grant endpoints
 - Mode catalog endpoint for UI mode selection bootstrap (`GET /api/modes`)
 - Minimal LLM router scaffold + quota tracking
 - React UI with route-based structure (`router/main.tsx`, `router/auth.tsx`, `router/index.tsx`)
@@ -157,6 +158,21 @@ Behavior and precedence:
 
 ### LLM cache invalidation policy
 
+### Project access control model (SaaS groundwork)
+
+Project grants are now persisted in `project_accesses` with strict role and principal typing to support future per-project security enforcement:
+
+- `GET /api/projects/{project_id}/access` → list active grants
+- `POST /api/projects/{project_id}/access` → add or update principal access
+
+Request schema:
+
+- `principal_id` (string, required)
+- `principal_type` (one of `user|service|system`, defaults to `user`)
+- `role` (one of `owner|editor|viewer`, defaults to `viewer`)
+
+This establishes the data model for `NFR5-001` and enables `NFR5-002` (project isolation checks) to be layered without changing project semantics later.
+
 LLM responses are cached in the `llm_cache` table and reused only when all cache-key dimensions match exactly:
 
 - hashed input text (`_build_llm_cache_key`)
@@ -193,6 +209,22 @@ Pipeline chunking for long corpora:
 - Segment payloads include stable `chunk_index` and `chunk_count`.
 - Segments are prepared per-chunk in parallel and then flushed in deterministic chapter/segment order to maintain stable ordering.
 - Chunks group full chapters only; intra-chapter segmentation remains in segmenter stage.
+
+Incremental recomputation for appended chapters:
+
+- `POST /api/projects/{project_id}/runs` accepts `incremental_recompute` (boolean).
+- When `incremental_recompute` is true, the pipeline:
+  - requires the current run config to match the latest completed run config for the same project,
+  - requires chapter content to be unchanged for all prior chapters,
+  - requires the latest completed run to have a contiguous processed chapter prefix.
+- If those conditions hold, previously computed outputs for unchanged chapters are copied forward:
+  - existing `segments.segment_json` rows are duplicated into the new run,
+  - existing `sub_segment_tags` rows are duplicated into the new run and remapped to the copied segment IDs.
+- Only chapters appended after the reused prefix are rebuilt.
+- The run config includes:
+  - `incremental_recompute.enabled` (boolean),
+  - `incremental_recompute.reused_chapter_count` (count of chapters preserved from the prior run).
+- For this feature to engage, the latest completed run must include all prior chapters in a contiguous sequence starting at chapter `1`.
 
 Run model metadata persistence:
 

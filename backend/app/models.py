@@ -39,6 +39,11 @@ class Project(Base):
     )
     characters: Mapped[list["Character"]] = relationship("Character", back_populates="project")
     runs: Mapped[list["Run"]] = relationship("Run", back_populates="project")
+    run_configuration_snapshots: Mapped[list["RunConfigurationSnapshot"]] = relationship(
+        "RunConfigurationSnapshot",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
     pronunciation_dictionary_entries: Mapped[list["PronunciationDictionary"]] = relationship(
         "PronunciationDictionary",
         back_populates="project",
@@ -53,11 +58,51 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    voice_map_snapshots: Mapped[list["VoiceMapSnapshot"]] = relationship(
+        "VoiceMapSnapshot",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    pronunciation_dictionary_snapshots: Mapped[list["PronunciationDictionarySnapshot"]] = relationship(
+        "PronunciationDictionarySnapshot",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    time_series_snapshots: Mapped[list["TimeSeriesSnapshot"]] = relationship(
+        "TimeSeriesSnapshot",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
     comparison_workspace_runs: Mapped[list["ComparisonWorkspaceRun"]] = relationship(
         "ComparisonWorkspaceRun",
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    access_controls: Mapped[list["ProjectAccess"]] = relationship(
+        "ProjectAccess",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
+
+class ProjectAccess(Base):
+    __tablename__ = "project_accesses"
+    __table_args__ = (
+        UniqueConstraint("project_id", "principal_type", "principal_id", name="uq_project_access_principal"),
+        CheckConstraint("role IN ('owner', 'editor', 'viewer')", name="ck_project_access_role"),
+        CheckConstraint("principal_type IN ('user', 'service', 'system')", name="ck_project_access_principal_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    principal_type: Mapped[str] = mapped_column(String(40), nullable=False, default="user")
+    principal_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(40), nullable=False, default="viewer")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="access_controls")
 
 
 class Chapter(Base):
@@ -170,6 +215,9 @@ class Run(Base):
     deterministic_seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     deterministic_model_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
     deterministic_randomization_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    llm_provider_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    llm_model_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    llm_model_version: Mapped[str | None] = mapped_column(String(120), nullable=True)
     config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
@@ -182,8 +230,33 @@ class Run(Base):
         back_populates="run",
         uselist=False,
     )
+    run_configuration_snapshot: Mapped["RunConfigurationSnapshot | None"] = relationship(
+        "RunConfigurationSnapshot",
+        back_populates="run",
+        uselist=False,
+    )
+    voice_map_snapshot: Mapped["VoiceMapSnapshot | None"] = relationship(
+        "VoiceMapSnapshot",
+        back_populates="run",
+        uselist=False,
+    )
+    pronunciation_dictionary_snapshot: Mapped["PronunciationDictionarySnapshot | None"] = relationship(
+        "PronunciationDictionarySnapshot",
+        back_populates="run",
+        uselist=False,
+    )
+    time_series_snapshot: Mapped["TimeSeriesSnapshot | None"] = relationship(
+        "TimeSeriesSnapshot",
+        back_populates="run",
+        uselist=False,
+    )
     comparison_workspace_runs: Mapped[list["ComparisonWorkspaceRun"]] = relationship(
         "ComparisonWorkspaceRun",
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+    changelog_entries: Mapped[list["RunChangelogEntry"]] = relationship(
+        "RunChangelogEntry",
         back_populates="run",
         cascade="all, delete-orphan",
     )
@@ -237,12 +310,141 @@ class CharacterMapSnapshot(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     source: Mapped[str] = mapped_column(String(80), nullable=False)
     snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    snapshot_json_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     project: Mapped[Project] = relationship("Project", back_populates="character_map_snapshots")
     run: Mapped["Run | None"] = relationship("Run", back_populates="character_map_snapshot")
+
+
+class RunConfigurationSnapshot(Base):
+    __tablename__ = "run_configuration_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "version",
+            name="uq_project_run_configuration_snapshot_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    snapshot_json_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="run_configuration_snapshots")
+    run: Mapped["Run"] = relationship("Run", back_populates="run_configuration_snapshot")
+
+
+class PronunciationDictionarySnapshot(Base):
+    __tablename__ = "pronunciation_dictionary_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "version",
+            name="uq_project_pronunciation_dictionary_snapshot_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    snapshot_json_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="pronunciation_dictionary_snapshots")
+    run: Mapped["Run | None"] = relationship("Run", back_populates="pronunciation_dictionary_snapshot")
+
+
+class VoiceMapSnapshot(Base):
+    __tablename__ = "voice_map_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "version",
+            name="uq_project_voice_map_snapshot_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    snapshot_json_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="voice_map_snapshots")
+    run: Mapped["Run | None"] = relationship("Run", back_populates="voice_map_snapshot")
+
+
+class TimeSeriesSnapshot(Base):
+    __tablename__ = "time_series_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "version",
+            name="uq_project_time_series_snapshot_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    snapshot_json_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="time_series_snapshots")
+    run: Mapped["Run | None"] = relationship("Run", back_populates="time_series_snapshot")
 
 
 class ComparisonWorkspace(Base):
@@ -373,6 +575,21 @@ class LLMCall(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
+
+
+class RunChangelogEntry(Base):
+    __tablename__ = "run_changelog_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    run: Mapped[Run] = relationship("Run", back_populates="changelog_entries")
 
 
 class LLMCache(Base):
