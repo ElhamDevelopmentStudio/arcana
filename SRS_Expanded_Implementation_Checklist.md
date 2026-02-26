@@ -94,7 +94,7 @@ Definition of done for each task:
 - [x] [ING-018] Add backend endpoint to create a draft project without uploading corpus content.
 - [x] [ING-019] Add backend endpoint to attach first ingestion source to an existing draft project.
 - [x] [ING-020] Add backend endpoint to update project metadata (`title`, `description`, `tags`) without re-ingestion.
-- [ ] [ING-021] Add integration tests for draft -> ingest -> metadata edit lifecycle continuity on one `project_id`.
+- [x] [ING-021] Add integration tests for draft -> ingest -> metadata edit lifecycle continuity on one `project_id`.
 
 ## 4.2 Deep Normalization (Ref: SRS.md §4.2)
 - [x] [NORM-001] Implement chapter detection from file boundaries.
