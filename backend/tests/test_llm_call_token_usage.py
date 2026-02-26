@@ -967,6 +967,115 @@ def test_pipeline_probe_uses_cache_on_exact_input_and_skips_provider_call(monkey
         session.close()
 
 
+def test_pipeline_probe_near_miss_text_does_not_use_cache(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="LLM Cache Near-Miss Project", configuration_snapshot_id="snapshot-cache-002")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        calls: list[str | None] = []
+
+        class _ProbeLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                self.openrouter_base_url = openrouter_base_url
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                calls.append(api_key)
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="near-miss-check",
+                    parsed_output={"sentiment": "positive", "confidence": 0.96},
+                    confidence=None,
+                    token_usage_estimate=256,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.example.com", "gpt-4-mini", "openrouter-key-a"),
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_priority_order",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_api_keys",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(pipeline, "LLMRouter", _ProbeLLMRouter)
+
+        run_config = {
+            "provider_name": "openrouter",
+            "max_calls_per_day": 10,
+            "llm_enabled": True,
+        }
+        near_match_a = "A small near miss should still be different."
+        near_match_b = "A small near miss should still be different"
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config=run_config,
+            input_text=near_match_a,
+        )
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config=run_config,
+            input_text=near_match_b,
+        )
+
+        assert calls == ["openrouter-key-a", "openrouter-key-a"]
+
+        llm_calls = session.query(LLMCall).filter(LLMCall.run_id == run.id).order_by(LLMCall.id.asc()).all()
+        assert len(llm_calls) == 2
+        assert llm_calls[0].is_cache_hit is False
+        assert llm_calls[1].is_cache_hit is False
+
+        a_hash = pipeline._build_llm_cache_key(near_match_a)
+        b_hash = pipeline._build_llm_cache_key(near_match_b)
+        assert a_hash != b_hash
+
+        cache_rows = (
+            session.query(LLMCache)
+            .filter(
+                LLMCache.configuration_snapshot_id == project.configuration_snapshot_id,
+                LLMCache.task_type == LLMTaskType.SENTIMENT_PROBE.value,
+                LLMCache.model_identifier == "gpt-4-mini",
+            )
+            .all()
+        )
+        assert len(cache_rows) == 2
+        persisted_hashes = {row.input_text_hash for row in cache_rows}
+        assert {a_hash, b_hash} == persisted_hashes
+    finally:
+        session.close()
+
+
 def test_run_detail_reports_cache_hit_and_miss_metrics_per_task_type(monkeypatch: object) -> None:
     session = _new_session()
     try:

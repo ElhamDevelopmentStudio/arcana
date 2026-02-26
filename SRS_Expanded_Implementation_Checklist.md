@@ -321,7 +321,7 @@ Definition of done for each task:
 - [X] [CACHE-005] Return cached result without provider call on exact key hit.
 - [X] [CACHE-006] Track cache hit/miss metrics per task type.
 - [X] [CACHE-007] Add cache invalidation policy docs.
-- [ ] [CACHE-008] Add tests for exact hit and near-miss behavior.
+- [X] [CACHE-008] Add tests for exact hit and near-miss behavior.
 
 ## 4.12.7 Deterministic Mode (Ref: SRS.md §4.12.7)
 - [ ] [DET-001] Add deterministic mode flag to run config.
