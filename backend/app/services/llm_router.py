@@ -20,6 +20,18 @@ _DEFAULT_ERROR_RETRY_ATTEMPTS: dict[str, int] = {
 }
 _DEFAULT_FAILOVER_ERROR_CODES = {"rate_limit", "quota", "timeout", "service_unavailable", "other"}
 _UNSUPPORTED_PROVIDER_ERROR_CODE = "unsupported_provider"
+_INVALID_REQUEST_ERROR_CODE = "invalid_request"
+LLM_STANDARD_RESPONSE_FIELDS: tuple[str, ...] = (
+    "provider_used",
+    "model_identifier",
+    "raw_output",
+    "parsed_output",
+    "confidence",
+    "token_usage_estimate",
+    "success_flag",
+    "error_code",
+    "timestamp",
+)
 
 
 @dataclass(frozen=True)
@@ -283,6 +295,9 @@ class LLMResponse:
     rate_limit_reset_at: datetime | None
     timestamp: str
 
+    def to_standardized_payload(self) -> dict[str, Any]:
+        return {field: getattr(self, field) for field in LLM_STANDARD_RESPONSE_FIELDS}
+
 
 @dataclass(frozen=True)
 class LLMProviderConfig:
@@ -317,6 +332,50 @@ class LLMRouter:
         model_identifier: str,
         api_key: str | None,
     ) -> LLMResponse:
+        request_validation_error = _validate_llm_request(request=request)
+        if request_validation_error is not None:
+            return LLMResponse(
+                provider_used=provider_name,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_INVALID_REQUEST_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        provider_name = _normalize_provider_name(provider_name)
+        if not provider_name:
+            return LLMResponse(
+                provider_used=provider_name,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_INVALID_REQUEST_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if not model_identifier or not str(model_identifier).strip():
+            return LLMResponse(
+                provider_used=provider_name,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_INVALID_REQUEST_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
         try:
             task_type = normalize_task_type(request.task_type)
         except LLMTaskTypeError:
@@ -347,6 +406,26 @@ class LLMRouter:
         request: LLMRequest,
         provider_configs: tuple[LLMProviderConfig, ...],
     ) -> LLMResponse:
+        request_validation_error = _validate_llm_request(request=request)
+        if request_validation_error is not None:
+            requested_provider = ""
+            requested_model = ""
+            if provider_configs:
+                requested_provider = provider_configs[0].provider_name
+                requested_model = provider_configs[0].model_identifier
+            return LLMResponse(
+                provider_used=requested_provider,
+                model_identifier=requested_model,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_INVALID_REQUEST_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
         if not provider_configs:
             return LLMResponse(
                 provider_used="",
@@ -379,6 +458,48 @@ class LLMRouter:
 
         final_response: LLMResponse | None = None
         for provider_config in provider_configs:
+            if not _normalize_provider_name(provider_config.provider_name):
+                return LLMResponse(
+                    provider_used=provider_config.provider_name,
+                    model_identifier=provider_config.model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code=_INVALID_REQUEST_ERROR_CODE,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+            if not provider_config.base_url or not str(provider_config.base_url).strip():
+                return LLMResponse(
+                    provider_used=provider_config.provider_name,
+                    model_identifier=provider_config.model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code=_INVALID_REQUEST_ERROR_CODE,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+            if not provider_config.model_identifier or not str(provider_config.model_identifier).strip():
+                return LLMResponse(
+                    provider_used=provider_config.provider_name,
+                    model_identifier=provider_config.model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code=_INVALID_REQUEST_ERROR_CODE,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
             response = self._call_provider_with_retry(
                 request=request,
                 provider_name=provider_config.provider_name,
@@ -534,6 +655,26 @@ class LLMRouter:
         )
         for hook in self.usage_metric_hooks:
             hook(metric)
+
+
+def _validate_llm_request(request: LLMRequest) -> str | None:
+    if not str(request.request_id).strip():
+        return "request_id must be provided"
+    if not isinstance(request.project_id, int) or request.project_id < 0:
+        return "project_id must be a non-negative integer"
+    if not isinstance(request.task_type, str) or not request.task_type.strip():
+        return "task_type must be provided"
+    if not isinstance(request.input_text, str) or not request.input_text.strip():
+        return "input_text must be provided"
+    if not isinstance(request.expected_schema, dict):
+        return "expected_schema must be a dictionary"
+    if not isinstance(request.configuration_snapshot_id, str) or not request.configuration_snapshot_id.strip():
+        return "configuration_snapshot_id must be provided"
+    if request.max_tokens is not None and (not isinstance(request.max_tokens, int) or request.max_tokens <= 0):
+        return "max_tokens must be a positive integer"
+    if request.max_tokens is not None and request.max_tokens > 1_000_000:
+        return "max_tokens exceeds allowed maximum"
+    return None
 
 
 def _coerce_json_response(response: object) -> dict[str, Any] | None:
