@@ -834,3 +834,40 @@ export function useRerunRunMutation(projectId: number | null, runId: number | nu
     },
   );
 }
+
+export function useRecoverRunMutation(projectId: number | null, runId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  const publishMutationEvent = useMutationEventPublisher();
+  return useSWRMutation(
+    projectId !== null && runId !== null ? ['recover-run', projectId, runId] : null,
+    async () => {
+      if (projectId === null || runId === null) {
+        throw new Error('Project and run are required before recovering a run.');
+      }
+      try {
+        const run = await nipeApiClient.recoverRun(projectId, runId);
+        publishMutationEvent({
+          level: 'success',
+          title: 'Run recovered',
+          message: `Recovered run #${run.run_id}.`,
+        });
+        return run;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to recover run.';
+        publishMutationEvent({
+          level: 'error',
+          title: 'Run recovery failed',
+          message,
+          recoveryLabel: 'Reload app',
+          onRecovery: () => window.location.reload(),
+        });
+        throw error;
+      }
+    },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('recover_run', { projectId });
+      },
+    },
+  );
+}

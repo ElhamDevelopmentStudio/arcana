@@ -48,6 +48,19 @@ describe('workspace mutation invalidation map', () => {
     expect((projectRunMatcher as (key: unknown) => boolean)(['project-control-panel-summary'])).toBe(false);
   });
 
+  it('adds project-scoped run-data invalidation for recover and rerun mutations', () => {
+    const rerunTargets = resolveWorkspaceMutationInvalidationTargets('rerun_run', { projectId: 21 });
+    const recoverTargets = resolveWorkspaceMutationInvalidationTargets('recover_run', { projectId: 21 });
+
+    const rerunMatcher = rerunTargets[2];
+    const recoverMatcher = recoverTargets[2];
+
+    expect(typeof rerunMatcher).toBe('function');
+    expect(typeof recoverMatcher).toBe('function');
+    expect((rerunMatcher as (key: unknown) => boolean)(['run-detail', 21, 9])).toBe(true);
+    expect((recoverMatcher as (key: unknown) => boolean)(['run-detail', 21, 9])).toBe(true);
+  });
+
   it('invalidates project llm settings key on llm settings mutation', () => {
     const targets = resolveWorkspaceMutationInvalidationTargets('update_project_llm_settings', { projectId: 21 });
 
