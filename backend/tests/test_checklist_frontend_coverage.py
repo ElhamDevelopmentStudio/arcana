@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.checklist_frontend_coverage_validation import (
     REQUIRED_ACCEPTANCE_NOTES_RULE,
+    REQUIRED_DEFERRED_FE_TASK_RULE,
     extract_frontend_task_ids,
     validate_checklist_frontend_coverage,
 )
@@ -33,6 +34,11 @@ def test_integration_checklist_contains_parallel_frontend_and_playwright_coverag
 def test_integration_checklist_contains_feature_slice_acceptance_notes_policy() -> None:
     markdown = CHECKLIST_PATH.read_text(encoding="utf-8")
     assert REQUIRED_ACCEPTANCE_NOTES_RULE in markdown
+
+
+def test_integration_checklist_contains_deferred_fe_task_id_policy() -> None:
+    markdown = CHECKLIST_PATH.read_text(encoding="utf-8")
+    assert REQUIRED_DEFERRED_FE_TASK_RULE in markdown
 
 
 def test_e2e_checklist_frontend_coverage_validation_cli_succeeds() -> None:
