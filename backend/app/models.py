@@ -100,6 +100,11 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    activity_events: Mapped[list["ProjectActivityEvent"]] = relationship(
+        "ProjectActivityEvent",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
 
 class ProjectLifecycleTransition(Base):
@@ -125,6 +130,28 @@ class ProjectLifecycleTransition(Base):
     )
 
     project: Mapped[Project] = relationship("Project", back_populates="lifecycle_transitions")
+
+
+class ProjectActivityEvent(Base):
+    __tablename__ = "project_activity_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('ingest', 'mode_change', 'run_start', 'run_complete', 'export', 'manual_edit', 'rerun')",
+            name="ck_project_activity_event_type_allowed",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    actor: Mapped[str] = mapped_column(String(255), nullable=False, default="system")
+    event_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="activity_events")
 
 
 class ProjectAccess(Base):
