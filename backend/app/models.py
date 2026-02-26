@@ -285,10 +285,17 @@ class LLMCall(Base):
 
 class LLMCache(Base):
     __tablename__ = "llm_cache"
-    __table_args__ = (UniqueConstraint("input_text_hash", name="uq_llm_cache_input_text_hash"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "input_text_hash",
+            "task_type",
+            name="uq_llm_cache_input_text_hash_task_type",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     input_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_type: Mapped[str] = mapped_column(String(100), nullable=False)
     response_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
