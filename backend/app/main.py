@@ -59,6 +59,9 @@ from app.schemas import (
     ProjectResponse,
     ProjectLLMSettingsRequest,
     ProjectLLMSettingsResponse,
+    LLMProviderStatus,
+    LLMProviderStatusUpdateRequest,
+    LLMProvidersResponse,
     RunCreateRequest,
     CharacterOccurrenceAnalyticsResponse,
     RunDetailResponse,
@@ -111,6 +114,12 @@ from app.services.normalization import (
 )
 from app.services.voice_preview import recompute_voice_previews_for_runs
 from app.services.pipeline import PipelineError, execute_pipeline
+from app.services.llm_router import is_supported_provider
+from app.services.provider_toggle import (
+    get_provider_statuses,
+    is_provider_enabled,
+    set_provider_enabled,
+)
 from app.services.voice import DEFAULT_VOICE_CONFIG, _normalize_internal_thought_voice_policy
 from app.services.phonetics import replace_pronunciations_with_counts
 
@@ -1061,6 +1070,43 @@ def update_project_llm_settings(
     session.refresh(project)
 
     return ProjectLLMSettingsResponse(project_id=project.id, llm_enabled=project.llm_enabled)
+
+
+@app.get(
+    "/api/llm/providers",
+    response_model=LLMProvidersResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_llm_provider_statuses(
+    session: Session = Depends(get_session),
+) -> LLMProvidersResponse:
+    settings = get_settings()
+    providers = get_provider_statuses(session=session, settings=settings)
+    return LLMProvidersResponse(
+        providers=[LLMProviderStatus(provider=provider, enabled=enabled) for provider, enabled in providers]
+    )
+
+
+@app.put(
+    "/api/llm/providers/{provider_name}",
+    response_model=LLMProviderStatus,
+    status_code=status.HTTP_200_OK,
+)
+def update_llm_provider_toggle(
+    provider_name: str,
+    payload: LLMProviderStatusUpdateRequest,
+    session: Session = Depends(get_session),
+) -> LLMProviderStatus:
+    provider = provider_name.strip().lower()
+    if not provider:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="provider_name must not be blank")
+
+    if not is_supported_provider(provider):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown provider")
+
+    enabled = set_provider_enabled(session=session, provider=provider, enabled=payload.enabled)
+    session.commit()
+    return LLMProviderStatus(provider=provider, enabled=enabled)
 
 
 @app.put(

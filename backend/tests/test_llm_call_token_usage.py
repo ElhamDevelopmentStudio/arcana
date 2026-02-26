@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
-from app.models import LLMCall, Project, ProviderQuota, Run
+from app.models import LLMCall, Project, ProviderQuota, ProviderToggle, Run
 from app.services import llm_router, pipeline
 
 
@@ -17,6 +17,12 @@ def setup_module() -> None:
     clear_settings_cache()
     reset_engine()
     init_db()
+    db_session = get_session_factory()()
+    try:
+        db_session.query(ProviderToggle).delete()
+        db_session.commit()
+    finally:
+        db_session.close()
 
 
 def teardown_module() -> None:
