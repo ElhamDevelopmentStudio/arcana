@@ -62,6 +62,24 @@ _AMBIGUOUS_CHARACTER_REFERENCE = object()
 _LLM_CONFIDENCE_THRESHOLD_DEFAULT = 0.6
 _PIPELINE_DEFAULT_CHUNK_MAX_CHARS = 120_000
 _PIPELINE_CHUNK_MAX_CHARS_KEY = "pipeline_chunk_max_chars"
+_INCREMENTAL_RECOMPUTE_CONFIG_KEYS: tuple[str, ...] = (
+    "mode",
+    "max_segment_chars",
+    "llm_enabled",
+    "provider_name",
+    "max_calls_per_day",
+    "llm_confidence_threshold",
+    "deep_semantic_refinement",
+    "deterministic_mode",
+    "deterministic_model_identifier",
+    "deterministic_seed",
+    "randomization_config",
+    "pipeline_chunk_max_chars",
+    "internal_thought_voice_policy",
+    "internal_thought_voice",
+    "provider_config",
+    "provider_api_keys",
+)
 
 
 class PipelineError(RuntimeError):
@@ -609,6 +627,150 @@ def _build_llm_cache_key(input_text: str) -> str:
     return sha256(str(input_text).encode("utf-8")).hexdigest()
 
 
+def _build_incremental_recompute_config_signature(run_config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: run_config[key]
+        for key in _INCREMENTAL_RECOMPUTE_CONFIG_KEYS
+        if key in run_config
+    }
+
+
+def _get_latest_completed_run_before(
+    session: Session,
+    project_id: int,
+    current_run_id: int,
+) -> Run | None:
+    return (
+        session.query(Run)
+        .filter(Run.project_id == project_id, Run.id < current_run_id, Run.status == "completed")
+        .order_by(Run.id.desc())
+        .first()
+    )
+
+
+def _get_processed_chapter_indexes_for_run(session: Session, run_id: int) -> list[int]:
+    rows = (
+        session.query(Chapter.chapter_index)
+        .join(Segment, Segment.chapter_id == Chapter.id)
+        .filter(Segment.run_id == run_id)
+        .group_by(Chapter.chapter_index)
+        .order_by(Chapter.chapter_index.asc())
+        .all()
+    )
+    return [int(row[0]) for row in rows]
+
+
+def _resolve_incremental_recompute_scope(
+    session: Session,
+    project_id: int,
+    current_run_id: int,
+    run_config: dict[str, Any],
+    chapters: list[Chapter],
+) -> int:
+    if not bool(run_config.get("incremental_recompute", False)):
+        return 0
+
+    prior_run = _get_latest_completed_run_before(
+        session=session,
+        project_id=project_id,
+        current_run_id=current_run_id,
+    )
+    if prior_run is None:
+        return 0
+
+    prior_signature = _build_incremental_recompute_config_signature(prior_run.config_json or {})
+    current_signature = _build_incremental_recompute_config_signature(run_config)
+    if prior_signature != current_signature:
+        return 0
+
+    prior_indexes = _get_processed_chapter_indexes_for_run(session=session, run_id=prior_run.id)
+    if not prior_indexes:
+        return 0
+
+    latest_index = prior_indexes[-1]
+    expected_prefix = list(range(1, latest_index + 1))
+    if prior_indexes != expected_prefix:
+        return 0
+
+    chapter_indexes = [int(chapter.chapter_index) for chapter in chapters]
+    if len(chapter_indexes) <= latest_index:
+        return 0
+
+    if chapter_indexes[:latest_index] != expected_prefix:
+        return 0
+
+    return latest_index
+
+
+def _copy_incremental_run_payloads(
+    session: Session,
+    source_run_id: int,
+    target_run_id: int,
+    chapter_scope: int,
+) -> list[dict[str, object]]:
+    prior_segments = (
+        session.query(Segment)
+        .join(Chapter, Segment.chapter_id == Chapter.id)
+        .filter(
+            Segment.run_id == source_run_id,
+            Chapter.chapter_index <= int(chapter_scope),
+        )
+        .order_by(Chapter.chapter_index.asc(), Segment.segment_index.asc(), Segment.id.asc())
+        .all()
+    )
+    if not prior_segments:
+        return []
+
+    source_to_target_segment_id: dict[int, int] = {}
+    reused_segment_payloads: list[dict[str, object]] = []
+    for prior_segment in prior_segments:
+        copied_segment = Segment(
+            run_id=target_run_id,
+            chapter_id=int(prior_segment.chapter_id),
+            segment_index=int(prior_segment.segment_index),
+            segment_json=dict(prior_segment.segment_json),
+        )
+        session.add(copied_segment)
+        session.flush()
+        source_to_target_segment_id[int(prior_segment.id)] = int(copied_segment.id)
+        reused_segment_payloads.append(dict(prior_segment.segment_json))
+
+    prior_segment_ids = list(source_to_target_segment_id.keys())
+    if prior_segment_ids:
+        prior_tags = (
+            session.query(SubSegmentTag)
+            .filter(SubSegmentTag.run_id == source_run_id, SubSegmentTag.segment_id.in_(prior_segment_ids))
+            .order_by(SubSegmentTag.segment_id.asc(), SubSegmentTag.sub_segment_index.asc())
+            .all()
+        )
+        for prior_tag in prior_tags:
+            copied_segment_id = source_to_target_segment_id.get(int(prior_tag.segment_id))
+            if copied_segment_id is None:
+                continue
+
+            session.add(
+                SubSegmentTag(
+                    run_id=target_run_id,
+                    chapter_id=int(prior_tag.chapter_id),
+                    segment_id=copied_segment_id,
+                    sub_segment_id=str(prior_tag.sub_segment_id),
+                    sub_segment_index=int(prior_tag.sub_segment_index),
+                    shift_type=str(prior_tag.shift_type),
+                    boundary_start_char=int(prior_tag.boundary_start_char),
+                    boundary_end_char=int(prior_tag.boundary_end_char),
+                    from_label=(None if prior_tag.from_label is None else str(prior_tag.from_label)),
+                    to_label=(None if prior_tag.to_label is None else str(prior_tag.to_label)),
+                    from_text=(None if prior_tag.from_text is None else str(prior_tag.from_text)),
+                    to_text=(None if prior_tag.to_text is None else str(prior_tag.to_text)),
+                    confidence=float(prior_tag.confidence),
+                    tags=dict(prior_tag.tags),
+                    evidence=(dict(prior_tag.evidence) if isinstance(prior_tag.evidence, dict) else {}),
+                )
+            )
+
+    return reused_segment_payloads
+
+
 def _get_cached_llm_response(
     session: Session,
     *,
@@ -956,11 +1118,27 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     session.query(LLMCall).filter(LLMCall.run_id == run.id).delete()
     session.query(SubSegmentTag).filter(SubSegmentTag.run_id == run.id).delete()
 
+    incremental_scope = _resolve_incremental_recompute_scope(
+        session=session,
+        project_id=project.id,
+        current_run_id=run.id,
+        run_config=run_config,
+        chapters=chapters,
+    )
+    if incremental_scope > 0:
+        run.config_json = {
+            **(run.config_json or {}),
+            "incremental_recompute": {
+                "enabled": True,
+                "reused_chapter_count": incremental_scope,
+            },
+        }
+
     max_chars = int(run_config.get("max_segment_chars", 255))
     llm_confidence_threshold = _coerce_confidence_threshold(run_config.get("llm_confidence_threshold", _LLM_CONFIDENCE_THRESHOLD_DEFAULT))
     deep_semantic_refinement = bool(run_config.get("deep_semantic_refinement", False))
     max_chunk_chars = _resolve_pipeline_chunk_max_chars(run_config)
-    chapter_work_items = _build_chunk_work_items(chapters=chapters)
+    chapter_work_items = _build_chunk_work_items(chapters=chapters[incremental_scope:])
     chunk_jobs = _build_chunk_jobs(chapter_work_items=chapter_work_items, max_chunk_chars=max_chunk_chars)
     chunk_count = len(chunk_jobs)
     run.config_json = {
@@ -974,7 +1152,22 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     llm_probe_text: str | None = None
     total_segments = 0
     segment_payloads: list[dict[str, object]] = []
-    sub_segment_payloads: list[list[dict[str, object]]] = []
+    if incremental_scope > 0:
+        prior_run = _get_latest_completed_run_before(
+            session=session,
+            project_id=project.id,
+            current_run_id=run.id,
+        )
+        if prior_run is not None:
+            segment_payloads.extend(
+                _copy_incremental_run_payloads(
+                    session=session,
+                    source_run_id=prior_run.id,
+                    target_run_id=run.id,
+                    chapter_scope=incremental_scope,
+                )
+            )
+            total_segments = len(segment_payloads)
 
     chunk_payloads: list[dict[str, object]] = []
     if chunk_jobs:
@@ -1003,20 +1196,25 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             for chunk_index in sorted(ordered_payloads):
                 chunk_payloads.append(ordered_payloads[chunk_index])
 
+    new_segment_payloads: list[dict[str, object]] = []
+    new_sub_segment_payloads: list[list[dict[str, object]]] = []
     for chunk_payload in chunk_payloads:
-        segment_payloads.extend(chunk_payload.get("segment_payloads", []))
-        sub_segment_payloads.extend(chunk_payload.get("sub_segment_payloads", []))
+        new_segment_payloads.extend(chunk_payload.get("segment_payloads", []))
+        new_sub_segment_payloads.extend(chunk_payload.get("sub_segment_payloads", []))
         if llm_probe_text is None:
             candidate_probe_text = chunk_payload.get("llm_probe_text")
             if isinstance(candidate_probe_text, str) and candidate_probe_text:
                 llm_probe_text = candidate_probe_text
 
+    segment_payloads.extend(new_segment_payloads)
+    total_segments = len(segment_payloads)
+
     chapter_id_by_index = {
-        int(item.chapter_index): item.chapter_id
-        for item in chapter_work_items
+        int(item.chapter_index): item.id
+        for item in chapters
     }
 
-    for segment_payload, boundary_payloads in zip(segment_payloads, sub_segment_payloads):
+    for segment_payload, boundary_payloads in zip(new_segment_payloads, new_sub_segment_payloads):
         chapter_index = int(segment_payload.get("chapter_id", 0))
         segment = Segment(
             run_id=run.id,
