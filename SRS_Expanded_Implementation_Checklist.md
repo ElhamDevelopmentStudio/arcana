@@ -652,7 +652,7 @@ Definition of done for each task:
 - [x] [FE-151] Build voice configuration editor using `PUT /api/projects/{project_id}/voices`.
 
 ### 13.7 Runs, Analytics, Exports, and Comparison Workspace
-- [ ] [FE-152] Build `/projects/{project_id}/pipeline-setup` run config flow using `POST /api/projects/{project_id}/runs`.
+- [x] [FE-152] Build `/projects/{project_id}/pipeline-setup` run config flow using `POST /api/projects/{project_id}/runs`.
 - [ ] [FE-153] Build run monitor/detail route using `GET /api/projects/{project_id}/runs/{run_id}`.
 - [ ] [FE-154] Build rerun flow using `POST /api/projects/{project_id}/runs/{run_id}/rerun`.
 - [ ] [FE-155] Build recover flow using `POST /api/projects/{project_id}/runs/{run_id}/recover`.

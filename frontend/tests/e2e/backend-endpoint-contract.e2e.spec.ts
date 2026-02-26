@@ -1688,6 +1688,109 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(voicesPutResponse.status()).toBe(200);
   });
 
+  test('projects/:project_id/pipeline-setup route creates run through backend runs endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-pipeline-run-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: [],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
+    const finalizeCharacterMapResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/characters/finalize`);
+    expect(finalizeCharacterMapResponse.status()).toBe(200);
+
+    const setupSeedRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+      },
+    });
+    expect(setupSeedRunResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}/mode`);
+    await page.getByTestId('mode-select').selectOption('author');
+    const modeSwitchConfirmButton = page.getByTestId('mode-switch-confirm-submit');
+    if (await modeSwitchConfirmButton.isVisible()) {
+      await modeSwitchConfirmButton.click();
+    }
+    await page.getByTestId('mode-continue-button').click();
+    await expect(page).toHaveURL(`/projects/${projectId}/characters`);
+    await page.getByRole('button', { name: 'Continue to Pipeline Setup' }).click();
+    await expect(page).toHaveURL(`/projects/${projectId}/pipeline-setup`);
+
+    await expect(page.getByTestId('run-pipeline-button')).toBeVisible();
+    await expect(page.getByTestId('run-pipeline-button')).toBeEnabled();
+
+    const runPostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST'
+        && networkRequest.url().endsWith(`/api/projects/${projectId}/runs`),
+    );
+    const runPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/runs`),
+    );
+
+    await page.getByTestId('run-pipeline-button').click();
+
+    const runPostRequest = await runPostRequestPromise;
+    const runPostPayload = runPostRequest.postDataJSON() as {
+      mode: string;
+      max_segment_chars: number;
+      provider_name?: string;
+      llm_enabled: boolean;
+      export_formats: string[];
+    };
+    expect(runPostPayload.mode).toBe('author');
+    expect(runPostPayload.max_segment_chars).toBeGreaterThan(0);
+    expect(runPostPayload.llm_enabled).toBe(false);
+    expect(Array.isArray(runPostPayload.export_formats)).toBe(true);
+    expect(runPostPayload.export_formats.length).toBeGreaterThan(0);
+    if (runPostPayload.provider_name !== undefined) {
+      expect(runPostPayload.provider_name).not.toHaveLength(0);
+    }
+
+    const runPostResponse = await runPostResponsePromise;
+    expect(runPostResponse.status()).toBe(200);
+    const runPostBody = (await runPostResponse.json()) as { run_id: number; project_id: number; status: string };
+    expect(runPostBody.project_id).toBe(projectId);
+    expect(runPostBody.run_id).toBeGreaterThan(0);
+    expect(runPostBody.status).toBe('completed');
+  });
+
   test('projects/:project_id/mode route requests mode catalog and updates mode through switch endpoint', async ({
     page,
     request,
