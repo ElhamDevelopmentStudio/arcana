@@ -2328,6 +2328,80 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(exportPayload.segments.length).toBeGreaterThan(0);
   });
 
+  test('all mode profiles can run and export against the live backend', async ({ request }) => {
+    const modes = ['audiobook', 'academic', 'author', 'custom'] as const;
+    const project = await createProject(request, uniqueTitle('e2e-all-mode-profiles'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'all-mode-profiles.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from(
+            'Chapter 1\nThe harbor lamps flickered while the crew watched the horizon.\n\n'
+              + 'Chapter 2\nA warning siren echoed through the steel corridor.',
+          ),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    for (const mode of modes) {
+      const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+        data: {
+          mode,
+          max_segment_chars: mode === 'academic' ? 180 : 140,
+          llm_enabled: false,
+          provider_name: 'openrouter',
+          max_calls_per_day: 25,
+          allow_unfinalized_character_map: true,
+        },
+      });
+      expect(runResponse.status()).toBe(200);
+      const runPayload = (await runResponse.json()) as { run_id: number; status: string; segment_count: number };
+      expect(runPayload.run_id).toBeGreaterThan(0);
+      expect(runPayload.status).toBe('completed');
+      expect(runPayload.segment_count).toBeGreaterThan(0);
+
+      const runDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runPayload.run_id}`);
+      expect(runDetailResponse.status()).toBe(200);
+      const runDetailPayload = (await runDetailResponse.json()) as {
+        status: string;
+        config: Record<string, unknown>;
+      };
+      expect(runDetailPayload.status).toBe('completed');
+      expect(runDetailPayload.config.mode).toBe(mode);
+
+      const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`);
+      expect(exportResponse.status()).toBe(200);
+      const exportPayload = (await exportResponse.json()) as {
+        run_id: number;
+        segments: unknown[];
+        manifest: { run: { config_snapshot: { mode: string } } };
+      };
+      expect(exportPayload.run_id).toBe(runPayload.run_id);
+      expect(exportPayload.manifest.run.config_snapshot.mode).toBe(mode);
+      expect(exportPayload.segments.length).toBeGreaterThan(0);
+
+      const academicExportResponse = await request.get(
+        `${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`,
+        { params: { output_schema: 'academic', output_format: 'json' } },
+      );
+      expect(academicExportResponse.status()).toBe(200);
+
+      if (mode === 'author') {
+        const authorExportResponse = await request.get(
+          `${backendBaseUrl}/api/projects/${projectId}/exports/${runPayload.run_id}.json`,
+          { params: { output_schema: 'author' } },
+        );
+        expect(authorExportResponse.status()).toBe(200);
+        const authorPayload = (await authorExportResponse.json()) as { output_schema: string };
+        expect(authorPayload.output_schema).toBe('author_narrative_health_json');
+      }
+    }
+  });
+
   test('correlation ID propagates from run API to export payload and headers', async ({ request }) => {
     const correlationId = `corr-e2e-${Date.now()}`;
     const project = await createProject(request, uniqueTitle('e2e-correlation-id'));

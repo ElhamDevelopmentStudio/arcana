@@ -10,8 +10,9 @@ from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
 from app.models import Chapter
+from app.modes import MODE_DEFAULT_PROFILES
 
-EXPECTED_MULTI_MODE_SEQUENCE = ["audiobook", "academic", "author"]
+EXPECTED_MULTI_MODE_SEQUENCE = ["audiobook", "academic", "author", "custom"]
 
 
 def setup_module() -> None:
@@ -63,10 +64,10 @@ def _run_mode(client: TestClient, project_id: int, mode: str) -> tuple[int, int]
 
 
 def test_unit_mode_sequence_for_multi_mode_integration() -> None:
-    assert EXPECTED_MULTI_MODE_SEQUENCE == ["audiobook", "academic", "author"]
+    assert EXPECTED_MULTI_MODE_SEQUENCE == ["audiobook", "academic", "author", "custom"]
 
 
-def test_integration_ingest_once_then_run_all_three_modes() -> None:
+def test_integration_ingest_once_then_run_all_modes() -> None:
     with TestClient(app) as client:
         project_id = _create_ingested_project(client, "Multi Mode Integration")
 
@@ -79,7 +80,10 @@ def test_integration_ingest_once_then_run_all_three_modes() -> None:
             assert segment_count > 0
             detail_resp = client.get(f"/api/projects/{project_id}/runs/{run_id}")
             assert detail_resp.status_code == 200
-            assert detail_resp.json()["config"]["mode"] == mode
+            detail_payload = detail_resp.json()
+            assert detail_payload["config"]["mode"] == mode
+            assert detail_payload["config"]["export_formats"] == MODE_DEFAULT_PROFILES[mode]["export_formats"]
+            assert detail_payload["config"]["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES[mode]
 
     session = get_session_factory()()
     try:
@@ -94,7 +98,7 @@ def test_integration_ingest_once_then_run_all_three_modes() -> None:
         session.close()
 
 
-def test_e2e_all_three_modes_produce_exports_from_single_ingestion() -> None:
+def test_e2e_all_modes_produce_exports_from_single_ingestion() -> None:
     with TestClient(app) as client:
         project_id = _create_ingested_project(client, "Multi Mode E2E")
 
@@ -108,7 +112,22 @@ def test_e2e_all_three_modes_produce_exports_from_single_ingestion() -> None:
             assert export_payload["project_id"] == project_id
             assert export_payload["run_id"] == run_id
             assert len(export_payload["segments"]) > 0
+            assert export_payload["manifest"]["run"]["config_snapshot"]["mode"] == mode
+
+            academic_export_resp = client.get(
+                f"/api/projects/{project_id}/exports/{run_id}.json",
+                params={"output_schema": "academic", "output_format": "json"},
+            )
+            assert academic_export_resp.status_code == 200
+
+            if mode == "author":
+                author_export_resp = client.get(
+                    f"/api/projects/{project_id}/exports/{run_id}.json",
+                    params={"output_schema": "author"},
+                )
+                assert author_export_resp.status_code == 200
+                assert author_export_resp.json()["output_schema"] == "author_narrative_health_json"
 
 
 def test_regression_multi_mode_sequence_snapshot() -> None:
-    assert EXPECTED_MULTI_MODE_SEQUENCE == ["audiobook", "academic", "author"]
+    assert EXPECTED_MULTI_MODE_SEQUENCE == ["audiobook", "academic", "author", "custom"]
