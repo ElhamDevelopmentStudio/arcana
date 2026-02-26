@@ -775,6 +775,81 @@ def test_pipeline_records_deterministic_replay_warning_when_provider_fallback_oc
         session.close()
 
 
+def test_pipeline_uses_llm_router_as_the_only_llm_call_path(monkeypatch: object) -> None:
+    session = _new_session()
+    try:
+        project = Project(title="LLM Router Access Path Project")
+        session.add(project)
+        session.flush()
+
+        run = Run(
+            project_id=project.id,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        session.flush()
+
+        router_invocations: list[object] = []
+
+        class _TrackingLLMRouter:
+            def __init__(self, openrouter_base_url: str) -> None:
+                router_invocations.append(("init", openrouter_base_url))
+
+            def call(
+                self,
+                request: llm_router.LLMRequest,
+                provider_name: str,
+                model_identifier: str,
+                api_key: str | None,
+            ) -> llm_router.LLMResponse:
+                router_invocations.append(("call", provider_name, model_identifier, api_key))
+                return llm_router.LLMResponse(
+                    provider_used=provider_name,
+                    model_identifier=model_identifier,
+                    raw_output="ok",
+                    parsed_output={"raw": "ok"},
+                    confidence=None,
+                    token_usage_estimate=11,
+                    success_flag=True,
+                    error_code=None,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+        def _forbid_direct_network_call(*args: object, **kwargs: object) -> object:
+            raise AssertionError("LLM provider request should route through LLMRouter")
+
+        monkeypatch.setattr(pipeline, "LLMRouter", _TrackingLLMRouter)
+        monkeypatch.setattr(llm_router.requests, "post", _forbid_direct_network_call)
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_runtime_settings",
+            lambda **kwargs: ("https://api.openrouter.org/v1", "gpt-test", "openrouter-key"),
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "get_provider_api_keys",
+            lambda **kwargs: ["openrouter-key"],
+        )
+
+        pipeline._run_llm_probe(
+            session=session,
+            project=project,
+            run=run,
+            run_config={"provider_name": "openrouter", "max_calls_per_day": 10},
+            input_text="Provider traffic should stay inside LLMRouter.",
+        )
+
+        llm_call = session.query(LLMCall).filter(LLMCall.run_id == run.id).one()
+        assert llm_call.success is True
+        assert llm_call.provider == "openrouter"
+        assert [item[0] for item in router_invocations] == ["init", "call"]
+        assert router_invocations[0][1] == "https://api.openrouter.org/v1"
+    finally:
+        session.close()
+
+
 def test_run_detail_and_export_expose_token_usage_estimate() -> None:
     session = _new_session()
     try:

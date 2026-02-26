@@ -332,7 +332,7 @@ Definition of done for each task:
 - [x] [DET-006] Emit explicit warning when provider nondeterminism may break exact replay.
 
 ## 4.13 Provider Abstraction Layer (Ref: SRS.md §4.13)
-- [ ] [PAL-001] Define `LLMRouter` as sole provider access point.
+- [x] [PAL-001] Define `LLMRouter` as sole provider access point.
 - [ ] [PAL-002] Implement provider selector using availability+quota+priority.
 - [ ] [PAL-003] Implement dispatch and response parser abstraction.
 - [ ] [PAL-004] Implement failure classification (`rate_limit`, `quota`, `timeout`, `service_unavailable`, `other`).
