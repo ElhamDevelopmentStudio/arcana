@@ -342,4 +342,87 @@ describe('project dashboards page', () => {
     expect(ayaBenEdge).toHaveTextContent('aya ↔ ben');
     expect(ayaBenEdge).toHaveTextContent('Count: 4');
   });
+
+  it('exports a dashboard snapshot payload from loaded dashboard data', async () => {
+    const user = userEvent.setup();
+    const originalCreateElement = document.createElement.bind(document);
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+
+    const createObjectURL = vi.fn(() => 'blob:dashboard-snapshot');
+    const revokeObjectURL = vi.fn();
+    const anchorClick = vi.fn();
+    let anchorHref: string | null = null;
+    let anchorDownload: string | null = null;
+
+    URL.createObjectURL = createObjectURL as typeof URL.createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL as typeof URL.revokeObjectURL;
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = originalCreateElement(tagName);
+      if (tagName === 'a') {
+        const anchor = element as HTMLAnchorElement;
+        vi.spyOn(anchor, 'click').mockImplementation(() => {
+          anchorHref = anchor.href;
+          anchorDownload = anchor.download;
+          anchorClick();
+        });
+        return anchor;
+      }
+      return element;
+    });
+
+    try {
+      renderDashboardPage();
+      await user.click(screen.getByTestId('dashboards-snapshot-export-button'));
+
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      const snapshotBlob = createObjectURL.mock.calls[0]?.[0];
+      expect(snapshotBlob).toBeInstanceOf(Blob);
+      expect(snapshotBlob).not.toBeNull();
+
+      const snapshotData = JSON.parse(await (snapshotBlob as Blob).text());
+      expect(snapshotData).toMatchObject({
+        project_id: 202,
+        run_id: 88,
+        show_smoothed_graph: true,
+        tension_graph: expect.any(Object),
+        character_analytics: expect.any(Object),
+        cooccurrence_graph: expect.any(Object),
+        audiobook_prep_dashboard: expect.any(Object),
+      });
+
+      expect(snapshotData.tension_graph).toMatchObject({
+        metric_id: 'smoothed_tension_curve',
+        points: expect.any(Array),
+      });
+      expect(snapshotData.character_analytics).toMatchObject({
+        project_id: 202,
+        run_id: 88,
+        character_first_appearance_chapter_index: expect.objectContaining({ Aya: 1 }),
+      });
+      expect(snapshotData.cooccurrence_graph).toMatchObject({
+        project_id: 202,
+        run_id: 88,
+        graph: expect.objectContaining({
+          metadata: expect.objectContaining({
+            node_count: 2,
+            edge_count: 1,
+          }),
+        }),
+      });
+      expect(snapshotData.audiobook_prep_dashboard).toMatchObject({
+        unresolved_speaker_count: 3,
+        export_readiness: expect.objectContaining({ is_ready: false }),
+      });
+
+      expect(anchorDownload).toBe('project-202-run-88-dashboard-snapshot.json');
+      expect(anchorHref).toBe('blob:dashboard-snapshot');
+      expect(anchorClick).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:dashboard-snapshot');
+    } finally {
+      createElementSpy.mockRestore();
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+  });
 });
