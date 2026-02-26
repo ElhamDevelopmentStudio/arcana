@@ -1316,6 +1316,7 @@ def _transition_project_lifecycle_state(
             actor=normalized_actor,
         )
     )
+    _refresh_project_dashboard_projection(session=session, project=project)
 
 
 def _build_initial_configuration_snapshot_id(project_id: int) -> str:
@@ -3258,6 +3259,9 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         description=None,
         tags=[],
         lifecycle_state=PROJECT_LIFECYCLE_DRAFT,
+        last_run_status=None,
+        last_export_at=None,
+        next_required_action="ingest",
         selected_mode=DEFAULT_MODE,
         selected_modes=[DEFAULT_MODE],
         llm_enabled=False,
@@ -3376,6 +3380,7 @@ def update_project_metadata(
             )
         },
     )
+    _refresh_project_dashboard_projection(session=session, project=project)
     updated_at = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -3496,6 +3501,39 @@ def _resolve_project_control_panel_next_required_action(
     return "configure"
 
 
+def _refresh_project_dashboard_projection(
+    *,
+    session: Session,
+    project: Project,
+    export_recorded_at: datetime | None = None,
+) -> None:
+    session.flush()
+    latest_run = (
+        session.query(Run)
+        .filter(Run.project_id == project.id)
+        .order_by(Run.id.desc())
+        .first()
+    )
+    if latest_run is None:
+        resolved_last_run_status: str | None = None
+    else:
+        normalized_last_run_status = str(latest_run.status or "").strip().lower()
+        resolved_last_run_status = normalized_last_run_status or None
+
+    lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+    if lifecycle_state not in set(_CONTROL_PANEL_STATE_ORDER):
+        lifecycle_state = PROJECT_LIFECYCLE_DRAFT
+
+    project.last_run_status = resolved_last_run_status
+    if export_recorded_at is not None:
+        project.last_export_at = export_recorded_at
+    project.next_required_action = _resolve_project_control_panel_next_required_action(
+        lifecycle_state=lifecycle_state,
+        last_run_status=resolved_last_run_status,
+    )
+    session.add(project)
+
+
 @app.get(
     "/api/dashboard/project-control-panel/projects",
     response_model=ProjectControlPanelProjectListResponse,
@@ -3558,66 +3596,63 @@ def get_project_control_panel_project_list(
             ),
         )
 
-    projects = session.query(Project).all()
-    runs = session.query(Run).all()
+    query = session.query(Project)
+    if normalized_status is not None:
+        query = query.filter(Project.lifecycle_state == normalized_status)
+    if normalized_selected_mode is not None:
+        query = query.filter(Project.selected_mode == normalized_selected_mode)
+    if normalized_last_run_status is not None:
+        query = query.filter(Project.last_run_status == normalized_last_run_status)
+    if normalized_next_required_action is not None:
+        query = query.filter(Project.next_required_action == normalized_next_required_action)
 
-    latest_run_by_project: dict[int, Run] = {}
-    for run in runs:
-        current_latest = latest_run_by_project.get(run.project_id)
-        if current_latest is None:
-            latest_run_by_project[run.project_id] = run
-            continue
-        run_started_at = run.started_at or datetime.min.replace(tzinfo=timezone.utc)
-        current_started_at = current_latest.started_at or datetime.min.replace(tzinfo=timezone.utc)
-        if run_started_at > current_started_at or (run_started_at == current_started_at and run.id > current_latest.id):
-            latest_run_by_project[run.project_id] = run
+    total_items = query.count()
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    projects = (
+        query.order_by(Project.created_at.desc(), Project.id.desc())
+        .offset(start_index)
+        .limit(page_size)
+        .all()
+    )
 
-    rows: list[dict[str, object]] = []
+    paged_rows: list[dict[str, object]] = []
     for project in projects:
-        lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
-        if lifecycle_state not in set(_CONTROL_PANEL_STATE_ORDER):
-            lifecycle_state = PROJECT_LIFECYCLE_DRAFT
-        latest_run = latest_run_by_project.get(project.id)
-        last_status = str(latest_run.status).strip().lower() if latest_run is not None else None
+        normalized_project_status = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+        if normalized_project_status not in set(_CONTROL_PANEL_STATE_ORDER):
+            normalized_project_status = PROJECT_LIFECYCLE_DRAFT
+
+        normalized_project_last_run_status = (
+            str(project.last_run_status).strip().lower()
+            if project.last_run_status is not None
+            else None
+        )
+        if normalized_project_last_run_status == "":
+            normalized_project_last_run_status = None
+
+        normalized_project_next_action = str(project.next_required_action or "").strip().lower()
+        if normalized_project_next_action not in _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES:
+            normalized_project_next_action = _resolve_project_control_panel_next_required_action(
+                lifecycle_state=normalized_project_status,
+                last_run_status=normalized_project_last_run_status,
+            )
+
         updated_at_candidates = [
             project.created_at,
             project.ingestion_timestamp,
-            latest_run.started_at if latest_run is not None else None,
-            latest_run.finished_at if latest_run is not None else None,
+            project.last_export_at,
         ]
         updated_at = max(candidate for candidate in updated_at_candidates if candidate is not None)
-        next_action = _resolve_project_control_panel_next_required_action(
-            lifecycle_state=lifecycle_state,
-            last_run_status=last_status,
+        paged_rows.append(
+            {
+                "project_id": project.id,
+                "status": normalized_project_status,
+                "selected_mode": str(project.selected_mode).strip().lower() or DEFAULT_MODE,
+                "last_run_status": normalized_project_last_run_status,
+                "updated_at": _serialize_datetime_to_utc_iso(updated_at) or generated_at,
+                "next_required_action": normalized_project_next_action,
+            }
         )
-        row = {
-            "project_id": project.id,
-            "status": lifecycle_state,
-            "selected_mode": str(project.selected_mode).strip().lower() or DEFAULT_MODE,
-            "last_run_status": last_status,
-            "updated_at": _serialize_datetime_to_utc_iso(updated_at) or generated_at,
-            "next_required_action": next_action,
-        }
-
-        if normalized_status is not None and row["status"] != normalized_status:
-            continue
-        if normalized_selected_mode is not None and row["selected_mode"] != normalized_selected_mode:
-            continue
-        if normalized_last_run_status is not None and row["last_run_status"] != normalized_last_run_status:
-            continue
-        if (
-            normalized_next_required_action is not None
-            and row["next_required_action"] != normalized_next_required_action
-        ):
-            continue
-
-        rows.append(row)
-
-    rows.sort(key=lambda item: (str(item["updated_at"]), int(item["project_id"])), reverse=True)
-    total_items = len(rows)
-    start_index = (page - 1) * page_size
-    end_index = start_index + page_size
-    paged_rows = rows[start_index:end_index]
 
     return ProjectControlPanelProjectListResponse(
         generated_at=generated_at,
@@ -5778,6 +5813,7 @@ def create_run(
             "reason": "initial_execution",
         }
         run.config_json = run_config_with_recovery
+    _refresh_project_dashboard_projection(session=session, project=project)
     session.commit()
     session.refresh(run)
     _emit_service_log(
@@ -6718,6 +6754,7 @@ def get_export_json(
             )
 
         if requested_output_format == "json":
+            export_recorded_at = datetime.now(timezone.utc)
             _append_project_activity_event(
                 session=session,
                 project_id=project.id,
@@ -6727,6 +6764,11 @@ def get_export_json(
                     "output_schema": "academic",
                     "output_format": "json",
                 },
+            )
+            _refresh_project_dashboard_projection(
+                session=session,
+                project=project,
+                export_recorded_at=export_recorded_at,
             )
             session.commit()
             return JSONResponse(content=payload, headers=export_headers)
@@ -6740,6 +6782,7 @@ def get_export_json(
                 )
 
             manifest = payload.get("manifest", {})
+            export_recorded_at = datetime.now(timezone.utc)
             _append_project_activity_event(
                 session=session,
                 project_id=project.id,
@@ -6750,6 +6793,11 @@ def get_export_json(
                     "output_format": "graph_json",
                     "output_id": selected_output_id,
                 },
+            )
+            _refresh_project_dashboard_projection(
+                session=session,
+                project=project,
+                export_recorded_at=export_recorded_at,
             )
             session.commit()
             return JSONResponse(
@@ -6776,6 +6824,7 @@ def get_export_json(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Unsupported output_format for author schema. Supported values: json.",
             )
+        export_recorded_at = datetime.now(timezone.utc)
         _append_project_activity_event(
             session=session,
             project_id=project.id,
@@ -6786,9 +6835,15 @@ def get_export_json(
                 "output_format": "json",
             },
         )
+        _refresh_project_dashboard_projection(
+            session=session,
+            project=project,
+            export_recorded_at=export_recorded_at,
+        )
         session.commit()
         return JSONResponse(content=payload["manifest"]["narrative_health_report"], headers=export_headers)
 
+    export_recorded_at = datetime.now(timezone.utc)
     _append_project_activity_event(
         session=session,
         project_id=project.id,
@@ -6798,6 +6853,11 @@ def get_export_json(
             "output_schema": "default",
             "output_format": "json",
         },
+    )
+    _refresh_project_dashboard_projection(
+        session=session,
+        project=project,
+        export_recorded_at=export_recorded_at,
     )
     session.commit()
     return JSONResponse(content=payload, headers=export_headers)
@@ -6882,6 +6942,7 @@ def get_export_csv(
             academic_manifest=academic_manifest,
         )
         filename = f"project-{project_id}-run-{run_id}-academic.csv"
+        export_recorded_at = datetime.now(timezone.utc)
         _append_project_activity_event(
             session=session,
             project_id=project.id,
@@ -6891,6 +6952,11 @@ def get_export_csv(
                 "output_schema": "academic",
                 "output_format": "csv",
             },
+        )
+        _refresh_project_dashboard_projection(
+            session=session,
+            project=project,
+            export_recorded_at=export_recorded_at,
         )
         session.commit()
     else:
@@ -6903,6 +6969,7 @@ def get_export_csv(
             apply_export_chunk_size=True,
         )
         filename = f"project-{project_id}-run-{run_id}.csv"
+        export_recorded_at = datetime.now(timezone.utc)
         _append_project_activity_event(
             session=session,
             project_id=project.id,
@@ -6912,6 +6979,11 @@ def get_export_csv(
                 "output_schema": "default",
                 "output_format": "csv",
             },
+        )
+        _refresh_project_dashboard_projection(
+            session=session,
+            project=project,
+            export_recorded_at=export_recorded_at,
         )
         session.commit()
     response_headers = dict(export_headers)

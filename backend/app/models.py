@@ -17,6 +17,14 @@ class Project(Base):
             "lifecycle_state IN ('draft', 'ingested', 'configured', 'running', 'completed', 'failed', 'archived')",
             name="ck_project_lifecycle_state_allowed",
         ),
+        CheckConstraint(
+            "last_run_status IS NULL OR last_run_status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted')",
+            name="ck_project_last_run_status_allowed",
+        ),
+        CheckConstraint(
+            "next_required_action IN ('ingest', 'select_mode', 'configure', 'run', 'rerun', 'export', 'review_failure', 'archived', 'none')",
+            name="ck_project_next_required_action_allowed",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -24,6 +32,9 @@ class Project(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     lifecycle_state: Mapped[str] = mapped_column(String(40), nullable=False, default=PROJECT_LIFECYCLE_DRAFT)
+    last_run_status: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    last_export_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    next_required_action: Mapped[str] = mapped_column(String(40), nullable=False, default="ingest", index=True)
     selected_mode: Mapped[str] = mapped_column(String(50), nullable=False, default=DEFAULT_MODE)
     selected_modes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     llm_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
