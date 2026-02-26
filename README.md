@@ -19,6 +19,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Voice resolution
 - JSON export
 - Project-level mode persistence (`projects.selected_mode`) with per-run mode snapshots
+- Run status lifecycle baseline (`queued` -> `running` -> terminal `completed|failed|cancelled`)
 - Project-level access-control model scaffold (`project_accesses`) with grant endpoints
 - Mode catalog endpoint for UI mode selection bootstrap (`GET /api/modes`)
 - Minimal LLM router scaffold + quota tracking

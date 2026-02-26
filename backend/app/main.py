@@ -168,6 +168,12 @@ from app.services.voice_preview import recompute_voice_previews_for_runs
 from app.services.background_jobs import submit_background_job
 from app.services.pipeline import PipelineError, execute_pipeline
 from app.services.llm_router import is_supported_provider
+from app.services.run_status import (
+    RUN_STATUS_COMPLETED,
+    RUN_STATUS_FAILED,
+    RUN_STATUS_QUEUED,
+    RUN_STATUS_RUNNING,
+)
 from app.services.provider_toggle import (
     get_provider_statuses,
     is_provider_enabled,
@@ -805,7 +811,7 @@ def _find_matching_idempotent_run(
             continue
         if run_config.get("idempotency_signature") != idempotency_signature:
             continue
-        if run.status == "failed":
+        if run.status == RUN_STATUS_FAILED:
             continue
         return run
     return None
@@ -1764,7 +1770,7 @@ def _clear_run_pipeline_artifacts(session: Session, run: Run) -> None:
 def _is_run_recoverable(run: Run, now: datetime | None = None) -> bool:
     if run.status == "interrupted":
         return True
-    if run.status != "running":
+    if run.status != RUN_STATUS_RUNNING:
         return False
     reference_time = _coerce_utc_datetime(run.started_at)
     recovery_state = _read_pipeline_recovery_state(run)
@@ -2339,8 +2345,8 @@ def _execute_pipeline_and_finalize_run(
             principal_id=principal_id,
             project_id=project.id,
         )
-        if run.status != "completed":
-            run.status = "completed"
+        if run.status != RUN_STATUS_COMPLETED:
+            run.status = RUN_STATUS_COMPLETED
         if run.finished_at is None:
             run.finished_at = datetime.now(timezone.utc)
 
@@ -2392,7 +2398,7 @@ def _execute_pipeline_and_finalize_run(
     except PipelineError as exc:
         session.rollback()
         run = _get_run_or_404(session, project.id, run.id)
-        run.status = "failed"
+        run.status = RUN_STATUS_FAILED
         run.finished_at = datetime.now(timezone.utc)
         error_metadata = {"reason": str(exc)}
         if isinstance(exc, Exception) and getattr(exc, "metadata", None):
@@ -2411,7 +2417,7 @@ def _execute_pipeline_and_finalize_run(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         run = _get_run_or_404(session, project.id, run.id)
-        run.status = "failed"
+        run.status = RUN_STATUS_FAILED
         run.finished_at = datetime.now(timezone.utc)
         _set_pipeline_recovery_state(run, session=session, status="failed", metadata={"reason": "unhandled_exception"})
         _append_run_changelog_entry(
@@ -4930,7 +4936,7 @@ def create_run(
     project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)
     run = Run(
         project_id=project.id,
-        status="running",
+        status=RUN_STATUS_QUEUED,
         deterministic_seed=(int(run_config["deterministic_seed"]) if bool(run_config.get("deterministic_mode")) else None),
         deterministic_model_identifier=(
             str(run_config.get("deterministic_model_identifier")).strip()
@@ -5059,6 +5065,15 @@ def create_run(
     _append_run_changelog_entry(
         session=session,
         run=run,
+        event_type="pipeline_execution_queued",
+        event_message="Pipeline execution queued",
+        event_metadata={"mode": run_config["mode"]},
+    )
+    run.status = RUN_STATUS_RUNNING
+    session.add(run)
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
         event_type="pipeline_execution_started",
         event_message="Pipeline execution started",
         event_metadata={"mode": run_config["mode"]},
@@ -5108,7 +5123,7 @@ def recover_run(
     project = _get_project_or_404(session, project_id)
     run = _get_run_or_404(session, project_id, run_id)
 
-    if run.status == "completed":
+    if run.status == RUN_STATUS_COMPLETED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Completed run cannot be recovered.",
@@ -5132,7 +5147,7 @@ def recover_run(
         run_config=dict(run.config_json or {}),
         attempt=next_attempt,
     )
-    run.status = "running"
+    run.status = RUN_STATUS_QUEUED
     run.started_at = datetime.now(timezone.utc)
     run.finished_at = None
     session.add(run)
@@ -5147,6 +5162,18 @@ def recover_run(
         },
     )
     _clear_run_pipeline_artifacts(session=session, run=run)
+    run.status = RUN_STATUS_RUNNING
+    session.add(run)
+    _append_run_changelog_entry(
+        session=session,
+        run=run,
+        event_type="pipeline_execution_started",
+        event_message="Pipeline execution started",
+        event_metadata={
+            "mode": str((run.config_json or {}).get("mode", DEFAULT_MODE)),
+            "recovery": True,
+        },
+    )
     session.commit()
     session.refresh(run)
 
@@ -5281,7 +5308,7 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
         else:
             metric["misses"] += 1
 
-    if run.status == "completed":
+    if run.status == RUN_STATUS_COMPLETED:
         _refresh_run_artifact_integrity_in_config(session=session, run=run)
         session.refresh(run)
     sanitized_run_config = _sanitize_run_config_for_frontend(run.config_json)
