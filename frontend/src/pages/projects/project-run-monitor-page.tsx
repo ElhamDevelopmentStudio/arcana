@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
+  useAudiobookPrepDashboardQuery,
   useCancelRunMutation,
   usePipelineStageDurationsDashboardQuery,
   useRecoverRunMutation,
@@ -34,6 +35,7 @@ export function ProjectRunMonitorPage() {
   const rerunRunMutation = useRerunRunMutation(projectId, runId);
   const recoverRunMutation = useRecoverRunMutation(projectId, runId);
   const cancelRunMutation = useCancelRunMutation(projectId, runId);
+  const audiobookPrepDashboardQuery = useAudiobookPrepDashboardQuery(projectId, runId);
   const pipelineStageDurationsDashboardQuery = usePipelineStageDurationsDashboardQuery(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
@@ -321,6 +323,23 @@ export function ProjectRunMonitorPage() {
             </pre>
           ) : (
             <p>No stage duration metrics yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Audiobook Prep Dashboard</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          {audiobookPrepDashboardQuery.isLoading ? <p>Loading audiobook prep metrics...</p> : null}
+          {audiobookPrepDashboardQuery.error ? <p className="text-destructive">{audiobookPrepDashboardQuery.error.message}</p> : null}
+          {audiobookPrepDashboardQuery.data ? (
+            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
+              {JSON.stringify(audiobookPrepDashboardQuery.data, null, 2)}
+            </pre>
+          ) : (
+            <p>No audiobook prep metrics yet.</p>
           )}
         </CardContent>
       </Card>

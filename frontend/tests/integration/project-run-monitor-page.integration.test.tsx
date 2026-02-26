@@ -13,6 +13,7 @@ const useRunConfigPresetMutationMock = vi.fn();
 const useRerunRunMutationMock = vi.fn();
 const useRecoverRunMutationMock = vi.fn();
 const useCancelRunMutationMock = vi.fn();
+const useAudiobookPrepDashboardQueryMock = vi.fn();
 const usePipelineStageDurationsDashboardQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
@@ -28,6 +29,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useRecoverRunMutationMock(...args),
   useCancelRunMutation: (...args: Parameters<typeof useCancelRunMutationMock>) =>
     useCancelRunMutationMock(...args),
+  useAudiobookPrepDashboardQuery: (...args: Parameters<typeof useAudiobookPrepDashboardQueryMock>) =>
+    useAudiobookPrepDashboardQueryMock(...args),
   usePipelineStageDurationsDashboardQuery: (...args: Parameters<typeof usePipelineStageDurationsDashboardQueryMock>) =>
     usePipelineStageDurationsDashboardQueryMock(...args),
 }));
@@ -78,6 +81,7 @@ describe('project run monitor page', () => {
     useRerunRunMutationMock.mockReset();
     useRecoverRunMutationMock.mockReset();
     useCancelRunMutationMock.mockReset();
+    useAudiobookPrepDashboardQueryMock.mockReset();
     usePipelineStageDurationsDashboardQueryMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
       data: null,
@@ -85,6 +89,11 @@ describe('project run monitor page', () => {
       error: null,
     });
     usePipelineStageDurationsDashboardQueryMock.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    useAudiobookPrepDashboardQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
@@ -325,5 +334,27 @@ describe('project run monitor page', () => {
     renderRunMonitorPage();
     expect(screen.getByText(/Pipeline Stage Durations Dashboard/i)).toBeInTheDocument();
     expect(screen.getByText(/run_llm_probe/i)).toBeInTheDocument();
+  });
+
+  it('renders audiobook prep dashboard payload when available', () => {
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+    useAudiobookPrepDashboardQueryMock.mockReturnValue({
+      data: {
+        project_id: 303,
+        run_id: 303,
+        narrator_readiness_score: 0.91,
+        unresolved_pronunciations: [],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    expect(screen.getByText(/Audiobook Prep Dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/narrator_readiness_score/i)).toBeInTheDocument();
   });
 });

@@ -2183,6 +2183,77 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(stageDurationsPayload.run_id).toBe(runPayload.run_id);
   });
 
+  test('projects/:project_id/run-monitor route loads audiobook prep dashboard through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-run-monitor-audiobook-prep-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: 'Run monitor audiobook prep project',
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: runPayload.run_id },
+    );
+
+    const audiobookPrepGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/runs/${runPayload.run_id}/audiobook-prep-dashboard`),
+    );
+
+    await page.goto(`/projects/${projectId}/run-monitor`);
+    await expect(page.getByText('Audiobook Prep Dashboard')).toBeVisible();
+
+    const audiobookPrepGetResponse = await audiobookPrepGetResponsePromise;
+    expect(audiobookPrepGetResponse.status()).toBe(200);
+    const audiobookPrepPayload = (await audiobookPrepGetResponse.json()) as {
+      project_id: number;
+      run_id: number;
+    };
+    expect(audiobookPrepPayload.project_id).toBe(projectId);
+    expect(audiobookPrepPayload.run_id).toBe(runPayload.run_id);
+  });
+
   test('projects/:project_id/pipeline-setup route updates voice configuration through backend endpoint', async ({
     page,
     request,
