@@ -397,7 +397,7 @@ Definition of done for each task:
 - [x] [NFR2-002] Add chapter-content loss detector after normalization/segmentation.
 - [x] [NFR2-003] Add run-state recovery for interrupted jobs.
 - [x] [NFR2-004] Add idempotent rerun behavior checks.
-- [ ] [NFR2-005] Add automated corruption checks on persisted artifacts.
+- [x] [NFR2-005] Add automated corruption checks on persisted artifacts.
 
 ### NFR-3 Usability
 - [x] [NFR3-001] Add pronunciation override UX with inline validation.
