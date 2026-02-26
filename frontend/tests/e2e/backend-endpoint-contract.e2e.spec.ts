@@ -187,6 +187,58 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     });
     expect(overlappingAppendResponse.status()).toBe(409);
 
+    const shadowSlaveProject = await createProject(request, uniqueTitle('e2e-acc001-shadow-slave'));
+    const shadowSlaveIngestResponse = await request.post(
+      `${backendBaseUrl}/api/projects/${shadowSlaveProject.id}/ingest/txt`,
+      {
+        multipart: {
+          file: {
+            name: 'shadow-slave-corpus.txt',
+            mimeType: 'text/plain',
+            buffer: Buffer.from(
+              'Shadow Slave\n\n'
+                + 'Chapter 1\n'
+                + 'Sunny stood at the edge of the ruined courtyard while rain struck old stone.\n\n'
+                + 'Chapter 2\n'
+                + 'Nephis watched the horizon and counted each distant flare in the night.\n\n'
+                + 'Chapter 3\n'
+                + 'The gate opened and their steps echoed through the drowned corridor.',
+            ),
+          },
+        },
+      },
+    );
+    expect(shadowSlaveIngestResponse.status()).toBe(200);
+    const shadowSlaveIngestPayload = (await shadowSlaveIngestResponse.json()) as { chapter_count: number };
+    expect(shadowSlaveIngestPayload.chapter_count).toBe(3);
+
+    const shadowSlaveRunResponse = await request.post(`${backendBaseUrl}/api/projects/${shadowSlaveProject.id}/runs`, {
+      data: {
+        mode: 'audiobook',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 2,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(shadowSlaveRunResponse.status()).toBe(200);
+    const shadowSlaveRunPayload = (await shadowSlaveRunResponse.json()) as { run_id: number };
+
+    const shadowSlaveExportResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${shadowSlaveProject.id}/exports/${shadowSlaveRunPayload.run_id}.json`,
+    );
+    expect(shadowSlaveExportResponse.status()).toBe(200);
+    const shadowSlaveExportPayload = (await shadowSlaveExportResponse.json()) as {
+      status: string;
+      segments: Array<{ chapter_id: number | string }>;
+    };
+    expect(shadowSlaveExportPayload.status).toBe('completed');
+    const shadowSlaveChapterIds = Array.from(
+      new Set(shadowSlaveExportPayload.segments.map((segment) => Number(segment.chapter_id))),
+    ).sort((a, b) => a - b);
+    expect(shadowSlaveChapterIds).toEqual([1, 2, 3]);
+
     const invalidMarkdownResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/markdown`, {
       multipart: {
         file: {

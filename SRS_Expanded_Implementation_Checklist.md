@@ -495,7 +495,7 @@ Definition of done for each task:
 - [x] [MVP-013] Add release gate preventing excluded features from blocking MVP sign-off.
 
 ## 11. Acceptance Criteria Execution (Ref: SRS.md §11)
-- [ ] [ACC-001] Build acceptance test: ingest and chapterize Shadow Slave corpus.
+- [x] [ACC-001] Build acceptance test: ingest and chapterize Shadow Slave corpus.
 - [ ] [ACC-002] Build acceptance test: edit character map with `name/verbalized/gender` fields.
 - [ ] [ACC-003] Build acceptance test: pronunciation substitution preview correctness.
 - [ ] [ACC-004] Build acceptance test: export contains phonetic-ready text.
