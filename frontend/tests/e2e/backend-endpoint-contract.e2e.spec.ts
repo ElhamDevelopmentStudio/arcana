@@ -42,6 +42,21 @@ type ProjectAllowedActionsResponse = {
   next_required_action: string;
   allowed_actions: string[];
 };
+type ProjectActivityTimelineResponse = {
+  project_id: number;
+  total_items: number;
+  page: number;
+  page_size: number;
+  has_next_page: boolean;
+  items: Array<{
+    event_id: number;
+    event_type: string;
+    actor: string;
+    run_id: number | null;
+    created_at: string;
+    event_metadata: Record<string, unknown>;
+  }>;
+};
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const fixtureNovelPath = path.resolve(currentDir, '../fixtures/minimal-novel.txt');
@@ -571,6 +586,20 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(rerunDetailPayload.config.rerun_source_configuration_snapshot_id).toBeTruthy();
     expect(rerunDetailPayload.config.rerun_source_configuration_snapshot_version).toBeTruthy();
     expect(rerunDetailPayload.config.rerun_lineage_type).toBe('snapshot_clone');
+    const timelineResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/timeline`, {
+      params: { page: 1, page_size: 25 },
+    });
+    expect(timelineResponse.status()).toBe(200);
+    const timelinePayload = (await timelineResponse.json()) as ProjectActivityTimelineResponse;
+    expect(timelinePayload.project_id).toBe(projectId);
+    expect(timelinePayload.total_items).toBeGreaterThan(0);
+    expect(timelinePayload.page).toBe(1);
+    expect(timelinePayload.page_size).toBe(25);
+    expect(Array.isArray(timelinePayload.items)).toBe(true);
+    const timelineEventTypes = timelinePayload.items.map((event) => event.event_type);
+    expect(timelineEventTypes).toEqual(expect.arrayContaining(['run_start', 'run_complete', 'rerun']));
+    expect(timelinePayload.items[0].event_id).toBeGreaterThan(0);
+    expect(typeof timelinePayload.items[0].actor).toBe('string');
 
     const runDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runId}`);
     expect(runDetailResponse.status()).toBe(200);

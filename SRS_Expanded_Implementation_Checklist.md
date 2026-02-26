@@ -545,7 +545,7 @@ Definition of done for each task:
 - [x] [X-020] Add performance regression gate in CI for core pipelines.
 - [x] [X-021] Add backend endpoint that returns allowed project actions (`ingest`, `select_mode`, `configure`, `run`, `rerun`, `export`, `archive`, `restore`) based on current state.
 - [x] [X-022] Add backend rerun endpoint that clones prior run configuration snapshot and enqueues a new run with lineage metadata.
-- [ ] [X-023] Add backend project activity timeline endpoint for project detail views.
+- [x] [X-023] Add backend project activity timeline endpoint for project detail views.
 - [ ] [X-024] Add regression tests for action gating and rerun permission rules across lifecycle states.
 
 ## 13. Frontend Parallel Delivery Track (Ref: SRS.md §§2–11)

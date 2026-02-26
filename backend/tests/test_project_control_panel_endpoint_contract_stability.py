@@ -12,6 +12,7 @@ from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
 from app.main import app
 from app.schemas import (
+    ProjectActivityTimelineResponse,
     ProjectControlPanelProjectListResponse,
     ProjectControlPanelSummaryResponse,
 )
@@ -162,4 +163,46 @@ def test_integration_project_control_panel_project_list_contract_stability() -> 
             "last_run_status",
             "updated_at",
             "next_required_action",
+        }
+
+
+def test_integration_project_activity_timeline_contract_stability() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects/drafts", json={"title": "Contract Stability Timeline"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+        metadata_resp = client.patch(
+            f"/api/projects/{project_id}/metadata",
+            json={"description": "timeline contract"},
+        )
+        assert metadata_resp.status_code == 200
+        response = client.get(f"/api/projects/{project_id}/timeline", params={"page": 1, "page_size": 20})
+
+    assert response.status_code == 200
+    payload = response.json()
+    parsed = ProjectActivityTimelineResponse.model_validate(payload)
+    assert parsed.output_schema == "project_activity_timeline_json"
+    assert set(payload.keys()) == {
+        "schema_version",
+        "output_schema",
+        "output_format",
+        "output_id",
+        "output_name",
+        "generated_at",
+        "generated_by",
+        "project_id",
+        "total_items",
+        "page",
+        "page_size",
+        "has_next_page",
+        "items",
+    }
+    if payload["items"]:
+        assert set(payload["items"][0].keys()) == {
+            "event_id",
+            "event_type",
+            "actor",
+            "run_id",
+            "created_at",
+            "event_metadata",
         }
