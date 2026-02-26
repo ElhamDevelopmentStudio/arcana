@@ -1,9 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from dataclasses import dataclass
+from platform import system
+from contextlib import contextmanager
 from hashlib import sha256
 from uuid import uuid4
+import time
 from typing import Any
+from typing import Iterator
 
 from sqlalchemy.orm import Session
 
@@ -15,6 +19,7 @@ from app.models import (
     LLMCall,
     LLMCache,
     Project,
+    RunChangelogEntry,
     PronunciationDictionary,
     Run,
     RunNormalizedCorpusBlob,
@@ -149,6 +154,106 @@ def _coerce_positive_int(value: object, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _coerce_memory_bytes(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _get_process_memory_bytes() -> int | None:
+    try:
+        import resource
+    except ImportError:
+        return None
+
+    raw_usage = _coerce_memory_bytes(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if raw_usage is None:
+        return None
+
+    if system() == "Darwin":
+        return raw_usage
+    return raw_usage * 1024
+
+
+def _collect_pipeline_step_record(
+    step_name: str,
+    *,
+    start_time: float,
+    end_time: float,
+    start_memory_bytes: int | None,
+    end_memory_bytes: int | None,
+) -> dict[str, object]:
+    return {
+        "name": step_name,
+        "duration_ms": int((end_time - start_time) * 1000),
+        "memory_bytes_start": start_memory_bytes,
+        "memory_bytes_end": end_memory_bytes,
+        "memory_bytes_delta": (
+            None
+            if start_memory_bytes is None or end_memory_bytes is None
+            else end_memory_bytes - start_memory_bytes
+        ),
+    }
+
+
+@contextmanager
+def _record_pipeline_step(
+    step_records: list[dict[str, object]],
+    step_name: str,
+) -> Iterator[None]:
+    start_time = time.perf_counter()
+    start_memory = _get_process_memory_bytes()
+    try:
+        yield
+    finally:
+        end_time = time.perf_counter()
+        end_memory = _get_process_memory_bytes()
+        step_records.append(
+            _collect_pipeline_step_record(
+                step_name,
+                start_time=start_time,
+                end_time=end_time,
+                start_memory_bytes=start_memory,
+                end_memory_bytes=end_memory,
+            )
+        )
+
+
+def _build_performance_telemetry_payload(
+    *,
+    step_records: list[dict[str, object]],
+    total_duration_ms: int,
+    status: str,
+) -> dict[str, object]:
+    return {
+        "status": status,
+        "total_duration_ms": total_duration_ms,
+        "steps": list(step_records),
+    }
+
+
+def _append_pipeline_performance_changelog_entry(
+    session: Session,
+    *,
+    run: Run,
+    telemetry: dict[str, object],
+) -> None:
+    session.add(
+        RunChangelogEntry(
+            run_id=run.id,
+            event_type="pipeline_performance_telemetry",
+            event_message="Pipeline performance telemetry captured",
+            event_metadata={"performance_telemetry": telemetry},
+        )
+    )
 
 
 def _resolve_pipeline_chunk_max_chars(run_config: dict[str, Any], *, default: int = _PIPELINE_DEFAULT_CHUNK_MAX_CHARS) -> int:
@@ -1003,86 +1108,92 @@ def _should_escalate_to_llm(
 
 
 def execute_pipeline(session: Session, project: Project, run: Run, run_config: dict) -> dict:
-    chapters = (
-        session.query(Chapter)
-        .filter(Chapter.project_id == project.id)
-        .order_by(Chapter.chapter_index.asc())
-        .all()
-    )
+    step_records: list[dict[str, object]] = []
+    pipeline_started_at = time.perf_counter()
 
-    if not chapters:
-        raise PipelineError("No chapters available. Upload and ingest a TXT file first.")
+    with _record_pipeline_step(step_records, "load_and_validate_source_data"):
+        chapters = (
+            session.query(Chapter)
+            .filter(Chapter.project_id == project.id)
+            .order_by(Chapter.chapter_index.asc())
+            .all()
+        )
 
-    _persist_normalized_corpus_blob(
-        session=session,
-        run_id=run.id,
-        normalized_corpus="\n\n".join(chapter.normalized_text for chapter in chapters),
-    )
+        if not chapters:
+            raise PipelineError("No chapters available. Upload and ingest a TXT file first.")
 
-    characters = (
-        session.query(Character)
-        .filter(Character.project_id == project.id)
-        .order_by(Character.name.asc(), Character.id.asc())
-        .all()
-    )
+    with _record_pipeline_step(step_records, "persist_normalized_corpus_blob"):
+        _persist_normalized_corpus_blob(
+            session=session,
+            run_id=run.id,
+            normalized_corpus="\n\n".join(chapter.normalized_text for chapter in chapters),
+        )
 
-    global_pronunciations = {
-        entry.term.strip(): entry.verbalized_form.strip()
-        for entry in session.query(PronunciationDictionary)
-        .filter(
-            PronunciationDictionary.project_id == project.id,
-            PronunciationDictionary.scope == "global",
-            PronunciationDictionary.character_name == "",
+    with _record_pipeline_step(step_records, "load_project_artifacts"):
+        characters = (
+            session.query(Character)
+            .filter(Character.project_id == project.id)
+            .order_by(Character.name.asc(), Character.id.asc())
+            .all()
         )
-        .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
-        .all()
-    }
-    place_pronunciations = {
-        entry.term.strip(): entry.verbalized_form.strip()
-        for entry in session.query(PronunciationDictionary)
-        .filter(
-            PronunciationDictionary.project_id == project.id,
-            PronunciationDictionary.scope == "place",
-            PronunciationDictionary.character_name == "",
+
+        global_pronunciations = {
+            entry.term.strip(): entry.verbalized_form.strip()
+            for entry in session.query(PronunciationDictionary)
+            .filter(
+                PronunciationDictionary.project_id == project.id,
+                PronunciationDictionary.scope == "global",
+                PronunciationDictionary.character_name == "",
+            )
+            .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
+            .all()
+        }
+        place_pronunciations = {
+            entry.term.strip(): entry.verbalized_form.strip()
+            for entry in session.query(PronunciationDictionary)
+            .filter(
+                PronunciationDictionary.project_id == project.id,
+                PronunciationDictionary.scope == "place",
+                PronunciationDictionary.character_name == "",
+            )
+            .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
+            .all()
+        }
+        invented_pronunciations = {
+            entry.term.strip(): entry.verbalized_form.strip()
+            for entry in session.query(PronunciationDictionary)
+            .filter(
+                PronunciationDictionary.project_id == project.id,
+                PronunciationDictionary.scope == "invented",
+                PronunciationDictionary.character_name == "",
+            )
+            .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
+            .all()
+        }
+        artifact_pronunciations = {
+            entry.term.strip(): entry.verbalized_form.strip()
+            for entry in session.query(PronunciationDictionary)
+            .filter(
+                PronunciationDictionary.project_id == project.id,
+                PronunciationDictionary.scope == "artifact",
+                PronunciationDictionary.character_name == "",
+            )
+            .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
+            .all()
+        }
+        character_scope_entries = (
+            session.query(PronunciationDictionary)
+            .filter(
+                PronunciationDictionary.project_id == project.id,
+                PronunciationDictionary.scope == "character",
+            )
+            .order_by(
+                PronunciationDictionary.character_name.asc(),
+                PronunciationDictionary.term.asc(),
+                PronunciationDictionary.id.asc(),
+            )
+            .all()
         )
-        .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
-        .all()
-    }
-    invented_pronunciations = {
-        entry.term.strip(): entry.verbalized_form.strip()
-        for entry in session.query(PronunciationDictionary)
-        .filter(
-            PronunciationDictionary.project_id == project.id,
-            PronunciationDictionary.scope == "invented",
-            PronunciationDictionary.character_name == "",
-        )
-        .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
-        .all()
-    }
-    artifact_pronunciations = {
-        entry.term.strip(): entry.verbalized_form.strip()
-        for entry in session.query(PronunciationDictionary)
-        .filter(
-            PronunciationDictionary.project_id == project.id,
-            PronunciationDictionary.scope == "artifact",
-            PronunciationDictionary.character_name == "",
-        )
-        .order_by(PronunciationDictionary.term.asc(), PronunciationDictionary.id.asc())
-        .all()
-    }
-    character_scope_entries = (
-        session.query(PronunciationDictionary)
-        .filter(
-            PronunciationDictionary.project_id == project.id,
-            PronunciationDictionary.scope == "character",
-        )
-        .order_by(
-            PronunciationDictionary.character_name.asc(),
-            PronunciationDictionary.term.asc(),
-            PronunciationDictionary.id.asc(),
-        )
-        .all()
-    )
     character_pronunciations = {}
     for entry in character_scope_entries:
         normalized_name = entry.character_name.strip().lower()
@@ -1114,168 +1225,193 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
     if run_config.get("internal_thought_voice"):
         voice_config["thought_voice"] = str(run_config["internal_thought_voice"]).strip()
 
-    session.query(Segment).filter(Segment.run_id == run.id).delete()
-    session.query(LLMCall).filter(LLMCall.run_id == run.id).delete()
-    session.query(SubSegmentTag).filter(SubSegmentTag.run_id == run.id).delete()
+    with _record_pipeline_step(step_records, "clear_previous_run_artifacts"):
+        session.query(Segment).filter(Segment.run_id == run.id).delete()
+        session.query(LLMCall).filter(LLMCall.run_id == run.id).delete()
+        session.query(SubSegmentTag).filter(SubSegmentTag.run_id == run.id).delete()
 
-    incremental_scope = _resolve_incremental_recompute_scope(
-        session=session,
-        project_id=project.id,
-        current_run_id=run.id,
-        run_config=run_config,
-        chapters=chapters,
-    )
-    if incremental_scope > 0:
+    with _record_pipeline_step(step_records, "resolve_incremental_recompute_scope"):
+        incremental_scope = _resolve_incremental_recompute_scope(
+            session=session,
+            project_id=project.id,
+            current_run_id=run.id,
+            run_config=run_config,
+            chapters=chapters,
+        )
+        if incremental_scope > 0:
+            run.config_json = {
+                **(run.config_json or {}),
+                "incremental_recompute": {
+                    "enabled": True,
+                    "reused_chapter_count": incremental_scope,
+                },
+            }
+
+    with _record_pipeline_step(step_records, "build_chunking_plan"):
+        max_chars = int(run_config.get("max_segment_chars", 255))
+        llm_confidence_threshold = _coerce_confidence_threshold(
+            run_config.get("llm_confidence_threshold", _LLM_CONFIDENCE_THRESHOLD_DEFAULT)
+        )
+        deep_semantic_refinement = bool(run_config.get("deep_semantic_refinement", False))
+        max_chunk_chars = _resolve_pipeline_chunk_max_chars(run_config)
+        chapter_work_items = _build_chunk_work_items(chapters=chapters[incremental_scope:])
+        chunk_jobs = _build_chunk_jobs(chapter_work_items=chapter_work_items, max_chunk_chars=max_chunk_chars)
+        chunk_count = len(chunk_jobs)
         run.config_json = {
             **(run.config_json or {}),
-            "incremental_recompute": {
-                "enabled": True,
-                "reused_chapter_count": incremental_scope,
+            "pipeline_chunking": {
+                "enabled": chunk_count > 1,
+                "chunk_max_chars": max_chunk_chars,
+                "chunk_count": chunk_count,
             },
         }
 
-    max_chars = int(run_config.get("max_segment_chars", 255))
-    llm_confidence_threshold = _coerce_confidence_threshold(run_config.get("llm_confidence_threshold", _LLM_CONFIDENCE_THRESHOLD_DEFAULT))
-    deep_semantic_refinement = bool(run_config.get("deep_semantic_refinement", False))
-    max_chunk_chars = _resolve_pipeline_chunk_max_chars(run_config)
-    chapter_work_items = _build_chunk_work_items(chapters=chapters[incremental_scope:])
-    chunk_jobs = _build_chunk_jobs(chapter_work_items=chapter_work_items, max_chunk_chars=max_chunk_chars)
-    chunk_count = len(chunk_jobs)
-    run.config_json = {
-        **(run.config_json or {}),
-        "pipeline_chunking": {
-            "enabled": chunk_count > 1,
-            "chunk_max_chars": max_chunk_chars,
-            "chunk_count": chunk_count,
-        },
-    }
     llm_probe_text: str | None = None
     total_segments = 0
     segment_payloads: list[dict[str, object]] = []
     if incremental_scope > 0:
-        prior_run = _get_latest_completed_run_before(
-            session=session,
-            project_id=project.id,
-            current_run_id=run.id,
-        )
-        if prior_run is not None:
-            segment_payloads.extend(
-                _copy_incremental_run_payloads(
-                    session=session,
-                    source_run_id=prior_run.id,
-                    target_run_id=run.id,
-                    chapter_scope=incremental_scope,
-                )
+        with _record_pipeline_step(step_records, "copy_incremental_segments"):
+            prior_run = _get_latest_completed_run_before(
+                session=session,
+                project_id=project.id,
+                current_run_id=run.id,
             )
-            total_segments = len(segment_payloads)
+            if prior_run is not None:
+                segment_payloads.extend(
+                    _copy_incremental_run_payloads(
+                        session=session,
+                        source_run_id=prior_run.id,
+                        target_run_id=run.id,
+                        chapter_scope=incremental_scope,
+                    )
+                )
+                total_segments = len(segment_payloads)
 
     chunk_payloads: list[dict[str, object]] = []
-    if chunk_jobs:
-        with ThreadPoolExecutor(max_workers=min(8, len(chunk_jobs))) as executor:
-            futures = {
-                executor.submit(
-                    _build_chunk_segment_payloads,
-                    chunk_index=chunk_index,
-                    chunk_count=chunk_count,
-                    chapter_batch=chapter_batch,
-                    max_chars=max_chars,
-                    name_to_verbalized=name_to_verbalized,
-                    character_lookup=character_lookup,
-                    character_pronunciations=character_pronunciations,
-                    voice_config=voice_config,
-                    llm_confidence_threshold=llm_confidence_threshold,
-                    deep_semantic_refinement=deep_semantic_refinement,
-                ): chunk_index
-                for chunk_index, chapter_batch in enumerate(chunk_jobs, start=1)
-            }
-            ordered_payloads: dict[int, dict[str, object]] = {}
-            for future in as_completed(futures):
-                chunk_payload = future.result()
-                ordered_payloads[int(chunk_payload.get("chunk_index", 0))] = chunk_payload
+    with _record_pipeline_step(step_records, "build_chunk_payloads"):
+        if chunk_jobs:
+            with ThreadPoolExecutor(max_workers=min(8, len(chunk_jobs))) as executor:
+                futures = {
+                    executor.submit(
+                        _build_chunk_segment_payloads,
+                        chunk_index=chunk_index,
+                        chunk_count=chunk_count,
+                        chapter_batch=chapter_batch,
+                        max_chars=max_chars,
+                        name_to_verbalized=name_to_verbalized,
+                        character_lookup=character_lookup,
+                        character_pronunciations=character_pronunciations,
+                        voice_config=voice_config,
+                        llm_confidence_threshold=llm_confidence_threshold,
+                        deep_semantic_refinement=deep_semantic_refinement,
+                    ): chunk_index
+                    for chunk_index, chapter_batch in enumerate(chunk_jobs, start=1)
+                }
+                ordered_payloads: dict[int, dict[str, object]] = {}
+                for future in as_completed(futures):
+                    chunk_payload = future.result()
+                    ordered_payloads[int(chunk_payload.get("chunk_index", 0))] = chunk_payload
 
-            for chunk_index in sorted(ordered_payloads):
-                chunk_payloads.append(ordered_payloads[chunk_index])
+                for chunk_index in sorted(ordered_payloads):
+                    chunk_payloads.append(ordered_payloads[chunk_index])
 
-    new_segment_payloads: list[dict[str, object]] = []
-    new_sub_segment_payloads: list[list[dict[str, object]]] = []
-    for chunk_payload in chunk_payloads:
-        new_segment_payloads.extend(chunk_payload.get("segment_payloads", []))
-        new_sub_segment_payloads.extend(chunk_payload.get("sub_segment_payloads", []))
-        if llm_probe_text is None:
-            candidate_probe_text = chunk_payload.get("llm_probe_text")
-            if isinstance(candidate_probe_text, str) and candidate_probe_text:
-                llm_probe_text = candidate_probe_text
+    with _record_pipeline_step(step_records, "merge_segment_payloads"):
+        new_segment_payloads: list[dict[str, object]] = []
+        new_sub_segment_payloads: list[list[dict[str, object]]] = []
+        for chunk_payload in chunk_payloads:
+            new_segment_payloads.extend(chunk_payload.get("segment_payloads", []))
+            new_sub_segment_payloads.extend(chunk_payload.get("sub_segment_payloads", []))
+            if llm_probe_text is None:
+                candidate_probe_text = chunk_payload.get("llm_probe_text")
+                if isinstance(candidate_probe_text, str) and candidate_probe_text:
+                    llm_probe_text = candidate_probe_text
 
-    segment_payloads.extend(new_segment_payloads)
-    total_segments = len(segment_payloads)
+        segment_payloads.extend(new_segment_payloads)
+        total_segments = len(segment_payloads)
 
-    chapter_id_by_index = {
-        int(item.chapter_index): item.id
-        for item in chapters
-    }
+        chapter_id_by_index = {int(item.chapter_index): item.id for item in chapters}
 
-    for segment_payload, boundary_payloads in zip(new_segment_payloads, new_sub_segment_payloads):
-        chapter_index = int(segment_payload.get("chapter_id", 0))
-        segment = Segment(
-            run_id=run.id,
-            chapter_id=chapter_id_by_index[chapter_index],
-            segment_index=int(segment_payload["segment_index"]),
-            segment_json=segment_payload,
-        )
-        session.add(segment)
-        session.flush()
-
-        segment_payload_id = str(segment_payload["segment_id"])
-        for boundary_payload in boundary_payloads:
-            if not isinstance(boundary_payload, dict):
-                continue
-            session.add(
-                SubSegmentTag(
-                    run_id=run.id,
-                    chapter_id=chapter_id_by_index[chapter_index],
-                    segment_id=segment.id,
-                    sub_segment_id=f"{segment_payload_id}-{int(boundary_payload.get('boundary_index', 0)):02d}",
-                    sub_segment_index=int(boundary_payload.get("boundary_index", 0)),
-                    shift_type=str(boundary_payload.get("shift_type")),
-                    boundary_start_char=int(boundary_payload.get("boundary_start_char", 0)),
-                    boundary_end_char=int(boundary_payload.get("boundary_end_char", 0)),
-                    from_label=(None if boundary_payload.get("from_label") is None else str(boundary_payload.get("from_label"))),
-                    to_label=(None if boundary_payload.get("to_label") is None else str(boundary_payload.get("to_label"))),
-                    from_text=(None if boundary_payload.get("from_text") is None else str(boundary_payload.get("from_text"))),
-                    to_text=(None if boundary_payload.get("to_text") is None else str(boundary_payload.get("to_text"))),
-                    confidence=float(boundary_payload.get("confidence", 0.0)),
-                    tags=boundary_payload.get("tags", {}),
-                    evidence=boundary_payload.get("evidence", {}),
-                )
+        for segment_payload, boundary_payloads in zip(new_segment_payloads, new_sub_segment_payloads):
+            chapter_index = int(segment_payload.get("chapter_id", 0))
+            segment = Segment(
+                run_id=run.id,
+                chapter_id=chapter_id_by_index[chapter_index],
+                segment_index=int(segment_payload["segment_index"]),
+                segment_json=segment_payload,
             )
+            session.add(segment)
+            session.flush()
 
-        total_segments += 1
+            segment_payload_id = str(segment_payload["segment_id"])
+            for boundary_payload in boundary_payloads:
+                if not isinstance(boundary_payload, dict):
+                    continue
+                session.add(
+                    SubSegmentTag(
+                        run_id=run.id,
+                        chapter_id=chapter_id_by_index[chapter_index],
+                        segment_id=segment.id,
+                        sub_segment_id=f"{segment_payload_id}-{int(boundary_payload.get('boundary_index', 0)):02d}",
+                        sub_segment_index=int(boundary_payload.get("boundary_index", 0)),
+                        shift_type=str(boundary_payload.get("shift_type")),
+                        boundary_start_char=int(boundary_payload.get("boundary_start_char", 0)),
+                        boundary_end_char=int(boundary_payload.get("boundary_end_char", 0)),
+                        from_label=(None if boundary_payload.get("from_label") is None else str(boundary_payload.get("from_label"))),
+                        to_label=(None if boundary_payload.get("to_label") is None else str(boundary_payload.get("to_label"))),
+                        from_text=(None if boundary_payload.get("from_text") is None else str(boundary_payload.get("from_text"))),
+                        to_text=(None if boundary_payload.get("to_text") is None else str(boundary_payload.get("to_text"))),
+                        confidence=float(boundary_payload.get("confidence", 0.0)),
+                        tags=boundary_payload.get("tags", {}),
+                        evidence=boundary_payload.get("evidence", {}),
+                    )
+                )
+
+            total_segments += 1
 
     llm_enabled = bool(run_config.get("llm_enabled", False))
-    if llm_enabled and llm_probe_text:
-        _run_llm_probe(
-            session=session,
-            project=project,
-            run=run,
-            run_config=run_config,
-            input_text=llm_probe_text,
+    with _record_pipeline_step(step_records, "run_llm_probe"):
+        if llm_enabled and llm_probe_text:
+            _run_llm_probe(
+                session=session,
+                project=project,
+                run=run,
+                run_config=run_config,
+                input_text=llm_probe_text,
+            )
+
+    with _record_pipeline_step(step_records, "derive_character_analytics"):
+        character_occurrence_analytics = build_character_occurrence_analytics(
+            chapters=chapters,
+            characters=characters,
+            segment_payloads=segment_payloads,
         )
+        run.config_json = {
+            **(run.config_json or {}),
+            **character_occurrence_analytics,
+        }
 
-    character_occurrence_analytics = build_character_occurrence_analytics(
-        chapters=chapters,
-        characters=characters,
-        segment_payloads=segment_payloads,
+    with _record_pipeline_step(step_records, "finalize_run_and_build_export"):
+        run.status = "completed"
+        run.finished_at = datetime.now(timezone.utc)
+        session.flush()
+        export_payload = build_run_export(session, project, run)
+
+    pipeline_completed_at = time.perf_counter()
+    performance_telemetry = _build_performance_telemetry_payload(
+        step_records=step_records,
+        total_duration_ms=int((pipeline_completed_at - pipeline_started_at) * 1000),
+        status="completed",
     )
-    run.config_json = {
-        **(run.config_json or {}),
-        **character_occurrence_analytics,
-    }
-
-    run.status = "completed"
-    run.finished_at = datetime.now(timezone.utc)
+    run_config_with_telemetry = dict(run.config_json or {})
+    run_config_with_telemetry["performance_telemetry"] = performance_telemetry
+    run.config_json = run_config_with_telemetry
+    _append_pipeline_performance_changelog_entry(
+        session=session,
+        run=run,
+        telemetry=performance_telemetry,
+    )
     session.flush()
 
-    export_payload = build_run_export(session, project, run)
     return {
         "segment_count": total_segments,
         "export": export_payload,
