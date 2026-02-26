@@ -180,6 +180,40 @@ Deterministic run model pinning:
 - If a value is provided, it is pinned in that run config and used for primary provider requests during that run.
 - The pinned model value is included in `run.config` and in LLM call logs (`model_identifier`).
 
+Pipeline chunking for long corpora:
+
+- `POST /api/projects/{project_id}/runs` accepts `pipeline_chunk_max_chars` in the request body.
+- `pipeline_chunk_max_chars` must be an integer in `[1024, 2000000]`.
+- If omitted, the backend defaults to `120000` characters.
+- Pipeline segments are processed in chapter-order batches where each batch total normalized chapter size is capped by the resolved threshold.
+- Run metadata includes `pipeline_chunking` with:
+  - `enabled` (boolean)
+  - `chunk_max_chars`
+  - `chunk_count`
+- Segment payloads include stable `chunk_index` and `chunk_count`.
+- Chunks group full chapters only; intra-chapter segmentation remains in segmenter stage.
+
+Run model metadata persistence:
+
+- Every run now stores selected LLM metadata on the `runs` record:
+  - `llm_provider_name`
+  - `llm_model_identifier`
+  - `llm_model_version` (derived from provider model identifier when a version suffix is present, e.g. `openai/gpt-4o-mini:preview` → `preview`)
+- These fields are returned by `GET /api/projects/{project_id}/runs/{run_id}` and are currently persisted even when the run completes with fallback attempts.
+- For runs executed with `llm_enabled` false, these values remain `null` because no LLM probe runs.
+
+Run changelog persistence:
+
+- Each run now records a changelog in `run_changelog_entries` with:
+  - `run_id` (FK to `runs.id`)
+  - `event_type` (for example `run_created`, `pipeline_execution_started`, `pipeline_completed`)
+  - `event_message` (human-readable summary)
+  - `event_metadata` (structured context like snapshot ids, segment counts, or failure reasons)
+  - `created_at` timestamp (UTC)
+- Changelog entries are written at run lifecycle boundaries and included in:
+  - `GET /api/projects/{project_id}/runs/{run_id}` under `changelog_entries`
+- The endpoint returns entries ordered by timestamp so consumers can reconstruct run history deterministically.
+
 Deterministic seed + randomization metadata:
 
 - `POST /api/projects/{project_id}/runs` also accepts:
