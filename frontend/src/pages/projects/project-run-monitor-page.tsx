@@ -26,6 +26,7 @@ export function ProjectRunMonitorPage() {
       step="Step 05"
       title="Run Monitor"
       description="Observe run execution state, logs, and progress events for a single project run."
+      showOutputDisclaimer
       action={
         projectId !== null ? (
           <div className="flex flex-wrap gap-2">

@@ -407,7 +407,7 @@ Definition of done for each task:
 - [x] [NFR3-005] Add docs page “How to review low-confidence outputs”.
 
 ### NFR-4 Transparency
-- [ ] [NFR4-001] Add UI disclaimer that outputs are probabilistic, not perfect.
+- [x] [NFR4-001] Add UI disclaimer that outputs are probabilistic, not perfect.
 - [ ] [NFR4-002] Show confidence score on all major tag outputs.
 - [ ] [NFR4-003] Add filtering by confidence thresholds in UI.
 

@@ -559,6 +559,7 @@ export function ProjectCharactersPage() {
       step="Step 03"
       title="Character Map"
       description="Manage character data through import, manual editing, and scrape-assisted discovery. This page is dedicated to character-map operations only."
+      showOutputDisclaimer
       action={
         projectId !== null ? (
           <div className="flex flex-wrap items-center gap-2">

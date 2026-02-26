@@ -36,6 +36,7 @@ export function ProjectExportPage() {
       step="Step 06"
       title="Exports"
       description="Review export readiness and download generated outputs. This page is dedicated to export artifacts only."
+      showOutputDisclaimer
       action={
         projectId !== null ? (
           <Button onClick={() => navigate(projectRoute(projectId, 'dashboards'))}>Continue to Dashboards</Button>
