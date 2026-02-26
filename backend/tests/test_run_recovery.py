@@ -234,10 +234,11 @@ def test_recover_run_refreshes_stale_artifacts_and_completes(
         },
     )
 
-    def _mock_pipeline(*, session, project, run, run_config):
+    def _mock_pipeline(*, session, project, run, run_config, **kwargs):
         assert project.id == project_id
         assert run_id == run.id
         assert run_config["pipeline_recovery"]["status"] == "running"
+        assert kwargs["project_id"] == project_id
         normalized_text = "Nova spoke."
         session.add(
             RunNormalizedCorpusBlob(
@@ -248,6 +249,7 @@ def test_recover_run_refreshes_stale_artifacts_and_completes(
                 normalized_corpus_blob=normalized_text.encode("utf-8"),
             )
         )
+        session.flush()
         return {
             "segment_count": 4,
             "export": {"time_series": {"emotion_valence": [0.3, 0.4]}},
