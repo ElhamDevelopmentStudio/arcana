@@ -476,7 +476,7 @@ Definition of done for each task:
 - [x] [MVP-001] Verify ingest supports TXT + chapter directory paths.
 - [x] [MVP-002] Verify normalization includes chapters/dedupe/quote normalization/reports.
 - [x] [MVP-003] Verify character map supports aliases and review UI.
-- [ ] [MVP-004] Verify dual gender system with inference + contradiction flags.
+- [x] [MVP-004] Verify dual gender system with inference + contradiction flags.
 - [ ] [MVP-005] Verify pronunciation overrides and preview.
 - [ ] [MVP-006] Verify TTS segmentation target <=255.
 - [ ] [MVP-007] Verify tagging includes structural + emotion + speaker + confidence.
