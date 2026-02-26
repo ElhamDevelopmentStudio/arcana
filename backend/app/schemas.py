@@ -1127,6 +1127,17 @@ ProjectControlPanelNextRequiredAction = Literal[
     "archived",
     "none",
 ]
+ProjectAllowedAction = Literal[
+    "ingest",
+    "select_mode",
+    "configure",
+    "run",
+    "rerun",
+    "export",
+    "archive",
+    "restore",
+]
+ProjectActionRunStatus = Literal["queued", "running", "completed", "failed", "cancelled", "interrupted"]
 
 
 class ProjectControlPanelStateCount(BaseModel):
@@ -1182,6 +1193,21 @@ class ProjectControlPanelProjectListResponse(BaseModel):
     page_size: int = Field(default=20, ge=1, le=200)
     has_next_page: bool = False
     items: list[ProjectControlPanelProjectListItem] = Field(default_factory=list)
+
+
+class ProjectAllowedActionsResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="project_allowed_actions_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="CP-003")
+    output_name: str = Field(default="project_allowed_actions")
+    generated_at: str = Field(min_length=1)
+    generated_by: str = Field(default="build_project_allowed_actions", min_length=1)
+    project_id: int = Field(ge=1)
+    lifecycle_state: ProjectLifecycleState
+    last_run_status: ProjectActionRunStatus | None = None
+    next_required_action: ProjectControlPanelNextRequiredAction
+    allowed_actions: list[ProjectAllowedAction] = Field(default_factory=list)
 
 
 

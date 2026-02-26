@@ -35,6 +35,14 @@ type ModeCatalogResponse = {
   >;
 };
 
+type ProjectAllowedActionsResponse = {
+  project_id: number;
+  lifecycle_state: string;
+  last_run_status: string | null;
+  next_required_action: string;
+  allowed_actions: string[];
+};
+
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const fixtureNovelPath = path.resolve(currentDir, '../fixtures/minimal-novel.txt');
 const fixtureCharactersPath = path.resolve(currentDir, '../fixtures/characters-minimal.json');
@@ -86,6 +94,15 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(projectId).toBeGreaterThan(0);
     expect(project.selected_mode).toBe('audiobook');
     expect(project.llm_enabled).toBe(false);
+
+    const draftActionsResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/actions`);
+    expect(draftActionsResponse.status()).toBe(200);
+    const draftActionsPayload = (await draftActionsResponse.json()) as ProjectAllowedActionsResponse;
+    expect(draftActionsPayload.project_id).toBe(projectId);
+    expect(draftActionsPayload.allowed_actions).toEqual(
+      expect.arrayContaining(['ingest', 'select_mode', 'configure', 'archive']),
+    );
+    expect(draftActionsPayload.allowed_actions).not.toContain('restore');
 
     const projectLlmGetResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/llm`);
     expect(projectLlmGetResponse.status()).toBe(200);
@@ -532,6 +549,14 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(runPayload.project_id).toBe(projectId);
 
     const runId = runPayload.run_id;
+    const completedActionsResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/actions`);
+    expect(completedActionsResponse.status()).toBe(200);
+    const completedActionsPayload = (await completedActionsResponse.json()) as ProjectAllowedActionsResponse;
+    expect(completedActionsPayload.project_id).toBe(projectId);
+    expect(completedActionsPayload.last_run_status).toBe('completed');
+    expect(completedActionsPayload.allowed_actions).toEqual(
+      expect.arrayContaining(['run', 'export', 'archive']),
+    );
 
     const runDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runId}`);
     expect(runDetailResponse.status()).toBe(200);
