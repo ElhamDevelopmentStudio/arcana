@@ -1792,6 +1792,48 @@ def test_export_csv_contains_tts_ready_segments() -> None:
         assert rows[1][header.index("segment_id")] != ""
 
 
+def test_export_audiobook_json_and_csv_are_available_for_same_run() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Manifest JSON+CSV Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={
+                "file": (
+                    "sample.txt",
+                    io.BytesIO(
+                        b"Chapter 1\n"
+                        b'"Hold the line," Ally said.\n\n'
+                        b"The rain hammered the window and the hall stayed silent.\n\n"
+                        b'"Understood," Beth replied.'
+                    ),
+                    "text/plain",
+                )
+            },
+        )
+        assert ingest_resp.status_code == 200
+
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"max_segment_chars": 80, "mode": "audiobook", "allow_unfinalized_character_map": True},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["run_id"]
+
+        export_json_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+        assert export_json_resp.status_code == 200
+        json_segments = export_json_resp.json()["segments"]
+        assert len(json_segments) > 0
+
+        export_csv_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.csv")
+        assert export_csv_resp.status_code == 200
+        csv_rows = list(csv.DictReader(io.StringIO(export_csv_resp.text)))
+        assert len(csv_rows) == len(json_segments)
+        assert {"segment_id", "normalized_text", "phonetic_text", "resolved_voice_id"} <= set(csv_rows[0].keys())
+
+
 def test_export_csv_supports_academic_output_schema() -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects", json={"title": "Manifest Academic CSV Project"})
