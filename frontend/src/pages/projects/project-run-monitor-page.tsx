@@ -18,6 +18,7 @@ import {
   useRunConfigDiffQuery,
   useRunConfigPresetMutation,
   useRunDetailQuery,
+  useTensionGraphQuery,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -40,6 +41,7 @@ export function ProjectRunMonitorPage() {
   const audiobookPrepDashboardQuery = useAudiobookPrepDashboardQuery(projectId, runId);
   const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
   const characterCooccurrenceGraphQuery = useCharacterCooccurrenceGraphQuery(projectId, runId);
+  const tensionGraphQuery = useTensionGraphQuery(projectId, runId);
   const pipelineStageDurationsDashboardQuery = usePipelineStageDurationsDashboardQuery(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
@@ -380,6 +382,23 @@ export function ProjectRunMonitorPage() {
             </pre>
           ) : (
             <p>No co-occurrence graph yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Tension Graph</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          {tensionGraphQuery.isLoading ? <p>Loading tension graph...</p> : null}
+          {tensionGraphQuery.error ? <p className="text-destructive">{tensionGraphQuery.error.message}</p> : null}
+          {tensionGraphQuery.data ? (
+            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
+              {JSON.stringify(tensionGraphQuery.data, null, 2)}
+            </pre>
+          ) : (
+            <p>No tension graph yet.</p>
           )}
         </CardContent>
       </Card>

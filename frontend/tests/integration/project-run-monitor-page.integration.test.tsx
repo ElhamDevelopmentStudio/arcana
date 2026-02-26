@@ -17,6 +17,7 @@ const useAudiobookPrepDashboardQueryMock = vi.fn();
 const useCharacterAnalyticsQueryMock = vi.fn();
 const useCharacterCooccurrenceGraphQueryMock = vi.fn();
 const usePipelineStageDurationsDashboardQueryMock = vi.fn();
+const useTensionGraphQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) =>
@@ -39,6 +40,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useCharacterCooccurrenceGraphQueryMock(...args),
   usePipelineStageDurationsDashboardQuery: (...args: Parameters<typeof usePipelineStageDurationsDashboardQueryMock>) =>
     usePipelineStageDurationsDashboardQueryMock(...args),
+  useTensionGraphQuery: (...args: Parameters<typeof useTensionGraphQueryMock>) =>
+    useTensionGraphQueryMock(...args),
 }));
 
 function renderRunMonitorPage() {
@@ -91,6 +94,7 @@ describe('project run monitor page', () => {
     useCharacterAnalyticsQueryMock.mockReset();
     useCharacterCooccurrenceGraphQueryMock.mockReset();
     usePipelineStageDurationsDashboardQueryMock.mockReset();
+    useTensionGraphQueryMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
@@ -112,6 +116,11 @@ describe('project run monitor page', () => {
       error: null,
     });
     useCharacterCooccurrenceGraphQueryMock.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    useTensionGraphQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
@@ -419,5 +428,29 @@ describe('project run monitor page', () => {
     renderRunMonitorPage();
     expect(screen.getByText(/Character Co-occurrence Graph/i)).toBeInTheDocument();
     expect(screen.getByText(/\"source\": \"Alice\"/i)).toBeInTheDocument();
+  });
+
+  it('renders tension graph payload when available', () => {
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+    useTensionGraphQueryMock.mockReturnValue({
+      data: {
+        project_id: 303,
+        run_id: 303,
+        points: [
+          { chapter_index: 1, segment_index: 4, tension_score: 0.71 },
+          { chapter_index: 1, segment_index: 8, tension_score: 0.84 },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    expect(screen.getByText(/Tension Graph/i)).toBeInTheDocument();
+    expect(screen.getByText(/tension_score/i)).toBeInTheDocument();
   });
 });
