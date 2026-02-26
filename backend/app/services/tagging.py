@@ -138,6 +138,16 @@ ShiftMarkerDetector = tuple[str, Callable[[str], dict[str, object]]]
 
 TAG_LOW_CONFIDENCE_THRESHOLD = 0.6
 TAG_VERY_LOW_CONFIDENCE_THRESHOLD = 0.3
+TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD = 2
+HIGH_AMBIGUITY_DIALOGUE_WARNING_FLAGS = {
+    "ambiguous_speaker_attribution",
+    "low_speaker_confidence",
+    "mixed_structure",
+    "mixed_dialogue_and_narration",
+    "ambiguity_emotion_shift",
+    "ambiguity_narration_internal_thought_shift",
+    "ambiguity_internal_external_speech_shift",
+}
 
 DOMINANCE_PRONOUN_TOKENS = {
     "he",
@@ -363,6 +373,120 @@ def _build_ambiguity_flags(
             flags.append(flag_name)
 
     return sorted(set(flags))
+
+
+def build_low_confidence_speaker_attribution_warnings(
+    segment_payloads: list[dict[str, object]],
+    *,
+    source: str = "tagging",
+    confidence_threshold: float = TAG_LOW_CONFIDENCE_THRESHOLD,
+) -> list[dict[str, object]]:
+    warnings: list[dict[str, object]] = []
+
+    threshold = _clamp_confidence(confidence_threshold)
+    for payload in segment_payloads:
+        structure = str(payload.get("type", "")).strip().lower()
+        if structure not in {STRUCTURAL_TYPE_DIALOGUE, STRUCTURAL_TYPE_MIXED}:
+            continue
+
+        segment_speaker = str(payload.get("speaker", "")).strip()
+        if not segment_speaker:
+            continue
+
+        raw_speaker_confidence = payload.get("speaker_confidence")
+        if raw_speaker_confidence is None:
+            nested_confidence = payload.get("confidence")
+            if isinstance(nested_confidence, dict):
+                raw_speaker_confidence = nested_confidence.get("speaker")
+        try:
+            speaker_confidence = _clamp_confidence(float(raw_speaker_confidence))
+        except (TypeError, ValueError):
+            continue
+
+        ambiguity_flags = payload.get("ambiguity_flags", [])
+        has_low_confidence_flag = False
+        if isinstance(ambiguity_flags, (list, tuple, set)):
+            has_low_confidence_flag = "low_speaker_confidence" in ambiguity_flags
+
+        if speaker_confidence >= threshold and not has_low_confidence_flag and segment_speaker.lower() != "unknown":
+            continue
+
+        speaker_state = str(payload.get("speaker_state", "unknown")).strip().lower()
+        if speaker_state not in {"uncertain", "unknown"} and not has_low_confidence_flag:
+            continue
+
+        warnings.append(
+            {
+                "type": "low_confidence_speaker_attribution",
+                "level": "warning",
+                "source": source,
+                "segment_id": payload.get("segment_id"),
+                "segment_index": payload.get("segment_index"),
+                "chapter_id": payload.get("chapter_id"),
+                "speaker": segment_speaker,
+                "speaker_confidence": speaker_confidence,
+                "speaker_state": speaker_state,
+                "threshold": threshold,
+                "message": (
+                    f"Low-confidence speaker attribution for segment '{payload.get('segment_id')}' "
+                    f"(speaker={segment_speaker!r}, confidence={speaker_confidence}, threshold={threshold})."
+                ),
+            }
+        )
+
+    return warnings
+
+
+def build_high_ambiguity_dialogue_block_warnings(
+    segment_payloads: list[dict[str, object]],
+    *,
+    source: str = "tagging",
+    ambiguity_flag_threshold: int = TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+) -> list[dict[str, object]]:
+    warnings: list[dict[str, object]] = []
+
+    threshold = max(1, int(ambiguity_flag_threshold))
+    for payload in segment_payloads:
+        structure = str(payload.get("type", "")).strip().lower()
+        if structure not in {STRUCTURAL_TYPE_DIALOGUE, STRUCTURAL_TYPE_MIXED}:
+            continue
+
+        ambiguity_flags = payload.get("ambiguity_flags", [])
+        if not isinstance(ambiguity_flags, (list, tuple, set)):
+            continue
+
+        raw_flags = sorted(str(flag).strip().lower() for flag in ambiguity_flags)
+        if not raw_flags:
+            continue
+
+        matched_flags = [flag for flag in raw_flags if flag in HIGH_AMBIGUITY_DIALOGUE_WARNING_FLAGS]
+        if len(matched_flags) < threshold:
+            continue
+
+        speaker_state = str(payload.get("speaker_state", "unknown")).strip().lower()
+        if not speaker_state:
+            speaker_state = "unknown"
+
+        warnings.append(
+            {
+                "type": "high_ambiguity_dialogue_block",
+                "level": "warning",
+                "source": source,
+                "segment_id": payload.get("segment_id"),
+                "segment_index": payload.get("segment_index"),
+                "chapter_id": payload.get("chapter_id"),
+                "speaker": str(payload.get("speaker", "")).strip() or None,
+                "speaker_state": speaker_state,
+                "ambiguity_flags": matched_flags,
+                "ambiguity_threshold": threshold,
+                "message": (
+                    f"High ambiguity dialogue block in segment '{payload.get('segment_id')}' "
+                    f"(flags={matched_flags}, threshold={threshold})."
+                ),
+            }
+        )
+
+    return warnings
 
 
 def _build_emotion_evidence(
