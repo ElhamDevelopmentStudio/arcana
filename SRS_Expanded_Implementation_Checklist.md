@@ -496,7 +496,7 @@ Definition of done for each task:
 
 ## 11. Acceptance Criteria Execution (Ref: SRS.md §11)
 - [x] [ACC-001] Build acceptance test: ingest and chapterize Shadow Slave corpus.
-- [ ] [ACC-002] Build acceptance test: edit character map with `name/verbalized/gender` fields.
+- [x] [ACC-002] Build acceptance test: edit character map with `name/verbalized/gender` fields.
 - [ ] [ACC-003] Build acceptance test: pronunciation substitution preview correctness.
 - [ ] [ACC-004] Build acceptance test: export contains phonetic-ready text.
 - [ ] [ACC-005] Build acceptance test: export contains speaker/gender/voice tags where applicable.

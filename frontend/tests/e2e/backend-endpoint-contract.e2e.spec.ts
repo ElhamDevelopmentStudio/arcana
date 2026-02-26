@@ -386,11 +386,13 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(refreshedCharacterMapResponse.status()).toBe(200);
     const refreshedCharacterMapPayload = (await refreshedCharacterMapResponse.json()) as {
       character_map_finalized: boolean;
-      characters: Array<{ name: string; aliases: string[] }>;
+      characters: Array<{ name: string; verbalized_form: string; gender: string; aliases: string[] }>;
     };
     expect(refreshedCharacterMapPayload.character_map_finalized).toBe(false);
     const refreshedAliceRow = refreshedCharacterMapPayload.characters.find((entry) => entry.name === 'Alice');
     expect(refreshedAliceRow?.aliases).toEqual(expect.arrayContaining(['Al']));
+    expect(refreshedAliceRow?.verbalized_form).toBe('Alice');
+    expect(refreshedAliceRow?.gender).toBe('female');
 
     const invalidSegmentationTargetResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
       data: {
