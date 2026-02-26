@@ -353,7 +353,7 @@ Definition of done for each task:
 - [x] [VR-001] Define chart data contracts for tension graph.
 - [x] [VR-002] Implement tension graph API payload endpoint.
 - [x] [VR-003] Add smoothing toggle for tension graph display.
-- [ ] [VR-004] Add peak markers and plateau overlays to tension graph.
+- [x] [VR-004] Add peak markers and plateau overlays to tension graph.
 - [ ] [VR-005] Define chart data contracts for emotional polarity graph.
 - [ ] [VR-006] Implement polarity graph API payload endpoint.
 - [ ] [VR-007] Add rolling-window control for polarity graph.
