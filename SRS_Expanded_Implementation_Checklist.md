@@ -531,7 +531,7 @@ Definition of done for each task:
 ## 13. Frontend Parallel Delivery Track (Ref: SRS.md §§2–11)
 
 ### 13.1 Parallel Delivery Contract
-- [ ] [FE-001] Add “paired frontend impact” note to PR template for all backend/API changes.
+- [x] [FE-001] Add “paired frontend impact” note to PR template for all backend/API changes.
 - [ ] [FE-002] Add checklist policy that every feature slice must include backend + frontend acceptance notes.
 - [ ] [FE-003] Add API contract changelog section consumed by frontend maintainers.
 - [ ] [FE-004] Add UI impact matrix mapping SRS sections to frontend pages/components.

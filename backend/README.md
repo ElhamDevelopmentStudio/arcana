@@ -263,6 +263,12 @@ python scripts_run_performance_regression_gate.py
 
 Thresholds are configured in `backend/performance_regression_thresholds.json` and enforced in CI via `.github/workflows/performance-regression-gate.yml`.
 
+PR template frontend-impact validation (`FE-001`):
+
+```bash
+python scripts_validate_pr_template_frontend_impact.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash
