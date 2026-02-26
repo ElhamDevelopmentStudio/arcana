@@ -492,7 +492,7 @@ Definition of done for each task:
 - `[BACKLOG][MVP-EXCLUDED][NICE-TO-HAVE]` advanced comparative clustering.
 - `[BACKLOG][MVP-EXCLUDED][NICE-TO-HAVE]` community sentiment overlay.
 - `[BACKLOG][MVP-EXCLUDED][NICE-TO-HAVE]` automatic web scraping by default.
-- [ ] [MVP-013] Add release gate preventing excluded features from blocking MVP sign-off.
+- [x] [MVP-013] Add release gate preventing excluded features from blocking MVP sign-off.
 
 ## 11. Acceptance Criteria Execution (Ref: SRS.md §11)
 - [ ] [ACC-001] Build acceptance test: ingest and chapterize Shadow Slave corpus.
