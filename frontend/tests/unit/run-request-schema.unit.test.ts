@@ -85,6 +85,47 @@ describe('runRequestSchema', () => {
     ).toThrow(z.ZodError);
   });
 
+  it('accepts deterministic mode config fields', () => {
+    const parsed = runRequestSchema.parse({
+      mode: 'academic',
+      max_segment_chars: 120,
+      llm_enabled: false,
+      provider_name: 'openrouter',
+      max_calls_per_day: 25,
+      deterministic_mode: true,
+      deterministic_model_identifier: 'openai/gpt-4o-mini',
+      deterministic_seed: 2026,
+      randomization_config: {
+        seed: 2026,
+        strategy: 'stable',
+        shuffle_enabled: false,
+      },
+    });
+
+    expect(parsed.deterministic_mode).toBe(true);
+    expect(parsed.deterministic_model_identifier).toBe('openai/gpt-4o-mini');
+    expect(parsed.deterministic_seed).toBe(2026);
+    expect(parsed.randomization_config).toEqual({
+      seed: 2026,
+      strategy: 'stable',
+      shuffle_enabled: false,
+    });
+  });
+
+  it('rejects negative deterministic seed', () => {
+    expect(() =>
+      runRequestSchema.parse({
+        mode: 'academic',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        deterministic_mode: true,
+        deterministic_seed: -1,
+      }),
+    ).toThrow(z.ZodError);
+  });
+
   it('requires export formats when explicitly provided', () => {
     expect(() =>
       runRequestSchema.parse({

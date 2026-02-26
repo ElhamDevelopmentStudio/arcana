@@ -21,6 +21,7 @@ import {
   useSaveVoicesMutation,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
+import type { RunRequestDto } from '@/app/schemas/api';
 
 type InternalThoughtVoicePolicy = 'character' | 'narrator' | 'thought_voice';
 type EmotionTaxonomy = 'basic' | 'expanded';
@@ -145,6 +146,10 @@ export function ProjectPipelineSetupPage() {
   const [maxSegmentChars, setMaxSegmentChars] = useState(255);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [deterministicMode, setDeterministicMode] = useState(false);
+  const [deterministicModelIdentifier, setDeterministicModelIdentifier] = useState('');
+  const [deterministicSeed, setDeterministicSeed] = useState(0);
+  const [deterministicRandomizationStrategy, setDeterministicRandomizationStrategy] = useState('stable');
+  const [deterministicShuffleEnabled, setDeterministicShuffleEnabled] = useState(false);
   const [webScrapingEnabled, setWebScrapingEnabled] = useState(false);
   const [emotionTaxonomy, setEmotionTaxonomy] = useState<EmotionTaxonomy>('basic');
   const [providerName, setProviderName] = useState('openrouter');
@@ -360,7 +365,7 @@ export function ProjectPipelineSetupPage() {
       const trimmedThoughtVoice =
         internalThoughtVoicePolicy === 'thought_voice' ? internalThoughtVoice.trim() : '';
 
-      const run = await runPipelineMutation.trigger({
+      const runPayload: RunRequestDto = {
         mode: selectedMode,
         max_segment_chars: maxSegmentChars,
         llm_enabled: llmEnabled,
@@ -379,7 +384,18 @@ export function ProjectPipelineSetupPage() {
         allow_unfinalized_character_map: allowUnfinalizedCharacterMap,
         internal_thought_voice_policy: internalThoughtVoicePolicy,
         internal_thought_voice: trimmedThoughtVoice || undefined,
-      });
+      };
+      if (deterministicMode) {
+        runPayload.deterministic_model_identifier = deterministicModelIdentifier.trim() || undefined;
+        runPayload.deterministic_seed = deterministicSeed;
+        runPayload.randomization_config = {
+          seed: deterministicSeed,
+          strategy: deterministicRandomizationStrategy.trim() || 'stable',
+          shuffle_enabled: deterministicShuffleEnabled,
+        };
+      }
+
+      const run = await runPipelineMutation.trigger(runPayload);
       setRunId(run.run_id);
       toast.success(`Run #${run.run_id} completed with ${run.segment_count} segments.`);
       navigate(projectRoute(projectId, 'run-monitor'));
@@ -685,6 +701,44 @@ export function ProjectPipelineSetupPage() {
                 <span>Enable deterministic mode</span>
                 <Switch checked={deterministicMode} onCheckedChange={setDeterministicMode} />
               </label>
+              {deterministicMode ? (
+                <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="deterministic-model-identifier">Deterministic model identifier</Label>
+                    <Input
+                      id="deterministic-model-identifier"
+                      value={deterministicModelIdentifier}
+                      onChange={(event) => setDeterministicModelIdentifier(event.target.value)}
+                      placeholder="optional model pin"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="deterministic-seed">Deterministic seed</Label>
+                    <Input
+                      id="deterministic-seed"
+                      min={0}
+                      type="number"
+                      value={deterministicSeed}
+                      onChange={(event) => setDeterministicSeed(Number(event.target.value))}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="deterministic-randomization-strategy">Randomization strategy</Label>
+                    <Input
+                      id="deterministic-randomization-strategy"
+                      value={deterministicRandomizationStrategy}
+                      onChange={(event) => setDeterministicRandomizationStrategy(event.target.value)}
+                    />
+                  </div>
+                  <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
+                    <span>Deterministic shuffle enabled</span>
+                    <Switch
+                      checked={deterministicShuffleEnabled}
+                      onCheckedChange={setDeterministicShuffleEnabled}
+                    />
+                  </label>
+                </div>
+              ) : null}
               <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
                 <span>Enable web scraping</span>
                 <Switch checked={webScrapingEnabled} onCheckedChange={setWebScrapingEnabled} />

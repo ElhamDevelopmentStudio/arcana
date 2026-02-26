@@ -260,6 +260,43 @@ describe('pipeline run mode lock regression', () => {
     );
   });
 
+  it('sends deterministic toggle fields when deterministic mode is enabled', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ selectedMode: 'audiobook' });
+    renderPipelinePage();
+
+    const deterministicToggle = screen
+      .getByText('Enable deterministic mode')
+      .closest('label')
+      ?.querySelector('[role="switch"]');
+    expect(deterministicToggle).not.toBeNull();
+    if (deterministicToggle) {
+      await user.click(deterministicToggle as Element);
+    }
+
+    await user.type(screen.getByLabelText('Deterministic model identifier'), 'openai/gpt-4o-mini');
+    await user.clear(screen.getByLabelText('Deterministic seed'));
+    await user.type(screen.getByLabelText('Deterministic seed'), '2026');
+    await user.clear(screen.getByLabelText('Randomization strategy'));
+    await user.type(screen.getByLabelText('Randomization strategy'), 'custom-stable');
+
+    await user.click(screen.getByTestId('run-pipeline-button'));
+
+    expect(runPipelineMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(runPipelineMutationTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deterministic_mode: true,
+        deterministic_model_identifier: 'openai/gpt-4o-mini',
+        deterministic_seed: 2026,
+        randomization_config: {
+          seed: 2026,
+          strategy: 'custom-stable',
+          shuffle_enabled: false,
+        },
+      }),
+    );
+  });
+
   it('allows users to disable export formats in run payload', async () => {
     const user = userEvent.setup();
     useWorkspaceStore.setState({ selectedMode: 'audiobook' });
