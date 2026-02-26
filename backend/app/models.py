@@ -177,6 +177,31 @@ class Run(Base):
         back_populates="run",
         cascade="all, delete-orphan",
     )
+    normalized_corpus_blobs: Mapped[list["RunNormalizedCorpusBlob"]] = relationship(
+        "RunNormalizedCorpusBlob",
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class RunNormalizedCorpusBlob(Base):
+    __tablename__ = "run_normalized_corpus_blobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    corpus_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    normalized_corpus_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    run: Mapped[Run] = relationship("Run", back_populates="normalized_corpus_blobs")
 
 
 class ComparisonWorkspace(Base):
