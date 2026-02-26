@@ -722,6 +722,170 @@ def test_llm_router_call_retries_on_service_unavailable(monkeypatch: object) -> 
     assert observed["attempts"] == 2
 
 
+def test_llm_router_call_emits_usage_metric_hooks(monkeypatch: object) -> None:
+    observed: list[llm_router.LLMRouterUsageMetric] = []
+
+    class DummyTimeoutResponse:
+        status_code = 503
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {}
+
+    class DummySuccessResponse:
+        status_code = 200
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [{"message": {"content": "{\"sentiment\":\"positive\",\"confidence\":0.9}"}}],
+                "usage": {"total_tokens": 9},
+            }
+
+    attempts = {"count": 0}
+
+    def fake_post(_url: str, *args: object, **kwargs: object) -> object:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            return DummyTimeoutResponse()
+        return DummySuccessResponse()
+
+    def track_metric(metric: llm_router.LLMRouterUsageMetric) -> None:
+        observed.append(metric)
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    router = llm_router.LLMRouter(
+        "https://api.siliconflow.cn/v1",
+        usage_metric_hooks=(track_metric,),
+    )
+    response = router.call(
+        request=llm_router.LLMRequest(
+            request_id="router-metrics-hook",
+            project_id=3,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="The candle flickers.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-metrics-hook",
+        ),
+        provider_name="SILICONFLOW",
+        model_identifier="deepseek-ai/DeepSeek-V3",
+        api_key="siliconflow-key",
+    )
+
+    assert response.success_flag is True
+    assert len(observed) == 2
+    assert observed[0].provider == "siliconflow"
+    assert observed[0].success is False
+    assert observed[0].error_code == "service_unavailable"
+    assert observed[1].provider == "siliconflow"
+    assert observed[1].success is True
+    assert observed[1].attempt_index == 2
+    assert observed[1].token_usage_estimate == 9
+
+
+def test_llm_router_call_with_failover_emits_usage_metric_hooks(monkeypatch: object) -> None:
+    observed: list[llm_router.LLMRouterUsageMetric] = []
+
+    class DummyServiceUnavailableResponse:
+        status_code = 503
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {}
+
+    class DummySuccessResponse:
+        status_code = 200
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [{"message": {"content": "{\"sentiment\":\"neutral\",\"confidence\":0.76}"}}],
+                "usage": {"total_tokens": 15},
+            }
+
+    attempts = {"openrouter": 0, "groq": 0}
+
+    def fake_post(url: str, *args: object, **kwargs: object) -> object:
+        if "openrouter" in url:
+            attempts["openrouter"] += 1
+            return DummyServiceUnavailableResponse()
+
+        attempts["groq"] += 1
+        return DummySuccessResponse()
+
+    def track_metric(metric: llm_router.LLMRouterUsageMetric) -> None:
+        observed.append(metric)
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    router = llm_router.LLMRouter(
+        "https://api.should-not-be-used.example",
+        usage_metric_hooks=(track_metric,),
+    )
+    response = router.call_with_failover(
+        request=llm_router.LLMRequest(
+            request_id="router-failover-metrics-hook",
+            project_id=4,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="She turned down the music.",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="router-failover-metrics-hook",
+        ),
+        provider_configs=(
+            llm_router.LLMProviderConfig(
+                provider_name="openrouter",
+                base_url="https://api.openrouter.ai/v1/",
+                model_identifier="openai/gpt-4o-mini",
+                api_key="openrouter-key",
+            ),
+            llm_router.LLMProviderConfig(
+                provider_name="groq",
+                base_url="https://api.groq.com/openai/v1",
+                model_identifier="llama-3.3-70b-versatile",
+                api_key="groq-key",
+            ),
+        ),
+    )
+
+    assert response.success_flag is True
+    assert response.provider_used == "groq"
+    assert len(observed) == 3
+    assert [metric.provider for metric in observed] == ["openrouter", "openrouter", "groq"]
+    assert [metric.attempt_index for metric in observed] == [1, 2, 1]
+    assert [metric.success for metric in observed] == [False, False, True]
+    assert [metric.error_code for metric in observed] == ["service_unavailable", "service_unavailable", None]
+    assert observed[0].provider_base_url == "https://api.openrouter.ai/v1"
+    assert observed[2].provider_base_url == "https://api.groq.com/openai/v1"
+    assert observed[2].token_usage_estimate == 15
+    assert attempts["openrouter"] == 2
+    assert attempts["groq"] == 1
+
+
 def test_llm_router_call_does_not_retry_on_rate_limit(monkeypatch: object) -> None:
     observed = {"attempts": 0}
 
