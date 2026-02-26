@@ -474,7 +474,7 @@ Definition of done for each task:
 
 ### MVP Includes coverage
 - [x] [MVP-001] Verify ingest supports TXT + chapter directory paths.
-- [ ] [MVP-002] Verify normalization includes chapters/dedupe/quote normalization/reports.
+- [x] [MVP-002] Verify normalization includes chapters/dedupe/quote normalization/reports.
 - [ ] [MVP-003] Verify character map supports aliases and review UI.
 - [ ] [MVP-004] Verify dual gender system with inference + contradiction flags.
 - [ ] [MVP-005] Verify pronunciation overrides and preview.
