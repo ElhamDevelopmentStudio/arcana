@@ -106,3 +106,164 @@ def test_reject_invalid_access_role_with_422() -> None:
             json={"principal_id": "alice", "principal_type": "user", "role": "superuser"},
         )
         assert invalid.status_code == 422
+
+
+def test_project_route_enforces_access_controls_when_principal_headers_provided() -> None:
+    with TestClient(app) as client:
+        project_a = client.post("/api/projects", json={"title": "Project A"})
+        assert project_a.status_code == 201
+        project_b = client.post("/api/projects", json={"title": "Project B"})
+        assert project_b.status_code == 201
+
+        project_a_id = project_a.json()["id"]
+        project_b_id = project_b.json()["id"]
+
+        viewer_headers = {"X-Principal-Type": "user", "X-Principal-Id": "alice"}
+        editor_headers = {"X-Principal-Type": "user", "X-Principal-Id": "alice"}
+
+        add_viewer = client.post(
+            f"/api/projects/{project_a_id}/access",
+            json={"principal_id": "alice", "principal_type": "user", "role": "viewer"},
+        )
+        assert add_viewer.status_code == 201
+
+        same_project_view = client.get(f"/api/projects/{project_a_id}/characters", headers=viewer_headers)
+        assert same_project_view.status_code == 200
+
+        cross_project_view = client.get(f"/api/projects/{project_b_id}/characters", headers=viewer_headers)
+        assert cross_project_view.status_code == 403
+
+        same_project_edit = client.put(
+            f"/api/projects/{project_a_id}/mode",
+            json={"mode": "academic"},
+            headers=viewer_headers,
+        )
+        assert same_project_edit.status_code == 403
+
+        denied_role_promotion = client.post(
+            f"/api/projects/{project_a_id}/access",
+            json={"principal_id": "alice", "principal_type": "user", "role": "editor"},
+            headers=viewer_headers,
+        )
+        assert denied_role_promotion.status_code == 403
+
+        grant_editor = client.post(
+            f"/api/projects/{project_a_id}/access",
+            json={"principal_id": "alice", "principal_type": "user", "role": "editor"},
+        )
+        assert grant_editor.status_code == 201
+
+        same_project_edit = client.put(
+            f"/api/projects/{project_a_id}/mode",
+            json={"mode": "academic"},
+            headers=editor_headers,
+        )
+        assert same_project_edit.status_code == 200
+        assert same_project_edit.json()["selected_mode"] == "academic"
+
+
+def test_project_route_requires_both_principal_headers() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Header Validation Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        missing_id_header = client.get(
+            f"/api/projects/{project_id}/characters",
+            headers={"X-Principal-Type": "user"},
+        )
+        assert missing_id_header.status_code == 400
+
+        bad_type = client.get(
+            f"/api/projects/{project_id}/characters",
+            headers={"X-Principal-Type": "robot", "X-Principal-Id": "alice"},
+        )
+        assert bad_type.status_code == 400
+
+
+def test_service_and_system_principal_scope_matrix() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects", json={"title": "Service Matrix Project"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        service_viewer_headers = {
+            "X-Principal-Type": "service",
+            "X-Principal-Id": "svc-viewer",
+        }
+        service_editor_headers = {
+            "X-Principal-Type": "service",
+            "X-Principal-Id": "svc-editor",
+        }
+        system_editor_headers = {
+            "X-Principal-Type": "system",
+            "X-Principal-Id": "sys-editor",
+        }
+
+        grant_service_viewer = client.post(
+            f"/api/projects/{project_id}/access",
+            json={"principal_id": "svc-viewer", "principal_type": "service", "role": "viewer"},
+        )
+        assert grant_service_viewer.status_code == 201
+
+        grant_service_editor = client.post(
+            f"/api/projects/{project_id}/access",
+            json={"principal_id": "svc-editor", "principal_type": "service", "role": "editor"},
+        )
+        assert grant_service_editor.status_code == 201
+
+        grant_system_editor = client.post(
+            f"/api/projects/{project_id}/access",
+            json={"principal_id": "sys-editor", "principal_type": "system", "role": "editor"},
+        )
+        assert grant_system_editor.status_code == 201
+
+        assert (
+            client.get(f"/api/projects/{project_id}/characters", headers=service_viewer_headers).status_code
+            == 200
+        )
+        assert (
+            client.get(f"/api/projects/{project_id}/characters", headers=service_editor_headers).status_code
+            == 200
+        )
+
+        assert (
+            client.put(
+                f"/api/projects/{project_id}/mode",
+                json={"mode": "academic"},
+                headers=service_viewer_headers,
+            ).status_code
+            == 403
+        )
+        assert (
+            client.put(
+                f"/api/projects/{project_id}/mode",
+                json={"mode": "academic"},
+                headers=service_editor_headers,
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                f"/api/projects/{project_id}/runs",
+                json={"allow_unfinalized_character_map": True},
+                headers=system_editor_headers,
+            ).status_code
+            == 403
+        )
+
+        service_editor_run_response = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={"allow_unfinalized_character_map": True},
+            headers=service_editor_headers,
+        )
+        assert service_editor_run_response.status_code != 403
+
+        assert (
+            client.post(
+                f"/api/projects/{project_id}/runs",
+                json={"allow_unfinalized_character_map": True},
+                headers=service_viewer_headers,
+            ).status_code
+            == 403
+        )

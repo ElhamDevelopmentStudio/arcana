@@ -182,6 +182,10 @@ When both headers are present, routes under `/api/projects/{project_id}/...` enf
 
 - minimum `viewer` role for read-style requests (GET/HEAD/OPTIONS)
 - minimum `editor` role for write-style requests (POST/PUT/PATCH/DELETE)
+- additional principal-type scope checks:
+  - `service` principals: `viewer` grants read-only access; `editor`/`owner` adds run execution (`POST /api/projects/{project_id}/runs` and `/runs/{run_id}/recover`) but not data mutation.
+  - `system` principals: only read access for all roles.
+- these checks are enforced at request time in middleware before endpoint handlers run.
 
 If a principal is not granted for the required role on the project, the response is `403 Forbidden`.
 If either header is missing or invalid, the response is `400 Bad Request`.
