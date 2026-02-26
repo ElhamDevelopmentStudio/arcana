@@ -381,7 +381,7 @@ Definition of done for each task:
 - [x] [DR-011] Persist deterministic seed settings per run.
 - [ ] [DR-012] Persist run ID + timestamp + changelog entries.
 - [x] [DR-013] Ensure every tag/metric can resolve back to chapter and segment.
-- [ ] [DR-014] Ensure evidence traces include original text offsets.
+- [x] [DR-014] Ensure evidence traces include original text offsets.
 
 ## 7. Non-Functional Requirements (Ref: SRS.md §7)
 
