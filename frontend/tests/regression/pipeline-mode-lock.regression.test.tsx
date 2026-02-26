@@ -91,6 +91,18 @@ describe('pipeline run mode lock regression', () => {
       ],
       character_map_finalized: true,
     };
+    saveVoicesMutationTrigger.mockReset();
+    saveVoicesMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      voice_config: {
+        narrator_voice: 'narrator_default',
+        male_default_voice: 'male_default',
+        female_default_voice: 'female_default',
+        neutral_default_voice: 'neutral_default',
+        unknown_default_voice: 'unknown_default',
+        internal_thought_voice_policy: 'character',
+      },
+    });
     runPipelineMutationTrigger.mockReset();
     runPipelineMutationTrigger.mockResolvedValue({
       run_id: 901,
@@ -148,6 +160,37 @@ describe('pipeline run mode lock regression', () => {
     expect(screen.getByTestId('voice-mapping-preview-table')).toHaveTextContent('female_default');
     expect(screen.getByTestId('voice-mapping-preview-table')).toHaveTextContent('custom_kai');
     expect(screen.getByTestId('internal-thought-preview')).toHaveTextContent('thought_custom');
+  });
+
+  it('saves voice configuration payload through the voice editor form', async () => {
+    const user = userEvent.setup();
+    renderPipelinePage();
+
+    await user.clear(screen.getByLabelText('Narrator voice'));
+    await user.type(screen.getByLabelText('Narrator voice'), 'narrator_custom');
+    await user.clear(screen.getByLabelText('Default male voice'));
+    await user.type(screen.getByLabelText('Default male voice'), 'male_custom');
+    await user.clear(screen.getByLabelText('Default female voice'));
+    await user.type(screen.getByLabelText('Default female voice'), 'female_custom');
+    await user.clear(screen.getByLabelText('Default neutral voice'));
+    await user.type(screen.getByLabelText('Default neutral voice'), 'neutral_custom');
+    await user.clear(screen.getByLabelText('Default unknown voice'));
+    await user.type(screen.getByLabelText('Default unknown voice'), 'unknown_custom');
+    await user.selectOptions(screen.getByLabelText('Internal thought voice policy'), 'thought_voice');
+    await user.type(screen.getByLabelText('Thought voice'), 'thought_custom');
+
+    await user.click(screen.getByRole('button', { name: 'Save Voice Config' }));
+
+    expect(saveVoicesMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(saveVoicesMutationTrigger).toHaveBeenCalledWith({
+      narrator_voice: 'narrator_custom',
+      male_default_voice: 'male_custom',
+      female_default_voice: 'female_custom',
+      neutral_default_voice: 'neutral_custom',
+      unknown_default_voice: 'unknown_custom',
+      internal_thought_voice_policy: 'thought_voice',
+      internal_thought_voice: 'thought_custom',
+    });
   });
 
   it('posts expanded emotion taxonomy when selected', async () => {
