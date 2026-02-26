@@ -535,7 +535,7 @@ Definition of done for each task:
 - [x] [FE-001] Add “paired frontend impact” note to PR template for all backend/API changes.
 - [x] [FE-002] Add checklist policy that every feature slice must include backend + frontend acceptance notes.
 - [x] [FE-003] Add API contract changelog section consumed by frontend maintainers.
-- [ ] [FE-004] Add UI impact matrix mapping SRS sections to frontend pages/components.
+- [x] [FE-004] Add UI impact matrix mapping SRS sections to frontend pages/components.
 - [ ] [FE-005] Add “deferred FE task ID required” policy when backend ships without UI.
 
 ### 13.2 App Shell, Routing, and State
