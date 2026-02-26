@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from bisect import bisect_right
 from collections.abc import Mapping
+import hashlib
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,10 +15,12 @@ from app.modes import DEFAULT_MODE, get_mode_catalog
 from app.models import (
     Chapter,
     Character,
+    CharacterVoiceMap,
     ComparisonWorkspace,
     ComparisonWorkspaceRun,
     LLMCall,
     Project,
+    ProjectRawCorpusBlob,
     PronunciationDictionary,
     Run,
     Segment,
@@ -66,6 +69,8 @@ from app.schemas import (
     LLMProvidersResponse,
     RunCreateRequest,
     CharacterOccurrenceAnalyticsResponse,
+    CharacterCooccurrenceGraphResponse,
+    AudiobookPrepDashboardResponse,
     TensionGraphContractResponse,
     PolarityGraphResponse,
     RunDetailResponse,
@@ -132,6 +137,9 @@ from app.services.provider_toggle import (
 from app.services.voice import DEFAULT_VOICE_CONFIG, _normalize_internal_thought_voice_policy
 from app.services.phonetics import replace_pronunciations_with_counts
 
+LOW_CONFIDENCE_STATE_VALUES = {"uncertain", "unknown"}
+LOW_CONFIDENCE_REGION_THRESHOLD = 0.8
+
 app = FastAPI(title="NIPE PoC API", version="0.1.0")
 
 app.add_middleware(
@@ -155,6 +163,60 @@ def _serialize_datetime_to_utc_iso(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc).isoformat()
     return value.astimezone(timezone.utc).isoformat()
+
+
+def _coerce_float(value: object | None, *, fallback: float | None = None) -> float | None:
+    if value is None:
+        return fallback
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _is_low_confidence_state(value: object) -> bool:
+    return isinstance(value, str) and value.strip().lower() in LOW_CONFIDENCE_STATE_VALUES
+
+
+def _as_dict(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _is_low_confidence_region(segment: dict[str, object]) -> bool:
+    tag_states = _as_dict(segment.get("tag_states"))
+    states_to_check = [
+        tag_states.get("type"),
+        tag_states.get("speaker"),
+        tag_states.get("emotion"),
+        tag_states.get("tension"),
+        tag_states.get("dominance"),
+        tag_states.get("summary"),
+        segment.get("speaker_state"),
+        segment.get("emotion_state"),
+    ]
+    if any(_is_low_confidence_state(state) for state in states_to_check):
+        return True
+
+    confidence = _as_dict(segment.get("confidence"))
+    tension_contribution = _as_dict(segment.get("tension_contribution"))
+    dominance_contribution = _as_dict(segment.get("dominance_contribution"))
+    summary_tag = _as_dict(segment.get("summary_tag"))
+
+    for confidence_value in [
+        confidence.get("speaker"),
+        confidence.get("emotion"),
+        confidence.get("type"),
+        confidence.get("tension"),
+        confidence.get("dominance"),
+        tension_contribution.get("confidence"),
+        dominance_contribution.get("confidence"),
+        summary_tag.get("confidence"),
+    ]:
+        confidence_numeric = _coerce_float(confidence_value)
+        if confidence_numeric is not None and confidence_numeric < LOW_CONFIDENCE_REGION_THRESHOLD:
+            return True
+
+    return False
 
 
 @app.get("/health")
@@ -557,6 +619,31 @@ def _get_next_chapter_index(session: Session, project_id: int) -> int:
     if last_chapter is None:
         return 1
     return int(last_chapter.chapter_index) + 1
+
+
+def _persist_raw_corpus_blob(
+    session: Session,
+    project_id: int,
+    source: str,
+    raw_corpus: str,
+    *,
+    source_filename: str | None = None,
+) -> None:
+    normalized_source = to_internal_utf8(raw_corpus)
+    blob_payload = normalized_source.encode("utf-8")
+    session.add(
+        ProjectRawCorpusBlob(
+            project_id=project_id,
+            source=source,
+            source_filename=(source_filename or None),
+            blob_sha256=hashlib.sha256(blob_payload).hexdigest(),
+            raw_corpus_blob=blob_payload,
+        )
+    )
+
+
+def _build_full_corpus_text(rows: list[tuple[int, str, str]]) -> str:
+    return "\n\n".join(row[2] for row in rows)
 
 
 def _build_character_map_item_payload(
@@ -1257,6 +1344,13 @@ def ingest_txt(
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
+    _persist_raw_corpus_blob(
+        session=session,
+        project_id=project_id,
+        source="txt",
+        raw_corpus=raw_text,
+        source_filename=filename,
+    )
     _update_project_ingestion_log(
         project,
         source="txt",
@@ -1358,6 +1452,13 @@ def ingest_markdown(
 
     if _project_title_needs_fallback(project.title):
         project.title = to_internal_utf8(detected_title)
+    _persist_raw_corpus_blob(
+        session=session,
+        project_id=project_id,
+        source="markdown",
+        raw_corpus=markdown_text,
+        source_filename=filename,
+    )
     _update_project_ingestion_log(
         project,
         source="markdown",
@@ -1454,6 +1555,18 @@ def ingest_epub(
         chapter_reports=chapter_normalization_reports,
         suspected_duplicate_title_count=len(duplicate_title_warnings),
         encoding_issue_count=encoding_issue_count,
+    )
+    _persist_raw_corpus_blob(
+        session=session,
+        project_id=project_id,
+        source="epub",
+        raw_corpus=_build_full_corpus_text(
+            [
+                (index, chapter_title, chapter_content)
+                for index, (chapter_title, chapter_content) in enumerate(chapters, start=1)
+            ]
+        ),
+        source_filename=filename,
     )
     _update_project_ingestion_log(
         project,
@@ -1574,6 +1687,18 @@ def ingest_chapters_dir(
         chapter_reports=chapter_normalization_reports,
         suspected_duplicate_title_count=len(duplicate_title_warnings),
         encoding_issue_count=len(encoding_warnings),
+    )
+    _persist_raw_corpus_blob(
+        session=session,
+        project_id=project_id,
+        source="chapters-dir",
+        raw_corpus=_build_full_corpus_text(
+            [
+                (index, chapter_title, chapter_content)
+                for index, (chapter_title, chapter_content) in enumerate(chapter_rows, start=1)
+            ]
+        ),
+        source_filename=None,
     )
     _update_project_ingestion_log(
         project,
@@ -1701,6 +1826,19 @@ def append_chapter(
             suspected_duplicate_title_count=len(duplicate_title_warnings),
             encoding_issue_count=len(encoding_warnings),
         ),
+    )
+    _persist_raw_corpus_blob(
+        session=session,
+        project_id=project_id,
+        source="append-chapter",
+        raw_corpus=_build_full_corpus_text(
+            [
+                (row[0], row[1], row[2])
+                for row in existing_chapters
+            ]
+            + [(next_chapter_index, chapter_title, chapter_content)]
+        ),
+        source_filename=filename,
     )
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
@@ -2900,6 +3038,98 @@ def get_run_detail(project_id: int, run_id: int, session: Session = Depends(get_
 
 
 @app.get(
+    "/api/projects/{project_id}/runs/{run_id}/audiobook-prep-dashboard",
+    response_model=AudiobookPrepDashboardResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_run_audiobook_prep_dashboard(
+    project_id: int,
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> AudiobookPrepDashboardResponse:
+    project = _get_project_or_404(session, project_id)
+    run = _get_run_or_404(session, project_id, run_id)
+
+    segment_rows = (
+        session.query(Segment)
+        .filter(Segment.run_id == run.id)
+        .order_by(Segment.id.asc())
+        .all()
+    )
+    segment_payloads = [segment.segment_json for segment in segment_rows if isinstance(segment.segment_json, dict)]
+
+    unresolved_speaker_count = 0
+    low_confidence_region_count = 0
+    speaker_ids: set[int] = set()
+
+    for segment in segment_payloads:
+        if _is_low_confidence_region(segment):
+            low_confidence_region_count += 1
+
+        speaker_state = segment.get("speaker_state")
+        tag_states = _as_dict(segment.get("tag_states"))
+        speaker_id = segment.get("speaker_id")
+
+        if (
+            _is_low_confidence_state(speaker_state)
+            or _is_low_confidence_state(tag_states.get("speaker"))
+            or not isinstance(speaker_id, int)
+        ):
+            unresolved_speaker_count += 1
+
+        if isinstance(speaker_id, int):
+            speaker_ids.add(speaker_id)
+
+    character_rows = (
+        session.query(Character.id, Character.voice_id)
+        .filter(Character.project_id == project.id, Character.id.in_(speaker_ids or [0]))
+        .all()
+        if speaker_ids
+        else []
+    )
+    mapped_speaker_ids = {
+        row[0]
+        for row in session.query(CharacterVoiceMap.character_id)
+        .filter(CharacterVoiceMap.character_id.in_([row[0] for row in character_rows]))
+        .all()
+    }
+
+    unresolved_voice_mapping_count = 0
+    for character_id, raw_voice_id in character_rows:
+        resolved_voice_id = str(raw_voice_id).strip() if isinstance(raw_voice_id, str) else raw_voice_id
+        if not resolved_voice_id and character_id not in mapped_speaker_ids:
+            unresolved_voice_mapping_count += 1
+
+    generated_at = (run.finished_at or run.started_at or datetime.now(timezone.utc)).isoformat()
+
+    blocking_reasons: list[str] = []
+    warning_reasons: list[str] = []
+    if run.status != "completed":
+        blocking_reasons.append("Run must be completed before the audiobook dashboard is fully ready.")
+    if unresolved_speaker_count > 0:
+        blocking_reasons.append("Some speaker assignments are still unresolved.")
+    if unresolved_voice_mapping_count > 0:
+        blocking_reasons.append("Some speakers are missing voice mappings.")
+    if low_confidence_region_count > 0:
+        warning_reasons.append("Some regions were tagged as low confidence and should be reviewed.")
+
+    return AudiobookPrepDashboardResponse(
+        project_id=project.id,
+        run_id=run.id,
+        run_status=run.status,
+        generated_at=generated_at,
+        unresolved_speaker_count=unresolved_speaker_count,
+        unresolved_voice_mapping_count=unresolved_voice_mapping_count,
+        low_confidence_region_count=low_confidence_region_count,
+        export_readiness={
+            "is_ready": not bool(blocking_reasons),
+            "blocking_reasons": blocking_reasons,
+            "warning_reasons": warning_reasons,
+        },
+    )
+
+
+@app.get(
     "/api/projects/{project_id}/runs/{run_id}/character-analytics",
     response_model=CharacterOccurrenceAnalyticsResponse,
     status_code=status.HTTP_200_OK,
@@ -2963,6 +3193,84 @@ def get_character_occurrence_analytics(
         run_id=run.id,
         **analytics,
     )
+
+
+@app.get(
+    "/api/projects/{project_id}/runs/{run_id}/character-cooccurrence-graph",
+    response_model=CharacterCooccurrenceGraphResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_run_character_cooccurrence_graph(
+    project_id: int,
+    run_id: int,
+    session: Session = Depends(get_session),
+) -> CharacterCooccurrenceGraphResponse:
+    project = _get_project_or_404(session, project_id)
+    run = _get_run_or_404(session, project_id, run_id)
+    export_payload = build_run_export(session=session, project=project, run=run)
+
+    manifest = export_payload.get("manifest")
+    if not isinstance(manifest, dict):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Run export manifest is missing.",
+        )
+
+    academic_reports = manifest.get("academic_reports")
+    if not isinstance(academic_reports, dict):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Run academic_reports block is missing.",
+        )
+
+    academic_manifest = manifest.get("academic_export_manifest")
+    if not isinstance(academic_manifest, dict):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Run academic_export_manifest block is missing.",
+        )
+
+    generated_at = academic_manifest.get("generated_at")
+    if not isinstance(generated_at, str) or not generated_at.strip():
+        generated_at = run.finished_at.isoformat() if run.finished_at else run.started_at.isoformat()
+
+    graph_payload = academic_reports.get("character_cooccurrence_graph")
+    centrality_payload = academic_reports.get("character_cooccurrence_centrality_table")
+
+    if not isinstance(graph_payload, dict) or not isinstance(centrality_payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Character co-occurrence payload is not available for this run.",
+        )
+
+    graph_data = {
+        "schema_version": "1.0.0",
+        "output_schema": "graph_json",
+        "output_format": "graph_json",
+        "output_id": "AO-004",
+        "output_name": "character_cooccurrence_graph",
+        "project_id": project.id,
+        "run_id": run.id,
+        "run_status": run.status,
+        "generated_at": generated_at,
+        "generated_by": "build_run_export_graph_json",
+        "graph": {
+            "nodes": graph_payload.get("nodes", []),
+            "edges": graph_payload.get("edges", []),
+            "metadata": graph_payload.get("metadata", {}),
+        },
+        "character_cooccurrence_centrality": {
+            "metrics_table": centrality_payload.get("metrics_table", []),
+            "metadata": centrality_payload.get("metadata", {}),
+        },
+        "manifest_snapshot": {
+            "output_schema": academic_manifest.get("output_schema"),
+            "generated_by": academic_manifest.get("generated_by"),
+            "generated_at": academic_manifest.get("generated_at"),
+        },
+    }
+
+    return CharacterCooccurrenceGraphResponse(**graph_data)
 
 
 @app.get(

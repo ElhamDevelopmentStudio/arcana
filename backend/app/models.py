@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Float, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -32,6 +32,11 @@ class Project(Base):
     )
 
     chapters: Mapped[list["Chapter"]] = relationship("Chapter", back_populates="project")
+    raw_corpus_blobs: Mapped[list["ProjectRawCorpusBlob"]] = relationship(
+        "ProjectRawCorpusBlob",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
     characters: Mapped[list["Character"]] = relationship("Character", back_populates="project")
     runs: Mapped[list["Run"]] = relationship("Run", back_populates="project")
     pronunciation_dictionary_entries: Mapped[list["PronunciationDictionary"]] = relationship(
@@ -73,6 +78,22 @@ class Chapter(Base):
     )
 
     project: Mapped[Project] = relationship("Project", back_populates="chapters")
+
+
+class ProjectRawCorpusBlob(Base):
+    __tablename__ = "project_raw_corpus_blobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    blob_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_corpus_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="raw_corpus_blobs")
 
 
 class Character(Base):
