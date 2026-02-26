@@ -630,7 +630,7 @@ class LLMCache(Base):
             "task_type",
             "configuration_snapshot_id",
             "model_identifier",
-            name="uq_llm_cache_input_text_hash_task_type_configuration_snapshot_model",
+            name="uq_llm_cache_hash_task_snapshot_model",
         ),
     )
 
