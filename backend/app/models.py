@@ -95,6 +95,36 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    lifecycle_transitions: Mapped[list["ProjectLifecycleTransition"]] = relationship(
+        "ProjectLifecycleTransition",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
+
+class ProjectLifecycleTransition(Base):
+    __tablename__ = "project_lifecycle_transitions"
+    __table_args__ = (
+        CheckConstraint(
+            "from_state IN ('draft', 'ingested', 'configured', 'running', 'completed', 'failed', 'archived')",
+            name="ck_project_lifecycle_transition_from_state_allowed",
+        ),
+        CheckConstraint(
+            "to_state IN ('draft', 'ingested', 'configured', 'running', 'completed', 'failed', 'archived')",
+            name="ck_project_lifecycle_transition_to_state_allowed",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    from_state: Mapped[str] = mapped_column(String(40), nullable=False)
+    to_state: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor: Mapped[str] = mapped_column(String(255), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="lifecycle_transitions")
 
 
 class ProjectAccess(Base):

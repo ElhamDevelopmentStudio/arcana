@@ -394,7 +394,7 @@ Definition of done for each task:
 - [x] [DR-012] Persist run ID + timestamp + changelog entries.
 - [x] [DR-013] Ensure every tag/metric can resolve back to chapter and segment.
 - [x] [DR-014] Ensure evidence traces include original text offsets.
-- [ ] [DR-015] Persist project lifecycle transition history with `from_state`, `to_state`, actor, and timestamp.
+- [x] [DR-015] Persist project lifecycle transition history with `from_state`, `to_state`, actor, and timestamp.
 - [ ] [DR-016] Persist project activity events (`ingest`, `mode_change`, `run_start`, `run_complete`, `export`, `manual_edit`, `rerun`) for timeline rendering.
 - [ ] [DR-017] Add indexed projection fields for project dashboard queries (`last_run_status`, `last_export_at`, `next_required_action`).
 - [ ] [DR-018] Add migration/backfill to initialize lifecycle and activity records for existing projects.

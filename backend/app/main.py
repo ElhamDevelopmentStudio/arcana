@@ -28,6 +28,7 @@ from app.models import (
     SubSegmentTag,
     RunChangelogEntry,
     Project,
+    ProjectLifecycleTransition,
     ProjectRawCorpusBlob,
     PronunciationDictionary,
     PronunciationDictionarySnapshot,
@@ -1242,10 +1243,17 @@ def _merge_selected_modes(existing_modes: list[str] | None, mode: str) -> list[s
     return merged
 
 
-def _transition_project_lifecycle_state(project: Project, next_state: str) -> None:
+def _transition_project_lifecycle_state(
+    project: Project,
+    next_state: str,
+    *,
+    session: Session,
+    actor: str = "system",
+) -> None:
+    current_state = str(project.lifecycle_state or "").strip().lower()
     try:
-        project.lifecycle_state = transition_project_lifecycle_state(
-            current_state=project.lifecycle_state,
+        resolved_state = transition_project_lifecycle_state(
+            current_state=current_state,
             next_state=next_state,
         )
     except ValueError as exc:
@@ -1253,6 +1261,19 @@ def _transition_project_lifecycle_state(project: Project, next_state: str) -> No
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Invalid project lifecycle transition: {exc}",
         ) from exc
+    if resolved_state == current_state:
+        return
+
+    normalized_actor = str(actor).strip() or "system"
+    project.lifecycle_state = resolved_state
+    session.add(
+        ProjectLifecycleTransition(
+            project_id=project.id,
+            from_state=current_state,
+            to_state=resolved_state,
+            actor=normalized_actor,
+        )
+    )
 
 
 def _build_initial_configuration_snapshot_id(project_id: int) -> str:
@@ -2446,6 +2467,12 @@ def _execute_pipeline_and_finalize_run(
             "principal_id": principal_id or "",
         },
     )
+    if principal_type is not None and principal_id is not None and str(principal_id).strip():
+        lifecycle_actor = f"{principal_type}:{principal_id}"
+    elif principal_type is not None:
+        lifecycle_actor = str(principal_type).strip() or "system"
+    else:
+        lifecycle_actor = "system"
     try:
         result = execute_pipeline(
             session=session,
@@ -2460,7 +2487,12 @@ def _execute_pipeline_and_finalize_run(
             run.status = RUN_STATUS_COMPLETED
         if run.finished_at is None:
             run.finished_at = datetime.now(timezone.utc)
-        _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_COMPLETED)
+        _transition_project_lifecycle_state(
+            project,
+            PROJECT_LIFECYCLE_COMPLETED,
+            session=session,
+            actor=lifecycle_actor,
+        )
         session.add(project)
 
         time_series_snapshot = _persist_time_series_snapshot(
@@ -2526,7 +2558,12 @@ def _execute_pipeline_and_finalize_run(
         project = _get_project_or_404(session, project.id)
         run.status = RUN_STATUS_FAILED
         run.finished_at = datetime.now(timezone.utc)
-        _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_FAILED)
+        _transition_project_lifecycle_state(
+            project,
+            PROJECT_LIFECYCLE_FAILED,
+            session=session,
+            actor=lifecycle_actor,
+        )
         error_metadata = {"reason": str(exc)}
         if isinstance(exc, Exception) and getattr(exc, "metadata", None):
             error_metadata["metadata"] = dict(exc.metadata)
@@ -2558,7 +2595,12 @@ def _execute_pipeline_and_finalize_run(
         project = _get_project_or_404(session, project.id)
         run.status = RUN_STATUS_FAILED
         run.finished_at = datetime.now(timezone.utc)
-        _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_FAILED)
+        _transition_project_lifecycle_state(
+            project,
+            PROJECT_LIFECYCLE_FAILED,
+            session=session,
+            actor=lifecycle_actor,
+        )
         _set_pipeline_recovery_state(run, session=session, status="failed", metadata={"reason": "unhandled_exception"})
         _append_run_changelog_entry(
             session=session,
@@ -3604,7 +3646,7 @@ def switch_project_mode(
         project_runs = session.query(Run).filter(Run.project_id == project.id).all()
         stale_runs_marked = mark_runs_stale_for_mode_switch(project_runs, payload.mode)
 
-    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_CONFIGURED)
+    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_CONFIGURED, session=session)
     project.selected_mode = payload.mode
     project.selected_modes = _merge_selected_modes(project.selected_modes, payload.mode)
     session.add(project)
@@ -3723,7 +3765,7 @@ def ingest_txt(
         dedup_actions=dedup_actions,
         normalization_report=normalization_report,
     )
-    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED)
+    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -3837,7 +3879,7 @@ def ingest_markdown(
         dedup_actions=dedup_actions,
         normalization_report=normalization_report,
     )
-    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED)
+    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -3951,7 +3993,7 @@ def ingest_epub(
         dedup_actions=build_duplicate_title_dedup_actions("epub", chapters),
         normalization_report=normalization_report,
     )
-    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED)
+    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -4078,7 +4120,7 @@ def ingest_chapters_dir(
         dedup_actions=dedup_actions,
         normalization_report=normalization_report,
     )
-    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED)
+    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -4232,7 +4274,7 @@ def append_chapter(
             ),
             source_filename=filename,
         )
-    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED)
+    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_INGESTED, session=session)
     project.ingestion_timestamp = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
@@ -5428,7 +5470,7 @@ def create_run(
     run_config["correlation_id"] = correlation_id
     project.selected_mode = str(run_config["mode"])
     project.selected_modes = _merge_selected_modes(project.selected_modes, project.selected_mode)
-    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_RUNNING)
+    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_RUNNING, session=session)
     run = Run(
         project_id=project.id,
         status=RUN_STATUS_QUEUED,
@@ -5687,7 +5729,7 @@ def recover_run(
     )
     _clear_run_pipeline_artifacts(session=session, run=run)
     run.status = RUN_STATUS_RUNNING
-    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_RUNNING)
+    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_RUNNING, session=session)
     session.add(project)
     session.add(run)
     _append_run_changelog_entry(
@@ -5779,7 +5821,7 @@ def cancel_run(
     run.status = RUN_STATUS_CANCELLED
     if run.finished_at is None:
         run.finished_at = datetime.now(timezone.utc)
-    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_CONFIGURED)
+    _transition_project_lifecycle_state(project, PROJECT_LIFECYCLE_CONFIGURED, session=session)
     _set_pipeline_recovery_state(
         run,
         session=session,
