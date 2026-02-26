@@ -88,12 +88,15 @@ def test_e2e_run_creation_persists_run_configuration_snapshot() -> None:
         assert snapshot.project_id == project_id
         assert snapshot.version == 1
         assert snapshot.run_id == run.id
+        assert snapshot.snapshot_json["config_schema_version"] == "1.0.0"
         assert snapshot.snapshot_json["project_id"] == project_id
         assert snapshot.snapshot_json["run_id"] == run.id
         assert snapshot.snapshot_json["mode"] == "academic"
         assert snapshot.snapshot_json["configuration_snapshot_id"] == f"run-{run.id}-config-{snapshot.version}"
         assert snapshot.snapshot_json["configuration"]["mode"] == "academic"
+        assert snapshot.snapshot_json["configuration"]["config_schema_version"] == "1.0.0"
         assert snapshot.snapshot_json["configuration"]["deterministic_seed"] == 2026
+        assert run.config_json["config_schema_version"] == "1.0.0"
         assert run.config_json["configuration_snapshot_id"] == f"run-{run.id}-config-{snapshot.version}"
         assert run.config_json["configuration_snapshot_version"] == snapshot.version
 
@@ -144,6 +147,8 @@ def test_run_configuration_snapshot_versions_increase_across_runs() -> None:
 
         first_run = session.query(Run).filter(Run.id == first_run_id).one()
         second_run = session.query(Run).filter(Run.id == second_run_id).one()
+        assert first_run.config_json["config_schema_version"] == "1.0.0"
+        assert second_run.config_json["config_schema_version"] == "1.0.0"
         assert first_run.config_json["configuration_snapshot_id"] == f"run-{first_run_id}-config-1"
         assert second_run.config_json["configuration_snapshot_id"] == f"run-{second_run_id}-config-2"
         assert second_run.config_json["configuration_snapshot_version"] == 2

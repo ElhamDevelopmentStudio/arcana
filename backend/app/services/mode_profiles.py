@@ -23,6 +23,8 @@ PROFILE_CONFIG_KEYS: tuple[str, ...] = (
     "web_scraping_enabled",
 )
 
+RUN_CONFIG_SCHEMA_VERSION: str = "1.0.0"
+
 
 def normalize_mode_value(mode: str | None) -> str:
     if mode is None:
@@ -60,6 +62,7 @@ def build_run_config_snapshot(mode: str | None, overrides: Mapping[str, Any] | N
 
     return {
         "mode": normalized_mode,
+        "config_schema_version": RUN_CONFIG_SCHEMA_VERSION,
         **resolved_profile_config,
         "mode_profile_snapshot": profile_snapshot,
     }

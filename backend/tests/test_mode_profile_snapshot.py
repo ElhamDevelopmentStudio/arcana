@@ -67,6 +67,7 @@ def test_unit_build_run_config_snapshot_keeps_profile_snapshot_and_applies_overr
     assert snapshot["provider_name"] == "groq"
     assert snapshot["deep_semantic_refinement"] is True
     assert snapshot["deterministic_mode"] is True
+    assert snapshot["config_schema_version"] == "1.0.0"
     assert snapshot["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
     assert snapshot["export_chunk_size"] == 500
     assert snapshot["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["author"]
@@ -124,6 +125,7 @@ def test_integration_run_config_stores_loaded_mode_profile_snapshot() -> None:
         assert detail_resp.status_code == 200
         config = detail_resp.json()["config"]
         assert config["mode"] == "academic"
+        assert config["config_schema_version"] == "1.0.0"
         assert config["export_formats"] == ["json", "csv", "time_series_json", "graph_json"]
         assert config["export_chunk_size"] == 500
         assert config["max_segment_chars"] == MODE_DEFAULT_PROFILES["academic"]["max_segment_chars"]
@@ -221,6 +223,7 @@ def test_e2e_run_config_accepts_segmentation_target_length_alias() -> None:
 def test_regression_custom_mode_snapshot_payload_shape() -> None:
     assert build_run_config_snapshot("custom") == {
         "mode": "custom",
+        "config_schema_version": "1.0.0",
         "max_segment_chars": 255,
         "export_formats": ["json", "csv", "time_series_json", "graph_json"],
         "export_chunk_size": 500,
