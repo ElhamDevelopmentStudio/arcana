@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from hashlib import sha256
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from app.models import (
     Chapter,
     Character,
     LLMCall,
+    LLMCache,
     Project,
     PronunciationDictionary,
     Run,
@@ -82,6 +84,35 @@ def _coerce_confidence_threshold(value: object) -> float:
     if threshold > 1.0:
         return 1.0
     return round(threshold, 4)
+
+
+def _build_llm_cache_key(input_text: str) -> str:
+    return sha256(str(input_text).encode("utf-8")).hexdigest()
+
+
+def _get_cached_llm_response(
+    session: Session,
+    *,
+    input_text: str,
+    task_type: str,
+    configuration_snapshot_id: str,
+    model_identifier: str | None,
+) -> LLMCache | None:
+    model_id = (str(model_identifier or "").strip()) or None
+    if model_id is None:
+        return None
+
+    input_text_hash = _build_llm_cache_key(input_text)
+    return (
+        session.query(LLMCache)
+        .filter(
+            LLMCache.input_text_hash == input_text_hash,
+            LLMCache.task_type == task_type,
+            LLMCache.configuration_snapshot_id == configuration_snapshot_id,
+            LLMCache.model_identifier == model_id,
+        )
+        .one_or_none()
+    )
 
 
 def _coerce_call_timestamp(value: str | None) -> datetime:
@@ -582,6 +613,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
     max_calls_per_day = int(run_config.get("max_calls_per_day", 25))
     settings = get_settings()
     provider_candidates = _build_probe_provider_order(requested_provider=provider, settings=settings)
+    configuration_snapshot_id = str(project.configuration_snapshot_id or f"run-{run.id}")
 
     request = LLMRequest(
         request_id=str(uuid4()),
@@ -589,7 +621,7 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
         task_type=LLMTaskType.SENTIMENT_PROBE.value,
         input_text=input_text,
         expected_schema={"sentiment": "string", "confidence": "number"},
-        configuration_snapshot_id=f"run-{run.id}",
+        configuration_snapshot_id=configuration_snapshot_id,
     )
 
     final_provider = provider
@@ -615,6 +647,39 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
             settings=settings,
             provider_name=active_provider,
         )
+        cached_response = _get_cached_llm_response(
+            session=session,
+            input_text=input_text,
+            task_type=LLMTaskType.SENTIMENT_PROBE.value,
+            configuration_snapshot_id=configuration_snapshot_id,
+            model_identifier=runtime_model_identifier,
+        )
+        if cached_response is not None:
+            cached_payload = cached_response.response_payload
+            final_provider = active_provider
+            final_success = bool(cached_payload.get("success", False))
+            final_token_usage = cached_payload.get("token_usage_estimate")
+            final_detail = cached_payload.get("detail")
+            final_model_identifier = str(runtime_model_identifier)
+            final_called_at = _coerce_call_timestamp(cached_payload.get("called_at"))
+            success = final_success
+            final_request_count = 0
+            session.add(
+                LLMCall(
+                    run_id=run.id,
+                    provider=final_provider,
+                    task_type=LLMTaskType.SENTIMENT_PROBE.value,
+                    success=final_success,
+                    request_count=final_request_count,
+                    token_usage_estimate=final_token_usage,
+                    detail=(None if final_success else str(final_detail) if final_detail is not None else "cache_hit"),
+                    model_identifier=final_model_identifier,
+                    called_at=final_called_at,
+                )
+            )
+            session.flush()
+            return
+
         runtime_api_keys = get_provider_api_keys(
             settings=settings,
             provider_name=active_provider,
@@ -652,7 +717,6 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 final_request_count = request_count
                 break
 
-            provider_attempted = True
             final_request_count = request_count
             response = router.call(
                 request=request,
@@ -675,6 +739,21 @@ def _run_llm_probe(session: Session, project: Project, run: Run, run_config: dic
                 final_detail = response.raw_output
                 final_model_identifier = response.model_identifier
                 final_called_at = _coerce_call_timestamp(response.timestamp)
+                payload = {
+                    "success": response.success_flag,
+                    "detail": response.raw_output,
+                    "token_usage_estimate": response.token_usage_estimate,
+                    "called_at": _coerce_call_timestamp(response.timestamp).isoformat(),
+                }
+                session.add(
+                    LLMCache(
+                        input_text_hash=_build_llm_cache_key(input_text),
+                        task_type=LLMTaskType.SENTIMENT_PROBE.value,
+                        configuration_snapshot_id=configuration_snapshot_id,
+                        model_identifier=(str(response.model_identifier) if response.model_identifier else runtime_model_identifier),
+                        response_payload=payload,
+                    )
+                )
                 success = True
                 break
 
