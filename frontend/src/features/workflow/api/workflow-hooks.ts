@@ -190,6 +190,18 @@ export function useExportPayloadQuery(projectId: number | null, runId: number | 
   );
 }
 
+export function useExportCsvMutation(projectId: number | null, runId: number | null) {
+  return useSWRMutation(
+    projectId !== null && runId !== null ? ['export-csv', projectId, runId] : null,
+    async () => {
+      if (projectId === null || runId === null) {
+        throw new Error('Project and run are required before exporting CSV.');
+      }
+      return nipeApiClient.getExportCsv(projectId, runId);
+    },
+  );
+}
+
 export function useTensionGraphQuery(projectId: number | null, runId: number | null) {
   return useSWR(
     projectId !== null && runId !== null ? workspaceKeys.tensionGraph(projectId, runId) : null,

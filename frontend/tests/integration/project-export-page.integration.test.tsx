@@ -7,58 +7,12 @@ import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { ProjectExportPage } from '@/pages/projects/project-export-page';
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
+const useExportPayloadQueryMock = vi.fn();
+const useExportCsvMutationMock = vi.fn();
+
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
-  useExportPayloadQuery: () => ({
-    data: {
-      project_id: 333,
-      project_title: 'Confidence Export Project',
-      run_id: 900,
-      status: 'complete',
-      segments: [
-        {
-          segment_id: '333-001',
-          chapter_id: 1,
-          speaker: 'Mara',
-          confidence: {
-            speaker: 0.92,
-            emotion: 0.81,
-            type: 0.74,
-          },
-          tension_contribution: { confidence: 0.58 },
-          dominance_contribution: { confidence: 0.67 },
-          summary_tag: { confidence: 0.55 },
-        },
-        {
-          segment_id: '333-002',
-          chapter_id: 1,
-          speaker: 'Narrator',
-          confidence: {
-            speaker: 0.98,
-            emotion: 0.93,
-            type: 0.86,
-            tension: 0.77,
-            dominance: 0.61,
-          },
-          summary_tag: { confidence: 0.9 },
-        },
-        {
-          segment_id: '333-003',
-          chapter_id: 2,
-          speaker: 'Editor',
-          confidence: {
-            speaker: 0.99,
-            emotion: 0.97,
-            type: 0.95,
-            tension: 0.95,
-            dominance: 0.96,
-          },
-          summary_tag: { confidence: 0.95 },
-        },
-      ],
-    },
-    isLoading: false,
-    error: null,
-  }),
+  useExportPayloadQuery: (...args: Parameters<typeof useExportPayloadQueryMock>) => useExportPayloadQueryMock(...args),
+  useExportCsvMutation: (...args: Parameters<typeof useExportCsvMutationMock>) => useExportCsvMutationMock(...args),
 }));
 
 function renderExportPage() {
@@ -82,12 +36,70 @@ function renderExportPage() {
 describe('project export page', () => {
   beforeEach(() => {
     resetWorkspaceStore();
+    useExportPayloadQueryMock.mockReset();
+    useExportCsvMutationMock.mockReset();
     useWorkspaceStore.setState({
       projectId: 333,
       projectTitle: 'Confidence Export Project',
       selectedMode: null,
       chapterCount: 2,
       runId: 900,
+    });
+    useExportPayloadQueryMock.mockReturnValue({
+      data: {
+        project_id: 333,
+        project_title: 'Confidence Export Project',
+        run_id: 900,
+        status: 'complete',
+        segments: [
+          {
+            segment_id: '333-001',
+            chapter_id: 1,
+            speaker: 'Mara',
+            confidence: {
+              speaker: 0.92,
+              emotion: 0.81,
+              type: 0.74,
+            },
+            tension_contribution: { confidence: 0.58 },
+            dominance_contribution: { confidence: 0.67 },
+            summary_tag: { confidence: 0.55 },
+          },
+          {
+            segment_id: '333-002',
+            chapter_id: 1,
+            speaker: 'Narrator',
+            confidence: {
+              speaker: 0.98,
+              emotion: 0.93,
+              type: 0.86,
+              tension: 0.77,
+              dominance: 0.61,
+            },
+            summary_tag: { confidence: 0.9 },
+          },
+          {
+            segment_id: '333-003',
+            chapter_id: 2,
+            speaker: 'Editor',
+            confidence: {
+              speaker: 0.99,
+              emotion: 0.97,
+              type: 0.95,
+              tension: 0.95,
+              dominance: 0.96,
+            },
+            summary_tag: { confidence: 0.95 },
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    useExportCsvMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: vi.fn().mockResolvedValue('segment_id,chapter_id\n333-001,1\n'),
     });
   });
 
@@ -109,6 +121,7 @@ describe('project export page', () => {
 
     expect(screen.getByText(/"project_id":\s+333/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Download JSON/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Download CSV/i })).toBeInTheDocument();
   });
 
   it('links to dashboards step', async () => {
@@ -137,5 +150,20 @@ describe('project export page', () => {
     expect(screen.getByText('Showing 1 rows where min confidence is at least 90%')).toBeInTheDocument();
     expect(screen.getByTestId('export-confidence-row-333-003')).toBeInTheDocument();
     expect(screen.queryByTestId('export-confidence-row-333-001')).not.toBeInTheDocument();
+  });
+
+  it('triggers CSV export mutation from export page', async () => {
+    const user = userEvent.setup();
+    const csvTrigger = vi.fn().mockResolvedValue('segment_id,chapter_id\n333-001,1\n');
+    useExportCsvMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: csvTrigger,
+    });
+
+    renderExportPage();
+    await user.click(screen.getByRole('button', { name: /Download CSV/i }));
+
+    expect(csvTrigger).toHaveBeenCalledTimes(1);
   });
 });

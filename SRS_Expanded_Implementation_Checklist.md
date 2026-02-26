@@ -666,7 +666,7 @@ Definition of done for each task:
 - [x] [FE-163] Build tension graph view from `GET /api/projects/{project_id}/runs/{run_id}/tension-graph`.
 - [x] [FE-164] Build polarity graph view from `GET /api/projects/{project_id}/runs/{run_id}/polarity-graph`.
 - [x] [FE-165] Build JSON export center path using `GET /api/projects/{project_id}/exports/{run_id}.json`.
-- [ ] [FE-166] Build CSV export center path using `GET /api/projects/{project_id}/exports/{run_id}.csv`.
+- [x] [FE-166] Build CSV export center path using `GET /api/projects/{project_id}/exports/{run_id}.csv`.
 - [ ] [FE-167] Add export availability gating UX from project/run state and backend format restrictions.
 - [ ] [FE-168] Build comparison workspace creation flow using `POST /api/comparison-workspaces`.
 - [ ] [FE-169] Build comparison workspace detail route using `GET /api/comparison-workspaces/{workspace_id}`.
