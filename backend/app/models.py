@@ -5,6 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from app.database import Base
+from app.services.encryption import EncryptedBinary, EncryptedText
 from app.modes import DEFAULT_MODE
 
 
@@ -117,10 +118,10 @@ class Chapter(Base):
     chapter_index: Mapped[int] = mapped_column(Integer, nullable=False)
     chapter_internal_id: Mapped[str] = mapped_column(String(80), nullable=False)
     chapter_title: Mapped[str] = mapped_column(String(255), nullable=False)
-    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
-    original_text_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
-    normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
-    normalized_text_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_text: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
+    original_text_snapshot: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
+    normalized_text: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
+    normalized_text_snapshot: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
     original_to_normalized_offset_map: Mapped[list[dict[str, int | str]]] = mapped_column(
         JSON,
         default=list,
@@ -138,7 +139,7 @@ class ProjectRawCorpusBlob(Base):
     source: Mapped[str] = mapped_column(String(80), nullable=False)
     source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     blob_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    raw_corpus_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    raw_corpus_blob: Mapped[bytes] = mapped_column(EncryptedBinary(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

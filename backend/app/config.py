@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     siliconflow_base_url: str = Field(default="https://api.siliconflow.cn/v1", alias="SILICONFLOW_BASE_URL")
     groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
     groq_api_keys: list[str] | None = Field(default=None, alias="GROQ_API_KEYS")
+    data_encryption_key: str | None = Field(default=None, alias="DATA_ENCRYPTION_KEY")
+    saas_mode: bool = Field(default=False, alias="SAAS_MODE")
 
     @field_validator(
         "openrouter_api_keys",

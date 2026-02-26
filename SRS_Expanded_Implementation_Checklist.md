@@ -413,8 +413,8 @@ Definition of done for each task:
 
 ### NFR-5 Security and Privacy (SaaS)
 - [x] [NFR5-001] Implement project-level access control model.
-- [ ] [NFR5-002] Add project data isolation checks in data access layer.
-- [ ] [NFR5-003] Encrypt sensitive uploaded text at rest in SaaS mode.
+- [x] [NFR5-002] Add project data isolation checks in data access layer.
+- [x] [NFR5-003] Encrypt sensitive uploaded text at rest in SaaS mode.
 - [ ] [NFR5-004] Add least-privilege service role matrix for storage and DB.
 
 ### NFR-6 Compliance and Copyright Guardrails
