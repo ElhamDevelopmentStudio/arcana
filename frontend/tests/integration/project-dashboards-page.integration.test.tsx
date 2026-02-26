@@ -122,6 +122,108 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isLoading: false,
     error: null,
   }),
+  useCharacterCooccurrenceGraphQuery: () => ({
+    data: {
+      schema_version: '1.0.0',
+      output_schema: 'graph_json',
+      output_format: 'graph_json',
+      output_id: 'AO-004',
+      output_name: 'character_cooccurrence_graph',
+      project_id: 202,
+      run_id: 88,
+      run_status: 'complete',
+      generated_at: '2025-01-01T00:00:00Z',
+      generated_by: 'build_run_export_graph_json',
+      graph: {
+        nodes: [
+          {
+            character_key: 'aya',
+            character_label: 'Aya',
+            speaker_id: 1,
+            segment_count: 5,
+            chapter_ids: [1, 2],
+            chapter_count: 2,
+            adjacency_weight: 4,
+          },
+          {
+            character_key: 'ben',
+            character_label: 'Ben',
+            speaker_id: 2,
+            segment_count: 6,
+            chapter_ids: [1],
+            chapter_count: 1,
+            adjacency_weight: 4,
+          },
+        ],
+        edges: [
+          {
+            source: 'aya',
+            target: 'ben',
+            co_occurrence_count: 4,
+            weight: 4,
+            chapter_ids: [1, 2],
+            chapter_count: 2,
+          },
+        ],
+        metadata: {
+          node_count: 2,
+          edge_count: 1,
+          scope: 'adjacent_speaker_transitions_within_chapter',
+          undirected: true,
+          generated_by: 'export_academic_graph',
+        },
+      },
+      character_cooccurrence_centrality: {
+        metrics_table: [
+          {
+            character_key: 'aya',
+            character_label: 'Aya',
+            speaker_id: 1,
+            rank: 1,
+            degree: 1,
+            weighted_degree: 4,
+            degree_centrality: 1,
+            weighted_degree_centrality: 1,
+            closeness_centrality: 0.75,
+            betweenness_centrality: 0.2,
+          },
+          {
+            character_key: 'ben',
+            character_label: 'Ben',
+            speaker_id: 2,
+            rank: 2,
+            degree: 1,
+            weighted_degree: 4,
+            degree_centrality: 0.8,
+            weighted_degree_centrality: 0.8,
+            closeness_centrality: 0.68,
+            betweenness_centrality: 0.15,
+          },
+        ],
+        metadata: {
+          node_count: 2,
+          edge_count: 1,
+          distance_transform: 'inverse_weight',
+          generated_by: 'export_academic_centrality',
+          centrality_metrics: [
+            'degree',
+            'degree_centrality',
+            'weighted_degree',
+            'weighted_degree_centrality',
+            'closeness_centrality',
+            'betweenness_centrality',
+          ],
+        },
+      },
+      manifest_snapshot: {
+        output_schema: 'academic_json',
+        generated_by: 'export_academic_json',
+        generated_at: '2025-01-01T00:00:00Z',
+      },
+    },
+    isLoading: false,
+    error: null,
+  }),
 }));
 
 function renderDashboardPage() {
@@ -182,5 +284,24 @@ describe('project dashboards page', () => {
     expect(screen.getByText('Character Mention Trends')).toBeInTheDocument();
     expect(screen.getByText('Per-chapter mention trajectory for top characters.')).toBeInTheDocument();
     expect(screen.getByText('Aya: first appears in chapter 1, last appears in chapter 2.')).toBeInTheDocument();
+  });
+
+  it('renders character co-occurrence graph cards and edge insights from co-occurrence endpoint data', () => {
+    renderDashboardPage();
+
+    expect(screen.getByText('Character Co-occurrence Graph')).toBeInTheDocument();
+    expect(screen.getByTestId('dashboards-cooccurrence-node-count')).toHaveTextContent('2');
+    expect(screen.getByTestId('dashboards-cooccurrence-edge-count')).toHaveTextContent('1');
+    const cards = screen.getAllByText(/Top centrality rows|No centrality values available for this run\./);
+    expect(cards).toHaveLength(1);
+
+    const ayaCentralityRow = screen.getByTestId('dashboards-cooccurrence-centrality-aya');
+    expect(ayaCentralityRow).toBeInTheDocument();
+    expect(ayaCentralityRow).toHaveTextContent('Aya');
+    expect(ayaCentralityRow).toHaveTextContent('Degree: 1');
+
+    const ayaBenEdge = screen.getByTestId('dashboards-cooccurrence-edge-aya-ben');
+    expect(ayaBenEdge).toHaveTextContent('aya ↔ ben');
+    expect(ayaBenEdge).toHaveTextContent('Count: 4');
   });
 });
