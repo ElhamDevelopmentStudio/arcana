@@ -466,6 +466,7 @@ class VoiceConfigResponse(BaseModel):
 
 class RunCreateRequest(BaseModel):
     mode: str = Field(default=DEFAULT_MODE)
+    pipeline_chunk_max_chars: int | None = Field(default=None, ge=1024, le=2_000_000)
     max_segment_chars: int = Field(default=255, ge=80, le=255)
     llm_enabled: bool = False
     provider_name: str = "openrouter"
@@ -480,6 +481,8 @@ class RunCreateRequest(BaseModel):
     allow_unfinalized_character_map: bool = False
     internal_thought_voice_policy: str = "character"
     internal_thought_voice: str | None = None
+    incremental_recompute: bool = False
+    idempotency_key: str | None = None
 
     @field_validator("mode")
     @classmethod
@@ -509,6 +512,18 @@ class RunCreateRequest(BaseModel):
             return None
         if len(trimmed) > 255:
             raise ValueError("internal_thought_voice must be 255 characters or fewer")
+        return trimmed
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def idempotency_key_must_be_trimmed(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 255:
+            raise ValueError("idempotency_key must be 255 characters or fewer")
         return trimmed
 
     @field_validator("deterministic_model_identifier")
@@ -598,6 +613,14 @@ class RunLLMCallLog(BaseModel):
     is_cache_hit: bool
 
 
+class RunChangelogEntry(BaseModel):
+    id: int
+    event_type: str
+    event_message: str | None = None
+    event_metadata: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime
+
+
 class LLMCacheMetrics(BaseModel):
     hits: int = Field(ge=0)
     misses: int = Field(ge=0)
@@ -607,12 +630,16 @@ class RunDetailResponse(BaseModel):
     run_id: int
     project_id: int
     status: str
+    llm_provider_name: str | None = None
+    llm_model_identifier: str | None = None
+    llm_model_version: str | None = None
     config: dict[str, Any]
     started_at: datetime
     finished_at: datetime | None
     segment_count: int
     llm_cache_metrics: dict[str, LLMCacheMetrics] = Field(default_factory=dict)
     llm_calls: list[RunLLMCallLog]
+    changelog_entries: list[RunChangelogEntry] = Field(default_factory=list)
 
 
 class NarrativeHealthChapterRange(BaseModel):
@@ -678,6 +705,105 @@ class CharacterOccurrenceAnalyticsResponse(BaseModel):
     character_last_appearance_chapter_index: dict[str, int | None]
     character_mentions_per_1000_words: dict[str, float]
     character_dialogue_line_counts: dict[str, int]
+
+
+class CharacterCooccurrenceGraphNode(BaseModel):
+    character_key: str = Field(min_length=1)
+    character_label: str = Field(min_length=1)
+    speaker_id: int | None = None
+    segment_count: int = Field(ge=0)
+    chapter_ids: list[int] = Field(default_factory=list)
+    chapter_count: int = Field(ge=0)
+    adjacency_weight: int = Field(ge=0)
+
+
+class CharacterCooccurrenceGraphEdge(BaseModel):
+    source: str = Field(min_length=1)
+    target: str = Field(min_length=1)
+    co_occurrence_count: int = Field(ge=0)
+    weight: int = Field(ge=0)
+    chapter_ids: list[int] = Field(default_factory=list)
+    chapter_count: int = Field(ge=0)
+
+
+class CharacterCooccurrenceGraphMetadata(BaseModel):
+    node_count: int = Field(ge=0)
+    edge_count: int = Field(ge=0)
+    scope: str = Field(default="adjacent_speaker_transitions_within_chapter")
+    undirected: bool = True
+    generated_by: str = Field(default="export_academic_graph")
+
+
+class CharacterCooccurrenceGraphData(BaseModel):
+    nodes: list[CharacterCooccurrenceGraphNode] = Field(default_factory=list)
+    edges: list[CharacterCooccurrenceGraphEdge] = Field(default_factory=list)
+    metadata: CharacterCooccurrenceGraphMetadata
+
+
+class CharacterCooccurrenceCentralityMetadata(BaseModel):
+    node_count: int = Field(ge=0)
+    edge_count: int = Field(ge=0)
+    centrality_metrics: list[str] = Field(default_factory=list)
+    distance_transform: str | None = None
+    generated_by: str = Field(default="export_academic_centrality")
+
+
+class CharacterCooccurrenceCentralityRow(BaseModel):
+    character_key: str = Field(min_length=1)
+    character_label: str = Field(min_length=1)
+    speaker_id: int | None = None
+    rank: int = Field(ge=1)
+    degree: int = Field(ge=0)
+    weighted_degree: float = Field(ge=0.0)
+    degree_centrality: float = Field(ge=0.0, le=1.0)
+    weighted_degree_centrality: float = Field(ge=0.0, le=1.0)
+    closeness_centrality: float = Field(ge=0.0, le=1.0)
+    betweenness_centrality: float = Field(ge=0.0, le=1.0)
+
+
+class CharacterCooccurrenceCentralityPayload(BaseModel):
+    metrics_table: list[CharacterCooccurrenceCentralityRow] = Field(default_factory=list)
+    metadata: CharacterCooccurrenceCentralityMetadata
+
+
+class CharacterCooccurrenceGraphResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="graph_json")
+    output_format: str = Field(default="graph_json")
+    output_id: str = Field(default="AO-004")
+    output_name: str = Field(default="character_cooccurrence_graph")
+    project_id: int
+    run_id: int
+    run_status: str
+    generated_at: str
+    generated_by: str = Field(default="build_run_export_graph_json")
+    graph: CharacterCooccurrenceGraphData
+    character_cooccurrence_centrality: CharacterCooccurrenceCentralityPayload
+    manifest_snapshot: dict[str, Any] = Field(default_factory=dict)
+
+
+class AudiobookPrepDashboardReadiness(BaseModel):
+    is_ready: bool
+    blocking_reasons: list[str] = Field(default_factory=list)
+    warning_reasons: list[str] = Field(default_factory=list)
+
+
+class AudiobookPrepDashboardResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="audiobook_prep_dashboard_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="AB-001")
+    output_name: str = Field(default="audiobook_prep_dashboard")
+    project_id: int
+    run_id: int
+    run_status: str
+    generated_at: str
+    generated_by: str = Field(default="build_audiobook_prep_dashboard")
+    unresolved_speaker_count: int = Field(ge=0)
+    unresolved_voice_mapping_count: int = Field(ge=0)
+    low_confidence_region_count: int = Field(ge=0)
+    export_readiness: AudiobookPrepDashboardReadiness
+
 
 
 class ComparisonWorkspaceCreateRequest(BaseModel):
