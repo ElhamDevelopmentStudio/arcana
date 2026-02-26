@@ -396,7 +396,11 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(Object.hasOwn(runConfigPresetPayload.run_config, 'configuration_snapshot_version')).toBe(false);
 
     const runFromPresetResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
-      data: runConfigPresetPayload.run_config,
+      data: {
+        ...runConfigPresetPayload.run_config,
+        config_schema_version: '0.9.0',
+        legacy_profile_name: 'release-2025',
+      },
     });
     expect(runFromPresetResponse.status()).toBe(200);
     const runFromPresetPayload = (await runFromPresetResponse.json()) as { run_id: number };

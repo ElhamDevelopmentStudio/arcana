@@ -357,6 +357,8 @@ describe('pipeline run mode lock regression', () => {
             export_formats: ['json', 'csv'],
             deterministic_mode: true,
             deterministic_seed: 2026,
+            config_schema_version: '0.9.0',
+            legacy_profile_name: 'release-2025',
           },
         }),
       ],
@@ -377,5 +379,7 @@ describe('pipeline run mode lock regression', () => {
         deterministic_seed: 2026,
       }),
     );
+    expect(runPipelineMutationTrigger.mock.calls[0][0]).not.toHaveProperty('config_schema_version');
+    expect(runPipelineMutationTrigger.mock.calls[0][0]).not.toHaveProperty('legacy_profile_name');
   });
 });
