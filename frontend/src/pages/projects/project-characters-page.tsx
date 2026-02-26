@@ -41,6 +41,11 @@ type ManualCharacterRow = {
   aliases: string;
 };
 
+type ManualCharacterRowError = {
+  name?: string;
+  verbalized?: string;
+};
+
 function createRow(): ManualCharacterRow {
   return {
     id: crypto.randomUUID(),
@@ -109,6 +114,27 @@ export function ProjectCharactersPage() {
 
   const characterMapQuery = useCharacterMapQuery(projectId);
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
+  const manualRowErrors = useMemo<Record<string, ManualCharacterRowError>>(() => {
+    return manualRows.reduce<Record<string, ManualCharacterRowError>>((acc, row) => {
+      const hasName = row.name.trim().length > 0;
+      const hasVerbalized = row.verbalized.trim().length > 0;
+      const hasAnyValue = hasName || hasVerbalized;
+
+      if (!hasAnyValue) {
+        return acc;
+      }
+
+      const next = { ...acc };
+      if (!hasName) {
+        next[row.id] = { ...next[row.id], name: 'Character name is required.' };
+      }
+      if (!hasVerbalized) {
+        next[row.id] = { ...next[row.id], verbalized: 'Verbalized form is required.' };
+      }
+      return next;
+    }, {});
+  }, [manualRows]);
+  const hasManualRowErrors = useMemo<boolean>(() => Object.keys(manualRowErrors).length > 0, [manualRowErrors]);
   const manualPreviewCount = useMemo(
     () => manualRows.filter((row) => row.name.trim() && row.verbalized.trim()).length,
     [manualRows],
@@ -170,6 +196,10 @@ export function ProjectCharactersPage() {
     event.preventDefault();
     if (projectId === null) {
       toast.error('Project is missing.');
+      return;
+    }
+    if (hasManualRowErrors) {
+      toast.error('Fix inline validation errors before saving.');
       return;
     }
 
@@ -708,18 +738,31 @@ export function ProjectCharactersPage() {
           <CardContent className="space-y-3">
             <div className="grid max-h-[28rem] gap-1 overflow-auto pr-1">
               {manualRows.map((row) => (
-                <div key={row.id} className="grid gap-2 px-1 py-1.5 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-panel-border/60">
-                  <div className="grid gap-2 lg:grid-cols-[1fr_1fr_1.3fr_160px_auto]">
+                <div
+                  key={row.id}
+                  className="grid gap-2 px-1 py-1.5 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-panel-border/60"
+                >
+                  <div className="space-y-1">
                     <Input
                       placeholder="Character name"
                       value={row.name}
                       onChange={(event) => updateRow(row.id, 'name', event.target.value)}
+                      className={manualRowErrors[row.id]?.name ? 'border-destructive' : undefined}
                     />
+                    {manualRowErrors[row.id]?.name ? (
+                      <p className="text-xs text-destructive">{manualRowErrors[row.id]!.name}</p>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2 lg:grid-cols-[1fr_1fr_1.3fr_160px_auto]">
                     <Input
                       placeholder="Verbalized form"
                       value={row.verbalized}
                       onChange={(event) => updateRow(row.id, 'verbalized', event.target.value)}
+                      className={manualRowErrors[row.id]?.verbalized ? 'border-destructive' : undefined}
                     />
+                    {manualRowErrors[row.id]?.verbalized ? (
+                      <p className="text-xs text-destructive">{manualRowErrors[row.id]!.verbalized}</p>
+                    ) : null}
                     <Input
                       placeholder="Aliases (comma-separated)"
                       value={row.aliases}
@@ -752,7 +795,7 @@ export function ProjectCharactersPage() {
             <form className="grid" onSubmit={handleSaveManualCharacters}>
               <Button
                 data-testid="character-map-save-button"
-                disabled={saveCharactersMutation.isMutating || projectId === null}
+                disabled={saveCharactersMutation.isMutating || projectId === null || hasManualRowErrors}
                 type="submit"
               >
                 {saveCharactersMutation.isMutating ? 'Saving...' : 'Save Character Map'}

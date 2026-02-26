@@ -400,7 +400,7 @@ Definition of done for each task:
 - [ ] [NFR2-005] Add automated corruption checks on persisted artifacts.
 
 ### NFR-3 Usability
-- [ ] [NFR3-001] Add pronunciation override UX with inline validation.
+- [x] [NFR3-001] Add pronunciation override UX with inline validation.
 - [ ] [NFR3-002] Add gender override UX with contradiction visibility.
 - [ ] [NFR3-003] Add character merge UX with undo support.
 - [ ] [NFR3-004] Add voice mapping UX with default fallback preview.

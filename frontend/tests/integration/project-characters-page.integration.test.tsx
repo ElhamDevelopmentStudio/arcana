@@ -168,6 +168,54 @@ describe('project characters page manual editor', () => {
     });
   });
 
+  it('validates manual editor rows inline before save', async () => {
+    const user = userEvent.setup();
+    renderCharacterPage();
+
+    await user.click(screen.getByRole('button', { name: 'Add Row' }));
+
+    const nameInputs = screen.getAllByPlaceholderText('Character name');
+    const verbalizedInputs = screen.getAllByPlaceholderText('Verbalized form');
+
+    await user.type(nameInputs[1], 'Lio');
+    expect(screen.getByText('Verbalized form is required.')).toBeInTheDocument();
+    expect(screen.getByTestId('character-map-save-button')).toBeDisabled();
+
+    await user.click(screen.getByTestId('character-map-save-button'));
+    expect(saveCharactersMutationTrigger).not.toHaveBeenCalled();
+
+    await user.type(verbalizedInputs[1], 'Lee-o');
+    expect(screen.queryByText('Verbalized form is required.')).not.toBeInTheDocument();
+    expect(screen.getByTestId('character-map-save-button')).not.toBeDisabled();
+
+    await user.click(screen.getByTestId('character-map-save-button'));
+    expect(saveCharactersMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(saveCharactersMutationTrigger).toHaveBeenCalledWith({
+      characters: [
+        {
+          name: 'Kai',
+          verbalized_form: 'Kai',
+          gender: 'male',
+          aliases: ['K'],
+          notes: null,
+          source_trace: [],
+          source: 'manual',
+          confidence: 1.0,
+        },
+        {
+          name: 'Lio',
+          verbalized_form: 'Lee-o',
+          gender: 'unknown',
+          aliases: [],
+          notes: null,
+          source_trace: [],
+          source: 'manual',
+          confidence: 1.0,
+        },
+      ],
+    });
+  });
+
   it('displays canonical merge suggestions when merge endpoint returns them', async () => {
     const user = userEvent.setup();
     mergeCharactersMutationTrigger.mockResolvedValue({
