@@ -12,6 +12,7 @@ PROFILE_CONFIG_KEYS: tuple[str, ...] = (
     "max_calls_per_day",
     "llm_confidence_threshold",
     "deep_semantic_refinement",
+    "deterministic_mode",
 )
 
 

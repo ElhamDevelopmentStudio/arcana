@@ -57,12 +57,14 @@ def test_unit_build_run_config_snapshot_keeps_profile_snapshot_and_applies_overr
             "max_segment_chars": 144,
             "provider_name": "groq",
             "deep_semantic_refinement": True,
+            "deterministic_mode": True,
         },
     )
     assert snapshot["mode"] == "author"
     assert snapshot["max_segment_chars"] == 144
     assert snapshot["provider_name"] == "groq"
     assert snapshot["deep_semantic_refinement"] is True
+    assert snapshot["deterministic_mode"] is True
     assert snapshot["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["author"]
     assert snapshot["mode_profile_snapshot"]["provider_name"] == "openrouter"
 
@@ -83,6 +85,7 @@ def test_integration_run_config_stores_loaded_mode_profile_snapshot() -> None:
         config = detail_resp.json()["config"]
         assert config["mode"] == "academic"
         assert config["max_segment_chars"] == MODE_DEFAULT_PROFILES["academic"]["max_segment_chars"]
+        assert config["deterministic_mode"] is False
         assert config["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["academic"]
 
 
@@ -108,6 +111,7 @@ def test_e2e_run_config_uses_overrides_without_mutating_profile_snapshot() -> No
         config = detail_resp.json()["config"]
         assert config["max_segment_chars"] == 99
         assert config["llm_enabled"] is True
+        assert config["deterministic_mode"] is False
         assert config["provider_name"] == "siliconflow"
         assert config["max_calls_per_day"] == 3
         assert config["mode_profile_snapshot"] == MODE_DEFAULT_PROFILES["audiobook"]
@@ -123,6 +127,7 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
         "max_calls_per_day": 25,
         "llm_confidence_threshold": 0.6,
         "deep_semantic_refinement": False,
+        "deterministic_mode": False,
         "mode_profile_snapshot": {
             "max_segment_chars": 255,
             "llm_enabled": False,
@@ -130,6 +135,7 @@ def test_regression_custom_mode_snapshot_payload_shape() -> None:
             "max_calls_per_day": 25,
             "llm_confidence_threshold": 0.6,
             "deep_semantic_refinement": False,
+            "deterministic_mode": False,
             "profile_intent": "user-tuned baseline with conservative defaults",
         },
     }

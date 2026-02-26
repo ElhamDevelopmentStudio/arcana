@@ -41,6 +41,7 @@ export function ProjectPipelineSetupPage() {
   const [internalThoughtVoice, setInternalThoughtVoice] = useState('');
   const [maxSegmentChars, setMaxSegmentChars] = useState(255);
   const [llmEnabled, setLlmEnabled] = useState(false);
+  const [deterministicMode, setDeterministicMode] = useState(false);
   const [providerName, setProviderName] = useState('openrouter');
   const [maxCallsPerDay, setMaxCallsPerDay] = useState(25);
   const [allowUnfinalizedCharacterMap, setAllowUnfinalizedCharacterMap] = useState(false);
@@ -111,6 +112,7 @@ export function ProjectPipelineSetupPage() {
         mode: selectedMode,
         max_segment_chars: maxSegmentChars,
         llm_enabled: llmEnabled,
+        deterministic_mode: deterministicMode,
         provider_name: providerName,
         max_calls_per_day: maxCallsPerDay,
         allow_unfinalized_character_map: allowUnfinalizedCharacterMap,
@@ -255,6 +257,10 @@ export function ProjectPipelineSetupPage() {
               <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
                 <span>Enable LLM-assisted refinement</span>
                 <Switch checked={llmEnabled} onCheckedChange={setLlmEnabled} />
+              </label>
+              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
+                <span>Enable deterministic mode</span>
+                <Switch checked={deterministicMode} onCheckedChange={setDeterministicMode} />
               </label>
               <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
                 <span>Run with unfinalized character map</span>
