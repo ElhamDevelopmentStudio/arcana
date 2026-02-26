@@ -8,6 +8,7 @@ from app.modes import DEFAULT_MODE, MODE_DEFAULT_PROFILES, MODE_VALUES, ModeDefa
 PROFILE_CONFIG_KEYS: tuple[str, ...] = (
     "max_segment_chars",
     "llm_enabled",
+    "export_formats",
     "provider_name",
     "max_calls_per_day",
     "llm_confidence_threshold",

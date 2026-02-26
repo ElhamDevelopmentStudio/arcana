@@ -40,6 +40,41 @@ _DIALOGUE_DENSITY_ANOMALY_MIN_TOTAL_SEGMENTS = 6
 _DIALOGUE_DENSITY_ANOMALY_MIN_CHAPTER_RUN = 2
 _DIALOGUE_DENSITY_ANOMALY_DEVIATION_THRESHOLD = 0.28
 
+ALLOWED_ACADEMIC_EXPORT_FORMATS: tuple[str, ...] = (
+    "json",
+    "csv",
+    "time_series_json",
+    "graph_json",
+)
+
+
+def _resolve_allowed_export_formats_from_run_config(run_config: Mapping[str, Any] | None) -> list[str]:
+    raw_formats = None if not isinstance(run_config, Mapping) else run_config.get("export_formats")
+    if raw_formats is None:
+        return []
+    if not isinstance(raw_formats, (list, tuple, set)):
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_format in raw_formats:
+        if not isinstance(raw_format, str):
+            continue
+        normalized_format = raw_format.strip().lower()
+        if not normalized_format:
+            continue
+        if normalized_format not in ALLOWED_ACADEMIC_EXPORT_FORMATS:
+            continue
+        if normalized_format not in seen:
+            normalized.append(normalized_format)
+            seen.add(normalized_format)
+
+    return normalized
+
+
+def resolve_run_allowed_export_formats(run: Run) -> list[str]:
+    return _resolve_allowed_export_formats_from_run_config(run.config_json)
+
 
 def _serialize_datetime_to_utc_iso(value: datetime | None) -> str | None:
     if value is None:
@@ -1149,7 +1184,10 @@ def _build_academic_export_output_inventory(
     academic_reports: dict[str, Any],
     generated_at: str,
     schema_version: str,
+    allowed_export_formats: list[str],
 ) -> list[dict[str, Any]]:
+    allowed_formats = set(allowed_export_formats)
+
     def _record_count(value: Any) -> int | None:
         if value is None:
             return None
@@ -1171,20 +1209,25 @@ def _build_academic_export_output_inventory(
             academic_reports.get(key) for key in (data_keys or [])
         ]
         record_counts = [_record_count(payload) for payload in payloads]
-        available_formats = [supported_format for supported_format in supported_formats if available]
+        available_formats = [
+            supported_format for supported_format in supported_formats if supported_format in allowed_formats
+        ]
+        is_available = bool(available_formats) if available else False
 
         return {
             "output_id": output_id,
             "output_name": output_name,
             "supported_formats": supported_formats,
-            "status": "available" if available else "not_implemented",
+            "status": "available" if is_available else "not_implemented",
             "available_formats": available_formats,
             "data_keys": data_keys or [],
             "data_record_counts": record_counts,
             "evidence": {
                 "generated_by": f"academic_export_schema_{schema_version.replace('.', '_')}",
                 "generated_at": generated_at,
-                "status_reason": reason,
+                "status_reason": reason
+                if reason is not None
+                else (None if is_available else "No allowed formats enabled for this output."),
             },
         }
 
@@ -1247,6 +1290,7 @@ def _build_academic_export_manifest(
     run: Run,
     academic_reports: dict[str, Any],
     generated_at: datetime,
+    allowed_export_formats: list[str],
 ) -> dict[str, Any]:
     generated_at_iso = generated_at.isoformat()
     schema_version = "1.0.0"
@@ -1254,6 +1298,7 @@ def _build_academic_export_manifest(
         academic_reports=academic_reports,
         generated_at=generated_at_iso,
         schema_version=schema_version,
+        allowed_export_formats=allowed_export_formats,
     )
 
     return {
@@ -2880,6 +2925,7 @@ def build_run_export(
     from_segment_index: int | None = None,
 ) -> dict:
     generated_at = run.finished_at or run.started_at or datetime.now(timezone.utc)
+    academic_export_formats = _resolve_allowed_export_formats_from_run_config(run.config_json)
     total_segments = session.query(Segment).filter(Segment.run_id == run.id).count()
     rows = session.execute(
         _build_segment_rows_query(run.id, from_chapter_index, from_segment_index)
@@ -2995,6 +3041,7 @@ def build_run_export(
             run=run,
             academic_reports=academic_reports,
             generated_at=generated_at,
+            allowed_export_formats=academic_export_formats,
         ),
     }
 

@@ -13,6 +13,7 @@ from app.services.mode_profiles import load_mode_profile, load_mode_profile_cata
 
 EXPECTED_CUSTOM_PROFILE = {
     "max_segment_chars": 255,
+    "export_formats": ["json", "csv", "time_series_json", "graph_json"],
     "deep_semantic_refinement": False,
     "llm_enabled": False,
     "provider_name": "openrouter",

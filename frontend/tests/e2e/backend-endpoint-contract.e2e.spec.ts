@@ -358,6 +358,43 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(runDetailPayload.status).toBe('completed');
     expect(runDetailPayload.config.mode).toBe('author');
 
+    const runWithFormatOverrideResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'academic',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: false,
+        export_formats: [' json ', 'CSV', 'json'],
+      },
+    });
+    expect(runWithFormatOverrideResponse.status()).toBe(200);
+    const runWithFormatOverridePayload = (await runWithFormatOverrideResponse.json()) as {
+      run_id: number;
+    };
+    const runWithFormatOverrideDetailResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${runWithFormatOverridePayload.run_id}`,
+    );
+    expect(runWithFormatOverrideDetailResponse.status()).toBe(200);
+    const runWithFormatOverrideDetail = (await runWithFormatOverrideDetailResponse.json()) as {
+      config: { export_formats: string[] };
+    };
+    expect(runWithFormatOverrideDetail.config.export_formats).toEqual(['json', 'csv']);
+
+    const invalidExportFormatRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'academic',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: false,
+        export_formats: ['invalid_format'],
+      },
+    });
+    expect(invalidExportFormatRunResponse.status()).toBe(422);
+
     const workspaceCreateResponse = await request.post(`${backendBaseUrl}/api/comparison-workspaces`, {
       data: { name: uniqueTitle('comparison-workspace') },
     });

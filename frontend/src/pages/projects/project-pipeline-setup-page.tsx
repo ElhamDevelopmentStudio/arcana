@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
@@ -28,6 +29,33 @@ const DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD = 0.6;
 const DEFAULT_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD = 2;
 const DEFAULT_UNSTABLE_EMOTION_SHIFT_TRANSITION_THRESHOLD = 4;
 const DEFAULT_UNSTABLE_EMOTION_SHIFT_DENSITY_THRESHOLD = 0.5;
+const EXPORT_FORMAT_OPTIONS = ['json', 'csv', 'time_series_json', 'graph_json'] as const;
+
+function normalizeExportFormats(formats: readonly unknown[]): string[] {
+  const normalized = formats
+    .map((format) => (typeof format === 'string' ? format.trim().toLowerCase() : ''))
+    .filter((format) => format.length > 0);
+  const deduped = Array.from(new Set(normalized));
+  return deduped.filter((format) => EXPORT_FORMAT_OPTIONS.includes(format as (typeof EXPORT_FORMAT_OPTIONS)[number]));
+}
+
+function orderExportFormats(formats: readonly string[]): string[] {
+  const deduped = new Set(formats);
+  return EXPORT_FORMAT_OPTIONS.filter((format) => deduped.has(format));
+}
+
+function toggleExportFormat(formats: string[], format: string): string[] {
+  const deduped = new Set(formats);
+  if (deduped.has(format)) {
+    if (deduped.size <= 1) {
+      return orderExportFormats(formats);
+    }
+    deduped.delete(format);
+  } else {
+    deduped.add(format);
+  }
+  return orderExportFormats(Array.from(deduped));
+}
 
 type VoicePreviewRow = {
   speaker: string;
@@ -120,6 +148,7 @@ export function ProjectPipelineSetupPage() {
   const [emotionTaxonomy, setEmotionTaxonomy] = useState<EmotionTaxonomy>('basic');
   const [providerName, setProviderName] = useState('openrouter');
   const [maxCallsPerDay, setMaxCallsPerDay] = useState(25);
+  const [exportFormats, setExportFormats] = useState<string[]>(Array.from(EXPORT_FORMAT_OPTIONS));
   const [allowUnfinalizedCharacterMap, setAllowUnfinalizedCharacterMap] = useState(false);
   const [hasCustomMaxSegmentChars, setHasCustomMaxSegmentChars] = useState(false);
   const [speakerConfidenceThreshold, setSpeakerConfidenceThreshold] = useState(DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD);
@@ -203,6 +232,7 @@ export function ProjectPipelineSetupPage() {
     setHasCustomUnstableEmotionShiftTransitionThreshold(false);
     setHasCustomUnstableEmotionShiftDensityThreshold(false);
     setHasCustomContradictionReviewRequired(false);
+    setExportFormats(Array.from(EXPORT_FORMAT_OPTIONS));
   }, [runMode]);
 
   useEffect(() => {
@@ -270,6 +300,15 @@ export function ProjectPipelineSetupPage() {
     }
   }, [hasCustomContradictionReviewRequired, selectedProfile]);
 
+  useEffect(() => {
+    if (selectedProfile === null || selectedProfile === undefined) {
+      return;
+    }
+
+    const profileFormats = normalizeExportFormats(Array.isArray(selectedProfile.export_formats) ? selectedProfile.export_formats : []);
+    setExportFormats(profileFormats.length > 0 ? profileFormats : Array.from(EXPORT_FORMAT_OPTIONS));
+  }, [selectedProfile]);
+
   async function handleSaveVoices(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (projectId === null) {
@@ -319,6 +358,7 @@ export function ProjectPipelineSetupPage() {
         high_ambiguity_dialogue_flag_threshold: highAmbiguityDialogueFlagThreshold,
         unstable_emotion_shift_transition_threshold: unstableEmotionShiftTransitionThreshold,
         unstable_emotion_shift_density_threshold: unstableEmotionShiftDensityThreshold,
+        export_formats: exportFormats,
         contradiction_review_required: contradictionReviewRequired,
         deterministic_mode: deterministicMode,
         web_scraping_enabled: webScrapingEnabled,
@@ -472,6 +512,28 @@ export function ProjectPipelineSetupPage() {
               <div className="grid gap-2">
                 <Label htmlFor="run-mode">Selected mode</Label>
                 <Input id="run-mode" disabled value={selectedMode ?? 'not selected'} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Export formats</Label>
+                <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                  {EXPORT_FORMAT_OPTIONS.map((format) => (
+                    <label
+                      key={format}
+                      htmlFor={`export-format-${format}`}
+                      className="inline-flex items-center gap-2 text-sm"
+                    >
+                      <Checkbox
+                        id={`export-format-${format}`}
+                        checked={exportFormats.includes(format)}
+                        disabled={exportFormats.length === 1 && exportFormats.includes(format)}
+                        onCheckedChange={() =>
+                          setExportFormats((previousFormats) => toggleExportFormat(previousFormats, format))
+                        }
+                      />
+                      <span className="font-medium uppercase">{format}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="max-segment-chars">Segmentation target length</Label>

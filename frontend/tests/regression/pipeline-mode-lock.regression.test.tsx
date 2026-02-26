@@ -20,8 +20,9 @@ const modeCatalogData = {
   default_mode: 'audiobook',
   persisted_in: ['projects.selected_mode', 'runs.config_json.mode'],
       mode_profiles: {
-        audiobook: {
+      audiobook: {
           max_segment_chars: 120,
+          export_formats: ['json', 'csv', 'time_series_json', 'graph_json'],
           llm_enabled: false,
           provider_name: 'openrouter',
           max_calls_per_day: 25,
@@ -224,6 +225,38 @@ describe('pipeline run mode lock regression', () => {
         high_ambiguity_dialogue_flag_threshold: 2,
         unstable_emotion_shift_transition_threshold: 4,
         unstable_emotion_shift_density_threshold: 0.5,
+      }),
+    );
+  });
+
+  it('defaults run payload export formats from selected mode profile', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ selectedMode: 'audiobook' });
+    renderPipelinePage();
+
+    await user.click(screen.getByTestId('run-pipeline-button'));
+
+    expect(runPipelineMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(runPipelineMutationTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        export_formats: ['json', 'csv', 'time_series_json', 'graph_json'],
+      }),
+    );
+  });
+
+  it('allows users to disable export formats in run payload', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ selectedMode: 'audiobook' });
+    renderPipelinePage();
+
+    const graphJsonToggle = screen.getByLabelText('graph_json');
+    await user.click(graphJsonToggle);
+    await user.click(screen.getByTestId('run-pipeline-button'));
+
+    expect(runPipelineMutationTrigger).toHaveBeenCalledTimes(1);
+    expect(runPipelineMutationTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        export_formats: ['json', 'csv', 'time_series_json'],
       }),
     );
   });

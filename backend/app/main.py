@@ -111,6 +111,7 @@ from app.services.export import (
 )
 from app.services.export import build_run_export_graph_json
 from app.services.export import build_run_export_academic_csv
+from app.services.export import resolve_run_allowed_export_formats
 from app.services.ingestion_errors import (
     MissingChaptersIngestionError,
     UnsupportedEncodingIngestionError,
@@ -5497,10 +5498,31 @@ def get_export_json(
     )
 
     if output_schema == "academic":
-        if output_format in (None, "json"):
+        requested_output_format = (output_format or "json").strip().lower()
+        allowed_formats = resolve_run_allowed_export_formats(run)
+        allowed_set = set(allowed_formats)
+        if requested_output_format not in {"json", "graph_json"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Unsupported output_format for academic schema. "
+                    "Supported values: json, graph_json."
+                ),
+            )
+        if requested_output_format not in allowed_set:
+            allowed_formats_str = ", ".join(allowed_formats) if allowed_formats else "none"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Export format '{requested_output_format}' is not allowed for this run. "
+                    f"Allowed formats: {allowed_formats_str}."
+                ),
+            )
+
+        if requested_output_format == "json":
             return JSONResponse(content=payload)
 
-        if output_format == "graph_json":
+        if requested_output_format == "graph_json":
             selected_output_id = (output_id or "AO-004").upper()
             if selected_output_id != "AO-004":
                 raise HTTPException(
@@ -5587,6 +5609,16 @@ def get_export_csv(
         )
 
     if output_schema == "academic":
+        allowed_formats = resolve_run_allowed_export_formats(run)
+        if "csv" not in allowed_formats:
+            allowed_formats_str = ", ".join(allowed_formats) if allowed_formats else "none"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"CSV export is not allowed for this run. Allowed formats: {allowed_formats_str}."
+                ),
+            )
+
         export_payload = build_run_export(
             session=session,
             project=project,
