@@ -759,6 +759,42 @@ class TensionGraphContractResponse(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
+class PolarityGraphPoint(BaseModel):
+    position: int = Field(ge=1)
+    rolling_mean_valence: float = Field(ge=-1.0, le=1.0)
+    rolling_mean_intensity: float = Field(ge=0.0, le=1.0)
+    chapter_id: int | None = None
+    segment_index: int | None = Field(default=None, ge=1)
+    segment_id: str | None = None
+
+
+class PolarityGraphVolatilityMarker(BaseModel):
+    position: int | None = None
+    from_segment_id: str | None = None
+    segment_id: str | None = None
+    chapter_id: int | None = None
+    segment_index: int | None = Field(default=None, ge=1)
+    volatility_index: float = Field(ge=0.0, le=1.0)
+    level: str = Field(min_length=1)
+    valence_delta: float
+    intensity_delta: float
+    tension_delta: float
+    dominance_delta: float
+    triggers: list[str] = Field(default_factory=list)
+    from_tension: float | None = None
+    to_tension: float | None = None
+
+
+class PolarityGraphResponse(BaseModel):
+    metric_id: str = Field(pattern=r"^rolling_emotional_polarity$")
+    metric_label: str = Field(min_length=1)
+    source_path: list[str]
+    value_key: str = Field(pattern=r"^rolling_mean_valence$")
+    points: list[PolarityGraphPoint]
+    volatility_markers: list[PolarityGraphVolatilityMarker]
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
 class ComparisonAlignedCurvePoint(BaseModel):
     normalized_position: float = Field(ge=0.0, le=1.0)
     value: float
