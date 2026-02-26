@@ -1,0 +1,108 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { useWorkspaceStore } from '@/app/state/workspace-store';
+import { ProjectExportPage } from '@/pages/projects/project-export-page';
+import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
+
+vi.mock('@/features/workflow/api/workflow-hooks', () => ({
+  useExportPayloadQuery: () => ({
+    data: {
+      project_id: 333,
+      project_title: 'Confidence Export Project',
+      run_id: 900,
+      status: 'complete',
+      segments: [
+        {
+          segment_id: '333-001',
+          chapter_id: 1,
+          speaker: 'Mara',
+          confidence: {
+            speaker: 0.92,
+            emotion: 0.81,
+            type: 0.74,
+          },
+          tension_contribution: { confidence: 0.58 },
+          dominance_contribution: { confidence: 0.67 },
+          summary_tag: { confidence: 0.55 },
+        },
+        {
+          segment_id: '333-002',
+          chapter_id: 1,
+          speaker: 'Narrator',
+          confidence: {
+            speaker: 0.98,
+            emotion: 0.93,
+            type: 0.86,
+            tension: 0.77,
+            dominance: 0.61,
+          },
+          summary_tag: { confidence: 0.9 },
+        },
+      ],
+    },
+    isLoading: false,
+    error: null,
+  }),
+}));
+
+function renderExportPage() {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/projects/:project_id/export',
+        element: <ProjectExportPage />,
+      },
+      {
+        path: '/projects/:project_id/dashboards',
+        element: <div data-testid="project-dashboards">Dashboards</div>,
+      },
+    ],
+    { initialEntries: ['/projects/333/export'] },
+  );
+
+  render(<RouterProvider router={router} />);
+}
+
+describe('project export page', () => {
+  beforeEach(() => {
+    resetWorkspaceStore();
+    useWorkspaceStore.setState({
+      projectId: 333,
+      projectTitle: 'Confidence Export Project',
+      selectedMode: null,
+      chapterCount: 2,
+      runId: 900,
+    });
+  });
+
+  it('renders major tag confidence for the first segments and keeps JSON preview available', () => {
+    renderExportPage();
+
+    expect(screen.getByText('Export Package')).toBeInTheDocument();
+    expect(screen.getByText('Project: 333')).toBeInTheDocument();
+    expect(screen.getByText('Run: 900')).toBeInTheDocument();
+
+    const firstRow = screen.getByTestId('export-confidence-row-333-001');
+    expect(firstRow).toHaveTextContent('Ch 1 / 333-001');
+    expect(firstRow).toHaveTextContent('92%');
+    expect(firstRow).toHaveTextContent('81%');
+    expect(firstRow).toHaveTextContent('74%');
+    expect(firstRow).toHaveTextContent('58%');
+    expect(firstRow).toHaveTextContent('67%');
+    expect(firstRow).toHaveTextContent('55%');
+
+    expect(screen.getByText(/"project_id":\s+333/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Download JSON/i })).toBeInTheDocument();
+  });
+
+  it('links to dashboards step', async () => {
+    renderExportPage();
+    const driver = userEvent.setup();
+
+    await driver.click(screen.getByRole('button', { name: 'Continue to Dashboards' }));
+    expect(screen.getByTestId('project-dashboards')).toBeInTheDocument();
+  });
+});
