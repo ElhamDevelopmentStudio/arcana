@@ -9,7 +9,9 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_nipc_provider_keys.db"
 
 from app.config import clear_settings_cache
 from app.database import init_db, reset_engine
+from app.database import get_session_factory
 from app.main import app
+from app.models import Project
 from app.schemas import RunCreateRequest
 from app.services import pipeline
 from app.services import llm_router
@@ -178,10 +180,7 @@ def test_run_create_endpoints_store_user_supplied_provider_keys_in_config() -> N
         assert detail_resp.status_code == 200
         detail = detail_resp.json()
 
-        assert detail["config"]["provider_api_keys"] == {
-            "openrouter": ["run-key-a", "run-key-b"],
-            "groq": ["run-groq-key"],
-        }
+        assert "provider_api_keys" not in detail["config"]
 
 
 def test_project_llm_provider_config_is_stored_and_inherited_by_runs() -> None:
@@ -212,9 +211,16 @@ def test_project_llm_provider_config_is_stored_and_inherited_by_runs() -> None:
     llm_settings = update_resp.json()
     assert llm_settings["provider_config"]["openrouter"]["base_url"] == "https://project.example.com/openrouter"
     assert llm_settings["provider_config"]["openrouter"]["model"] == "project/openrouter/model"
-    assert llm_settings["provider_config"]["openrouter"]["api_keys"] == ["project-or-a", "project-or-b"]
-    assert llm_settings["provider_config"]["groq"]["api_key"] == "project-groq-key"
+    assert "api_keys" not in llm_settings["provider_config"]["openrouter"]
+    assert "api_key" not in llm_settings["provider_config"]["groq"]
     assert llm_settings["provider_config"]["groq"]["model"] == "project/groq/model"
+    session = get_session_factory()()
+    try:
+        project = session.query(Project).filter(Project.id == project_id).one()
+        assert project.llm_provider_config_json["openrouter"]["api_keys"] == ["project-or-a", "project-or-b"]
+        assert project.llm_provider_config_json["groq"]["api_key"] == "project-groq-key"
+    finally:
+        session.close()
 
     with TestClient(app) as client:
         ingest_resp = client.post(
@@ -245,5 +251,83 @@ def test_project_llm_provider_config_is_stored_and_inherited_by_runs() -> None:
 
     assert run_config["provider_config"]["openrouter"]["base_url"] == "https://project.example.com/openrouter"
     assert run_config["provider_config"]["openrouter"]["model"] == "project/openrouter/model"
-    assert run_config["provider_config"]["openrouter"]["api_keys"] == ["project-or-a", "project-or-b"]
+    assert "api_keys" not in run_config["provider_config"]["openrouter"]
+    assert "api_key" not in run_config["provider_config"]["groq"]
     assert run_config["provider_config"]["groq"]["model"] == "project/groq/model"
+
+
+def test_export_payload_redacts_api_keys_in_run_config_snapshots() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post(
+            "/api/projects",
+            json={"title": "Export API Key Redaction Project"},
+        )
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        update_resp = client.put(
+            f"/api/projects/{project_id}/llm",
+            json={
+                "llm_enabled": True,
+                "provider_config": {
+                    "openrouter": {
+                        "base_url": "https://project.example.com/openrouter",
+                        "model": "project/openrouter/model",
+                        "api_key": "project-openrouter-key",
+                        "api_keys": ["project-or-a", "project-or-b"],
+                    },
+                    "groq": {
+                        "base_url": "https://project.example.com/groq",
+                        "model": "project/groq/model",
+                        "api_key": "project-groq-key",
+                        "api_keys": ["project-groq-a", "project-groq-b"],
+                    },
+                },
+            },
+        )
+    assert update_resp.status_code == 200
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("provider-key-export.txt", io.BytesIO(b"Chapter 1\n\nExport should sanitize provider key data."), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "llm_enabled": False,
+                "allow_unfinalized_character_map": True,
+            },
+        )
+    assert run_resp.status_code == 200
+    run_id = run_resp.json()["run_id"]
+
+    with TestClient(app) as client:
+        export_resp = client.get(f"/api/projects/{project_id}/exports/{run_id}.json")
+    assert export_resp.status_code == 200
+
+    payload = export_resp.json()
+
+    run_snapshot = payload["manifest"]["run"]["config_snapshot"]
+    comparative_snapshot = payload["manifest"]["academic_reports"]["comparative_run_metrics_snapshot"][
+        "run_config_snapshot"
+    ]
+
+    assert "provider_api_keys" not in run_snapshot
+    assert "provider_api_keys" not in comparative_snapshot
+
+    for snapshot in (run_snapshot, comparative_snapshot):
+        provider_config = snapshot.get("provider_config")
+        assert isinstance(provider_config, dict)
+        assert "api_key" not in provider_config
+        for provider in provider_config.values():
+            if not isinstance(provider, dict):
+                continue
+            assert "api_key" not in provider
+            assert "api_keys" not in provider

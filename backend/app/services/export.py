@@ -50,6 +50,46 @@ def _serialize_datetime_to_utc_iso(value: datetime | None) -> str | None:
     return value.astimezone(timezone.utc).isoformat()
 
 
+def _sanitize_provider_config_for_export(provider_config: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(provider_config, Mapping):
+        return {}
+
+    sanitized: dict[str, dict[str, Any]] = {}
+    for provider_name, config in provider_config.items():
+        if not isinstance(config, Mapping):
+            continue
+
+        normalized_provider_name = str(provider_name).strip().lower()
+        if not normalized_provider_name:
+            continue
+
+        sanitized_config: dict[str, Any] = {}
+        for key, value in config.items():
+            if not isinstance(key, str):
+                continue
+            normalized_key = key.strip().lower()
+            if normalized_key in {"api_key", "api_keys"}:
+                continue
+            sanitized_config[key] = value
+
+        sanitized[normalized_provider_name] = sanitized_config
+
+    return sanitized
+
+
+def _sanitize_run_config_for_export(run_config: object) -> dict[str, Any]:
+    if not isinstance(run_config, Mapping):
+        return {}
+
+    sanitized = dict(run_config)
+
+    if "provider_config" in sanitized:
+        sanitized["provider_config"] = _sanitize_provider_config_for_export(sanitized["provider_config"])
+
+    sanitized.pop("provider_api_keys", None)
+    return sanitized
+
+
 def _compute_range(values: list[float]) -> float:
     if not values:
         return 0.0
@@ -932,7 +972,7 @@ def _load_run_llm_calls(session: Session, run: Run) -> list[dict[str, Any]]:
 
 
 def _build_export_reports(project: Project, run: Run, segment_count: int, ordered_by: list[str]) -> dict[str, Any]:
-    run_snapshot = dict(run.config_json or {})
+    run_snapshot = _sanitize_run_config_for_export(run.config_json)
     project_ingestion_log = dict(project.ingestion_log_json or {})
     return {
         "project": {
@@ -1070,7 +1110,7 @@ def _build_comparative_run_metrics_snapshot(
         }
     )
     segment_signature = _build_comparative_run_signature(segments)
-    run_snapshot = dict(run.config_json or {})
+    run_snapshot = _sanitize_run_config_for_export(run.config_json)
 
     return {
         "snapshot_type": "comparative_run_metrics_snapshot",
@@ -2923,7 +2963,7 @@ def build_run_export(
         "run": {
             "id": run.id,
             "status": run.status,
-            "config_snapshot": run.config_json,
+            "config_snapshot": _sanitize_run_config_for_export(run.config_json),
         },
         "segment_count": len(segments),
         "ordered_by": ordered_by,

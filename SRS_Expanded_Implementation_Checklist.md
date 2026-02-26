@@ -430,8 +430,8 @@ Definition of done for each task:
 - [x] [NFR7-004] Add tests for complete provider outage scenarios.
 
 ### NFR-8 API Key Security
-- [ ] [NFR8-001] Store API keys server-side only.
-- [ ] [NFR8-002] Ensure API keys never reach frontend payloads/logs.
+- [x] [NFR8-001] Store API keys server-side only.
+- [x] [NFR8-002] Ensure API keys never reach frontend payloads/logs.
 - [ ] [NFR8-003] Scope key access per project/user context.
 - [ ] [NFR8-004] Implement key rotation workflow.
 - [ ] [NFR8-005] Add key usage audit logging with redaction.
