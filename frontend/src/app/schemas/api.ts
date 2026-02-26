@@ -246,6 +246,57 @@ export const exportSchema = z.object({
   segments: z.array(z.record(z.string(), z.unknown())),
 });
 
+export const tensionGraphPointSchema = z.object({
+  position: z.number().int().positive(),
+  smoothed_tension: z.number().min(0).max(1),
+  chapter_id: z.number().int().nonnegative().nullable().optional().default(null),
+  segment_index: z.number().int().positive().nullable().optional().default(null),
+  segment_id: z.string().nullable().optional().default(null),
+});
+
+export const tensionGraphPeakMarkerSchema = z.object({
+  position: z.number().int().positive().nullable().optional().default(null),
+  segment_id: z.string().nullable().optional().default(null),
+  chapter_id: z.number().int().nonnegative().nullable().optional().default(null),
+  segment_index: z.number().int().positive().nullable().optional().default(null),
+  peak_type: z.string(),
+  severity: z.string(),
+  prominence: z.number().min(0),
+  previous_tension: z.number().min(0).max(1),
+  next_tension: z.number().min(0).max(1),
+  tension_value: z.number().min(0).max(1),
+});
+
+export const tensionGraphValueRangeSchema = z.object({
+  min: z.number().min(0).max(1),
+  max: z.number().min(0).max(1),
+  delta: z.number().min(0),
+});
+
+export const tensionGraphPlateauRegionSchema = z.object({
+  region_type: z.string(),
+  start_position: z.number().int().nullable().optional().default(null),
+  end_position: z.number().int().nullable().optional().default(null),
+  length: z.number().int().positive(),
+  segment_count: z.number().int().positive(),
+  segment_ids: z.array(z.string()).default([]),
+  segment_indices: z.array(z.number().int().positive()).default([]),
+  chapter_ids: z.array(z.number().int().positive()).default([]),
+  average_tension: z.number().min(0).max(1),
+  tension_value_range: tensionGraphValueRangeSchema,
+});
+
+export const tensionGraphResponseSchema = z.object({
+  metric_id: z.string(),
+  metric_label: z.string().min(1),
+  source_path: z.array(z.string()),
+  value_key: z.string(),
+  points: z.array(tensionGraphPointSchema),
+  peak_markers: z.array(tensionGraphPeakMarkerSchema),
+  plateau_regions: z.array(tensionGraphPlateauRegionSchema),
+  metadata: z.record(z.unknown()).default({}),
+});
+
 export type ModeCatalogDto = z.infer<typeof modeCatalogSchema>;
 export type ProjectDto = z.infer<typeof projectSchema>;
 export type ProjectLLMSettingsRequestDto = z.infer<typeof projectLLMSettingsRequestSchema>;
@@ -269,3 +320,7 @@ export type RunRequestDto = z.infer<typeof runRequestSchema>;
 export type RunResponseDto = z.infer<typeof runResponseSchema>;
 export type RunDetailDto = z.infer<typeof runDetailSchema>;
 export type ExportDto = z.infer<typeof exportSchema>;
+export type TensionGraphPointDto = z.infer<typeof tensionGraphPointSchema>;
+export type TensionGraphPeakMarkerDto = z.infer<typeof tensionGraphPeakMarkerSchema>;
+export type TensionGraphPlateauRegionDto = z.infer<typeof tensionGraphPlateauRegionSchema>;
+export type TensionGraphResponseDto = z.infer<typeof tensionGraphResponseSchema>;

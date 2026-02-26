@@ -11,6 +11,7 @@ import {
   pronunciationDictionaryPreviewRequestSchema,
   pronunciationDictionaryPreviewResponseSchema,
   exportSchema,
+  tensionGraphResponseSchema,
   ingestResponseSchema,
   modeCatalogSchema,
   projectSchema,
@@ -33,6 +34,7 @@ import {
   type CharacterExtractionDto,
   type PronunciationDictionaryPreviewRequestDto,
   type PronunciationDictionaryPreviewResponseDto,
+  type TensionGraphResponseDto,
   characterExtractionSchema,
 } from '@/app/schemas/api';
 
@@ -316,6 +318,15 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/exports/${runId}.json`);
       return exportSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getTensionGraph(projectId: number, runId: number): Promise<TensionGraphResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/tension-graph`);
+      return tensionGraphResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
