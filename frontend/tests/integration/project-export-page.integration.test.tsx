@@ -9,10 +9,12 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useExportPayloadQueryMock = vi.fn();
 const useExportCsvMutationMock = vi.fn();
+const useRunDetailQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useExportPayloadQuery: (...args: Parameters<typeof useExportPayloadQueryMock>) => useExportPayloadQueryMock(...args),
   useExportCsvMutation: (...args: Parameters<typeof useExportCsvMutationMock>) => useExportCsvMutationMock(...args),
+  useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) => useRunDetailQueryMock(...args),
 }));
 
 function renderExportPage() {
@@ -38,6 +40,7 @@ describe('project export page', () => {
     resetWorkspaceStore();
     useExportPayloadQueryMock.mockReset();
     useExportCsvMutationMock.mockReset();
+    useRunDetailQueryMock.mockReset();
     useWorkspaceStore.setState({
       projectId: 333,
       projectTitle: 'Confidence Export Project',
@@ -100,6 +103,16 @@ describe('project export page', () => {
       isMutating: false,
       error: null,
       trigger: vi.fn().mockResolvedValue('segment_id,chapter_id\n333-001,1\n'),
+    });
+    useRunDetailQueryMock.mockReturnValue({
+      data: {
+        status: 'completed',
+        config: {
+          export_formats: ['json', 'csv'],
+        },
+      },
+      isLoading: false,
+      error: null,
     });
   });
 
@@ -165,5 +178,43 @@ describe('project export page', () => {
     await user.click(screen.getByRole('button', { name: /Download CSV/i }));
 
     expect(csvTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it('gates export actions by run status and allowed formats', () => {
+    useRunDetailQueryMock.mockReturnValue({
+      data: {
+        status: 'running',
+        config: {
+          export_formats: ['json'],
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderExportPage();
+
+    expect(screen.getByText('Exports are unavailable while run status is running.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Download JSON/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Download CSV/i })).toBeDisabled();
+  });
+
+  it('keeps JSON enabled and disables CSV when run format allow-list excludes csv', () => {
+    useRunDetailQueryMock.mockReturnValue({
+      data: {
+        status: 'completed',
+        config: {
+          export_formats: ['json'],
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderExportPage();
+
+    expect(screen.getByRole('button', { name: /Download JSON/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Download CSV/i })).toBeDisabled();
+    expect(screen.getByText('CSV export is disabled for this run configuration.')).toBeInTheDocument();
   });
 });
