@@ -255,6 +255,14 @@ Release security review checklist validation (`X-019`):
 python scripts_validate_release_security_checklist.py
 ```
 
+Core pipeline performance regression gate (`X-020`):
+
+```bash
+python scripts_run_performance_regression_gate.py
+```
+
+Thresholds are configured in `backend/performance_regression_thresholds.json` and enforced in CI via `.github/workflows/performance-regression-gate.yml`.
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash

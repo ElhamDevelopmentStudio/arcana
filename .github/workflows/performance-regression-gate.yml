@@ -1,0 +1,31 @@
+name: Performance Regression Gate
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/performance-regression-gate.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/performance-regression-gate.yml"
+
+jobs:
+  performance-regression-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run core pipeline performance regression gate
+        run: python backend/scripts_run_performance_regression_gate.py
