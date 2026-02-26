@@ -47,11 +47,14 @@ def test_unit_background_job_executor_rejects_unknown_executor() -> None:
 
 def test_integration_create_run_submits_pipeline_through_background_job_framework(monkeypatch: object) -> None:
     call_counter = {"count": 0}
+    observed_correlation_ids: list[str | None] = []
+    expected_correlation_id = "corr-bg-framework-001"
 
-    def _counted_submit_background_job(*, job_name: str, execute, executor_name=None):  # noqa: ANN001
+    def _counted_submit_background_job(*, job_name: str, execute, executor_name=None, correlation_id=None):  # noqa: ANN001
         call_counter["count"] += 1
         assert job_name == "pipeline_execute_run"
         assert executor_name is None
+        observed_correlation_ids.append(correlation_id)
         return execute()
 
     monkeypatch.setattr("app.main.submit_background_job", _counted_submit_background_job)
@@ -85,10 +88,11 @@ def test_integration_create_run_submits_pipeline_through_background_job_framewor
                 "max_calls_per_day": 5,
                 "allow_unfinalized_character_map": True,
             },
+            headers={"X-Correlation-Id": expected_correlation_id},
         )
         assert run_resp.status_code == 200
         payload = run_resp.json()
         assert payload["status"] == "completed"
 
     assert call_counter["count"] == 1
-
+    assert observed_correlation_ids == [expected_correlation_id]

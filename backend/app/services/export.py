@@ -79,6 +79,16 @@ def resolve_run_allowed_export_formats(run: Run) -> list[str]:
     return _resolve_allowed_export_formats_from_run_config(run.config_json)
 
 
+def _resolve_correlation_id_from_run_config(run_config: Mapping[str, Any] | None) -> str | None:
+    if not isinstance(run_config, Mapping):
+        return None
+    raw_correlation_id = run_config.get("correlation_id")
+    if not isinstance(raw_correlation_id, str):
+        return None
+    correlation_id = raw_correlation_id.strip()
+    return correlation_id or None
+
+
 def _resolve_export_chunk_size_from_run_config(run_config: Mapping[str, Any] | None) -> int:
     if not isinstance(run_config, Mapping):
         return DEFAULT_EXPORT_CHUNK_SIZE
@@ -1312,6 +1322,7 @@ def _build_academic_export_manifest(
     academic_reports: dict[str, Any],
     generated_at: datetime,
     allowed_export_formats: list[str],
+    correlation_id: str | None,
 ) -> dict[str, Any]:
     generated_at_iso = generated_at.isoformat()
     schema_version = "1.0.0"
@@ -1331,6 +1342,7 @@ def _build_academic_export_manifest(
         "project_id": project.id,
         "run_id": run.id,
         "run_status": run.status,
+        "correlation_id": correlation_id,
         "ordered_by": ["chapter_index", "segment_index"],
         "outputs": inventory,
     }
@@ -2891,6 +2903,7 @@ def build_run_export_graph_json(
     graph_report = _to_dict(academic_reports.get("character_cooccurrence_graph"))
     centrality_report = _to_dict(academic_reports.get("character_cooccurrence_centrality_table"))
     generated_at = academic_manifest.get("generated_at", datetime.now(timezone.utc).isoformat())
+    correlation_id = academic_manifest.get("correlation_id")
     schema_version = "1.0.0"
 
     graph_payload = {
@@ -2914,6 +2927,7 @@ def build_run_export_graph_json(
         "project_id": project.id,
         "run_id": run.id,
         "run_status": run.status,
+        "correlation_id": correlation_id,
         "generated_at": generated_at,
         "generated_by": "build_run_export_graph_json",
         "graph": graph_payload,
@@ -2921,6 +2935,7 @@ def build_run_export_graph_json(
         "manifest_snapshot": {
             "output_schema": academic_manifest.get("output_schema"),
             "generated_by": academic_manifest.get("generated_by"),
+            "correlation_id": correlation_id,
         },
     }
 
@@ -3012,6 +3027,7 @@ def build_run_export(
     apply_export_chunk_size: bool = False,
 ) -> dict:
     generated_at = run.finished_at or run.started_at or datetime.now(timezone.utc)
+    correlation_id = _resolve_correlation_id_from_run_config(run.config_json)
     academic_export_formats = _resolve_allowed_export_formats_from_run_config(run.config_json)
     export_chunk_size = (
         _resolve_export_chunk_size_from_run_config(run.config_json)
@@ -3106,8 +3122,10 @@ def build_run_export(
         "run": {
             "id": run.id,
             "status": run.status,
+            "correlation_id": correlation_id,
             "config_snapshot": _sanitize_run_config_for_export(run.config_json),
         },
+        "correlation_id": correlation_id,
         "segment_count": len(segments),
         "ordered_by": ordered_by,
         "logs": {
@@ -3139,6 +3157,7 @@ def build_run_export(
             academic_reports=academic_reports,
             generated_at=generated_at,
             allowed_export_formats=academic_export_formats,
+            correlation_id=correlation_id,
         ),
     }
 
@@ -3147,6 +3166,7 @@ def build_run_export(
         "project_title": project.title,
         "run_id": run.id,
         "status": run.status,
+        "correlation_id": correlation_id,
         "manifest": manifest,
         "segments": segments,
         "time_series": time_series,
