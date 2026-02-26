@@ -931,6 +931,74 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(csvHeader).toContain('resolved_voice_id');
     expect(firstCsvRow).toBeTruthy();
 
+    const incrementalAppendResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/append-chapter`, {
+      multipart: {
+        file: {
+          name: 'append-chapter-4.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from(
+            'Chapter 4\nThe watchfire dimmed while the harbor bells echoed beneath the rain.',
+          ),
+        },
+      },
+    });
+    expect(incrementalAppendResponse.status()).toBe(200);
+
+    const incrementalRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 120,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: false,
+        incremental_recompute: true,
+      },
+    });
+    expect(incrementalRunResponse.status()).toBe(200);
+    const incrementalRunPayload = (await incrementalRunResponse.json()) as { run_id: number };
+
+    const incrementalExportResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/exports/${incrementalRunPayload.run_id}.json`,
+    );
+    expect(incrementalExportResponse.status()).toBe(200);
+    const incrementalExportPayload = (await incrementalExportResponse.json()) as {
+      segments: Array<Record<string, unknown>>;
+    };
+
+    const baselineSegments = exportPayload.segments as Array<Record<string, unknown>>;
+    const maxBaselineChapterId = Math.max(
+      ...baselineSegments.map((segment) => Number(segment.chapter_id ?? 0)),
+    );
+    const incrementalPrefixSegments = incrementalExportPayload.segments.filter(
+      (segment) => Number(segment.chapter_id ?? 0) <= maxBaselineChapterId,
+    );
+    expect(incrementalPrefixSegments).toEqual(baselineSegments);
+    const incrementalAppendedSegments = incrementalExportPayload.segments.filter(
+      (segment) => Number(segment.chapter_id ?? 0) > maxBaselineChapterId,
+    );
+    expect(incrementalAppendedSegments.length).toBeGreaterThan(0);
+
+    const incrementalRunDetailResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${incrementalRunPayload.run_id}`,
+    );
+    expect(incrementalRunDetailResponse.status()).toBe(200);
+    const incrementalRunDetailPayload = (await incrementalRunDetailResponse.json()) as {
+      config: {
+        incremental_recompute?: unknown;
+      };
+    };
+    const incrementalRecomputeConfig = incrementalRunDetailPayload.config.incremental_recompute;
+    if (typeof incrementalRecomputeConfig === 'boolean') {
+      expect(incrementalRecomputeConfig).toBe(true);
+    } else if (
+      incrementalRecomputeConfig &&
+      typeof incrementalRecomputeConfig === 'object' &&
+      Object.hasOwn(incrementalRecomputeConfig as Record<string, unknown>, 'enabled')
+    ) {
+      expect((incrementalRecomputeConfig as { enabled?: boolean }).enabled).toBe(true);
+    }
+
     const pronunciationScopes: Array<[string, string, string, string]> = [
       ['global', 'global', 'Nimble', 'Nim-ble'],
       ['places', 'place', 'Atlantis', 'At-Lan-tis'],
