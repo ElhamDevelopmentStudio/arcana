@@ -299,9 +299,14 @@ describe('project dashboards page', () => {
     renderDashboardPage();
 
     expect(screen.getByText('Audiobook Prep Readiness')).toBeInTheDocument();
+    expect(screen.getByTestId('dashboards-audiobook-readiness-status')).toHaveTextContent('Export readiness: Not ready');
     expect(screen.getByTestId('dashboards-audiobook-unresolved-speakers')).toHaveTextContent('Unresolved speaker assignments: 3');
     expect(screen.getByTestId('dashboards-audiobook-unresolved-voice-maps')).toHaveTextContent('Unresolved voice mappings: 1');
     expect(screen.getByTestId('dashboards-audiobook-low-confidence-regions')).toHaveTextContent('Low-confidence region count: 0');
+    expect(screen.getByTestId('dashboards-audiobook-blocking-reasons')).toHaveTextContent('Some speaker assignments are still unresolved.');
+    expect(screen.getByTestId('dashboards-audiobook-warning-reasons')).toHaveTextContent(
+      'Some regions were tagged as low confidence and should be reviewed.',
+    );
   });
 
   it('renders character prominence and trend widgets from analytics endpoint data', () => {

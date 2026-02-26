@@ -431,6 +431,14 @@ export function ProjectDashboardsPage() {
           <CardTitle>Audiobook Prep Readiness</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
+          {audiobookPrepDashboardQuery.data ? (
+            <p data-testid="dashboards-audiobook-readiness-status">
+              Export readiness:{' '}
+              <span className={audiobookPrepDashboardQuery.data.export_readiness.is_ready ? 'text-emerald-500' : 'text-amber-500'}>
+                {audiobookPrepDashboardQuery.data.export_readiness.is_ready ? 'Ready' : 'Not ready'}
+              </span>
+            </p>
+          ) : null}
           <p data-testid="dashboards-audiobook-unresolved-speakers">
             Unresolved speaker assignments:{' '}
             <span className="font-medium text-foreground">
@@ -441,6 +449,18 @@ export function ProjectDashboardsPage() {
                   : `${audiobookPrepDashboardQuery.data?.unresolved_speaker_count ?? 0}`}
             </span>
           </p>
+          {audiobookPrepDashboardQuery.data ? (
+            <div className="space-y-1">
+              <p className="font-medium text-foreground">Blocking reasons</p>
+              <p data-testid="dashboards-audiobook-blocking-reasons" className="text-xs">
+                {audiobookPrepDashboardQuery.data.export_readiness.blocking_reasons.join(', ') || 'None'}
+              </p>
+              <p className="font-medium text-foreground">Warning reasons</p>
+              <p data-testid="dashboards-audiobook-warning-reasons" className="text-xs">
+                {audiobookPrepDashboardQuery.data.export_readiness.warning_reasons.join(', ') || 'None'}
+              </p>
+            </div>
+          ) : null}
           {audiobookPrepDashboardQuery.data ? (
             <p data-testid="dashboards-audiobook-low-confidence-regions">
               Low-confidence region count:{' '}
