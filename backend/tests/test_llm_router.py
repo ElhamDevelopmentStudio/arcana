@@ -486,3 +486,94 @@ def test_llm_router_extracts_rate_limit_reset_timestamp_from_headers(monkeypatch
     assert call.error_code == "rate_limit"
     assert call.rate_limit_reset_at is not None
     assert call.rate_limit_reset_at.timestamp() == 1735689600
+
+
+def test_default_llm_dispatcher_delegates_to_requests(monkeypatch: object) -> None:
+    observed = {}
+
+    class DummyResponse:
+        status_code = 200
+
+        @property
+        def headers(self) -> dict[str, str]:
+            return {"x-test": "header"}
+
+        def json(self) -> dict:
+            return {"choices": [], "usage": {"total_tokens": 11}}
+
+    def fake_post(url: str, *args: object, **kwargs: object) -> DummyResponse:
+        observed["url"] = url
+        observed["headers"] = kwargs.get("headers", {})
+        observed["payload"] = kwargs.get("json", {})
+        return DummyResponse()
+
+    monkeypatch.setattr(llm_router.requests, "post", fake_post)
+
+    result = llm_router.LLMDispatcher().dispatch(
+        request=llm_router.LLMDispatchRequest(
+            endpoint="https://api.example.com/chat/completions",
+            payload={"model": "test-model", "messages": []},
+            headers={"Authorization": "Bearer test"},
+        )
+    )
+
+    assert observed["url"] == "https://api.example.com/chat/completions"
+    assert observed["headers"]["Authorization"] == "Bearer test"
+    assert result.status_code == 200
+    assert result.headers == {"x-test": "header"}
+    assert result.body == {"choices": [], "usage": {"total_tokens": 11}}
+
+
+def test_response_parser_extracts_raw_payload_on_success() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-success",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="calm dawn and bright sky",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-success",
+        ),
+        provider_name="openrouter",
+        model_identifier="openai/gpt-4o-mini",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=200,
+            headers={"x-test": "ok"},
+            body={
+                "choices": [{"message": {"content": "{\"sentiment\": \"neutral\", \"confidence\": 0.95}"}}],
+                "usage": {"total_tokens": 44},
+            },
+        ),
+    )
+
+    assert response.success_flag is True
+    assert response.raw_output == '{"sentiment": "neutral", "confidence": 0.95}'
+    assert response.parsed_output == {"raw": '{"sentiment": "neutral", "confidence": 0.95}'}
+    assert response.token_usage_estimate == 44
+
+
+def test_response_parser_marks_rate_limit_from_dispatch() -> None:
+    parser = llm_router.LLMResponseParser()
+    response = parser.parse(
+        request=llm_router.LLMRequest(
+            request_id="parser-rate-limit",
+            project_id=1,
+            task_type=llm_router.LLMTaskType.SENTIMENT_PROBE.value,
+            input_text="storm front",
+            expected_schema={"sentiment": "string", "confidence": "number"},
+            configuration_snapshot_id="parser-rate-limit",
+        ),
+        provider_name="groq",
+        model_identifier="llama",
+        dispatch_response=llm_router.LLMDispatchResponse(
+            status_code=429,
+            headers={"retry-after": "120"},
+            body={},
+        ),
+    )
+
+    assert response.success_flag is False
+    assert response.error_code == "rate_limit"
+    assert response.rate_limit_reset_at is not None
+    assert int(response.rate_limit_reset_at.timestamp()) > 0

@@ -334,7 +334,7 @@ Definition of done for each task:
 ## 4.13 Provider Abstraction Layer (Ref: SRS.md §4.13)
 - [x] [PAL-001] Define `LLMRouter` as sole provider access point.
 - [x] [PAL-002] Implement provider selector using availability+quota+priority.
-- [ ] [PAL-003] Implement dispatch and response parser abstraction.
+- [x] [PAL-003] Implement dispatch and response parser abstraction.
 - [ ] [PAL-004] Implement failure classification (`rate_limit`, `quota`, `timeout`, `service_unavailable`, `other`).
 - [ ] [PAL-005] Implement retry policy by error class.
 - [ ] [PAL-006] Implement failover handoff to next provider.
