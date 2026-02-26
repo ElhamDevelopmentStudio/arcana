@@ -35,6 +35,8 @@ import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/pro
 import { Checkbox } from '@/components/ui/checkbox';
 
 const STANDARD_GENDERS = new Set(['male', 'female', 'neutral']);
+const SCRAPE_LEGAL_WARNING_TEXT =
+  'Only use web-scrape sources you are legally authorized to access. External sources may include inaccurate data and may be restricted by terms of service or copyright.';
 
 function normalizeCharacterName(value: string): string {
   return value.trim().toLowerCase();
@@ -655,6 +657,12 @@ export function ProjectCharactersPage() {
               </p>
               {appEnv.featureScrapeEnabled ? (
                 <form className="grid gap-2" onSubmit={handleScrapeCharacters}>
+                  <p
+                    className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
+                    data-testid="character-scrape-warning"
+                  >
+                    <span className="font-semibold">Legal warning:</span> {SCRAPE_LEGAL_WARNING_TEXT}
+                  </p>
                   <Input
                     id="character-scrape-url"
                     aria-label="Character scrape source URL"
@@ -664,12 +672,12 @@ export function ProjectCharactersPage() {
                   />
                   <label className="flex items-start gap-2 text-xs text-muted-foreground">
                     <Checkbox
+                      aria-label="Acknowledge scrape warning"
                       checked={scrapeWarningAcknowledged}
                       onCheckedChange={(checked) => setScrapeWarningAcknowledged(checked === true)}
                     />
                     <span>
-                      I understand this source is external and may have accuracy or legal constraints; scraped candidates may be inaccurate and
-                      should be reviewed.
+                      I acknowledge this is a web-scrape source and accept the legal and accuracy risks above.
                     </span>
                   </label>
                   <Button
@@ -724,6 +732,12 @@ export function ProjectCharactersPage() {
               <p className="font-medium text-foreground">Merged candidates</p>
               <form className="grid gap-2" onSubmit={handleMergeCharacters}>
                 <p className="text-xs">Combine user-uploaded and auto-discovered candidates; add scrape URL to include external candidates.</p>
+                <p
+                  className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
+                  data-testid="character-merge-scrape-warning"
+                >
+                  <span className="font-semibold">Legal warning:</span> {SCRAPE_LEGAL_WARNING_TEXT}
+                </p>
                 <Input
                   id="character-merge-scrape-url"
                   aria-label="Optional merge scrape source URL"
@@ -733,6 +747,7 @@ export function ProjectCharactersPage() {
                 />
                 <label className="flex items-start gap-2 text-xs text-muted-foreground">
                   <Checkbox
+                    aria-label="Acknowledge merge scrape warning"
                     checked={mergeScrapeAcknowledged}
                     onCheckedChange={(checked) => setMergeScrapeAcknowledged(checked === true)}
                     disabled={!mergeScrapeUrl.trim()}
