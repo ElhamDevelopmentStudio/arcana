@@ -503,7 +503,7 @@ Definition of done for each task:
 - [x] [ACC-006] Build acceptance test: export contains emotion + confidence tags.
 - [x] [ACC-007] Build acceptance test: gender contradiction detection and flagging.
 - [x] [ACC-008] Build acceptance test: identical input+config yields reproducible outputs.
-- [ ] [ACC-009] Build acceptance test: incremental chapter append updates only affected outputs.
+- [x] [ACC-009] Build acceptance test: incremental chapter append updates only affected outputs.
 - [ ] [ACC-010] Create final acceptance report template with pass/fail per criterion.
 
 ## 12. Cross-Cutting Engineering Tasks (Supports all SRS sections)
