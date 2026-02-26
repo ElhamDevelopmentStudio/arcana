@@ -1116,6 +1116,17 @@ class PipelineStageDurationsDashboardResponse(BaseModel):
 
 
 ProjectLifecycleState = Literal["draft", "ingested", "configured", "running", "completed", "failed", "archived"]
+ProjectControlPanelNextRequiredAction = Literal[
+    "ingest",
+    "select_mode",
+    "configure",
+    "run",
+    "rerun",
+    "export",
+    "review_failure",
+    "archived",
+    "none",
+]
 
 
 class ProjectControlPanelStateCount(BaseModel):
@@ -1147,6 +1158,30 @@ class ProjectControlPanelSummaryResponse(BaseModel):
     blocked_export_run_count: int = Field(ge=0)
     recent_failure_count: int = Field(ge=0)
     recent_failures: list[ProjectControlPanelRecentFailureItem] = Field(default_factory=list)
+
+
+class ProjectControlPanelProjectListItem(BaseModel):
+    project_id: int = Field(ge=1)
+    status: ProjectLifecycleState
+    selected_mode: str = Field(min_length=1, max_length=50)
+    last_run_status: RunStatus | None = None
+    updated_at: str = Field(min_length=1)
+    next_required_action: ProjectControlPanelNextRequiredAction
+
+
+class ProjectControlPanelProjectListResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="project_control_panel_project_list_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="CP-002")
+    output_name: str = Field(default="project_control_panel_project_list")
+    generated_at: str = Field(min_length=1)
+    generated_by: str = Field(default="build_project_control_panel_project_list", min_length=1)
+    total_items: int = Field(ge=0)
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=200)
+    has_next_page: bool = False
+    items: list[ProjectControlPanelProjectListItem] = Field(default_factory=list)
 
 
 
