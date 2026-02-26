@@ -500,7 +500,7 @@ Definition of done for each task:
 - [x] [ACC-003] Build acceptance test: pronunciation substitution preview correctness.
 - [x] [ACC-004] Build acceptance test: export contains phonetic-ready text.
 - [x] [ACC-005] Build acceptance test: export contains speaker/gender/voice tags where applicable.
-- [ ] [ACC-006] Build acceptance test: export contains emotion + confidence tags.
+- [x] [ACC-006] Build acceptance test: export contains emotion + confidence tags.
 - [ ] [ACC-007] Build acceptance test: gender contradiction detection and flagging.
 - [ ] [ACC-008] Build acceptance test: identical input+config yields reproducible outputs.
 - [ ] [ACC-009] Build acceptance test: incremental chapter append updates only affected outputs.
