@@ -437,7 +437,7 @@ Definition of done for each task:
 - [X] [NFR8-005] Add key usage audit logging with redaction.
 
 ## 8. Error Handling and Warnings (Ref: SRS.md §8)
-- [ ] [ER-001] Implement ingestion error class: unsupported format.
+- [x] [ER-001] Implement ingestion error class: unsupported format.
 - [ ] [ER-002] Implement ingestion error class: encoding failure.
 - [ ] [ER-003] Implement ingestion error class: missing chapter content.
 - [ ] [ER-004] Implement normalization warning: ambiguous chapter boundaries.
