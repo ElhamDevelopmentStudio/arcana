@@ -19,6 +19,7 @@ from app.models import (
     Character,
     LLMCall,
     LLMCache,
+    ProviderApiKeyUsageAudit,
     Project,
     RunChangelogEntry,
     PronunciationDictionary,
@@ -1038,6 +1039,31 @@ def _coerce_call_timestamp(value: str | None) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _build_provider_api_key_audit_mask(api_key: str | None) -> str | None:
+    if not api_key:
+        return None
+
+    clean_key = str(api_key).strip()
+    if not clean_key:
+        return None
+
+    if len(clean_key) <= 4:
+        return "*" * len(clean_key)
+
+    return f"••••{clean_key[-4:]}"
+
+
+def _build_provider_api_key_fingerprint(api_key: str | None) -> str | None:
+    if not api_key:
+        return None
+
+    clean_key = str(api_key).strip()
+    if not clean_key:
+        return None
+
+    return sha256(clean_key.encode("utf-8")).hexdigest()
+
+
 def _append_deterministic_replay_warning(run: Run, requested_provider: str, actual_provider: str, reason: str) -> None:
     config_snapshot = dict(run.config_json or {})
     warnings = config_snapshot.get("deterministic_warnings")
@@ -1244,7 +1270,16 @@ def _should_escalate_to_llm(
     return False
 
 
-def execute_pipeline(session: Session, project: Project, run: Run, run_config: dict) -> dict:
+def execute_pipeline(
+    session: Session,
+    project: Project,
+    run: Run,
+    run_config: dict,
+    *,
+    project_id: int | str | None = None,
+    principal_type: str | None = None,
+    principal_id: str | None = None,
+) -> dict:
     step_records: list[dict[str, object]] = []
     completed_stages: list[str] = []
     pipeline_started_at = time.perf_counter()
@@ -1559,6 +1594,7 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
             )
 
     llm_enabled = bool(run_config.get("llm_enabled", False))
+    resolved_project_id = project_id if project_id is not None else project.id
     llm_probe_success = False
     with _record_pipeline_stage(
         step_records=step_records,
@@ -1572,6 +1608,9 @@ def execute_pipeline(session: Session, project: Project, run: Run, run_config: d
                 run=run,
                 run_config=run_config,
                 input_text=llm_probe_text,
+                project_id=resolved_project_id,
+                principal_type=principal_type,
+                principal_id=principal_id,
             )
 
         for persisted_segment, segment_payload in persisted_segment_records:
@@ -1635,6 +1674,10 @@ def _run_llm_probe(
     run: Run,
     run_config: dict,
     input_text: str,
+    *,
+    project_id: int | str | None = None,
+    principal_type: str | None = None,
+    principal_id: str | None = None,
 ) -> bool:
     provider = _normalize_provider_name_for_llm(run_config.get("provider_name", "openrouter"))
     requested_provider = provider
@@ -1724,6 +1767,7 @@ def _run_llm_probe(
     final_called_at = None
     success = False
     all_providers_exhausted = False
+    request_attempt_index = 0
 
     for active_provider in provider_candidates:
         if not is_supported_provider(active_provider):
@@ -1734,6 +1778,9 @@ def _run_llm_probe(
             settings=run_scoped_settings,
             provider_name=active_provider,
             max_calls_per_day=max_calls_per_day,
+            project_id=project_id,
+            principal_type=principal_type,
+            principal_id=principal_id,
         )
         if not provider_requestable:
             final_provider = active_provider
@@ -1807,6 +1854,9 @@ def _run_llm_probe(
                     provider=active_provider,
                     provider_api_key=api_key,
                     max_calls_per_day=max_calls_per_day,
+                    project_id=project_id,
+                    principal_type=principal_type,
+                    principal_id=principal_id,
                 )
                 if not key_allowed:
                     provider_failure_detail = "quota_reached"
@@ -1818,6 +1868,9 @@ def _run_llm_probe(
                 session=session,
                 provider=active_provider,
                 max_calls_per_day=max_calls_per_day,
+                project_id=project_id,
+                principal_type=principal_type,
+                principal_id=principal_id,
             )
             if not allowed:
                 provider_failure_detail = "quota_reached"
@@ -1831,15 +1884,47 @@ def _run_llm_probe(
                 model_identifier=runtime_model_identifier,
                 api_key=api_key,
             )
+            request_attempt_index += 1
+            session.add(
+                ProviderApiKeyUsageAudit(
+                    run_id=run.id,
+                    provider=active_provider,
+                    task_type=LLMTaskType.SENTIMENT_PROBE.value,
+                    request_id=request.request_id,
+                    attempt_index=request_attempt_index,
+                    provider_api_key_masked=_build_provider_api_key_audit_mask(api_key),
+                    provider_api_key_fingerprint=_build_provider_api_key_fingerprint(api_key),
+                    model_identifier=response.model_identifier,
+                    success=response.success_flag,
+                    error_code=None if response.success_flag else response.error_code,
+                    token_usage_estimate=response.token_usage_estimate,
+                    called_at=_coerce_call_timestamp(response.timestamp),
+                )
+            )
 
             if response.success_flag:
-                mark_provider_available(session=session, provider=active_provider)
-                mark_provider_successful_call(session=session, provider=active_provider)
+                mark_provider_available(
+                    session=session,
+                    provider=active_provider,
+                    project_id=project_id,
+                    principal_type=principal_type,
+                    principal_id=principal_id,
+                )
+                mark_provider_successful_call(
+                    session=session,
+                    provider=active_provider,
+                    project_id=project_id,
+                    principal_type=principal_type,
+                    principal_id=principal_id,
+                )
                 if api_key is not None:
                     mark_api_key_successful_call(
                         session=session,
                         provider=active_provider,
                         provider_api_key=api_key,
+                        project_id=project_id,
+                        principal_type=principal_type,
+                        principal_id=principal_id,
                     )
                 final_provider = active_provider
                 final_token_usage = response.token_usage_estimate
@@ -1872,24 +1957,43 @@ def _run_llm_probe(
 
             if response.error_code in {"rate_limit", "quota"}:
                 if api_key is not None:
-                    mark_api_key_rate_limited(session=session, provider=active_provider, provider_api_key=api_key)
+                    mark_api_key_rate_limited(
+                        session=session,
+                        provider=active_provider,
+                        provider_api_key=api_key,
+                        project_id=project_id,
+                        principal_type=principal_type,
+                        principal_id=principal_id,
+                    )
                     if response.error_code == "rate_limit":
                         mark_api_key_reset_at(
                             session=session,
                             provider=active_provider,
                             provider_api_key=api_key,
                             reset_at=response.rate_limit_reset_at,
+                            project_id=project_id,
+                            principal_type=principal_type,
+                            principal_id=principal_id,
                         )
                 is_last_key = index + 1 >= len(runtime_api_keys)
                 if not is_last_key:
                     continue
 
-                mark_provider_rate_limited(session=session, provider=active_provider)
+                mark_provider_rate_limited(
+                    session=session,
+                    provider=active_provider,
+                    project_id=project_id,
+                    principal_type=principal_type,
+                    principal_id=principal_id,
+                )
                 if response.error_code == "rate_limit":
                     mark_provider_reset_at(
                         session=session,
                         provider=active_provider,
                         reset_at=response.rate_limit_reset_at,
+                        project_id=project_id,
+                        principal_type=principal_type,
+                        principal_id=principal_id,
                     )
 
             else:

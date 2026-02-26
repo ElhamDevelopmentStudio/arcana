@@ -112,6 +112,11 @@ Failover order:
 - Within that provider, all available keys are consumed in order.
 - If all keys are rate-limited/quota-exhausted for that provider, the system marks provider as temporarily unavailable and tries the next provider in `LLM_PROVIDER_PRIORITY_ORDER` (default: `openrouter,siliconflow,groq`).
 - The provider that returned success is recorded for that probe run.
+- Every concrete key/API attempt is also persisted in `provider_api_key_usage_audit` with redacted key data:
+  - `provider_api_key_masked` stores a masked suffix (example: `••••ey-a` for `openrouter-key-a`).
+  - `provider_api_key_fingerprint` stores a SHA-256 fingerprint of the key (not the key itself).
+  - `attempt_index`, `error_code`, `success`, and `called_at` are recorded for each attempt.
+- Cached probe responses do not create key-usage audit rows because no outbound call is made.
 - If the requested provider is manually disabled, the run returns `provider_disabled` for that request without fallback.
 
 Manual provider toggles are supported and tracked via provider availability rules already configured in the backend.
@@ -213,6 +218,24 @@ Behavior:
 - reads decrypt automatically when surfaced through SQLAlchemy models;
 - integrity checks and run-time processing still operate on the decrypted application value.
 - if `DATA_ENCRYPTION_KEY` is missing while `SAAS_MODE` is enabled, writes will fail with a runtime error.
+
+### Derived-metrics-only persistence mode (`NFR6-004`)
+
+Projects can opt into source-text minimization with:
+
+- `POST /api/projects` body field `do_not_store_source_text: true`
+
+In derived-metrics mode, the backend persists only derived outputs required for outputs and analytics:
+
+- ✅ `ProjectRawCorpusBlob` is not stored
+- ✅ `chapters.normalized_text` / `chapters.normalized_text_snapshot` are still stored
+- ✅ `chapters.raw_text`, `chapters.original_text_snapshot`, and `chapters.original_to_normalized_offset_map` are intentionally left blank
+
+Behavior notes:
+
+- Appends and runs continue to work using derived chapter text.
+- Re-imported source text from uploads is not retained.
+- Integrity checks intentionally mark `project_raw_corpus_blobs` as passed with reason `do_not_store_source_text` for compliant projects.
 
 LLM responses are cached in the `llm_cache` table and reused only when all cache-key dimensions match exactly:
 
