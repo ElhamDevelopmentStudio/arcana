@@ -41,6 +41,15 @@ _DIALOGUE_DENSITY_ANOMALY_MIN_CHAPTER_RUN = 2
 _DIALOGUE_DENSITY_ANOMALY_DEVIATION_THRESHOLD = 0.28
 
 
+def _serialize_datetime_to_utc_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc).isoformat()
+    return value.astimezone(timezone.utc).isoformat()
+
+
 def _compute_range(values: list[float]) -> float:
     if not values:
         return 0.0
@@ -913,6 +922,8 @@ def _load_run_llm_calls(session: Session, run: Run) -> list[dict[str, Any]]:
             "success": call.success,
             "request_count": call.request_count,
             "token_usage_estimate": call.token_usage_estimate,
+            "model_identifier": call.model_identifier,
+            "called_at": _serialize_datetime_to_utc_iso(call.called_at),
             "detail": call.detail,
             "created_at": call.created_at.isoformat(),
         }
