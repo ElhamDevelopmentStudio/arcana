@@ -261,6 +261,12 @@ app.add_middleware(
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    session = get_session_factory()()
+    try:
+        _backfill_project_lifecycle_and_activity_records(session=session)
+        session.commit()
+    finally:
+        session.close()
 
 
 def _extract_project_id_from_path(path: str) -> int | None:
@@ -1283,6 +1289,168 @@ def _append_project_activity_event(
             event_metadata=dict(event_metadata or {}),
         )
     )
+
+
+def _backfill_project_lifecycle_and_activity_records(*, session: Session) -> dict[str, int]:
+    transitions_created = 0
+    events_created = 0
+    projects = session.query(Project).order_by(Project.id.asc()).all()
+    for project in projects:
+        normalized_lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+        if normalized_lifecycle_state not in set(_CONTROL_PANEL_STATE_ORDER):
+            normalized_lifecycle_state = PROJECT_LIFECYCLE_DRAFT
+
+        has_transition = (
+            session.query(ProjectLifecycleTransition.id)
+            .filter(ProjectLifecycleTransition.project_id == project.id)
+            .first()
+            is not None
+        )
+        if not has_transition and normalized_lifecycle_state != PROJECT_LIFECYCLE_DRAFT:
+            session.add(
+                ProjectLifecycleTransition(
+                    project_id=project.id,
+                    from_state=PROJECT_LIFECYCLE_DRAFT,
+                    to_state=normalized_lifecycle_state,
+                    actor="system",
+                    created_at=project.created_at,
+                )
+            )
+            transitions_created += 1
+
+        has_activity_event = (
+            session.query(ProjectActivityEvent.id)
+            .filter(ProjectActivityEvent.project_id == project.id)
+            .first()
+            is not None
+        )
+        if has_activity_event:
+            continue
+
+        chapter_count = session.query(Chapter).filter(Chapter.project_id == project.id).count()
+        if project.ingestion_timestamp is not None or chapter_count > 0:
+            session.add(
+                ProjectActivityEvent(
+                    project_id=project.id,
+                    event_type="ingest",
+                    actor="system",
+                    event_metadata={
+                        "backfilled": True,
+                        "chapter_count": chapter_count,
+                        "source": "legacy_unknown",
+                    },
+                    created_at=project.ingestion_timestamp or project.created_at,
+                )
+            )
+            events_created += 1
+
+        selected_mode = str(project.selected_mode or DEFAULT_MODE).strip().lower() or DEFAULT_MODE
+        if selected_mode != DEFAULT_MODE:
+            session.add(
+                ProjectActivityEvent(
+                    project_id=project.id,
+                    event_type="mode_change",
+                    actor="system",
+                    event_metadata={
+                        "backfilled": True,
+                        "previous_mode": DEFAULT_MODE,
+                        "selected_mode": selected_mode,
+                    },
+                    created_at=project.created_at,
+                )
+            )
+            events_created += 1
+
+        project_runs = (
+            session.query(Run)
+            .filter(Run.project_id == project.id)
+            .order_by(Run.id.asc())
+            .all()
+        )
+        latest_completed_run_id: int | None = None
+        for run in project_runs:
+            run_started_at = run.started_at or project.created_at
+            run_status = str(run.status or "").strip().lower()
+            raw_config = run.config_json if isinstance(run.config_json, dict) else {}
+            recovery_state = _coerce_recovery_state(raw_config.get(_PIPELINE_RECOVERY_CONFIG_KEY))
+            recovery_attempt = recovery_state.get("attempt")
+            try:
+                recovery_attempt_int = max(int(recovery_attempt), 0)
+            except (TypeError, ValueError):
+                recovery_attempt_int = 0
+
+            session.add(
+                ProjectActivityEvent(
+                    project_id=project.id,
+                    run_id=run.id,
+                    event_type="run_start",
+                    actor="system",
+                    event_metadata={
+                        "backfilled": True,
+                        "mode": str(raw_config.get("mode", selected_mode or DEFAULT_MODE)),
+                    },
+                    created_at=run_started_at,
+                )
+            )
+            events_created += 1
+
+            if recovery_attempt_int > 0:
+                session.add(
+                    ProjectActivityEvent(
+                        project_id=project.id,
+                        run_id=run.id,
+                        event_type="rerun",
+                        actor="system",
+                        event_metadata={
+                            "backfilled": True,
+                            "attempt": recovery_attempt_int,
+                        },
+                        created_at=run_started_at,
+                    )
+                )
+                events_created += 1
+
+            if run_status and run_status not in {RUN_STATUS_QUEUED, RUN_STATUS_RUNNING}:
+                session.add(
+                    ProjectActivityEvent(
+                        project_id=project.id,
+                        run_id=run.id,
+                        event_type="run_complete",
+                        actor="system",
+                        event_metadata={
+                            "backfilled": True,
+                            "status": run_status,
+                        },
+                        created_at=run.finished_at or run_started_at,
+                    )
+                )
+                events_created += 1
+
+            if run_status == RUN_STATUS_COMPLETED:
+                latest_completed_run_id = run.id
+
+        if project.last_export_at is not None:
+            session.add(
+                ProjectActivityEvent(
+                    project_id=project.id,
+                    run_id=latest_completed_run_id,
+                    event_type="export",
+                    actor="system",
+                    event_metadata={
+                        "backfilled": True,
+                        "output_schema": "legacy_unknown",
+                        "output_format": "legacy_unknown",
+                    },
+                    created_at=project.last_export_at,
+                )
+            )
+            events_created += 1
+
+    return {
+        "projects_scanned": len(projects),
+        "transitions_created": transitions_created,
+        "events_created": events_created,
+    }
 
 
 def _transition_project_lifecycle_state(
