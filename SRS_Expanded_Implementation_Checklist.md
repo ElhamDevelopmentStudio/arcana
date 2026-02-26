@@ -455,9 +455,9 @@ Definition of done for each task:
 
 ## 9. Configuration Requirements (Ref: SRS.md §9)
 - [x] [CFG-001] Add segmentation target length config.
-- [ ] [CFG-002] Add emotion taxonomy config (`basic` vs `expanded`).
-- [ ] [CFG-003] Add confidence thresholds config for warnings.
-- [ ] [CFG-004] Add web scraping enable/disable config.
+- [x] [CFG-002] Add emotion taxonomy config (`basic` vs `expanded`).
+- [x] [CFG-003] Add confidence thresholds config for warnings.
+- [x] [CFG-004] Add web scraping enable/disable config.
 - [ ] [CFG-005] Add contradiction-review-required toggle config.
 - [ ] [CFG-006] Add internal thought voice policy config.
 - [ ] [CFG-007] Add export formats config.

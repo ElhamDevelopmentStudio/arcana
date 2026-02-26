@@ -2,6 +2,12 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator
+from app.services.tagging import (
+    TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+    TAG_LOW_CONFIDENCE_THRESHOLD,
+    TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
+    TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
+)
 
 from app.modes import DEFAULT_MODE, is_valid_mode
 
@@ -201,8 +207,13 @@ class ModeDefaultProfileResponse(BaseModel):
     provider_name: str = Field(min_length=1)
     max_calls_per_day: int = Field(ge=1, le=10000)
     llm_confidence_threshold: float = Field(ge=0.0, le=1.0)
+    speaker_confidence_threshold: float = Field(ge=0.0, le=1.0)
+    high_ambiguity_dialogue_flag_threshold: int = Field(ge=1, le=10)
+    unstable_emotion_shift_transition_threshold: int = Field(ge=1, le=20)
+    unstable_emotion_shift_density_threshold: float = Field(ge=0.0, le=1.0)
     deep_semantic_refinement: bool
     deterministic_mode: bool
+    web_scraping_enabled: bool
     profile_intent: str = Field(min_length=1)
 
 
@@ -559,10 +570,32 @@ class RunCreateRequest(BaseModel):
     deterministic_mode: bool = False
     max_calls_per_day: int = Field(default=25, ge=1, le=10000)
     llm_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    speaker_confidence_threshold: float = Field(
+        default=TAG_LOW_CONFIDENCE_THRESHOLD,
+        ge=0.0,
+        le=1.0,
+    )
+    high_ambiguity_dialogue_flag_threshold: int = Field(
+        default=TAG_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+        ge=1,
+        le=20,
+    )
+    unstable_emotion_shift_transition_threshold: int = Field(
+        default=TAG_UNSTABLE_RAPID_EMOTION_SHIFT_THRESHOLD,
+        ge=1,
+        le=20,
+    )
+    unstable_emotion_shift_density_threshold: float = Field(
+        default=TAG_UNSTABLE_RAPID_EMOTION_SHIFT_DENSITY,
+        ge=0.0,
+        le=1.0,
+    )
     deterministic_model_identifier: str | None = None
+    web_scraping_enabled: bool = False
     deterministic_seed: int | None = Field(default=None, ge=0)
     randomization_config: dict[str, object] | None = None
     provider_api_keys: dict[str, list[str]] | None = None
+    emotion_taxonomy: str = "basic"
     allow_unfinalized_character_map: bool = False
     internal_thought_voice_policy: str = "character"
     internal_thought_voice: str | None = None
@@ -586,6 +619,16 @@ class RunCreateRequest(BaseModel):
     @classmethod
     def internal_thought_voice_policy_must_be_valid(cls, value: str) -> str:
         return _normalize_internal_thought_voice_policy_or_raise(value)
+
+    @field_validator("emotion_taxonomy")
+    @classmethod
+    def emotion_taxonomy_must_be_valid(cls, value: str) -> str:
+        normalized = str(value).strip().lower()
+        if not normalized:
+            return "basic"
+        if normalized not in {"basic", "expanded"}:
+            raise ValueError("emotion_taxonomy must be one of: basic, expanded")
+        return normalized
 
     @field_validator("internal_thought_voice")
     @classmethod

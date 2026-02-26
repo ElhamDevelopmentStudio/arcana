@@ -11,8 +11,13 @@ PROFILE_CONFIG_KEYS: tuple[str, ...] = (
     "provider_name",
     "max_calls_per_day",
     "llm_confidence_threshold",
+    "speaker_confidence_threshold",
+    "high_ambiguity_dialogue_flag_threshold",
+    "unstable_emotion_shift_transition_threshold",
+    "unstable_emotion_shift_density_threshold",
     "deep_semantic_refinement",
     "deterministic_mode",
+    "web_scraping_enabled",
 )
 
 

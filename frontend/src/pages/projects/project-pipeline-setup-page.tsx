@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
 import {
   useCharacterMapQuery,
@@ -20,9 +21,82 @@ import {
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 
-export function ProjectPipelineSetupPage() {
-  type InternalThoughtVoicePolicy = 'character' | 'narrator' | 'thought_voice';
+type InternalThoughtVoicePolicy = 'character' | 'narrator' | 'thought_voice';
+type EmotionTaxonomy = 'basic' | 'expanded';
 
+const DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD = 0.6;
+const DEFAULT_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD = 2;
+const DEFAULT_UNSTABLE_EMOTION_SHIFT_TRANSITION_THRESHOLD = 4;
+const DEFAULT_UNSTABLE_EMOTION_SHIFT_DENSITY_THRESHOLD = 0.5;
+
+type VoicePreviewRow = {
+  speaker: string;
+  resolvedVoice: string;
+  rule: string;
+  source: string;
+};
+
+function resolveNarrationFallbackVoice(params: {
+  characterGender: string;
+  explicitVoiceId: string;
+  maleDefault: string;
+  femaleDefault: string;
+  neutralDefault: string;
+  unknownDefault: string;
+}) {
+  const trimmedExplicitVoice = params.explicitVoiceId.trim();
+  if (trimmedExplicitVoice) {
+    return {
+      voiceId: trimmedExplicitVoice,
+      rule: 'explicit character override',
+      source: 'character voice map',
+    };
+  }
+
+  const normalizedGender = params.characterGender.trim().toLowerCase();
+  if (normalizedGender === 'male') {
+    return { voiceId: params.maleDefault, rule: 'gender fallback', source: 'male_default_voice' };
+  }
+  if (normalizedGender === 'female') {
+    return { voiceId: params.femaleDefault, rule: 'gender fallback', source: 'female_default_voice' };
+  }
+  if (normalizedGender === 'neutral') {
+    return { voiceId: params.neutralDefault, rule: 'gender fallback', source: 'neutral_default_voice' };
+  }
+
+  return { voiceId: params.unknownDefault, rule: 'gender fallback', source: 'unknown_default_voice' };
+}
+
+function resolveInternalThoughtPreviewVoice(params: {
+  policy: InternalThoughtVoicePolicy;
+  thoughtVoice: string;
+  narratorVoice: string;
+}) {
+  if (params.policy === 'character') {
+    return {
+      voiceId: params.narratorVoice,
+      source: 'character policy default',
+      rule: 'uses resolved dialogue-style fallback',
+    };
+  }
+
+  if (params.policy === 'thought_voice') {
+    const normalizedThoughtVoice = params.thoughtVoice.trim();
+    return {
+      voiceId: normalizedThoughtVoice || params.narratorVoice,
+      source: normalizedThoughtVoice ? 'custom thought_voice' : 'thought policy narrator fallback',
+      rule: normalizedThoughtVoice ? 'thought_voice policy' : 'thought policy without override',
+    };
+  }
+
+  return {
+    voiceId: params.narratorVoice,
+    source: 'internal thought policy',
+    rule: 'narrator policy',
+  };
+}
+
+export function ProjectPipelineSetupPage() {
   const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
   const routeProjectId = parseProjectIdParam(params.project_id);
@@ -42,10 +116,28 @@ export function ProjectPipelineSetupPage() {
   const [maxSegmentChars, setMaxSegmentChars] = useState(255);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [deterministicMode, setDeterministicMode] = useState(false);
+  const [webScrapingEnabled, setWebScrapingEnabled] = useState(false);
+  const [emotionTaxonomy, setEmotionTaxonomy] = useState<EmotionTaxonomy>('basic');
   const [providerName, setProviderName] = useState('openrouter');
   const [maxCallsPerDay, setMaxCallsPerDay] = useState(25);
   const [allowUnfinalizedCharacterMap, setAllowUnfinalizedCharacterMap] = useState(false);
   const [hasCustomMaxSegmentChars, setHasCustomMaxSegmentChars] = useState(false);
+  const [speakerConfidenceThreshold, setSpeakerConfidenceThreshold] = useState(DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD);
+  const [highAmbiguityDialogueFlagThreshold, setHighAmbiguityDialogueFlagThreshold] = useState(
+    DEFAULT_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+  );
+  const [unstableEmotionShiftTransitionThreshold, setUnstableEmotionShiftTransitionThreshold] = useState(
+    DEFAULT_UNSTABLE_EMOTION_SHIFT_TRANSITION_THRESHOLD,
+  );
+  const [unstableEmotionShiftDensityThreshold, setUnstableEmotionShiftDensityThreshold] = useState(
+    DEFAULT_UNSTABLE_EMOTION_SHIFT_DENSITY_THRESHOLD,
+  );
+  const [hasCustomSpeakerConfidenceThreshold, setHasCustomSpeakerConfidenceThreshold] = useState(false);
+  const [hasCustomHighAmbiguityDialogueFlagThreshold, setHasCustomHighAmbiguityDialogueFlagThreshold] = useState(false);
+  const [hasCustomUnstableEmotionShiftTransitionThreshold, setHasCustomUnstableEmotionShiftTransitionThreshold] = useState(
+    false,
+  );
+  const [hasCustomUnstableEmotionShiftDensityThreshold, setHasCustomUnstableEmotionShiftDensityThreshold] = useState(false);
 
   const saveVoicesMutation = useSaveVoicesMutation(projectId);
   const runPipelineMutation = useRunPipelineMutation(projectId);
@@ -56,9 +148,58 @@ export function ProjectPipelineSetupPage() {
     characterMapQuery.data !== undefined && characterMapQuery.data.characters.length > 0 && !characterMapQuery.data.character_map_finalized;
   const runMode = selectedMode ?? modeCatalogQuery.data?.default_mode ?? null;
   const selectedProfile = runMode !== null ? modeCatalogQuery.data?.mode_profiles?.[runMode] : null;
+  const characterRows = characterMapQuery.data?.characters ?? [];
+  const voiceMappingPreviewRows: VoicePreviewRow[] = useMemo(() => {
+    const resolvedCharacterRows = characterRows.map((character) => {
+      const resolution = resolveNarrationFallbackVoice({
+        characterGender: character.gender,
+        explicitVoiceId: character.voice_id || '',
+        maleDefault: maleVoice,
+        femaleDefault: femaleVoice,
+        neutralDefault: neutralVoice,
+        unknownDefault: unknownVoice,
+      });
+
+      return {
+        speaker: character.name,
+        resolvedVoice: resolution.voiceId,
+        rule: resolution.rule,
+        source: resolution.source,
+      };
+    });
+
+    return [
+      {
+        speaker: 'Narrator',
+        resolvedVoice: narratorVoice,
+        rule: 'explicit narrator default',
+        source: 'narrator_voice',
+      },
+      ...resolvedCharacterRows,
+    ];
+  }, [characterRows, maleVoice, femaleVoice, neutralVoice, unknownVoice, narratorVoice]);
+  const internalThoughtPreview = useMemo(
+    () =>
+      resolveInternalThoughtPreviewVoice({
+        policy: internalThoughtVoicePolicy,
+        thoughtVoice: internalThoughtVoice,
+        narratorVoice,
+      }),
+    [internalThoughtVoicePolicy, internalThoughtVoice, narratorVoice],
+  );
+
+  useEffect(() => {
+    if (selectedProfile !== null && selectedProfile !== undefined) {
+      setWebScrapingEnabled(Boolean(selectedProfile.web_scraping_enabled));
+    }
+  }, [selectedProfile]);
 
   useEffect(() => {
     setHasCustomMaxSegmentChars(false);
+    setHasCustomSpeakerConfidenceThreshold(false);
+    setHasCustomHighAmbiguityDialogueFlagThreshold(false);
+    setHasCustomUnstableEmotionShiftTransitionThreshold(false);
+    setHasCustomUnstableEmotionShiftDensityThreshold(false);
   }, [runMode]);
 
   useEffect(() => {
@@ -66,6 +207,51 @@ export function ProjectPipelineSetupPage() {
       setMaxSegmentChars(selectedProfile.max_segment_chars);
     }
   }, [hasCustomMaxSegmentChars, selectedProfile]);
+
+  useEffect(() => {
+    if (!hasCustomSpeakerConfidenceThreshold && selectedProfile !== null && selectedProfile !== undefined) {
+      setSpeakerConfidenceThreshold(selectedProfile.speaker_confidence_threshold ?? DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD);
+    }
+  }, [hasCustomSpeakerConfidenceThreshold, selectedProfile]);
+
+  useEffect(() => {
+    if (
+      !hasCustomHighAmbiguityDialogueFlagThreshold &&
+      selectedProfile !== null &&
+      selectedProfile !== undefined
+    ) {
+      setHighAmbiguityDialogueFlagThreshold(
+        selectedProfile.high_ambiguity_dialogue_flag_threshold ??
+          DEFAULT_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
+      );
+    }
+  }, [hasCustomHighAmbiguityDialogueFlagThreshold, selectedProfile]);
+
+  useEffect(() => {
+    if (
+      !hasCustomUnstableEmotionShiftTransitionThreshold &&
+      selectedProfile !== null &&
+      selectedProfile !== undefined
+    ) {
+      setUnstableEmotionShiftTransitionThreshold(
+        selectedProfile.unstable_emotion_shift_transition_threshold ??
+          DEFAULT_UNSTABLE_EMOTION_SHIFT_TRANSITION_THRESHOLD,
+      );
+    }
+  }, [hasCustomUnstableEmotionShiftTransitionThreshold, selectedProfile]);
+
+  useEffect(() => {
+    if (
+      !hasCustomUnstableEmotionShiftDensityThreshold &&
+      selectedProfile !== null &&
+      selectedProfile !== undefined
+    ) {
+      setUnstableEmotionShiftDensityThreshold(
+        selectedProfile.unstable_emotion_shift_density_threshold ??
+          DEFAULT_UNSTABLE_EMOTION_SHIFT_DENSITY_THRESHOLD,
+      );
+    }
+  }, [hasCustomUnstableEmotionShiftDensityThreshold, selectedProfile]);
 
   async function handleSaveVoices(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -112,9 +298,15 @@ export function ProjectPipelineSetupPage() {
         mode: selectedMode,
         max_segment_chars: maxSegmentChars,
         llm_enabled: llmEnabled,
-        deterministic_mode: deterministicMode,
-        provider_name: providerName,
-        max_calls_per_day: maxCallsPerDay,
+        speaker_confidence_threshold: speakerConfidenceThreshold,
+        high_ambiguity_dialogue_flag_threshold: highAmbiguityDialogueFlagThreshold,
+        unstable_emotion_shift_transition_threshold: unstableEmotionShiftTransitionThreshold,
+        unstable_emotion_shift_density_threshold: unstableEmotionShiftDensityThreshold,
+                deterministic_mode: deterministicMode,
+                web_scraping_enabled: webScrapingEnabled,
+                emotion_taxonomy: emotionTaxonomy,
+                provider_name: providerName,
+                max_calls_per_day: maxCallsPerDay,
         allow_unfinalized_character_map: allowUnfinalizedCharacterMap,
         internal_thought_voice_policy: internalThoughtVoicePolicy,
         internal_thought_voice: trimmedThoughtVoice || undefined,
@@ -201,6 +393,47 @@ export function ProjectPipelineSetupPage() {
                   placeholder="Only required when using thought voice policy"
                 />
               </div>
+    <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                <p className="text-sm font-medium">Voice fallback preview</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Check how current defaults resolve before saving voice settings.
+                </p>
+                <div className="mt-2 overflow-x-auto">
+                  <Table data-testid="voice-mapping-preview-table">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Speaker</TableHead>
+                        <TableHead>Resolved voice</TableHead>
+                        <TableHead>Rule</TableHead>
+                        <TableHead>Source</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {voiceMappingPreviewRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                            No character map entries found yet.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        voiceMappingPreviewRows.map((row, index) => (
+                          <TableRow key={`${row.speaker}-${row.source}-${index}`} data-testid="voice-mapping-preview-row">
+                            <TableCell className="font-medium">{row.speaker}</TableCell>
+                            <TableCell>{row.resolvedVoice}</TableCell>
+                            <TableCell>{row.rule}</TableCell>
+                            <TableCell>{row.source}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                <p className="mt-3 text-sm" data-testid="internal-thought-preview">
+                  Internal-thought preview:{' '}
+                  <span className="font-medium">{internalThoughtPreview.voiceId}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">({internalThoughtPreview.rule})</span>
+                </p>
+              </div>
               <Button disabled={saveVoicesMutation.isMutating || projectId === null} type="submit">
                 {saveVoicesMutation.isMutating ? 'Saving...' : 'Save Voice Config'}
               </Button>
@@ -223,7 +456,7 @@ export function ProjectPipelineSetupPage() {
                 <Input id="run-mode" disabled value={selectedMode ?? 'not selected'} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="max-segment-chars">Max segment chars</Label>
+                <Label htmlFor="max-segment-chars">Segmentation target length</Label>
                 <Input
                   id="max-segment-chars"
                   min={80}
@@ -235,6 +468,81 @@ export function ProjectPipelineSetupPage() {
                     setMaxSegmentChars(Number(event.target.value));
                   }}
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="speaker-confidence-threshold">Speaker confidence threshold</Label>
+                <Input
+                  id="speaker-confidence-threshold"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  type="number"
+                  value={speakerConfidenceThreshold}
+                  onChange={(event) => {
+                    setHasCustomSpeakerConfidenceThreshold(true);
+                    setSpeakerConfidenceThreshold(Number(event.target.value));
+                  }}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="high-ambiguity-dialogue-flag-threshold">
+                  High-ambiguity dialogue flag threshold
+                </Label>
+                <Input
+                  id="high-ambiguity-dialogue-flag-threshold"
+                  min={1}
+                  max={20}
+                  type="number"
+                  value={highAmbiguityDialogueFlagThreshold}
+                  onChange={(event) => {
+                    setHasCustomHighAmbiguityDialogueFlagThreshold(true);
+                    setHighAmbiguityDialogueFlagThreshold(Number(event.target.value));
+                  }}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="unstable-emotion-shift-transition-threshold">
+                  Unstable emotion transition threshold
+                </Label>
+                <Input
+                  id="unstable-emotion-shift-transition-threshold"
+                  min={1}
+                  max={20}
+                  type="number"
+                  value={unstableEmotionShiftTransitionThreshold}
+                  onChange={(event) => {
+                    setHasCustomUnstableEmotionShiftTransitionThreshold(true);
+                    setUnstableEmotionShiftTransitionThreshold(Number(event.target.value));
+                  }}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="unstable-emotion-shift-density-threshold">
+                  Unstable emotion shift density threshold
+                </Label>
+                <Input
+                  id="unstable-emotion-shift-density-threshold"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  type="number"
+                  value={unstableEmotionShiftDensityThreshold}
+                  onChange={(event) => {
+                    setHasCustomUnstableEmotionShiftDensityThreshold(true);
+                    setUnstableEmotionShiftDensityThreshold(Number(event.target.value));
+                  }}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="emotion-taxonomy">Emotion taxonomy</Label>
+                <NativeSelect
+                  id="emotion-taxonomy"
+                  value={emotionTaxonomy}
+                  onChange={(event) => setEmotionTaxonomy(event.target.value as EmotionTaxonomy)}
+                >
+                  <option value="basic">Basic</option>
+                  <option value="expanded">Expanded</option>
+                </NativeSelect>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="provider-name">Provider</Label>
@@ -261,6 +569,10 @@ export function ProjectPipelineSetupPage() {
               <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
                 <span>Enable deterministic mode</span>
                 <Switch checked={deterministicMode} onCheckedChange={setDeterministicMode} />
+              </label>
+              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
+                <span>Enable web scraping</span>
+                <Switch checked={webScrapingEnabled} onCheckedChange={setWebScrapingEnabled} />
               </label>
               <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
                 <span>Run with unfinalized character map</span>

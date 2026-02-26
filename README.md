@@ -270,6 +270,45 @@ Run request segmentation target length config:
 - Accepted range is `80` to `255`, and the resolved value is persisted as `max_segment_chars`
   inside run configuration.
 
+Run request emotion taxonomy config:
+
+- `POST /api/projects/{project_id}/runs` accepts `emotion_taxonomy` for tagging behavior.
+- Allowed values are `basic` (default) and `expanded`.
+- The value is persisted on the run as `run.config.emotion_taxonomy`.
+- `basic` keeps broad primary labels (`positive` / `negative` / `neutral`) and uses secondary labels as a refinement.
+- `expanded` enables richer emotion buckets via expanded secondary-label heuristics and maps the primary label accordingly.
+- Run snapshots (`run_configuration_snapshot`) include `emotion_taxonomy`.
+- If the value is omitted, backend parsing stores `"basic"` and front-end schema sets this default.
+
+Run request warning-threshold config:
+
+- `POST /api/projects/{project_id}/runs` accepts warning-signal thresholds:
+  - `speaker_confidence_threshold` (float, `0.0` to `1.0`)
+  - `high_ambiguity_dialogue_flag_threshold` (int, `1` to `20`)
+  - `unstable_emotion_shift_transition_threshold` (int, `1` to `20`)
+  - `unstable_emotion_shift_density_threshold` (float, `0.0` to `1.0`)
+- These values are persisted in `run.config` and included in `run_configuration_snapshot`:
+  - `speaker_confidence_threshold`
+  - `high_ambiguity_dialogue_flag_threshold`
+  - `unstable_emotion_shift_transition_threshold`
+  - `unstable_emotion_shift_density_threshold`
+- Defaults are sourced from backend mode profiles (also exposed via `GET /api/modes`) and mirrored in the pipeline setup frontend:
+  - `speaker_confidence_threshold: 0.6`
+  - `high_ambiguity_dialogue_flag_threshold: 2`
+  - `unstable_emotion_shift_transition_threshold: 4`
+  - `unstable_emotion_shift_density_threshold: 0.5`
+- If a field is omitted by client, backend parsing applies default values and the frontend schema also defaults it to the same profile-safe values.
+- `frontend/src/pages/projects/project-pipeline-setup-page.tsx` now renders explicit controls for each of the above so users can override per-run.
+
+Run request web scraping toggle config:
+
+- `POST /api/projects/{project_id}/runs` accepts `web_scraping_enabled` to control whether the pipeline may enrich content via external web source lookups.
+- This value is sourced from mode profile defaults and also stored on a per-run basis in:
+  - `run.config.web_scraping_enabled`
+  - `run_configuration_snapshot.web_scraping_enabled`
+- For this initial implementation, the default for all mode profiles is `false`, and the
+  `GET /api/modes` payload exposes `web_scraping_enabled` on each `mode_profiles` entry for UI bootstrap.
+
 Pipeline chunking for long corpora:
 
 - `POST /api/projects/{project_id}/runs` accepts `pipeline_chunk_max_chars` in the request body.
