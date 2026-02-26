@@ -1,12 +1,13 @@
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronRight, LineChart, ShieldAlert, Waves } from 'lucide-react';
+import { ChevronRight, LineChart, ShieldAlert, TriangleAlert, Waves } from 'lucide-react';
 
 export function ProjectRunMonitorPage() {
   const navigate = useNavigate();
@@ -17,6 +18,26 @@ export function ProjectRunMonitorPage() {
 
   const projectId = routeProjectId ?? storeProjectId;
   const runDetailQuery = useRunDetailQuery(projectId, runId);
+  const llmExecutionMode = runDetailQuery.data?.config?.llm_execution_mode;
+  const isRuleOnlyMode =
+    typeof llmExecutionMode === 'object' &&
+    llmExecutionMode !== null &&
+    'mode' in llmExecutionMode &&
+    (llmExecutionMode as Record<string, unknown>).mode === 'rule_only';
+  const llmExecutionModeReason =
+    typeof llmExecutionMode === 'object' &&
+    llmExecutionMode !== null &&
+    'reason' in llmExecutionMode &&
+    typeof (llmExecutionMode as Record<string, unknown>).reason === 'string'
+      ? (llmExecutionMode as Record<string, unknown>).reason
+      : null;
+  const llmExecutionModeProvider =
+    typeof llmExecutionMode === 'object' &&
+    llmExecutionMode !== null &&
+    'provider' in llmExecutionMode &&
+    typeof (llmExecutionMode as Record<string, unknown>).provider === 'string'
+      ? (llmExecutionMode as Record<string, unknown>).provider
+      : null;
 
   const runStatus = runDetailQuery.data?.status ?? 'not-started';
   const segmentCount = runDetailQuery.data?.segment_count ?? 0;
@@ -75,6 +96,18 @@ export function ProjectRunMonitorPage() {
             <CardTitle>Run Lifecycle</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
+            {isRuleOnlyMode ? (
+              <Alert data-testid="llm-degraded-banner" className="border-amber-400/50 bg-amber-50">
+                <TriangleAlert className="text-amber-600" />
+                <AlertTitle>LLM availability is degraded</AlertTitle>
+                <AlertDescription>
+                  The pipeline is running in rule-only mode because one or more LLM providers were unavailable.
+                  {llmExecutionModeReason ? <p>Reason: {llmExecutionModeReason}</p> : null}
+                  {llmExecutionModeProvider ? <p>Last attempted provider: {llmExecutionModeProvider}</p> : null}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
             <div className="grid gap-1">
               <p>
                 Status: <strong className="text-foreground">{runStatus}</strong>
