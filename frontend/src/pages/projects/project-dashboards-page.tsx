@@ -442,6 +442,14 @@ export function ProjectDashboardsPage() {
             </span>
           </p>
           {audiobookPrepDashboardQuery.data ? (
+            <p data-testid="dashboards-audiobook-low-confidence-regions">
+              Low-confidence region count:{' '}
+              <span className="font-medium text-foreground">
+                {audiobookPrepDashboardQuery.data.low_confidence_region_count}
+              </span>
+            </p>
+          ) : null}
+          {audiobookPrepDashboardQuery.data ? (
             <p data-testid="dashboards-audiobook-unresolved-voice-maps">
               Unresolved voice mappings:{' '}
               <span className="font-medium text-foreground">

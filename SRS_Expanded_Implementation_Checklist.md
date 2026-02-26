@@ -363,7 +363,7 @@ Definition of done for each task:
 - [x] [VR-011] Define audiobook prep dashboard data contracts.
 - [x] [VR-012] Show unresolved speaker count in audiobook dashboard.
 - [x] [VR-013] Show unresolved voice mapping count in audiobook dashboard.
-- [ ] [VR-014] Show low-confidence region count in audiobook dashboard.
+- [x] [VR-014] Show low-confidence region count in audiobook dashboard.
 - [ ] [VR-015] Show export readiness indicator with blocking reasons.
 - [ ] [VR-016] Add dashboard snapshot export capability.
 
