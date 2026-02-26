@@ -823,6 +823,69 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(cooccurrenceGraphPayload.graph.nodes.length).toBe(cooccurrenceGraphPayload.graph.metadata.node_count);
     expect(cooccurrenceGraphPayload.character_cooccurrence_centrality.metrics_table).toBeInstanceOf(Array);
 
+    const tensionGraphResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/tension-graph`);
+    expect(tensionGraphResponse.status()).toBe(200);
+    const tensionGraphPayload = (await tensionGraphResponse.json()) as {
+      metric_id: string;
+      value_key: string;
+      points: Array<{ position: number; smoothed_tension: number }>;
+      peak_markers: Array<{ prominence: number; tension_value: number }>;
+      metadata: { smoothed_window_size?: number; peak_prominence_thresholds?: { major?: number; minor?: number } | null };
+    };
+    expect(tensionGraphPayload.metric_id).toBe('smoothed_tension_curve');
+    expect(tensionGraphPayload.value_key).toBe('smoothed_tension');
+    expect(tensionGraphPayload.points.length).toBeGreaterThan(0);
+    expect(tensionGraphPayload.points.every((point) => typeof point.position === 'number')).toBe(true);
+    expect(tensionGraphPayload.points.every((point) => typeof point.smoothed_tension === 'number')).toBe(true);
+    expect(typeof tensionGraphPayload.metadata.smoothed_window_size).toBe('number');
+    if (tensionGraphPayload.peak_markers.length > 0) {
+      expect(tensionGraphPayload.peak_markers.every((marker) => typeof marker.prominence === 'number')).toBe(true);
+      expect(tensionGraphPayload.peak_markers.every((marker) => typeof marker.tension_value === 'number')).toBe(true);
+    }
+    const peakProminenceThresholds = tensionGraphPayload.metadata.peak_prominence_thresholds;
+    if (peakProminenceThresholds) {
+      expect(typeof peakProminenceThresholds.major).toBe('number');
+      expect(typeof peakProminenceThresholds.minor).toBe('number');
+    }
+
+    const polarityGraphResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/polarity-graph`);
+    expect(polarityGraphResponse.status()).toBe(200);
+    const polarityGraphPayload = (await polarityGraphResponse.json()) as {
+      metric_id: string;
+      value_key: string;
+      points: Array<{ position: number; rolling_mean_valence: number; rolling_mean_intensity: number }>;
+      metadata: { rolling_window_size?: number };
+    };
+    expect(polarityGraphPayload.metric_id).toBe('rolling_emotional_polarity');
+    expect(polarityGraphPayload.value_key).toBe('rolling_mean_valence');
+    expect(polarityGraphPayload.points.length).toBeGreaterThan(0);
+    expect(polarityGraphPayload.points.every((point) => typeof point.position === 'number')).toBe(true);
+    expect(polarityGraphPayload.points.every((point) => typeof point.rolling_mean_valence === 'number')).toBe(true);
+    expect(polarityGraphPayload.points.every((point) => typeof point.rolling_mean_intensity === 'number')).toBe(true);
+    expect(typeof polarityGraphPayload.metadata.rolling_window_size).toBe('number');
+
+    const characterAnalyticsResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/runs/${runId}/character-analytics`,
+    );
+    expect(characterAnalyticsResponse.status()).toBe(200);
+    const characterAnalyticsPayload = (await characterAnalyticsResponse.json()) as {
+      project_id: number;
+      run_id: number;
+      character_mentions_by_chapter: Array<{ chapter_index: number; mention_counts: Record<string, number> }>;
+      character_mentions_per_1000_words: Record<string, number>;
+      character_dialogue_line_counts: Record<string, number>;
+    };
+    expect(characterAnalyticsPayload.project_id).toBe(projectId);
+    expect(characterAnalyticsPayload.run_id).toBe(runId);
+    expect(characterAnalyticsPayload.character_mentions_by_chapter.length).toBeGreaterThan(0);
+    expect(Object.keys(characterAnalyticsPayload.character_mentions_per_1000_words).length).toBeGreaterThan(0);
+    expect(Object.keys(characterAnalyticsPayload.character_dialogue_line_counts).length).toBeGreaterThan(0);
+    expect(
+      Object.values(characterAnalyticsPayload.character_mentions_per_1000_words).every(
+        (prominenceValue) => typeof prominenceValue === 'number' && prominenceValue >= 0,
+      ),
+    ).toBe(true);
+
     const exportResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/exports/${runId}.json`);
     expect(exportResponse.status()).toBe(200);
     const exportPayload = (await exportResponse.json()) as { project_id: number; run_id: number; status: string; segments: unknown[] };
