@@ -1518,6 +1518,75 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(byName.Kai.requires_review).toBe(false);
   });
 
+  test('identical input and run config yield reproducible export segments', async ({ request }) => {
+    const project = await createProject(request, uniqueTitle('e2e-reproducible-outputs'));
+    const projectId = project.id;
+
+    const ingestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: {
+          name: 'reproducible-source.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from(
+            'Chapter 1\nStormlight traced the ruined arch while the sentries waited.\n\n'
+              + 'Chapter 2\nBy dawn, the harbor lanterns dimmed and the bells fell silent.',
+          ),
+        },
+      },
+    });
+    expect(ingestResponse.status()).toBe(200);
+
+    const runPayload = {
+      mode: 'author',
+      max_segment_chars: 120,
+      llm_enabled: false,
+      provider_name: 'openrouter',
+      max_calls_per_day: 25,
+      allow_unfinalized_character_map: true,
+      deterministic_mode: true,
+      deterministic_seed: 20260226,
+      randomization_config: {
+        strategy: 'stable',
+        shuffle_enabled: false,
+      },
+    };
+
+    const firstRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: runPayload,
+    });
+    expect(firstRunResponse.status()).toBe(200);
+    const firstRunPayload = (await firstRunResponse.json()) as { run_id: number };
+
+    const secondRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: runPayload,
+    });
+    expect(secondRunResponse.status()).toBe(200);
+    const secondRunPayload = (await secondRunResponse.json()) as { run_id: number };
+    expect(secondRunPayload.run_id).not.toBe(firstRunPayload.run_id);
+
+    const firstExportResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/exports/${firstRunPayload.run_id}.json`,
+    );
+    expect(firstExportResponse.status()).toBe(200);
+    const firstExportPayload = (await firstExportResponse.json()) as {
+      status: string;
+      segments: Array<Record<string, unknown>>;
+    };
+    expect(firstExportPayload.status).toBe('completed');
+
+    const secondExportResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/exports/${secondRunPayload.run_id}.json`,
+    );
+    expect(secondExportResponse.status()).toBe(200);
+    const secondExportPayload = (await secondExportResponse.json()) as {
+      status: string;
+      segments: Array<Record<string, unknown>>;
+    };
+    expect(secondExportPayload.status).toBe('completed');
+
+    expect(firstExportPayload.segments).toEqual(secondExportPayload.segments);
+  });
+
   test('export includes emotion labels and valence-intensity details for real run', async ({ request }) => {
     const project = await createProject(request, uniqueTitle('e2e-emotion-tags'));
     const projectId = project.id;
