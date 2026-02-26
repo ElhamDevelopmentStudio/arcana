@@ -2770,6 +2770,17 @@ def create_run(
     run = Run(
         project_id=project.id,
         status="running",
+        deterministic_seed=(int(run_config["deterministic_seed"]) if bool(run_config.get("deterministic_mode")) else None),
+        deterministic_model_identifier=(
+            str(run_config.get("deterministic_model_identifier")).strip()
+            if bool(run_config.get("deterministic_mode"))
+            else None
+        ),
+        deterministic_randomization_config=(
+            dict(run_config.get("randomization_config"))
+            if bool(run_config.get("deterministic_mode"))
+            else None
+        ),
         config_json=run_config,
         started_at=datetime.now(timezone.utc),
     )

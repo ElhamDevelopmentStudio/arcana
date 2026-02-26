@@ -140,6 +140,9 @@ class Run(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
+    deterministic_seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deterministic_model_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    deterministic_randomization_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

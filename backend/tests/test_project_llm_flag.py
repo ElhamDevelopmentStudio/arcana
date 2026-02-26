@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.config import clear_settings_cache
 from app.database import get_session_factory, init_db, reset_engine
 from app.main import app
-from app.models import Project
+from app.models import Project, Run
 from app.schemas import ProjectResponse
 
 
@@ -324,6 +324,56 @@ def test_integration_deterministic_seed_and_randomization_config_override() -> N
     assert config["randomization_config"]["shuffle_enabled"] is True
 
 
+def test_run_model_persists_deterministic_seed_settings() -> None:
+    explicit_seed = 20260103
+    with TestClient(app) as client:
+        project_resp = client.post(
+            "/api/projects",
+            json={"title": "Deterministic Run Model Persistence"},
+        )
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    with TestClient(app) as client:
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("sample.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+    assert ingest_resp.status_code == 200
+
+    with TestClient(app) as client:
+        run_resp = client.post(
+            f"/api/projects/{project_id}/runs",
+            json={
+                "mode": "author",
+                "max_segment_chars": 120,
+                "provider_name": "openrouter",
+                "max_calls_per_day": 5,
+                "allow_unfinalized_character_map": True,
+                "deterministic_mode": True,
+                "deterministic_seed": explicit_seed,
+                "randomization_config": {"strategy": "stable", "shuffle_enabled": False},
+                "llm_enabled": False,
+            },
+        )
+    assert run_resp.status_code == 200
+
+    run_id = run_resp.json()["run_id"]
+
+    session = get_session_factory()()
+    try:
+        run = session.query(Run).filter(Run.id == run_id).one()
+        assert run.deterministic_seed == explicit_seed
+        assert run.deterministic_model_identifier == get_settings().openrouter_model
+        assert run.deterministic_randomization_config == {
+            "seed": explicit_seed,
+            "strategy": "stable",
+            "shuffle_enabled": False,
+        }
+    finally:
+        session.close()
+
+
 def test_integration_non_deterministic_run_does_not_persist_seed_config() -> None:
     with TestClient(app) as client:
         project_resp = client.post(
@@ -362,6 +412,15 @@ def test_integration_non_deterministic_run_does_not_persist_seed_config() -> Non
     config = detail_resp.json()["config"]
     assert "deterministic_seed" not in config
     assert "randomization_config" not in config
+
+    session = get_session_factory()()
+    try:
+        run = session.query(Run).filter(Run.id == run_resp.json()["run_id"]).one()
+        assert run.deterministic_seed is None
+        assert run.deterministic_model_identifier is None
+        assert run.deterministic_randomization_config is None
+    finally:
+        session.close()
 
 
 def test_integration_deterministic_run_pins_runtime_model_identifier() -> None:
