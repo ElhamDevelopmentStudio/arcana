@@ -438,7 +438,7 @@ Definition of done for each task:
 
 ## 8. Error Handling and Warnings (Ref: SRS.md §8)
 - [x] [ER-001] Implement ingestion error class: unsupported format.
-- [ ] [ER-002] Implement ingestion error class: encoding failure.
+- [x] [ER-002] Implement ingestion error class: encoding failure.
 - [ ] [ER-003] Implement ingestion error class: missing chapter content.
 - [ ] [ER-004] Implement normalization warning: ambiguous chapter boundaries.
 - [ ] [ER-005] Implement normalization warning: uncertain quote repair.

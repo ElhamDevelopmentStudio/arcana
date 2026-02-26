@@ -12,6 +12,7 @@ from app.database import init_db, reset_engine
 from app.main import app
 from app.services.ingestion_errors import (
     IngestionErrorType,
+    UnsupportedEncodingIngestionError,
     UnsupportedFormatIngestionError,
     make_ingestion_http_error,
 )
@@ -54,6 +55,13 @@ def test_unit_unsupported_format_error_is_http_exception_with_header() -> None:
     assert error.status_code == 400
     assert error.headers == {"X-NIPE-Error-Type": "unsupported_format"}
     assert error.detail == "Only .txt files are supported"
+
+
+def test_unit_unsupported_encoding_error_is_http_exception_with_header() -> None:
+    error = UnsupportedEncodingIngestionError(detail="Unable to decode TXT content reliably with supported encodings")
+    assert error.status_code == 400
+    assert error.headers == {"X-NIPE-Error-Type": "unsupported_encoding"}
+    assert error.detail == "Unable to decode TXT content reliably with supported encodings"
 
 
 def test_integration_unsupported_format_sets_error_type_header() -> None:
