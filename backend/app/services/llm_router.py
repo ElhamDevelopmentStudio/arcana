@@ -18,6 +18,7 @@ _DEFAULT_ERROR_RETRY_ATTEMPTS: dict[str, int] = {
     "service_unavailable": 2,
     "other": 1,
 }
+_DEFAULT_FAILOVER_ERROR_CODES = {"rate_limit", "quota", "timeout", "service_unavailable", "other"}
 
 
 @dataclass(frozen=True)
@@ -266,6 +267,14 @@ class LLMResponse:
     timestamp: str
 
 
+@dataclass(frozen=True)
+class LLMProviderConfig:
+    provider_name: str
+    base_url: str
+    model_identifier: str
+    api_key: str | None
+
+
 class LLMRouter:
     def __init__(
         self,
@@ -305,8 +314,80 @@ class LLMRouter:
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
-        provider = _normalize_provider_name(provider_name)
+        return self._call_provider_with_retry(
+            request=request,
+            provider_name=provider_name,
+            model_identifier=model_identifier,
+            api_key=api_key,
+            base_url=self.base_url,
+            task_type=task_type,
+        )
 
+    def call_with_failover(
+        self,
+        request: LLMRequest,
+        provider_configs: tuple[LLMProviderConfig, ...],
+    ) -> LLMResponse:
+        if not provider_configs:
+            return LLMResponse(
+                provider_used="",
+                model_identifier="",
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="unsupported_provider",
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        try:
+            task_type = normalize_task_type(request.task_type)
+        except LLMTaskTypeError:
+            return LLMResponse(
+                provider_used=provider_configs[0].provider_name,
+                model_identifier=provider_configs[0].model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="unsupported_task_type",
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        final_response: LLMResponse | None = None
+        for provider_config in provider_configs:
+            response = self._call_provider_with_retry(
+                request=request,
+                provider_name=provider_config.provider_name,
+                model_identifier=provider_config.model_identifier,
+                api_key=provider_config.api_key,
+                base_url=provider_config.base_url,
+                task_type=task_type,
+            )
+            final_response = response
+            if response.success_flag:
+                return response
+            if response.error_code not in _DEFAULT_FAILOVER_ERROR_CODES:
+                return response
+
+        assert final_response is not None
+        return final_response
+
+    def _call_provider_with_retry(
+        self,
+        *,
+        request: LLMRequest,
+        provider_name: str,
+        model_identifier: str,
+        api_key: str | None,
+        base_url: str,
+        task_type: str,
+    ) -> LLMResponse:
+        provider = _normalize_provider_name(provider_name)
         if not is_supported_provider(provider):
             return LLMResponse(
                 provider_used=provider,
@@ -336,7 +417,7 @@ class LLMRouter:
             )
 
         system_prompt, user_prompt = _build_task_prompts(task_type=task_type, input_text=request.input_text)
-        endpoint = f"{self.base_url}/chat/completions"
+        endpoint = f"{base_url.rstrip('/')}/chat/completions"
         payload = {
             "model": model_identifier,
             "messages": [
