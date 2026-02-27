@@ -79,6 +79,7 @@ export type WorkspaceMutationName =
   | 'create_project'
   | 'create_project_draft'
   | 'update_project_metadata'
+  | 'grant_project_access'
   | 'update_project_llm_settings'
   | 'update_llm_provider_status'
   | 'archive_project'
@@ -108,6 +109,18 @@ export const workspaceMutationInvalidationMap: Record<
       workspaceKeys.projectDetail(projectId),
       workspaceKeys.projectWorkspaceSummary(projectId),
       workspaceKeys.projectSetupStatus(projectId),
+    ];
+  },
+  grant_project_access: ({ projectId }) => {
+    if (projectId === null || projectId === undefined) {
+      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
+    }
+    return [
+      workspaceKeys.projectAccessList(projectId),
+      workspaceKeys.projectDetail(projectId),
+      workspaceKeys.projectWorkspaceSummary(projectId),
+      workspaceKeys.projectSetupStatus(projectId),
+      workspaceKeyMatchers.projectActivityTimeline(projectId),
     ];
   },
   update_project_llm_settings: ({ projectId }) => {

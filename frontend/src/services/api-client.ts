@@ -33,6 +33,8 @@ import {
   projectWorkspaceSummaryResponseSchema,
   projectIngestionSourceAttachRequestSchema,
   projectIngestionSourceAttachResponseSchema,
+  projectAccessGrantRequestSchema,
+  projectAccessGrantResponseSchema,
   projectAccessListResponseSchema,
   projectCreateRequestSchema,
   projectMetadataUpdateRequestSchema,
@@ -77,6 +79,8 @@ import {
   type ProjectWorkspaceSummaryResponseDto,
   type ProjectIngestionSourceAttachRequestDto,
   type ProjectIngestionSourceAttachResponseDto,
+  type ProjectAccessGrantRequestDto,
+  type ProjectAccessGrantResponseDto,
   type ProjectAccessListResponseDto,
   type ProjectMetadataUpdateRequestDto,
   type ProjectMetadataUpdateResponseDto,
@@ -281,6 +285,19 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/access`);
       return projectAccessListResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async grantProjectAccess(
+    projectId: number,
+    payload: ProjectAccessGrantRequestDto,
+  ): Promise<ProjectAccessGrantResponseDto> {
+    const parsedPayload = projectAccessGrantRequestSchema.parse(payload);
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/access`, parsedPayload);
+      return projectAccessGrantResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
