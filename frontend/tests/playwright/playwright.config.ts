@@ -25,6 +25,22 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
       },
     },
+    {
+      name: 'visual-tablet',
+      testMatch: /.*\.visual\.spec\.ts/,
+      use: {
+        ...devices['iPad (gen 7)'],
+        browserName: 'chromium',
+      },
+    },
+    {
+      name: 'visual-mobile',
+      testMatch: /.*\.visual\.spec\.ts/,
+      use: {
+        ...devices['Pixel 5'],
+        browserName: 'chromium',
+      },
+    },
   ],
   webServer: {
     command: 'npm run dev -- --host 127.0.0.1 --port 4173',
