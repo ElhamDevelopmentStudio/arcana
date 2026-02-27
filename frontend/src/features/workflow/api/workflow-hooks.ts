@@ -491,6 +491,13 @@ export function useCharacterAliasCollisionsQuery(projectId: number | null) {
   );
 }
 
+export function useArtifactPronunciationDictionaryQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? ['pronunciation-dictionary-artifacts', projectId] : null,
+    async ([, currentProjectId]) => nipeApiClient.getArtifactPronunciationDictionary(currentProjectId),
+  );
+}
+
 export function useSaveCharacterMapMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['save-characters', projectId] : null,
@@ -571,6 +578,25 @@ export function useLookupCharacterAliasMutation(projectId: number | null) {
         throw new Error('Project must exist before alias lookup.');
       }
       return nipeApiClient.lookupCharacterAlias(projectId, arg);
+    },
+  );
+}
+
+export function useSaveArtifactPronunciationDictionaryMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['save-pronunciation-dictionary-artifacts', projectId] : null,
+    async (
+      _,
+      {
+        arg,
+      }: {
+        arg: { entries: Array<{ term: string; verbalized_form: string; source: string; confidence: number }> };
+      },
+    ) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before saving artifact pronunciation dictionary.');
+      }
+      return nipeApiClient.updateArtifactPronunciationDictionary(projectId, arg);
     },
   );
 }

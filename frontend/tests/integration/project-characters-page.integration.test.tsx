@@ -13,6 +13,7 @@ const scrapeCharactersMutationTrigger = vi.fn();
 const mergeCharactersMutationTrigger = vi.fn();
 const inferCharacterGendersMutationTrigger = vi.fn();
 const lookupCharacterAliasMutationTrigger = vi.fn();
+const saveArtifactPronunciationDictionaryMutationTrigger = vi.fn();
 const pronunciationPreviewMutationTrigger = vi.fn();
 const finalizeCharactersMutationTrigger = vi.fn();
 const defaultCharacterMapQueryData = {
@@ -91,6 +92,23 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     error: null,
     mutate: vi.fn(),
   }),
+  useArtifactPronunciationDictionaryQuery: () => ({
+    data: {
+      project_id: 101,
+      scope: 'artifact',
+      entries: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'EE-gis',
+          source: 'user',
+          confidence: 1.0,
+        },
+      ],
+    },
+    isLoading: false,
+    error: null,
+    mutate: vi.fn(),
+  }),
   useSaveCharacterMapMutation: () => ({
     isMutating: false,
     trigger: saveCharactersMutationTrigger,
@@ -114,6 +132,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useLookupCharacterAliasMutation: () => ({
     isMutating: false,
     trigger: lookupCharacterAliasMutationTrigger,
+  }),
+  useSaveArtifactPronunciationDictionaryMutation: () => ({
+    isMutating: false,
+    trigger: saveArtifactPronunciationDictionaryMutationTrigger,
   }),
   useFinalizeCharacterMapMutation: () => ({
     isMutating: false,
@@ -153,6 +175,7 @@ describe('project characters page manual editor', () => {
     mergeCharactersMutationTrigger.mockReset();
     inferCharacterGendersMutationTrigger.mockReset();
     lookupCharacterAliasMutationTrigger.mockReset();
+    saveArtifactPronunciationDictionaryMutationTrigger.mockReset();
     pronunciationPreviewMutationTrigger.mockReset();
     finalizeCharactersMutationTrigger.mockReset();
     saveCharactersMutationTrigger.mockResolvedValue({
@@ -211,6 +234,18 @@ describe('project characters page manual editor', () => {
       alias: 'K',
       canonical_name: 'Kai',
       match_source: 'manual_alias',
+    });
+    saveArtifactPronunciationDictionaryMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      scope: 'artifact',
+      entries: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'EE-gis',
+          source: 'user',
+          confidence: 1.0,
+        },
+      ],
     });
   });
 
@@ -294,6 +329,26 @@ describe('project characters page manual editor', () => {
     expect(screen.getByTestId('character-alias-collision-inspector-count')).toHaveTextContent('1 collision group(s)');
     expect(screen.getByTestId('character-alias-collision-inspector-row-0')).toHaveTextContent('K');
     expect(screen.getByTestId('character-alias-collision-inspector-row-0')).toHaveTextContent('Kai, Kade');
+  });
+
+  it('saves artifact pronunciation dictionary scope through utility panel', async () => {
+    const user = userEvent.setup();
+    renderCharacterPage();
+
+    await user.clear(screen.getByTestId('pronunciation-artifacts-textarea'));
+    await user.type(screen.getByTestId('pronunciation-artifacts-textarea'), 'Aegis|EE-gis');
+    await user.click(screen.getByTestId('pronunciation-artifacts-save-button'));
+
+    expect(saveArtifactPronunciationDictionaryMutationTrigger).toHaveBeenCalledWith({
+      entries: [
+        {
+          term: 'Aegis',
+          verbalized_form: 'EE-gis',
+          source: 'user',
+          confidence: 1,
+        },
+      ],
+    });
   });
 
   it('validates manual editor rows inline before save', async () => {
