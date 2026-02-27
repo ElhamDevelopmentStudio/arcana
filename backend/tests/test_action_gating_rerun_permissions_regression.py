@@ -44,11 +44,21 @@ def _sample_txt() -> str:
 
 
 def _set_project_state(project_id: int, lifecycle_state: str, last_run_status: str | None) -> None:
+    next_required_action_by_lifecycle = {
+        "draft": "ingest",
+        "ingested": "run",
+        "configured": "run",
+        "running": "none",
+        "completed": "export",
+        "failed": "review_failure",
+        "archived": "archived",
+    }
     session = get_session_factory()()
     try:
         project = session.query(Project).filter(Project.id == project_id).one()
         project.lifecycle_state = lifecycle_state
         project.last_run_status = last_run_status
+        project.next_required_action = next_required_action_by_lifecycle.get(lifecycle_state, "configure")
         session.add(project)
         session.commit()
     finally:
@@ -71,21 +81,22 @@ def _set_run_status(run_id: int, status_value: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("lifecycle_state", "last_run_status", "expected_actions"),
+    ("lifecycle_state", "last_run_status", "expected_actions", "expected_required_step"),
     [
-        ("draft", None, ["ingest", "select_mode", "configure", "archive"]),
-        ("ingested", None, ["ingest", "select_mode", "configure", "run", "archive"]),
-        ("configured", None, ["ingest", "select_mode", "configure", "run", "archive"]),
-        ("running", "running", []),
-        ("completed", "completed", ["ingest", "select_mode", "configure", "run", "export", "archive"]),
-        ("failed", "failed", ["ingest", "select_mode", "configure", "run", "rerun", "archive"]),
-        ("archived", None, ["restore"]),
+        ("draft", None, ["ingest", "select_mode", "configure", "archive"], "ingestion"),
+        ("ingested", None, ["ingest", "select_mode", "configure", "run", "archive"], "initial_run"),
+        ("configured", None, ["ingest", "select_mode", "configure", "run", "archive"], "initial_run"),
+        ("running", "running", [], "initial_run"),
+        ("completed", "completed", ["ingest", "select_mode", "configure", "run", "export", "archive"], None),
+        ("failed", "failed", ["ingest", "select_mode", "configure", "run", "rerun", "archive"], "initial_run"),
+        ("archived", None, ["restore"], "restore"),
     ],
 )
 def test_integration_allowed_actions_regression_matrix_by_lifecycle_state(
     lifecycle_state: str,
     last_run_status: str | None,
     expected_actions: list[str],
+    expected_required_step: str | None,
 ) -> None:
     with TestClient(app) as client:
         project_resp = client.post("/api/projects/drafts", json={"title": f"Actions Matrix {lifecycle_state}"})
@@ -102,6 +113,11 @@ def test_integration_allowed_actions_regression_matrix_by_lifecycle_state(
     assert actions_payload["lifecycle_state"] == lifecycle_state
     assert actions_payload["last_run_status"] == last_run_status
     assert actions_payload["allowed_actions"] == expected_actions
+    assert actions_payload["required_step"] == expected_required_step
+    if expected_required_step is None:
+        assert actions_payload["blocked_reason"] is None
+    else:
+        assert actions_payload["blocked_reason"] is not None
 
 
 @pytest.mark.parametrize(
@@ -145,4 +161,3 @@ def test_integration_rerun_permissions_regression_matrix_by_source_run_status(
     else:
         rerun_payload = rerun_resp.json()
         assert rerun_payload["run_id"] != source_run_id
-
