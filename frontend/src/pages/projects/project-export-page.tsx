@@ -4,7 +4,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useExportCsvMutation, useExportPayloadQuery, useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
+import {
+  useCreateComparisonWorkspaceMutation,
+  useExportCsvMutation,
+  useExportPayloadQuery,
+  useRunDetailQuery,
+} from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Download } from 'lucide-react';
@@ -92,9 +97,12 @@ export function ProjectExportPage() {
   const projectId = routeProjectId ?? storeProjectId;
   const exportPayloadQuery = useExportPayloadQuery(projectId, runId);
   const exportCsvMutation = useExportCsvMutation(projectId, runId);
+  const createComparisonWorkspaceMutation = useCreateComparisonWorkspaceMutation();
   const runDetailQuery = useRunDetailQuery(projectId, runId);
   const [minimumConfidence, setMinimumConfidence] = useState(0.8);
   const [showBelowThreshold, setShowBelowThreshold] = useState(true);
+  const [comparisonWorkspaceName, setComparisonWorkspaceName] = useState('');
+  const [createdComparisonWorkspaceId, setCreatedComparisonWorkspaceId] = useState<number | null>(null);
 
   const allowedExportFormats = useMemo(
     () => toAllowedExportFormats(runDetailQuery.data?.config as Record<string, unknown> | undefined),
@@ -178,6 +186,19 @@ export function ProjectExportPage() {
       URL.revokeObjectURL(url);
     } catch {
       // surfaced via exportCsvMutation.error
+    }
+  }
+
+  async function createComparisonWorkspace() {
+    const trimmedName = comparisonWorkspaceName.trim();
+    if (!trimmedName) {
+      return;
+    }
+    try {
+      const createdWorkspace = await createComparisonWorkspaceMutation.trigger({ name: trimmedName });
+      setCreatedComparisonWorkspaceId(createdWorkspace.workspace_id);
+    } catch {
+      // surfaced via createComparisonWorkspaceMutation.error
     }
   }
 
@@ -315,6 +336,42 @@ export function ProjectExportPage() {
           ) : (
             <p>JSON/CSV/chunked export links and manifest metadata with deterministic run context.</p>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Comparison Workspace</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>Create a comparison workspace to group multiple runs for aligned-curve analysis.</p>
+          <div className="flex max-w-xl flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              aria-label="Comparison workspace name"
+              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
+              data-testid="comparison-workspace-name-input"
+              onChange={(event) => setComparisonWorkspaceName(event.target.value)}
+              placeholder="Enter workspace name"
+              value={comparisonWorkspaceName}
+            />
+            <Button
+              data-testid="comparison-workspace-create-button"
+              disabled={comparisonWorkspaceName.trim().length === 0 || createComparisonWorkspaceMutation.isMutating}
+              onClick={createComparisonWorkspace}
+              type="button"
+              variant="outline"
+            >
+              {createComparisonWorkspaceMutation.isMutating ? 'Creating workspace...' : 'Create comparison workspace'}
+            </Button>
+          </div>
+          {createComparisonWorkspaceMutation.error ? (
+            <p className="text-destructive">{createComparisonWorkspaceMutation.error.message}</p>
+          ) : null}
+          {createdComparisonWorkspaceId !== null ? (
+            <p data-testid="comparison-workspace-created-id">
+              Workspace created: <strong className="text-foreground">#{createdComparisonWorkspaceId}</strong>
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </WorkflowPageShell>
