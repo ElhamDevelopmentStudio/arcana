@@ -67,6 +67,7 @@ type WorkspaceMutationContext = {
 export type WorkspaceMutationName =
   | 'create_project'
   | 'create_project_draft'
+  | 'update_project_metadata'
   | 'switch_mode'
   | 'run_pipeline'
   | 'cancel_run';
@@ -81,6 +82,18 @@ export const workspaceMutationInvalidationMap: Record<
 > = {
   create_project: () => [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList],
   create_project_draft: () => [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList],
+  update_project_metadata: ({ projectId }) => {
+    if (projectId === null || projectId === undefined) {
+      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
+    }
+    return [
+      workspaceKeys.projectControlPanelSummary,
+      workspaceKeyMatchers.projectControlPanelProjectList,
+      workspaceKeys.projectDetail(projectId),
+      workspaceKeys.projectWorkspaceSummary(projectId),
+      workspaceKeys.projectSetupStatus(projectId),
+    ];
+  },
   switch_mode: ({ projectId }) => {
     if (projectId === null || projectId === undefined) {
       return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];

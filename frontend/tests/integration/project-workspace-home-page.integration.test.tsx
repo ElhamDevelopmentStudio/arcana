@@ -7,10 +7,14 @@ import { ProjectWorkspaceHomePage } from '@/pages/projects/project-workspace-hom
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useProjectDetailQueryMock = vi.fn();
+const useUpdateProjectMetadataMutationMock = vi.fn();
 const projectDetailMutateMock = vi.fn();
+const updateProjectMetadataTriggerMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useProjectDetailQuery: (...args: Parameters<typeof useProjectDetailQueryMock>) => useProjectDetailQueryMock(...args),
+  useUpdateProjectMetadataMutation: (...args: Parameters<typeof useUpdateProjectMetadataMutationMock>) =>
+    useUpdateProjectMetadataMutationMock(...args),
 }));
 
 function renderProjectWorkspaceHomePage() {
@@ -43,7 +47,20 @@ describe('project workspace home page', () => {
   beforeEach(() => {
     resetWorkspaceStore();
     useProjectDetailQueryMock.mockReset();
+    useUpdateProjectMetadataMutationMock.mockReset();
     projectDetailMutateMock.mockReset();
+    updateProjectMetadataTriggerMock.mockReset();
+    useUpdateProjectMetadataMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: updateProjectMetadataTriggerMock,
+    });
+    updateProjectMetadataTriggerMock.mockResolvedValue({
+      project_id: 77,
+      title: 'Shadow Slave Workspace Updated',
+      description: 'Updated detail',
+      tags: ['arc', 'research'],
+      updated_at: '2026-02-27T00:15:00Z',
+    });
   });
 
   it('renders loading state while project detail is pending', () => {
@@ -113,5 +130,55 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-workspace-home-open-overview')).toHaveAttribute('href', '/projects/77/overview');
     expect(screen.getByTestId('project-workspace-home-open-setup')).toHaveAttribute('href', '/projects/77/setup');
     expect(screen.getByTestId('project-workspace-home-open-runs')).toHaveAttribute('href', '/projects/77/runs');
+    expect(screen.getByTestId('project-metadata-title-input')).toHaveValue('Shadow Slave Workspace');
+    expect(screen.getByTestId('project-metadata-description-input')).toHaveValue('workspace-home detail');
+    expect(screen.getByTestId('project-metadata-tags-input')).toHaveValue('poc');
+  });
+
+  it('submits metadata edits through patch mutation', async () => {
+    const user = userEvent.setup();
+    useProjectDetailQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectDetailMutateMock,
+      data: {
+        project_id: 77,
+        title: 'Shadow Slave Workspace',
+        description: 'workspace-home detail',
+        tags: ['poc'],
+        lifecycle_state: 'configured',
+        last_run_status: null,
+        next_required_action: 'run',
+        allowed_actions: ['run', 'archive'],
+        selected_mode: 'author',
+        selected_modes: ['author'],
+        llm_enabled: true,
+        do_not_store_source_text: false,
+        character_map_finalized: false,
+        configuration_snapshot_id: null,
+        ingestion_timestamp: null,
+        last_export_at: null,
+        created_at: '2026-02-27T00:00:00Z',
+        updated_at: '2026-02-27T00:10:00Z',
+      },
+    });
+
+    renderProjectWorkspaceHomePage();
+
+    await user.clear(screen.getByTestId('project-metadata-title-input'));
+    await user.type(screen.getByTestId('project-metadata-title-input'), 'Shadow Slave Workspace Updated');
+    await user.clear(screen.getByTestId('project-metadata-description-input'));
+    await user.type(screen.getByTestId('project-metadata-description-input'), 'Updated detail');
+    await user.clear(screen.getByTestId('project-metadata-tags-input'));
+    await user.type(screen.getByTestId('project-metadata-tags-input'), 'arc, research');
+    await user.click(screen.getByTestId('project-metadata-save-button'));
+
+    expect(updateProjectMetadataTriggerMock).toHaveBeenCalledTimes(1);
+    expect(updateProjectMetadataTriggerMock).toHaveBeenCalledWith({
+      title: 'Shadow Slave Workspace Updated',
+      description: 'Updated detail',
+      tags: ['arc', 'research'],
+    });
+    expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
   });
 });

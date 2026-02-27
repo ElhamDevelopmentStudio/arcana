@@ -219,6 +219,31 @@ export function useCreateProjectDraftMutation() {
   );
 }
 
+export function useUpdateProjectMetadataMutation(projectId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  return useSWRMutation(
+    projectId !== null ? ['update-project-metadata', projectId] : null,
+    async (
+      _,
+      {
+        arg,
+      }: {
+        arg: { title?: string; description?: string | null; tags?: string[] };
+      },
+    ) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before metadata update.');
+      }
+      return nipeApiClient.updateProjectMetadata(projectId, arg);
+    },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('update_project_metadata', { projectId });
+      },
+    },
+  );
+}
+
 export function useSwitchModeMutation(projectId: number | null) {
   const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
   return useSWRMutation(

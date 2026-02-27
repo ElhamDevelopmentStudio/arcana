@@ -31,6 +31,8 @@ import {
   projectIngestionSourceAttachRequestSchema,
   projectIngestionSourceAttachResponseSchema,
   projectCreateRequestSchema,
+  projectMetadataUpdateRequestSchema,
+  projectMetadataUpdateResponseSchema,
   projectSchema,
   projectLLMSettingsRequestSchema,
   projectLLMSettingsResponseSchema,
@@ -62,6 +64,8 @@ import {
   type ProjectWorkspaceSummaryResponseDto,
   type ProjectIngestionSourceAttachRequestDto,
   type ProjectIngestionSourceAttachResponseDto,
+  type ProjectMetadataUpdateRequestDto,
+  type ProjectMetadataUpdateResponseDto,
   type VoiceConfigDto,
   type CharacterMapDto,
   type CharacterMapUpdateDto,
@@ -133,6 +137,19 @@ export class NipeApiClient {
     try {
       const response = await this.client.post('/api/projects/drafts', parsedPayload);
       return projectSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async updateProjectMetadata(
+    projectId: number,
+    payload: ProjectMetadataUpdateRequestDto,
+  ): Promise<ProjectMetadataUpdateResponseDto> {
+    const parsedPayload = projectMetadataUpdateRequestSchema.parse(payload);
+    try {
+      const response = await this.client.patch(`/api/projects/${projectId}/metadata`, parsedPayload);
+      return projectMetadataUpdateResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

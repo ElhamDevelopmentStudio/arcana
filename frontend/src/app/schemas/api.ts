@@ -153,6 +153,29 @@ export const projectCreateRequestSchema = z.object({
   do_not_store_source_text: z.boolean().default(false),
 });
 
+export const projectMetadataUpdateRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(255).optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    tags: z.array(z.string().trim().min(1).max(64)).optional(),
+  })
+  .refine(
+    (payload) =>
+      payload.title !== undefined || payload.description !== undefined || payload.tags !== undefined,
+    {
+      message: 'At least one metadata field must be provided.',
+      path: ['title'],
+    },
+  );
+
+export const projectMetadataUpdateResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  title: z.string().min(1).max(255),
+  description: z.string().nullable().optional().default(null),
+  tags: z.array(z.string()).default([]),
+  updated_at: z.string().min(1),
+});
+
 export const projectIngestionSourceAttachRequestSchema = z.object({
   source: z.enum(['txt', 'markdown', 'epub', 'chapters-dir']),
   source_filename: z.string().trim().min(1).max(255).optional(),
@@ -902,6 +925,8 @@ export type ModeCatalogDto = z.infer<typeof modeCatalogSchema>;
 export type HealthDto = z.infer<typeof healthSchema>;
 export type ProjectDto = z.infer<typeof projectSchema>;
 export type ProjectCreateRequestDto = z.infer<typeof projectCreateRequestSchema>;
+export type ProjectMetadataUpdateRequestDto = z.infer<typeof projectMetadataUpdateRequestSchema>;
+export type ProjectMetadataUpdateResponseDto = z.infer<typeof projectMetadataUpdateResponseSchema>;
 export type ProjectIngestionSourceAttachRequestDto = z.infer<typeof projectIngestionSourceAttachRequestSchema>;
 export type ProjectIngestionSourceAttachResponseDto = z.infer<typeof projectIngestionSourceAttachResponseSchema>;
 export type ProjectLLMSettingsRequestDto = z.infer<typeof projectLLMSettingsRequestSchema>;
