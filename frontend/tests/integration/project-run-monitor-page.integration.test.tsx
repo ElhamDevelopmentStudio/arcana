@@ -14,6 +14,7 @@ const useRerunRunMutationMock = vi.fn();
 const useRecoverRunMutationMock = vi.fn();
 const useCancelRunMutationMock = vi.fn();
 const useAudiobookPrepDashboardQueryMock = vi.fn();
+const useCharacterAnalyticsQueryMock = vi.fn();
 const usePipelineStageDurationsDashboardQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
@@ -31,6 +32,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useCancelRunMutationMock(...args),
   useAudiobookPrepDashboardQuery: (...args: Parameters<typeof useAudiobookPrepDashboardQueryMock>) =>
     useAudiobookPrepDashboardQueryMock(...args),
+  useCharacterAnalyticsQuery: (...args: Parameters<typeof useCharacterAnalyticsQueryMock>) =>
+    useCharacterAnalyticsQueryMock(...args),
   usePipelineStageDurationsDashboardQuery: (...args: Parameters<typeof usePipelineStageDurationsDashboardQueryMock>) =>
     usePipelineStageDurationsDashboardQueryMock(...args),
 }));
@@ -82,6 +85,7 @@ describe('project run monitor page', () => {
     useRecoverRunMutationMock.mockReset();
     useCancelRunMutationMock.mockReset();
     useAudiobookPrepDashboardQueryMock.mockReset();
+    useCharacterAnalyticsQueryMock.mockReset();
     usePipelineStageDurationsDashboardQueryMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
       data: null,
@@ -94,6 +98,11 @@ describe('project run monitor page', () => {
       error: null,
     });
     useAudiobookPrepDashboardQueryMock.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    useCharacterAnalyticsQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
@@ -356,5 +365,28 @@ describe('project run monitor page', () => {
     renderRunMonitorPage();
     expect(screen.getByText(/Audiobook Prep Dashboard/i)).toBeInTheDocument();
     expect(screen.getByText(/narrator_readiness_score/i)).toBeInTheDocument();
+  });
+
+  it('renders character analytics dashboard payload when available', () => {
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+    useCharacterAnalyticsQueryMock.mockReturnValue({
+      data: {
+        project_id: 303,
+        run_id: 303,
+        top_characters: [
+          { name: 'Alice', mention_count: 24 },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    expect(screen.getByText(/Character Analytics Dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/top_characters/i)).toBeInTheDocument();
   });
 });
