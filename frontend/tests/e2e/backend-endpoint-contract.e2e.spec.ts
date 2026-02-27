@@ -2584,6 +2584,139 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     }
   });
 
+  test('projects/:project_id/run-monitor route executes rerun recover cancel lifecycle flow', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-run-monitor-lifecycle-flow');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const initialRun = (await runResponse.json()) as { run_id: number };
+    expect(initialRun.run_id).toBeGreaterThan(0);
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: 'Run monitor lifecycle flow project',
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: initialRun.run_id },
+    );
+
+    await page.goto(`/projects/${projectId}/run-monitor`);
+    await expect(page.getByRole('button', { name: 'Rerun run' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Recover run' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel run' })).toBeVisible();
+
+    const rerunPostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST'
+        && networkRequest.url().endsWith(`/api/projects/${projectId}/runs/${initialRun.run_id}/rerun`),
+    );
+    const rerunPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/runs/${initialRun.run_id}/rerun`),
+    );
+
+    await page.getByRole('button', { name: 'Rerun run' }).click();
+    await rerunPostRequestPromise;
+    const rerunPostResponse = await rerunPostResponsePromise;
+    expect(rerunPostResponse.status()).toBe(200);
+    const rerunPayload = (await rerunPostResponse.json()) as { run_id: number; project_id: number; status: string };
+    expect(rerunPayload.project_id).toBe(projectId);
+    expect(rerunPayload.run_id).not.toBe(initialRun.run_id);
+    expect(['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']).toContain(rerunPayload.status);
+
+    await expect(page.getByText(new RegExp(`Run:\\s*${rerunPayload.run_id}`))).toBeVisible();
+
+    const recoverPostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST'
+        && networkRequest.url().endsWith(`/api/projects/${projectId}/runs/${rerunPayload.run_id}/recover`),
+    );
+    const recoverPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/runs/${rerunPayload.run_id}/recover`),
+    );
+
+    await page.getByRole('button', { name: 'Recover run' }).click();
+    await recoverPostRequestPromise;
+    const recoverPostResponse = await recoverPostResponsePromise;
+    expect([200, 409]).toContain(recoverPostResponse.status());
+    if (recoverPostResponse.status() === 200) {
+      const recoverPayload = (await recoverPostResponse.json()) as { run_id: number; project_id: number; status: string };
+      expect(recoverPayload.project_id).toBe(projectId);
+      expect(recoverPayload.run_id).toBe(rerunPayload.run_id);
+      expect(['queued', 'running', 'completed']).toContain(recoverPayload.status);
+    } else {
+      const recoverErrorPayload = (await recoverPostResponse.json()) as { detail: string };
+      expect(typeof recoverErrorPayload.detail).toBe('string');
+      expect(recoverErrorPayload.detail.length).toBeGreaterThan(0);
+    }
+
+    const cancelPostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST'
+        && networkRequest.url().endsWith(`/api/projects/${projectId}/runs/${rerunPayload.run_id}/cancel`),
+    );
+    const cancelPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/runs/${rerunPayload.run_id}/cancel`),
+    );
+
+    await page.getByRole('button', { name: 'Cancel run' }).click();
+    await cancelPostRequestPromise;
+    const cancelPostResponse = await cancelPostResponsePromise;
+    expect([200, 409]).toContain(cancelPostResponse.status());
+    if (cancelPostResponse.status() === 200) {
+      const cancelPayload = (await cancelPostResponse.json()) as { run_id: number; project_id: number; status: string };
+      expect(cancelPayload.project_id).toBe(projectId);
+      expect(cancelPayload.run_id).toBe(rerunPayload.run_id);
+      expect(cancelPayload.status).toBe('cancelled');
+    } else {
+      const cancelErrorPayload = (await cancelPostResponse.json()) as { detail: string };
+      expect(typeof cancelErrorPayload.detail).toBe('string');
+      expect(cancelErrorPayload.detail.length).toBeGreaterThan(0);
+    }
+  });
+
   test('projects/:project_id/run-monitor route loads config preset through backend endpoint', async ({
     page,
     request,
