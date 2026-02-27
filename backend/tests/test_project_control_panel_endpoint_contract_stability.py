@@ -15,6 +15,8 @@ from app.schemas import (
     ProjectActivityTimelineResponse,
     ProjectControlPanelProjectListResponse,
     ProjectControlPanelSummaryResponse,
+    ProjectDetailResponse,
+    ProjectLifecycleStateChangeResponse,
 )
 
 
@@ -206,3 +208,79 @@ def test_integration_project_activity_timeline_contract_stability() -> None:
             "created_at",
             "event_metadata",
         }
+
+
+def test_integration_project_detail_contract_stability() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects/drafts", json={"title": "Contract Stability Project Detail"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+        response = client.get(f"/api/projects/{project_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    parsed = ProjectDetailResponse.model_validate(payload)
+    assert parsed.output_schema == "project_detail_json"
+    assert set(payload.keys()) == {
+        "schema_version",
+        "output_schema",
+        "output_format",
+        "output_id",
+        "output_name",
+        "generated_at",
+        "generated_by",
+        "project_id",
+        "title",
+        "description",
+        "tags",
+        "lifecycle_state",
+        "last_run_status",
+        "next_required_action",
+        "allowed_actions",
+        "selected_mode",
+        "selected_modes",
+        "llm_enabled",
+        "do_not_store_source_text",
+        "character_map_finalized",
+        "configuration_snapshot_id",
+        "ingestion_timestamp",
+        "last_export_at",
+        "created_at",
+        "updated_at",
+    }
+
+
+def test_integration_project_lifecycle_state_change_contract_stability() -> None:
+    with TestClient(app) as client:
+        project_resp = client.post("/api/projects/drafts", json={"title": "Contract Stability Lifecycle Change"})
+        assert project_resp.status_code == 201
+        project_id = project_resp.json()["id"]
+
+        archive_resp = client.post(f"/api/projects/{project_id}/archive")
+        assert archive_resp.status_code == 200
+        archive_payload = archive_resp.json()
+        archive_parsed = ProjectLifecycleStateChangeResponse.model_validate(archive_payload)
+        assert archive_parsed.action == "archive"
+        assert set(archive_payload.keys()) == {
+            "schema_version",
+            "output_schema",
+            "output_format",
+            "output_id",
+            "output_name",
+            "generated_at",
+            "generated_by",
+            "project_id",
+            "action",
+            "previous_lifecycle_state",
+            "lifecycle_state",
+            "last_run_status",
+            "next_required_action",
+            "allowed_actions",
+        }
+
+        restore_resp = client.post(f"/api/projects/{project_id}/restore")
+        assert restore_resp.status_code == 200
+        restore_payload = restore_resp.json()
+        restore_parsed = ProjectLifecycleStateChangeResponse.model_validate(restore_payload)
+        assert restore_parsed.action == "restore"
+        assert set(restore_payload.keys()) == set(archive_payload.keys())

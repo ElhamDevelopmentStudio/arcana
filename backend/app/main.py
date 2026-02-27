@@ -88,6 +88,8 @@ from app.schemas import (
     ProjectMetadataUpdateResponse,
     ProjectAllowedActionsResponse,
     ProjectActivityTimelineResponse,
+    ProjectDetailResponse,
+    ProjectLifecycleStateChangeResponse,
     ProjectControlPanelProjectListResponse,
     ProjectControlPanelSummaryResponse,
     ProjectLLMSettingsRequest,
@@ -245,6 +247,7 @@ _PROJECT_ALLOWED_ACTION_ORDER = (
 _PROJECT_ACTIVITY_EVENT_TYPES = frozenset(
     {"ingest", "mode_change", "run_start", "run_complete", "export", "manual_edit", "rerun"}
 )
+_PROJECT_ARCHIVE_METADATA_KEY = "control_panel_archive"
 
 _PROJECT_SERVICE_ROLE_SCOPE_MATRIX: dict[str, dict[str, set[str]]] = {
     "service": {
@@ -3480,6 +3483,102 @@ def create_project_draft(payload: ProjectCreate, session: Session = Depends(get_
     return create_project(payload=payload, session=session)
 
 
+def _build_project_detail_response(project: Project) -> ProjectDetailResponse:
+    generated_at = datetime.now(timezone.utc).isoformat()
+    normalized_lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+    if normalized_lifecycle_state not in set(_CONTROL_PANEL_STATE_ORDER):
+        normalized_lifecycle_state = PROJECT_LIFECYCLE_DRAFT
+
+    normalized_last_run_status = (
+        str(project.last_run_status).strip().lower()
+        if project.last_run_status is not None
+        else None
+    )
+    if normalized_last_run_status == "":
+        normalized_last_run_status = None
+
+    normalized_next_required_action = str(project.next_required_action or "").strip().lower()
+    if normalized_next_required_action not in _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES:
+        normalized_next_required_action = _resolve_project_control_panel_next_required_action(
+            lifecycle_state=normalized_lifecycle_state,
+            last_run_status=normalized_last_run_status,
+        )
+
+    updated_at_candidates = [
+        project.created_at,
+        project.ingestion_timestamp,
+        project.last_export_at,
+    ]
+    updated_at = max(candidate for candidate in updated_at_candidates if candidate is not None)
+
+    return ProjectDetailResponse(
+        generated_at=generated_at,
+        project_id=project.id,
+        title=project.title,
+        description=project.description,
+        tags=list(project.tags or []),
+        lifecycle_state=normalized_lifecycle_state,
+        last_run_status=normalized_last_run_status,
+        next_required_action=normalized_next_required_action,
+        allowed_actions=_resolve_allowed_project_actions(
+            lifecycle_state=normalized_lifecycle_state,
+            last_run_status=normalized_last_run_status,
+        ),
+        selected_mode=str(project.selected_mode).strip().lower() or DEFAULT_MODE,
+        selected_modes=[str(mode).strip().lower() for mode in list(project.selected_modes or []) if str(mode).strip()],
+        llm_enabled=bool(project.llm_enabled),
+        do_not_store_source_text=bool(project.do_not_store_source_text),
+        character_map_finalized=bool(project.character_map_finalized),
+        configuration_snapshot_id=project.configuration_snapshot_id,
+        ingestion_timestamp=_serialize_datetime_to_utc_iso(project.ingestion_timestamp),
+        last_export_at=_serialize_datetime_to_utc_iso(project.last_export_at),
+        created_at=_serialize_datetime_to_utc_iso(project.created_at) or generated_at,
+        updated_at=_serialize_datetime_to_utc_iso(updated_at) or generated_at,
+    )
+
+
+def _resolve_archived_project_restore_state(*, session: Session, project: Project) -> str:
+    supported_restore_states = {
+        PROJECT_LIFECYCLE_DRAFT,
+        PROJECT_LIFECYCLE_INGESTED,
+        PROJECT_LIFECYCLE_CONFIGURED,
+        PROJECT_LIFECYCLE_COMPLETED,
+        PROJECT_LIFECYCLE_FAILED,
+    }
+
+    log_json = dict(project.ingestion_log_json or {})
+    archived_metadata = log_json.get(_PROJECT_ARCHIVE_METADATA_KEY)
+    if isinstance(archived_metadata, dict):
+        previous_state = str(archived_metadata.get("previous_lifecycle_state", "")).strip().lower()
+        if previous_state in supported_restore_states:
+            return previous_state
+
+    chapter_count = session.query(Chapter).filter(Chapter.project_id == project.id).count()
+    if chapter_count == 0:
+        return PROJECT_LIFECYCLE_DRAFT
+
+    normalized_last_run_status = (
+        str(project.last_run_status).strip().lower()
+        if project.last_run_status is not None
+        else None
+    )
+    if normalized_last_run_status == RUN_STATUS_COMPLETED:
+        return PROJECT_LIFECYCLE_COMPLETED
+    if normalized_last_run_status == RUN_STATUS_FAILED:
+        return PROJECT_LIFECYCLE_FAILED
+    return PROJECT_LIFECYCLE_INGESTED
+
+
+@app.get(
+    "/api/projects/{project_id}",
+    response_model=ProjectDetailResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_detail(project_id: int, session: Session = Depends(get_session)) -> ProjectDetailResponse:
+    project = _get_project_or_404(session, project_id)
+    return _build_project_detail_response(project)
+
+
 @app.post(
     "/api/projects/{project_id}/ingest/source",
     response_model=ProjectIngestionSourceAttachResponse,
@@ -3787,6 +3886,213 @@ def get_project_allowed_actions(
         allowed_actions=_resolve_allowed_project_actions(
             lifecycle_state=normalized_lifecycle_state,
             last_run_status=normalized_last_run_status,
+        ),
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/archive",
+    response_model=ProjectLifecycleStateChangeResponse,
+    status_code=status.HTTP_200_OK,
+)
+def archive_project(
+    project_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> ProjectLifecycleStateChangeResponse:
+    project = _get_project_or_404(session, project_id)
+    normalized_lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+    if normalized_lifecycle_state not in set(_CONTROL_PANEL_STATE_ORDER):
+        normalized_lifecycle_state = PROJECT_LIFECYCLE_DRAFT
+    normalized_last_run_status = (
+        str(project.last_run_status).strip().lower()
+        if project.last_run_status is not None
+        else None
+    )
+    if normalized_last_run_status == "":
+        normalized_last_run_status = None
+    normalized_next_required_action = str(project.next_required_action or "").strip().lower()
+    if normalized_next_required_action not in _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES:
+        normalized_next_required_action = _resolve_project_control_panel_next_required_action(
+            lifecycle_state=normalized_lifecycle_state,
+            last_run_status=normalized_last_run_status,
+        )
+
+    allowed_actions = _resolve_allowed_project_actions(
+        lifecycle_state=normalized_lifecycle_state,
+        last_run_status=normalized_last_run_status,
+    )
+    if "archive" not in allowed_actions:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Project cannot be archived in its current state.",
+        )
+
+    project_principal = _resolve_project_access_headers(request=request)
+    if project_principal is None:
+        principal_type = None
+        principal_id = None
+    else:
+        principal_type, principal_id = project_principal
+    activity_actor = _resolve_project_activity_actor(
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
+
+    archived_at = datetime.now(timezone.utc).isoformat()
+    log_json = dict(project.ingestion_log_json or {})
+    log_json[_PROJECT_ARCHIVE_METADATA_KEY] = {
+        "previous_lifecycle_state": normalized_lifecycle_state,
+        "previous_last_run_status": normalized_last_run_status,
+        "previous_next_required_action": normalized_next_required_action,
+        "archived_at": archived_at,
+    }
+    project.ingestion_log_json = log_json
+
+    _transition_project_lifecycle_state(
+        project,
+        PROJECT_LIFECYCLE_ARCHIVED,
+        session=session,
+        actor=activity_actor,
+    )
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        event_type="manual_edit",
+        actor=activity_actor,
+        event_metadata={
+            "action": "archive",
+            "from_lifecycle_state": normalized_lifecycle_state,
+            "to_lifecycle_state": PROJECT_LIFECYCLE_ARCHIVED,
+        },
+    )
+    _refresh_project_dashboard_projection(session=session, project=project)
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+
+    normalized_project_last_run_status = (
+        str(project.last_run_status).strip().lower()
+        if project.last_run_status is not None
+        else None
+    )
+    if normalized_project_last_run_status == "":
+        normalized_project_last_run_status = None
+    resolved_next_required_action = str(project.next_required_action or "").strip().lower()
+    if resolved_next_required_action not in _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES:
+        resolved_next_required_action = _resolve_project_control_panel_next_required_action(
+            lifecycle_state=PROJECT_LIFECYCLE_ARCHIVED,
+            last_run_status=normalized_project_last_run_status,
+        )
+
+    return ProjectLifecycleStateChangeResponse(
+        generated_at=archived_at,
+        project_id=project.id,
+        action="archive",
+        previous_lifecycle_state=normalized_lifecycle_state,
+        lifecycle_state=PROJECT_LIFECYCLE_ARCHIVED,
+        last_run_status=normalized_project_last_run_status,
+        next_required_action=resolved_next_required_action,
+        allowed_actions=_resolve_allowed_project_actions(
+            lifecycle_state=PROJECT_LIFECYCLE_ARCHIVED,
+            last_run_status=normalized_project_last_run_status,
+        ),
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/restore",
+    response_model=ProjectLifecycleStateChangeResponse,
+    status_code=status.HTTP_200_OK,
+)
+def restore_project(
+    project_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> ProjectLifecycleStateChangeResponse:
+    project = _get_project_or_404(session, project_id)
+    normalized_lifecycle_state = str(project.lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+    if normalized_lifecycle_state not in set(_CONTROL_PANEL_STATE_ORDER):
+        normalized_lifecycle_state = PROJECT_LIFECYCLE_DRAFT
+    if normalized_lifecycle_state != PROJECT_LIFECYCLE_ARCHIVED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only archived projects can be restored.",
+        )
+
+    restore_target_state = _resolve_archived_project_restore_state(session=session, project=project)
+    if restore_target_state == PROJECT_LIFECYCLE_ARCHIVED:
+        restore_target_state = PROJECT_LIFECYCLE_DRAFT
+
+    project_principal = _resolve_project_access_headers(request=request)
+    if project_principal is None:
+        principal_type = None
+        principal_id = None
+    else:
+        principal_type, principal_id = project_principal
+    activity_actor = _resolve_project_activity_actor(
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
+
+    _transition_project_lifecycle_state(
+        project,
+        restore_target_state,
+        session=session,
+        actor=activity_actor,
+    )
+    restored_at = datetime.now(timezone.utc).isoformat()
+    log_json = dict(project.ingestion_log_json or {})
+    archived_metadata = log_json.get(_PROJECT_ARCHIVE_METADATA_KEY)
+    if isinstance(archived_metadata, dict):
+        next_archive_metadata = dict(archived_metadata)
+    else:
+        next_archive_metadata = {}
+    next_archive_metadata["restored_at"] = restored_at
+    next_archive_metadata["restored_lifecycle_state"] = restore_target_state
+    log_json[_PROJECT_ARCHIVE_METADATA_KEY] = next_archive_metadata
+    project.ingestion_log_json = log_json
+    _append_project_activity_event(
+        session=session,
+        project_id=project.id,
+        event_type="manual_edit",
+        actor=activity_actor,
+        event_metadata={
+            "action": "restore",
+            "from_lifecycle_state": PROJECT_LIFECYCLE_ARCHIVED,
+            "to_lifecycle_state": restore_target_state,
+        },
+    )
+    _refresh_project_dashboard_projection(session=session, project=project)
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+
+    normalized_project_last_run_status = (
+        str(project.last_run_status).strip().lower()
+        if project.last_run_status is not None
+        else None
+    )
+    if normalized_project_last_run_status == "":
+        normalized_project_last_run_status = None
+    resolved_next_required_action = str(project.next_required_action or "").strip().lower()
+    if resolved_next_required_action not in _CONTROL_PANEL_NEXT_REQUIRED_ACTION_VALUES:
+        resolved_next_required_action = _resolve_project_control_panel_next_required_action(
+            lifecycle_state=restore_target_state,
+            last_run_status=normalized_project_last_run_status,
+        )
+
+    return ProjectLifecycleStateChangeResponse(
+        generated_at=restored_at,
+        project_id=project.id,
+        action="restore",
+        previous_lifecycle_state=PROJECT_LIFECYCLE_ARCHIVED,
+        lifecycle_state=restore_target_state,
+        last_run_status=normalized_project_last_run_status,
+        next_required_action=resolved_next_required_action,
+        allowed_actions=_resolve_allowed_project_actions(
+            lifecycle_state=restore_target_state,
+            last_run_status=normalized_project_last_run_status,
         ),
     )
 

@@ -42,6 +42,25 @@ type ProjectAllowedActionsResponse = {
   next_required_action: string;
   allowed_actions: string[];
 };
+type ProjectDetailResponse = {
+  project_id: number;
+  title: string;
+  lifecycle_state: string;
+  next_required_action: string;
+  allowed_actions: string[];
+  selected_mode: string;
+  selected_modes: string[];
+  created_at: string;
+  updated_at: string;
+};
+type ProjectLifecycleStateChangeResponse = {
+  project_id: number;
+  action: 'archive' | 'restore';
+  previous_lifecycle_state: string;
+  lifecycle_state: string;
+  next_required_action: string;
+  allowed_actions: string[];
+};
 type ProjectActivityTimelineResponse = {
   project_id: number;
   total_items: number;
@@ -118,6 +137,47 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       expect.arrayContaining(['ingest', 'select_mode', 'configure', 'archive']),
     );
     expect(draftActionsPayload.allowed_actions).not.toContain('restore');
+
+    const projectDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}`);
+    expect(projectDetailResponse.status()).toBe(200);
+    const projectDetailPayload = (await projectDetailResponse.json()) as ProjectDetailResponse;
+    expect(projectDetailPayload.project_id).toBe(projectId);
+    expect(projectDetailPayload.lifecycle_state).toBe('draft');
+    expect(projectDetailPayload.next_required_action).toBe('ingest');
+    expect(projectDetailPayload.allowed_actions).toEqual(
+      expect.arrayContaining(['ingest', 'select_mode', 'configure', 'archive']),
+    );
+    expect(projectDetailPayload.selected_mode).toBe('audiobook');
+    expect(projectDetailPayload.created_at).toEqual(expect.any(String));
+    expect(projectDetailPayload.updated_at).toEqual(expect.any(String));
+
+    const archiveProjectResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/archive`);
+    expect(archiveProjectResponse.status()).toBe(200);
+    const archiveProjectPayload = (await archiveProjectResponse.json()) as ProjectLifecycleStateChangeResponse;
+    expect(archiveProjectPayload.project_id).toBe(projectId);
+    expect(archiveProjectPayload.action).toBe('archive');
+    expect(archiveProjectPayload.previous_lifecycle_state).toBe('draft');
+    expect(archiveProjectPayload.lifecycle_state).toBe('archived');
+    expect(archiveProjectPayload.next_required_action).toBe('archived');
+    expect(archiveProjectPayload.allowed_actions).toEqual(['restore']);
+
+    const archivedActionsResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/actions`);
+    expect(archivedActionsResponse.status()).toBe(200);
+    const archivedActionsPayload = (await archivedActionsResponse.json()) as ProjectAllowedActionsResponse;
+    expect(archivedActionsPayload.allowed_actions).toEqual(['restore']);
+
+    const restoreProjectResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/restore`);
+    expect(restoreProjectResponse.status()).toBe(200);
+    const restoreProjectPayload = (await restoreProjectResponse.json()) as ProjectLifecycleStateChangeResponse;
+    expect(restoreProjectPayload.project_id).toBe(projectId);
+    expect(restoreProjectPayload.action).toBe('restore');
+    expect(restoreProjectPayload.previous_lifecycle_state).toBe('archived');
+    expect(restoreProjectPayload.lifecycle_state).toBe('draft');
+    expect(restoreProjectPayload.next_required_action).toBe('ingest');
+    expect(restoreProjectPayload.allowed_actions).toEqual(
+      expect.arrayContaining(['ingest', 'select_mode', 'configure', 'archive']),
+    );
+    expect(restoreProjectPayload.allowed_actions).not.toContain('restore');
 
     const projectLlmGetResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/llm`);
     expect(projectLlmGetResponse.status()).toBe(200);
