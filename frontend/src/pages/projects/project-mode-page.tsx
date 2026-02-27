@@ -1,10 +1,20 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,6 +37,8 @@ export function ProjectModePage() {
   const selectedMode = useWorkspaceStore((state) => state.selectedMode);
   const runId = useWorkspaceStore((state) => state.runId);
   const setSelectedMode = useWorkspaceStore((state) => state.setSelectedMode);
+  const [pendingMode, setPendingMode] = useState<string | null>(null);
+  const [isSwitchConfirmationOpen, setIsSwitchConfirmationOpen] = useState(false);
 
   const projectId = routeProjectId ?? storeProjectId;
   const setupStatusQuery = useProjectSetupStatusQuery(projectId);
@@ -69,6 +81,33 @@ export function ProjectModePage() {
     }
   }
 
+  function handleModeSelectionIntent(nextMode: string) {
+    if (!canSelectMode || projectId === null) {
+      return;
+    }
+    if (nextMode === effectiveMode) {
+      return;
+    }
+    setPendingMode(nextMode);
+    setIsSwitchConfirmationOpen(true);
+  }
+
+  async function handleModeSwitchConfirmation() {
+    if (pendingMode === null) {
+      return;
+    }
+    await handleModeChange(pendingMode);
+    setPendingMode(null);
+    setIsSwitchConfirmationOpen(false);
+  }
+
+  function handleModeSwitchDialogOpenChange(nextOpen: boolean) {
+    setIsSwitchConfirmationOpen(nextOpen);
+    if (!nextOpen && !switchModeMutation.isMutating) {
+      setPendingMode(null);
+    }
+  }
+
   return (
     <WorkflowPageShell
       step="Step 02"
@@ -101,7 +140,7 @@ export function ProjectModePage() {
                 data-testid="mode-select"
                 disabled={!canSelectMode || modeCatalogQuery.isLoading || switchModeMutation.isMutating}
                 value={effectiveMode}
-                onChange={(event) => void handleModeChange(event.target.value)}
+                onChange={(event) => handleModeSelectionIntent(event.target.value)}
               >
               {modeOptions.map((mode) => (
                 <option key={mode} value={mode}>
@@ -144,8 +183,36 @@ export function ProjectModePage() {
               Choose a mode from the selector to unlock downstream pipeline execution.
             </p>
           ) : null}
+          {canSelectMode ? (
+            <p className="text-sm text-muted-foreground" data-testid="mode-stale-artifact-warning-hint">
+              Switching mode marks downstream run artifacts as stale and may require reruns before exports.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
+      <AlertDialog open={isSwitchConfirmationOpen} onOpenChange={handleModeSwitchDialogOpenChange}>
+        <AlertDialogContent data-testid="mode-switch-confirm-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch mode and mark downstream artifacts stale?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong className="text-foreground">{effectiveMode}</strong>
+              {' -> '}
+              <strong className="text-foreground">{pendingMode ?? 'selected mode'}</strong>. Existing run outputs for this
+              project can become stale and require reruns before export delivery.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="mode-switch-confirm-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="mode-switch-confirm-submit"
+              disabled={switchModeMutation.isMutating}
+              onClick={() => void handleModeSwitchConfirmation()}
+            >
+              {switchModeMutation.isMutating ? 'Switching mode...' : 'Switch mode'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </WorkflowPageShell>
   );
 }

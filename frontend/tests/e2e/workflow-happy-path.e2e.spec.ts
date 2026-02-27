@@ -150,6 +150,7 @@ test('creates project, ingests text, selects mode, and advances to character pag
   await expect(page).toHaveURL(/\/projects\/101\/mode$/);
 
   await page.getByTestId('mode-select').selectOption('author');
+  await page.getByTestId('mode-switch-confirm-submit').click();
   await page.getByTestId('mode-continue-button').click();
   await expect(page).toHaveURL(/\/projects\/101\/characters$/);
 });

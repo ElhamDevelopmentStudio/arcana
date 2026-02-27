@@ -62,6 +62,21 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isLoading: false,
     error: null,
   }),
+  useProjectSetupStatusQuery: () => ({
+    data: {
+      project_id: 101,
+      lifecycle_state: 'ingested',
+      next_required_action: 'select_mode',
+      is_complete: false,
+      steps: [
+        { step_id: 'ingestion', label: 'Ingestion', ready: true, required: true },
+        { step_id: 'mode_selection', label: 'Mode Selection', ready: false, required: true },
+        { step_id: 'initial_run', label: 'Initial Run', ready: false, required: true },
+      ],
+    },
+    isLoading: false,
+    error: null,
+  }),
   useRunDetailQuery: () => ({
     data: undefined,
     isLoading: false,
