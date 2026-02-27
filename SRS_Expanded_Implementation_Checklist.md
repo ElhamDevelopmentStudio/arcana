@@ -654,7 +654,7 @@ Definition of done for each task:
 ### 13.7 Runs, Analytics, Exports, and Comparison Workspace
 - [x] [FE-152] Build `/projects/{project_id}/pipeline-setup` run config flow using `POST /api/projects/{project_id}/runs`.
 - [x] [FE-153] Build run monitor/detail route using `GET /api/projects/{project_id}/runs/{run_id}`.
-- [ ] [FE-154] Build rerun flow using `POST /api/projects/{project_id}/runs/{run_id}/rerun`.
+- [x] [FE-154] Build rerun flow using `POST /api/projects/{project_id}/runs/{run_id}/rerun`.
 - [ ] [FE-155] Build recover flow using `POST /api/projects/{project_id}/runs/{run_id}/recover`.
 - [ ] [FE-156] Build cancel flow using `POST /api/projects/{project_id}/runs/{run_id}/cancel`.
 - [ ] [FE-157] Build run config preset panel using `GET /api/projects/{project_id}/runs/{run_id}/config-preset`.

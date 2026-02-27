@@ -797,3 +797,40 @@ export function useCancelRunMutation(projectId: number | null, runId: number | n
     },
   );
 }
+
+export function useRerunRunMutation(projectId: number | null, runId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  const publishMutationEvent = useMutationEventPublisher();
+  return useSWRMutation(
+    projectId !== null && runId !== null ? ['rerun-run', projectId, runId] : null,
+    async () => {
+      if (projectId === null || runId === null) {
+        throw new Error('Project and run are required before rerunning a run.');
+      }
+      try {
+        const run = await nipeApiClient.rerunRun(projectId, runId);
+        publishMutationEvent({
+          level: 'success',
+          title: 'Run rerun started',
+          message: `Rerun #${run.run_id} completed.`,
+        });
+        return run;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to rerun run.';
+        publishMutationEvent({
+          level: 'error',
+          title: 'Rerun failed',
+          message,
+          recoveryLabel: 'Reload app',
+          onRecovery: () => window.location.reload(),
+        });
+        throw error;
+      }
+    },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('rerun_run', { projectId });
+      },
+    },
+  );
+}
