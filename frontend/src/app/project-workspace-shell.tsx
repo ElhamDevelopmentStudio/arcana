@@ -1,0 +1,60 @@
+import { NavLink, Outlet, useParams } from 'react-router-dom';
+
+import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
+
+type WorkspaceNavItem = {
+  to: string;
+  label: string;
+  end?: boolean;
+};
+
+const PROJECT_WORKSPACE_NAV_ITEMS: WorkspaceNavItem[] = [
+  { to: '.', label: 'Workspace', end: true },
+  { to: 'mode', label: 'Mode' },
+  { to: 'characters', label: 'Characters' },
+  { to: 'pipeline-setup', label: 'Pipeline Setup' },
+  { to: 'run-monitor', label: 'Run Monitor' },
+  { to: 'export', label: 'Exports' },
+  { to: 'dashboards', label: 'Dashboards' },
+];
+
+export function ProjectWorkspaceShell() {
+  const params = useParams<{ project_id: string }>();
+  const projectId = parseProjectIdParam(params.project_id);
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]" data-testid="project-workspace-shell">
+      <aside className="h-fit rounded-xl border border-panel-border/70 bg-card/55 p-3" data-testid="project-workspace-sidebar">
+        <p className="text-[11px] font-semibold tracking-[0.15em] text-muted-foreground uppercase">Project Workspace</p>
+        <p className="mt-2 text-sm font-semibold text-foreground" data-testid="project-workspace-shell-project-id">
+          Project #{projectId ?? 'n/a'}
+        </p>
+
+        <nav aria-label="Project Workspace Navigation" className="mt-3">
+          <ul className="space-y-1.5">
+            {PROJECT_WORKSPACE_NAV_ITEMS.map((item) => (
+              <li key={item.label}>
+                <NavLink
+                  className={({ isActive }) =>
+                    [
+                      'flex rounded-lg px-2.5 py-2 text-sm transition',
+                      isActive ? 'bg-sidebar-active/12 text-sidebar-active' : 'text-sidebar-foreground hover:bg-background/75',
+                    ].join(' ')
+                  }
+                  end={item.end}
+                  to={item.to}
+                >
+                  {item.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </aside>
+
+      <section className="min-w-0">
+        <Outlet />
+      </section>
+    </div>
+  );
+}

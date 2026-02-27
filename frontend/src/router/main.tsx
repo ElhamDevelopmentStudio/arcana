@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import type { RouteObject } from 'react-router-dom';
 
 import { MainShell } from '@/app/main-shell';
+import { ProjectWorkspaceShell } from '@/app/project-workspace-shell';
 
 const loadDashboardPage = () => import('@/pages/dashboard/dashboard-page');
 const loadProjectCharactersPage = () => import('@/pages/projects/project-characters-page');
@@ -15,6 +16,7 @@ const loadProjectSpeakerReviewPage = () => import('@/pages/projects/project-spea
 const loadProjectEmotionReviewPage = () => import('@/pages/projects/project-emotion-review-page');
 const loadProjectLowConfidenceReviewPage = () => import('@/pages/projects/project-low-confidence-review-page');
 const loadProjectLowConfidenceReviewGuidePage = () => import('@/pages/projects/project-low-confidence-review-guide-page');
+const loadProjectWorkspaceHomePage = () => import('@/pages/projects/project-workspace-home-page');
 
 const DashboardPage = lazy(() => loadDashboardPage().then((module) => ({ default: module.DashboardPage })));
 const ProjectCharactersPage = lazy(() =>
@@ -48,10 +50,16 @@ const ProjectLowConfidenceReviewGuidePage = lazy(() =>
     default: module.ProjectLowConfidenceReviewGuidePage,
   })),
 );
+const ProjectWorkspaceHomePage = lazy(() =>
+  loadProjectWorkspaceHomePage().then((module) => ({
+    default: module.ProjectWorkspaceHomePage,
+  })),
+);
 
 const ROUTE_MODULE_PREFETCHERS: Array<{ pattern: RegExp; load: () => Promise<unknown> }> = [
   { pattern: /^\/dashboard$/, load: loadDashboardPage },
   { pattern: /^\/projects\/new$/, load: loadProjectNewPage },
+  { pattern: /^\/projects\/[^/]+$/, load: loadProjectWorkspaceHomePage },
   { pattern: /^\/projects\/[^/]+\/mode$/, load: loadProjectModePage },
   { pattern: /^\/projects\/[^/]+\/characters$/, load: loadProjectCharactersPage },
   { pattern: /^\/projects\/[^/]+\/pipeline-setup$/, load: loadProjectPipelineSetupPage },
@@ -93,44 +101,54 @@ export const mainRouter: RouteObject[] = [
         element: <SuspendedRoute><ProjectNewPage /></SuspendedRoute>,
       },
       {
-        path: 'projects/:project_id/mode',
-        element: <SuspendedRoute><ProjectModePage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/:project_id/characters',
-        element: <SuspendedRoute><ProjectCharactersPage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/:project_id/pipeline-setup',
-        element: <SuspendedRoute><ProjectPipelineSetupPage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/:project_id/run-monitor',
-        element: <SuspendedRoute><ProjectRunMonitorPage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/:project_id/review/speakers',
-        element: <SuspendedRoute><ProjectSpeakerReviewPage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/:project_id/review/emotions',
-        element: <SuspendedRoute><ProjectEmotionReviewPage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/:project_id/review/low-confidence',
-        element: <SuspendedRoute><ProjectLowConfidenceReviewPage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/:project_id/guide/low-confidence-review',
-        element: <SuspendedRoute><ProjectLowConfidenceReviewGuidePage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/:project_id/export',
-        element: <SuspendedRoute><ProjectExportPage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/:project_id/dashboards',
-        element: <SuspendedRoute><ProjectDashboardsPage /></SuspendedRoute>,
+        path: 'projects/:project_id',
+        element: <ProjectWorkspaceShell />,
+        children: [
+          {
+            index: true,
+            element: <SuspendedRoute><ProjectWorkspaceHomePage /></SuspendedRoute>,
+          },
+          {
+            path: 'mode',
+            element: <SuspendedRoute><ProjectModePage /></SuspendedRoute>,
+          },
+          {
+            path: 'characters',
+            element: <SuspendedRoute><ProjectCharactersPage /></SuspendedRoute>,
+          },
+          {
+            path: 'pipeline-setup',
+            element: <SuspendedRoute><ProjectPipelineSetupPage /></SuspendedRoute>,
+          },
+          {
+            path: 'run-monitor',
+            element: <SuspendedRoute><ProjectRunMonitorPage /></SuspendedRoute>,
+          },
+          {
+            path: 'review/speakers',
+            element: <SuspendedRoute><ProjectSpeakerReviewPage /></SuspendedRoute>,
+          },
+          {
+            path: 'review/emotions',
+            element: <SuspendedRoute><ProjectEmotionReviewPage /></SuspendedRoute>,
+          },
+          {
+            path: 'review/low-confidence',
+            element: <SuspendedRoute><ProjectLowConfidenceReviewPage /></SuspendedRoute>,
+          },
+          {
+            path: 'guide/low-confidence-review',
+            element: <SuspendedRoute><ProjectLowConfidenceReviewGuidePage /></SuspendedRoute>,
+          },
+          {
+            path: 'export',
+            element: <SuspendedRoute><ProjectExportPage /></SuspendedRoute>,
+          },
+          {
+            path: 'dashboards',
+            element: <SuspendedRoute><ProjectDashboardsPage /></SuspendedRoute>,
+          },
+        ],
       },
     ],
   },
