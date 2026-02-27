@@ -550,7 +550,7 @@ Definition of done for each task:
 - [x] [X-025] Add backend project-detail endpoint (`GET /api/projects/{project_id}`) with lifecycle/action projection and management metadata for dashboard detail views.
 - [x] [X-026] Add backend archive/restore endpoints (`POST /api/projects/{project_id}/archive`, `POST /api/projects/{project_id}/restore`) with lifecycle state-change contracts.
 - [x] [X-027] Add backend endpoint `GET /api/projects/{project_id}/setup-status` returning per-step setup readiness and `is_complete`.
-- [ ] [X-028] Implement backend setup-status computation service from existing project/ingestion/mode/character/voice/run state.
+- [x] [X-028] Implement backend setup-status computation service from existing project/ingestion/mode/character/voice/run state.
 - [ ] [X-029] Add backend setup-status contract tests for draft, partially configured, fully configured, completed, and archived projects.
 - [ ] [X-030] Add backend endpoint `GET /api/projects/{project_id}/workspace-summary` for project-shell sidebar badges/counts.
 - [ ] [X-031] Add backend workspace-summary contract tests for empty/default and populated projects.
