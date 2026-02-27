@@ -1787,6 +1787,22 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(runResponse.status()).toBe(200);
     await waitForSetupCompletion(request, projectId);
 
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
     const charactersGetResponsePromise = page.waitForResponse(
       (networkResponse) =>
         networkResponse.request().method() === 'GET' &&
@@ -1850,6 +1866,22 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(runResponse.status()).toBe(200);
     await waitForSetupCompletion(request, projectId);
 
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
     const charactersGetResponsePromise = page.waitForResponse(
       (networkResponse) =>
         networkResponse.request().method() === 'GET' &&
@@ -1912,6 +1944,22 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     });
     expect(runResponse.status()).toBe(200);
     await waitForSetupCompletion(request, projectId);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
 
     const charactersGetResponsePromise = page.waitForResponse(
       (networkResponse) =>
@@ -1999,6 +2047,22 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(runResponse.status()).toBe(200);
     await waitForSetupCompletion(request, projectId);
 
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
     const charactersGetResponsePromise = page.waitForResponse(
       (networkResponse) =>
         networkResponse.request().method() === 'GET' &&
@@ -2034,6 +2098,88 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(mergedResponsePayload.status).toBe('complete');
     expect(mergedResponsePayload.candidate_count).toBeGreaterThanOrEqual(0);
     await expect(page.getByTestId('character-merged-state')).toBeVisible();
+  });
+
+  test('projects/:project_id/characters route runs gender inference action through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-characters-infer-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
+    const charactersGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters`),
+    );
+    await page.goto(`/projects/${projectId}/characters`);
+    await charactersGetResponsePromise;
+
+    const inferRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/characters/infer`),
+    );
+    const inferResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters/infer`),
+    );
+    await page.getByRole('button', { name: 'Infer Character Genders' }).click();
+
+    await inferRequestPromise;
+    const inferResponse = await inferResponsePromise;
+    expect(inferResponse.status()).toBe(200);
+    const inferPayload = (await inferResponse.json()) as {
+      project_id: number;
+      character_map_finalized: boolean;
+      characters: Array<{ inferred_gender: string }>;
+    };
+    expect(inferPayload.project_id).toBe(projectId);
+    expect(Array.isArray(inferPayload.characters)).toBe(true);
+    expect(inferPayload.characters.length).toBeGreaterThanOrEqual(0);
   });
 
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({

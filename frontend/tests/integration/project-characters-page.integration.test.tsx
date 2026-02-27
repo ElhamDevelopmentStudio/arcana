@@ -11,6 +11,7 @@ const saveCharactersMutationTrigger = vi.fn();
 const autoExtractCharactersMutationTrigger = vi.fn();
 const scrapeCharactersMutationTrigger = vi.fn();
 const mergeCharactersMutationTrigger = vi.fn();
+const inferCharacterGendersMutationTrigger = vi.fn();
 const pronunciationPreviewMutationTrigger = vi.fn();
 const finalizeCharactersMutationTrigger = vi.fn();
 const defaultCharacterMapQueryData = {
@@ -90,6 +91,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isMutating: false,
     trigger: mergeCharactersMutationTrigger,
   }),
+  useInferCharacterGendersMutation: () => ({
+    isMutating: false,
+    trigger: inferCharacterGendersMutationTrigger,
+  }),
   useFinalizeCharacterMapMutation: () => ({
     isMutating: false,
     trigger: finalizeCharactersMutationTrigger,
@@ -126,6 +131,7 @@ describe('project characters page manual editor', () => {
     autoExtractCharactersMutationTrigger.mockReset();
     scrapeCharactersMutationTrigger.mockReset();
     mergeCharactersMutationTrigger.mockReset();
+    inferCharacterGendersMutationTrigger.mockReset();
     pronunciationPreviewMutationTrigger.mockReset();
     finalizeCharactersMutationTrigger.mockReset();
     saveCharactersMutationTrigger.mockResolvedValue({
@@ -158,6 +164,24 @@ describe('project characters page manual editor', () => {
           verbalized_form: 'EE-jis',
           count: 1,
           scope: 'global',
+        },
+      ],
+    });
+    inferCharacterGendersMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      character_map_finalized: false,
+      characters: [
+        {
+          name: 'Kai',
+          verbalized_form: 'Kai',
+          gender: 'male',
+          inferred_gender: 'male',
+          inferred_confidence: 0.93,
+          inferred_source_trace: [],
+          aliases: ['K'],
+          notes: 'Initial',
+          source: 'manual',
+          confidence: 1.0,
         },
       ],
     });
@@ -205,6 +229,15 @@ describe('project characters page manual editor', () => {
         },
       ],
     });
+  });
+
+  it('triggers gender inference action', async () => {
+    const user = userEvent.setup();
+    renderCharacterPage();
+
+    await user.click(screen.getByRole('button', { name: 'Infer Character Genders' }));
+
+    expect(inferCharacterGendersMutationTrigger).toHaveBeenCalledTimes(1);
   });
 
   it('validates manual editor rows inline before save', async () => {

@@ -540,6 +540,15 @@ export class NipeApiClient {
     }
   }
 
+  async inferCharacterGenders(projectId: number): Promise<CharacterMapDto> {
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/characters/infer`);
+      return characterMapSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async previewPronunciationDictionary(
     projectId: number,
     payload: PronunciationDictionaryPreviewRequestDto,
