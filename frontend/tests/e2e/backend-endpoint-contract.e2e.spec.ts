@@ -2471,6 +2471,79 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(tensionGraphPayload.points.length).toBeGreaterThan(0);
   });
 
+  test('projects/:project_id/run-monitor route loads polarity graph through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-run-monitor-polarity-graph-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: 'Run monitor polarity graph project',
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: runPayload.run_id },
+    );
+
+    const polarityGraphGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/runs/${runPayload.run_id}/polarity-graph`),
+    );
+
+    await page.goto(`/projects/${projectId}/run-monitor`);
+    await expect(page.getByText('Polarity Graph')).toBeVisible();
+
+    const polarityGraphGetResponse = await polarityGraphGetResponsePromise;
+    expect(polarityGraphGetResponse.status()).toBe(200);
+    const polarityGraphPayload = (await polarityGraphGetResponse.json()) as {
+      metric_id: string;
+      value_key: string;
+      points: Array<{ position: number; rolling_mean_valence: number; rolling_mean_intensity: number }>;
+    };
+    expect(polarityGraphPayload.metric_id).toBe('rolling_emotional_polarity');
+    expect(polarityGraphPayload.value_key).toBe('rolling_mean_valence');
+    expect(polarityGraphPayload.points.length).toBeGreaterThan(0);
+  });
+
   test('projects/:project_id/pipeline-setup route updates voice configuration through backend endpoint', async ({
     page,
     request,

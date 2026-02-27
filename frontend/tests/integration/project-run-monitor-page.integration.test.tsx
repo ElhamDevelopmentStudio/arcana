@@ -18,6 +18,7 @@ const useCharacterAnalyticsQueryMock = vi.fn();
 const useCharacterCooccurrenceGraphQueryMock = vi.fn();
 const usePipelineStageDurationsDashboardQueryMock = vi.fn();
 const useTensionGraphQueryMock = vi.fn();
+const usePolarityGraphQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) =>
@@ -42,6 +43,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     usePipelineStageDurationsDashboardQueryMock(...args),
   useTensionGraphQuery: (...args: Parameters<typeof useTensionGraphQueryMock>) =>
     useTensionGraphQueryMock(...args),
+  usePolarityGraphQuery: (...args: Parameters<typeof usePolarityGraphQueryMock>) =>
+    usePolarityGraphQueryMock(...args),
 }));
 
 function renderRunMonitorPage() {
@@ -95,6 +98,7 @@ describe('project run monitor page', () => {
     useCharacterCooccurrenceGraphQueryMock.mockReset();
     usePipelineStageDurationsDashboardQueryMock.mockReset();
     useTensionGraphQueryMock.mockReset();
+    usePolarityGraphQueryMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
@@ -121,6 +125,11 @@ describe('project run monitor page', () => {
       error: null,
     });
     useTensionGraphQueryMock.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    usePolarityGraphQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
@@ -452,5 +461,29 @@ describe('project run monitor page', () => {
     renderRunMonitorPage();
     expect(screen.getByText(/Tension Graph/i)).toBeInTheDocument();
     expect(screen.getByText(/tension_score/i)).toBeInTheDocument();
+  });
+
+  it('renders polarity graph payload when available', () => {
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+    usePolarityGraphQueryMock.mockReturnValue({
+      data: {
+        metric_id: 'rolling_emotional_polarity',
+        value_key: 'rolling_mean_valence',
+        points: [
+          { position: 1, rolling_mean_valence: 0.1, rolling_mean_intensity: 0.2 },
+          { position: 2, rolling_mean_valence: 0.3, rolling_mean_intensity: 0.4 },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    expect(screen.getByText(/Polarity Graph/i)).toBeInTheDocument();
+    expect(screen.getByText(/rolling_mean_valence/i)).toBeInTheDocument();
   });
 });
