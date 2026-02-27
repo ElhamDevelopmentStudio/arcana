@@ -4,12 +4,17 @@ import { toast } from 'sonner';
 
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { ApiPanelError, ApiPanelLoading } from '@/components/ui/api-panel-state';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useProjectDetailQuery, useUpdateProjectMetadataMutation } from '@/features/workflow/api/workflow-hooks';
+import {
+  useProjectAllowedActionsQuery,
+  useProjectDetailQuery,
+  useUpdateProjectMetadataMutation,
+} from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
 export function ProjectWorkspaceHomePage() {
@@ -18,6 +23,7 @@ export function ProjectWorkspaceHomePage() {
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const projectId = routeProjectId ?? storeProjectId;
   const projectDetailQuery = useProjectDetailQuery(projectId);
+  const projectAllowedActionsQuery = useProjectAllowedActionsQuery(projectId);
   const updateProjectMetadataMutation = useUpdateProjectMetadataMutation(projectId);
   const [metadataTitle, setMetadataTitle] = useState('');
   const [metadataDescription, setMetadataDescription] = useState('');
@@ -25,6 +31,10 @@ export function ProjectWorkspaceHomePage() {
 
   const projectDetailErrorMessage =
     projectDetailQuery.error instanceof Error ? projectDetailQuery.error.message : 'Unable to load project detail.';
+  const projectActionsErrorMessage =
+    projectAllowedActionsQuery.error instanceof Error
+      ? projectAllowedActionsQuery.error.message
+      : 'Unable to load action gating metadata.';
 
   useEffect(() => {
     if (!projectDetailQuery.data) {
@@ -101,6 +111,9 @@ export function ProjectWorkspaceHomePage() {
     }
   }
 
+  const allowedActions = projectAllowedActionsQuery.data?.allowed_actions ?? [];
+  const isCommandAllowed = (action: string) => allowedActions.includes(action);
+
   return (
     <Card data-testid="project-workspace-home-ready">
       <CardHeader>
@@ -152,6 +165,125 @@ export function ProjectWorkspaceHomePage() {
             </Button>
           </div>
         </form>
+        <div className="mt-4 space-y-3 rounded-lg border border-panel-border/70 p-3" data-testid="project-command-panel">
+          <p className="text-xs font-semibold tracking-wide text-foreground">Action-gated command panel</p>
+          {projectAllowedActionsQuery.isLoading && projectAllowedActionsQuery.data === undefined ? (
+            <div data-testid="project-command-panel-loading">
+              <ApiPanelLoading
+                description="Fetching allowed actions for this project."
+                title="Loading command panel"
+              />
+            </div>
+          ) : projectAllowedActionsQuery.error ? (
+            <div data-testid="project-command-panel-error">
+              <ApiPanelError
+                description={projectActionsErrorMessage}
+                onRetry={() => {
+                  void projectAllowedActionsQuery.mutate();
+                }}
+                retryLabel="Retry actions"
+                title="Command panel unavailable"
+              />
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground" data-testid="project-command-panel-next-action">
+                Next action: {projectAllowedActionsQuery.data?.next_required_action ?? 'none'}
+              </p>
+              {projectAllowedActionsQuery.data?.required_step ? (
+                <p className="text-xs text-muted-foreground" data-testid="project-command-panel-required-step">
+                  Required step: {projectAllowedActionsQuery.data.required_step}
+                </p>
+              ) : null}
+              {projectAllowedActionsQuery.data?.blocked_reason ? (
+                <p className="text-xs text-muted-foreground" data-testid="project-command-panel-blocked-reason">
+                  {projectAllowedActionsQuery.data.blocked_reason}
+                </p>
+              ) : null}
+              <div className="flex flex-wrap gap-2" data-testid="project-command-panel-allowed-actions">
+                {allowedActions.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">No commands currently allowed.</span>
+                ) : (
+                  allowedActions.map((action) => (
+                    <Badge data-testid={`project-command-panel-allowed-action-${action}`} key={action} variant="outline">
+                      {action}
+                    </Badge>
+                  ))
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {isCommandAllowed('ingest') || isCommandAllowed('select_mode') || isCommandAllowed('configure') ? (
+                  <Link
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-foreground hover:bg-background/75"
+                    data-testid="project-command-panel-open-setup"
+                    to="setup"
+                  >
+                    Open Setup
+                  </Link>
+                ) : (
+                  <span
+                    aria-disabled="true"
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-muted-foreground opacity-60"
+                    data-testid="project-command-panel-open-setup-disabled"
+                  >
+                    Open Setup
+                  </span>
+                )}
+                {isCommandAllowed('run') ? (
+                  <Link
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-foreground hover:bg-background/75"
+                    data-testid="project-command-panel-open-runs"
+                    to="runs"
+                  >
+                    Open Runs
+                  </Link>
+                ) : (
+                  <span
+                    aria-disabled="true"
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-muted-foreground opacity-60"
+                    data-testid="project-command-panel-open-runs-disabled"
+                  >
+                    Open Runs
+                  </span>
+                )}
+                {isCommandAllowed('export') ? (
+                  <Link
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-foreground hover:bg-background/75"
+                    data-testid="project-command-panel-open-exports"
+                    to="exports"
+                  >
+                    Open Exports
+                  </Link>
+                ) : (
+                  <span
+                    aria-disabled="true"
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-muted-foreground opacity-60"
+                    data-testid="project-command-panel-open-exports-disabled"
+                  >
+                    Open Exports
+                  </span>
+                )}
+                {isCommandAllowed('configure') ? (
+                  <Link
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-foreground hover:bg-background/75"
+                    data-testid="project-command-panel-open-settings"
+                    to="settings"
+                  >
+                    Open Settings
+                  </Link>
+                ) : (
+                  <span
+                    aria-disabled="true"
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-muted-foreground opacity-60"
+                    data-testid="project-command-panel-open-settings-disabled"
+                  >
+                    Open Settings
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-foreground hover:bg-background/75"

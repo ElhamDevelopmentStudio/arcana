@@ -1756,6 +1756,53 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(projectDetailPayload.tags).toEqual(['Arc', 'Research']);
   });
 
+  test('projects/:project_id command panel reflects allowed actions endpoint response', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-workspace-home-actions');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-command-panel')).toBeVisible();
+    await expect(page.getByTestId('project-command-panel-allowed-action-run')).toBeVisible();
+    await expect(page.getByTestId('project-command-panel-allowed-action-export')).toBeVisible();
+    await expect(page.getByTestId('project-command-panel-open-runs')).toBeVisible();
+    await expect(page.getByTestId('project-command-panel-open-exports')).toBeVisible();
+
+    const archiveResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/archive`);
+    expect(archiveResponse.status()).toBe(200);
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-command-panel-required-step')).toContainText('restore');
+    await expect(page.getByTestId('project-command-panel-blocked-reason')).toContainText('Restore');
+    await expect(page.getByTestId('project-command-panel-open-runs-disabled')).toBeVisible();
+    await expect(page.getByTestId('project-command-panel-open-exports-disabled')).toBeVisible();
+  });
+
   test('create draft stays setup-gated until completion, then allows overview access', async ({ page, request }) => {
     const title = uniqueTitle('e2e-draft-setup-gate');
     const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
