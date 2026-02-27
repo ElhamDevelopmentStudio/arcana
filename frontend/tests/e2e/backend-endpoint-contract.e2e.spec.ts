@@ -5392,6 +5392,243 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(exportResponse.status()).toBe(200);
   });
 
+  test('pronunciation + voice configuration flow persists through run setup against live backend', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-pronunciation-voice-flow');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: [],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
+    const finalizeCharacterMapResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/characters/finalize`);
+    expect(finalizeCharacterMapResponse.status()).toBe(200);
+
+    const setupSeedRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(setupSeedRunResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}/mode`);
+    await page.getByTestId('mode-select').selectOption('author');
+    const modeSwitchConfirmButton = page.getByTestId('mode-switch-confirm-submit');
+    if (await modeSwitchConfirmButton.isVisible()) {
+      await modeSwitchConfirmButton.click();
+    }
+    await expect(page.getByTestId('mode-continue-button')).toBeEnabled();
+    await page.getByTestId('mode-continue-button').click();
+
+    await expect(page).toHaveURL(`/projects/${projectId}/characters`);
+    await expect(page.getByTestId('pronunciation-global-panel')).toBeVisible();
+
+    const globalPutRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/global`),
+    );
+    const globalPutResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/global`),
+    );
+
+    await page.getByTestId('pronunciation-global-textarea').fill('Aegis|EE-gis');
+    await page.getByTestId('pronunciation-global-save-button').click();
+
+    const globalPutRequest = await globalPutRequestPromise;
+    const globalPutPayload = globalPutRequest.postDataJSON() as {
+      entries: Array<{ term: string; verbalized_form: string; source: string; confidence: number }>;
+    };
+    expect(globalPutPayload.entries).toEqual([
+      {
+        term: 'Aegis',
+        verbalized_form: 'EE-gis',
+        source: 'user',
+        confidence: 1,
+      },
+    ]);
+
+    const globalPutResponse = await globalPutResponsePromise;
+    expect(globalPutResponse.status()).toBe(200);
+    await expect(page.getByTestId('pronunciation-global-state')).toContainText('Saved entries: 1');
+
+    const previewPostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST'
+        && networkRequest.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/preview`),
+    );
+    const previewPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/preview`),
+    );
+
+    await page.getByTestId('pronunciation-preview-text').fill('The Aegis answered softly.');
+    await page.getByTestId('pronunciation-preview-button').click();
+
+    const previewPostRequest = await previewPostRequestPromise;
+    const previewPostPayload = previewPostRequest.postDataJSON() as {
+      text: string;
+      include_global_scope: boolean;
+      include_character_scope: boolean;
+      include_place_scope: boolean;
+      include_artifact_scope: boolean;
+      include_invented_scope: boolean;
+      match_whole_words: boolean;
+      case_sensitive: boolean;
+      alias_aware: boolean;
+    };
+    expect(previewPostPayload).toMatchObject({
+      text: 'The Aegis answered softly.',
+      include_global_scope: true,
+      include_character_scope: false,
+      include_place_scope: false,
+      include_artifact_scope: false,
+      include_invented_scope: false,
+      match_whole_words: true,
+      case_sensitive: true,
+      alias_aware: false,
+    });
+
+    const previewPostResponse = await previewPostResponsePromise;
+    expect(previewPostResponse.status()).toBe(200);
+    await expect(page.getByTestId('pronunciation-preview-after')).toHaveValue('The EE-gis answered softly.');
+
+    const globalDictionaryResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/pronunciation-dictionary/global`,
+    );
+    expect(globalDictionaryResponse.status()).toBe(200);
+    const globalDictionaryPayload = (await globalDictionaryResponse.json()) as {
+      entries: Array<{ term: string; verbalized_form: string }>;
+    };
+    expect(globalDictionaryPayload.entries).toEqual(
+      expect.arrayContaining([expect.objectContaining({ term: 'Aegis', verbalized_form: 'EE-gis' })]),
+    );
+
+    await page.getByRole('button', { name: 'Continue to Pipeline Setup' }).click();
+    await expect(page).toHaveURL(`/projects/${projectId}/pipeline-setup`);
+    await expect(page.getByRole('button', { name: 'Save Voice Config' })).toBeVisible();
+
+    const voicesPutRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/voices`),
+    );
+    const voicesPutResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/voices`),
+    );
+
+    await page.getByLabel('Narrator voice').fill('narrator_flow');
+    await page.getByLabel('Default male voice').fill('male_flow');
+    await page.getByLabel('Default female voice').fill('female_flow');
+    await page.getByLabel('Default neutral voice').fill('neutral_flow');
+    await page.getByLabel('Default unknown voice').fill('unknown_flow');
+    await page.getByLabel('Internal thought voice policy').selectOption('thought_voice');
+    await page.getByLabel('Thought voice', { exact: true }).fill('thought_flow');
+    await page.getByRole('button', { name: 'Save Voice Config' }).click();
+
+    const voicesPutRequest = await voicesPutRequestPromise;
+    const voicesPutPayload = voicesPutRequest.postDataJSON() as {
+      narrator_voice: string;
+      male_default_voice: string;
+      female_default_voice: string;
+      neutral_default_voice: string;
+      unknown_default_voice: string;
+      internal_thought_voice_policy: string;
+      internal_thought_voice?: string;
+    };
+    expect(voicesPutPayload).toEqual({
+      narrator_voice: 'narrator_flow',
+      male_default_voice: 'male_flow',
+      female_default_voice: 'female_flow',
+      neutral_default_voice: 'neutral_flow',
+      unknown_default_voice: 'unknown_flow',
+      internal_thought_voice_policy: 'thought_voice',
+      internal_thought_voice: 'thought_flow',
+    });
+
+    const voicesPutResponse = await voicesPutResponsePromise;
+    expect(voicesPutResponse.status()).toBe(200);
+    const voicesPutResponseBody = (await voicesPutResponse.json()) as { voice_config: Record<string, string | undefined> };
+    expect(voicesPutResponseBody.voice_config).toHaveProperty('narrator_voice', 'narrator_flow');
+    expect(voicesPutResponseBody.voice_config).toHaveProperty('thought_voice', 'thought_flow');
+    expect(voicesPutResponseBody.voice_config).toHaveProperty('internal_thought_voice_policy', 'thought_voice');
+
+    const runPostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' && networkRequest.url().endsWith(`/api/projects/${projectId}/runs`),
+    );
+    const runPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/runs`),
+    );
+
+    await expect(page.getByTestId('run-pipeline-button')).toBeEnabled();
+    await page.getByTestId('run-pipeline-button').click();
+
+    const runPostRequest = await runPostRequestPromise;
+    const runPostPayload = runPostRequest.postDataJSON() as {
+      mode: string;
+      internal_thought_voice_policy: string;
+      internal_thought_voice?: string;
+    };
+    expect(runPostPayload.mode).toBe('author');
+    expect(runPostPayload.internal_thought_voice_policy).toBe('thought_voice');
+    expect(runPostPayload.internal_thought_voice).toBe('thought_flow');
+
+    const runPostResponse = await runPostResponsePromise;
+    expect(runPostResponse.status()).toBe(200);
+    const runPostBody = (await runPostResponse.json()) as { run_id: number; status: string };
+    expect(runPostBody.run_id).toBeGreaterThan(0);
+    expect(runPostBody.status).toBe('completed');
+
+    const runDetailResponse = await request.get(`${backendBaseUrl}/api/projects/${projectId}/runs/${runPostBody.run_id}`);
+    expect(runDetailResponse.status()).toBe(200);
+    const runDetailPayload = (await runDetailResponse.json()) as {
+      config: { internal_thought_voice_policy: string; internal_thought_voice?: string };
+    };
+    expect(runDetailPayload.config.internal_thought_voice_policy).toBe('thought_voice');
+    expect(runDetailPayload.config.internal_thought_voice).toBe('thought_flow');
+  });
+
   test('projects/:project_id workspace home renders project detail contract data', async ({ page, request }) => {
     const title = uniqueTitle('e2e-workspace-home-detail');
     const project = await createProject(request, title);
