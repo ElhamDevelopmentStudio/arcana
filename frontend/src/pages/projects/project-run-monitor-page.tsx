@@ -11,6 +11,7 @@ import {
   useAudiobookPrepDashboardQuery,
   useCancelRunMutation,
   useCharacterAnalyticsQuery,
+  useCharacterCooccurrenceGraphQuery,
   usePipelineStageDurationsDashboardQuery,
   useRecoverRunMutation,
   useRerunRunMutation,
@@ -38,6 +39,7 @@ export function ProjectRunMonitorPage() {
   const cancelRunMutation = useCancelRunMutation(projectId, runId);
   const audiobookPrepDashboardQuery = useAudiobookPrepDashboardQuery(projectId, runId);
   const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
+  const characterCooccurrenceGraphQuery = useCharacterCooccurrenceGraphQuery(projectId, runId);
   const pipelineStageDurationsDashboardQuery = usePipelineStageDurationsDashboardQuery(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
@@ -359,6 +361,25 @@ export function ProjectRunMonitorPage() {
             </pre>
           ) : (
             <p>No character analytics yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Character Co-occurrence Graph</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          {characterCooccurrenceGraphQuery.isLoading ? <p>Loading co-occurrence graph...</p> : null}
+          {characterCooccurrenceGraphQuery.error ? (
+            <p className="text-destructive">{characterCooccurrenceGraphQuery.error.message}</p>
+          ) : null}
+          {characterCooccurrenceGraphQuery.data ? (
+            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
+              {JSON.stringify(characterCooccurrenceGraphQuery.data, null, 2)}
+            </pre>
+          ) : (
+            <p>No co-occurrence graph yet.</p>
           )}
         </CardContent>
       </Card>
