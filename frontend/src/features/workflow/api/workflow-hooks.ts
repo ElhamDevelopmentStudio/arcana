@@ -202,6 +202,13 @@ export function useExportCsvMutation(projectId: number | null, runId: number | n
   );
 }
 
+export function useCreateComparisonWorkspaceMutation() {
+  return useSWRMutation(
+    ['create-comparison-workspace'],
+    async (_, { arg }: { arg: { name: string } }) => nipeApiClient.createComparisonWorkspace(arg.name),
+  );
+}
+
 export function useTensionGraphQuery(projectId: number | null, runId: number | null) {
   return useSWR(
     projectId !== null && runId !== null ? workspaceKeys.tensionGraph(projectId, runId) : null,

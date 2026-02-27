@@ -10,11 +10,14 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 const useExportPayloadQueryMock = vi.fn();
 const useExportCsvMutationMock = vi.fn();
 const useRunDetailQueryMock = vi.fn();
+const useCreateComparisonWorkspaceMutationMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useExportPayloadQuery: (...args: Parameters<typeof useExportPayloadQueryMock>) => useExportPayloadQueryMock(...args),
   useExportCsvMutation: (...args: Parameters<typeof useExportCsvMutationMock>) => useExportCsvMutationMock(...args),
   useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) => useRunDetailQueryMock(...args),
+  useCreateComparisonWorkspaceMutation: (...args: Parameters<typeof useCreateComparisonWorkspaceMutationMock>) =>
+    useCreateComparisonWorkspaceMutationMock(...args),
 }));
 
 function renderExportPage() {
@@ -41,6 +44,7 @@ describe('project export page', () => {
     useExportPayloadQueryMock.mockReset();
     useExportCsvMutationMock.mockReset();
     useRunDetailQueryMock.mockReset();
+    useCreateComparisonWorkspaceMutationMock.mockReset();
     useWorkspaceStore.setState({
       projectId: 333,
       projectTitle: 'Confidence Export Project',
@@ -113,6 +117,14 @@ describe('project export page', () => {
       },
       isLoading: false,
       error: null,
+    });
+    useCreateComparisonWorkspaceMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: vi.fn().mockResolvedValue({
+        workspace_id: 501,
+        run_count: 0,
+      }),
     });
   });
 
@@ -216,5 +228,25 @@ describe('project export page', () => {
     expect(screen.getByRole('button', { name: /Download JSON/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /Download CSV/i })).toBeDisabled();
     expect(screen.getByText('CSV export is disabled for this run configuration.')).toBeInTheDocument();
+  });
+
+  it('creates comparison workspace from export page', async () => {
+    const user = userEvent.setup();
+    const createWorkspaceTrigger = vi.fn().mockResolvedValue({
+      workspace_id: 777,
+      run_count: 0,
+    });
+    useCreateComparisonWorkspaceMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: createWorkspaceTrigger,
+    });
+
+    renderExportPage();
+    await user.type(screen.getByTestId('comparison-workspace-name-input'), 'Cross-run analysis pack');
+    await user.click(screen.getByTestId('comparison-workspace-create-button'));
+
+    expect(createWorkspaceTrigger).toHaveBeenCalledWith({ name: 'Cross-run analysis pack' });
+    expect(screen.getByTestId('comparison-workspace-created-id')).toHaveTextContent('Workspace created: #777');
   });
 });

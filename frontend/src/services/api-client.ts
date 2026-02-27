@@ -302,6 +302,41 @@ export class NipeApiClient {
     }
   }
 
+  async createComparisonWorkspace(name: string): Promise<{
+    workspace_id: number;
+    run_count: number;
+    name?: string;
+    created_at?: string;
+  }> {
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      throw new Error('Comparison workspace name is required.');
+    }
+
+    try {
+      const response = await this.client.post('/api/comparison-workspaces', {
+        name: normalizedName,
+      });
+      const payload = response.data;
+      if (
+        !payload
+        || typeof payload !== 'object'
+        || typeof (payload as { workspace_id?: unknown }).workspace_id !== 'number'
+        || typeof (payload as { run_count?: unknown }).run_count !== 'number'
+      ) {
+        throw new Error('Invalid comparison workspace response payload.');
+      }
+      return payload as {
+        workspace_id: number;
+        run_count: number;
+        name?: string;
+        created_at?: string;
+      };
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async grantProjectAccess(
     projectId: number,
     payload: ProjectAccessGrantRequestDto,

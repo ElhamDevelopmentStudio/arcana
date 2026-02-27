@@ -1888,6 +1888,84 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByText('CSV export is disabled for this run configuration.')).toBeVisible();
   });
 
+  test('projects/:project_id/export route creates comparison workspace through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-export-create-comparison-workspace-route');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+        export_formats: ['json', 'csv'],
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: 'Export comparison workspace route project',
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: runPayload.run_id },
+    );
+
+    await page.goto(`/projects/${projectId}/export`);
+    const workspaceName = uniqueTitle('comparison-workspace-ui');
+    await page.getByTestId('comparison-workspace-name-input').fill(workspaceName);
+
+    const workspaceCreatePostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith('/api/comparison-workspaces'),
+    );
+
+    await page.getByTestId('comparison-workspace-create-button').click();
+
+    const workspaceCreatePostResponse = await workspaceCreatePostResponsePromise;
+    expect(workspaceCreatePostResponse.status()).toBe(201);
+    const workspacePayload = (await workspaceCreatePostResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+    };
+    expect(workspacePayload.workspace_id).toBeGreaterThan(0);
+    expect(workspacePayload.run_count).toBe(0);
+    await expect(page.getByTestId('comparison-workspace-created-id')).toContainText(
+      `#${workspacePayload.workspace_id}`,
+    );
+  });
+
   test('projects/:project_id/run-monitor route reruns an existing run through backend endpoint', async ({
     page,
     request,
