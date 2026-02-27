@@ -25,6 +25,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Minimal LLM router scaffold + quota tracking
 - React UI with route-based structure (`router/main.tsx`, `router/auth.tsx`, `router/index.tsx`)
 - Frontend entry flow now starts at landing route `/` with CTA navigation to `/dashboard` and project draft creation bootstrap
+- Global frontend health dependency gate now blocks interactions when `GET /health` is not reachable or not `ok`
 - Global Tailwind-based design system in `frontend/src/styles/globals.css`
 - Frontend API/state foundations using Axios + SWR + Zustand + Zod + date-fns
 - Frontend test stack with centralized Vitest + Playwright suites (unit, integration, regression, e2e, visual)

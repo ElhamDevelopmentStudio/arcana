@@ -558,7 +558,7 @@ Definition of done for each task:
 - [x] [FE-092] Implement unified API error normalization layer (validation/conflict/not-found/network/rate-limit).
 - [x] [FE-093] Add Zod request/response guards for every frontend-consumed backend endpoint.
 - [x] [FE-094] Implement SWR key factory and mutation invalidation map for project/run/dashboard data.
-- [ ] [FE-095] Add global health dependency handling based on `GET /health`.
+- [x] [FE-095] Add global health dependency handling based on `GET /health`.
 - [ ] [FE-096] Implement route-level prefetch strategy for critical workflow transitions.
 - [ ] [FE-097] Persist route/query/filter/UI state across reloads for dashboard and project-detail flows.
 - [ ] [FE-098] Standardize reusable loading/empty/error/retry primitives for API panels.
