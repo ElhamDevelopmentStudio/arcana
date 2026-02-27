@@ -52,6 +52,8 @@ def test_integration_project_allowed_actions_for_draft_and_completed_states() ->
         draft_actions_payload = draft_actions_resp.json()
         assert draft_actions_payload["allowed_actions"] == ["ingest", "select_mode", "configure", "archive"]
         assert draft_actions_payload["next_required_action"] == "ingest"
+        assert draft_actions_payload["blocked_reason"] is not None
+        assert draft_actions_payload["required_step"] == "ingestion"
 
         ingest_resp = client.post(
             f"/api/projects/{project_id}/ingest/txt",
@@ -68,6 +70,8 @@ def test_integration_project_allowed_actions_for_draft_and_completed_states() ->
         assert completed_actions_payload["lifecycle_state"] == "completed"
         assert completed_actions_payload["last_run_status"] == "completed"
         assert completed_actions_payload["next_required_action"] == "export"
+        assert completed_actions_payload["blocked_reason"] is None
+        assert completed_actions_payload["required_step"] is None
         assert completed_actions_payload["allowed_actions"] == [
             "ingest",
             "select_mode",
@@ -95,6 +99,8 @@ def test_integration_project_allowed_actions_for_failed_and_archived_states() ->
         failed_actions_payload = failed_actions_resp.json()
         assert failed_actions_payload["lifecycle_state"] == "failed"
         assert failed_actions_payload["last_run_status"] == "failed"
+        assert failed_actions_payload["blocked_reason"] is not None
+        assert failed_actions_payload["required_step"] == "initial_run"
         assert failed_actions_payload["allowed_actions"] == [
             "ingest",
             "select_mode",
@@ -124,4 +130,6 @@ def test_integration_project_allowed_actions_for_failed_and_archived_states() ->
         archived_actions_payload = archived_actions_resp.json()
         assert archived_actions_payload["lifecycle_state"] == "archived"
         assert archived_actions_payload["next_required_action"] == "archived"
+        assert archived_actions_payload["blocked_reason"] is not None
+        assert archived_actions_payload["required_step"] == "restore"
         assert archived_actions_payload["allowed_actions"] == ["restore"]

@@ -3818,6 +3818,32 @@ def _resolve_allowed_project_actions(
     return [action for action in _PROJECT_ALLOWED_ACTION_ORDER if action in allowed_actions]
 
 
+def _resolve_project_action_gating_metadata(
+    *,
+    lifecycle_state: str,
+    next_required_action: str,
+) -> tuple[str | None, str | None]:
+    normalized_lifecycle_state = str(lifecycle_state or PROJECT_LIFECYCLE_DRAFT).strip().lower()
+    normalized_next_required_action = str(next_required_action or "configure").strip().lower()
+
+    if normalized_lifecycle_state == PROJECT_LIFECYCLE_ARCHIVED:
+        return ("Project is archived. Restore the project to continue workflow actions.", "restore")
+
+    if normalized_lifecycle_state == PROJECT_LIFECYCLE_RUNNING:
+        return ("A run is currently in progress. Wait for completion before changing workflow actions.", "initial_run")
+
+    if normalized_next_required_action == "ingest":
+        return ("Source ingestion is required before setup and run actions are available.", "ingestion")
+    if normalized_next_required_action in {"select_mode", "configure"}:
+        return ("Mode selection and configuration must be completed before running the pipeline.", "mode_selection")
+    if normalized_next_required_action in {"run", "rerun", "review_failure"}:
+        return ("An initial run is required (or must be rerun) before downstream actions are unlocked.", "initial_run")
+    if normalized_next_required_action in {"export", "none"}:
+        return (None, None)
+
+    return ("Project setup is incomplete for the current state.", "initial_run")
+
+
 def _refresh_project_dashboard_projection(
     *,
     session: Session,
@@ -3880,16 +3906,24 @@ def get_project_allowed_actions(
             last_run_status=normalized_last_run_status,
         )
 
+    allowed_actions = _resolve_allowed_project_actions(
+        lifecycle_state=normalized_lifecycle_state,
+        last_run_status=normalized_last_run_status,
+    )
+    blocked_reason, required_step = _resolve_project_action_gating_metadata(
+        lifecycle_state=normalized_lifecycle_state,
+        next_required_action=normalized_next_required_action,
+    )
+
     return ProjectAllowedActionsResponse(
         generated_at=datetime.now(timezone.utc).isoformat(),
         project_id=project.id,
         lifecycle_state=normalized_lifecycle_state,
         last_run_status=normalized_last_run_status,
         next_required_action=normalized_next_required_action,
-        allowed_actions=_resolve_allowed_project_actions(
-            lifecycle_state=normalized_lifecycle_state,
-            last_run_status=normalized_last_run_status,
-        ),
+        allowed_actions=allowed_actions,
+        blocked_reason=blocked_reason,
+        required_step=required_step,
     )
 
 
