@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   healthSchema,
+  projectAllowedActionsResponseSchema,
   projectControlPanelProjectListResponseSchema,
   projectControlPanelSummaryResponseSchema,
 } from '@/app/schemas/api';
@@ -70,5 +71,26 @@ describe('control panel schemas', () => {
     expect(parsed.items[0].project_id).toBe(101);
     expect(parsed.items[0].next_required_action).toBe('ingest');
   });
-});
 
+  it('parses project allowed-actions payload with gating metadata', () => {
+    const parsed = projectAllowedActionsResponseSchema.parse({
+      schema_version: '1.0.0',
+      output_schema: 'project_allowed_actions_json',
+      output_format: 'json',
+      output_id: 'CP-003',
+      output_name: 'project_allowed_actions',
+      generated_at: '2026-02-27T00:00:00Z',
+      generated_by: 'build_project_allowed_actions',
+      project_id: 101,
+      lifecycle_state: 'draft',
+      last_run_status: null,
+      next_required_action: 'ingest',
+      allowed_actions: ['ingest', 'select_mode', 'configure', 'archive'],
+      blocked_reason: 'Source ingestion is required before setup and run actions are available.',
+      required_step: 'ingestion',
+    });
+
+    expect(parsed.allowed_actions).toContain('ingest');
+    expect(parsed.required_step).toBe('ingestion');
+  });
+});

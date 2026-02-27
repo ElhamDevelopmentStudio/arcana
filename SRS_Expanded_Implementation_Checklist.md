@@ -580,7 +580,7 @@ Definition of done for each task:
 - [x] [FE-104] Build dashboard project table from `GET /api/dashboard/project-control-panel/projects`.
 - [x] [FE-105] Add dashboard filter controls for status/mode/last_run_status/next_required_action with URL state sync.
 - [x] [FE-106] Add dashboard pagination controls mapped to `page` and `page_size`.
-- [ ] [FE-107] Add row-level quick actions driven by `GET /api/projects/{project_id}/actions`.
+- [x] [FE-107] Add row-level quick actions driven by `GET /api/projects/{project_id}/actions`.
 - [ ] [FE-108] Add dashboard refresh strategy for active runs and stale row states.
 - [ ] [FE-109] Add recent-failures triage panel from control-panel summary payload.
 

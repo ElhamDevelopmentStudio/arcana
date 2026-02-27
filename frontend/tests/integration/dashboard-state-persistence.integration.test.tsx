@@ -8,6 +8,7 @@ import { DashboardPage } from '@/pages/dashboard/dashboard-page';
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useProjectControlPanelProjectListQueryMock = vi.fn();
+const useProjectAllowedActionsQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useProjectControlPanelSummaryQuery: () => ({
@@ -19,6 +20,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   }),
   useProjectControlPanelProjectListQuery: (...args: Parameters<typeof useProjectControlPanelProjectListQueryMock>) =>
     useProjectControlPanelProjectListQueryMock(...args),
+  useProjectAllowedActionsQuery: (...args: Parameters<typeof useProjectAllowedActionsQueryMock>) =>
+    useProjectAllowedActionsQueryMock(...args),
 }));
 
 function renderDashboard(initialEntry: string = '/dashboard') {
@@ -36,6 +39,10 @@ function renderDashboard(initialEntry: string = '/dashboard') {
         path: '/projects/:project_id/run-monitor',
         element: <div data-testid="project-run-monitor-route">Run monitor route</div>,
       },
+      {
+        path: '/projects/:project_id/pipeline-setup',
+        element: <div data-testid="project-pipeline-setup-route">Pipeline setup route</div>,
+      },
     ],
     {
       initialEntries: [initialEntry],
@@ -50,6 +57,7 @@ describe('dashboard route/query state persistence', () => {
   beforeEach(() => {
     resetWorkspaceStore();
     useProjectControlPanelProjectListQueryMock.mockReset();
+    useProjectAllowedActionsQueryMock.mockReset();
     useProjectControlPanelProjectListQueryMock.mockReturnValue({
       data: {
         items: [
@@ -63,6 +71,13 @@ describe('dashboard route/query state persistence', () => {
           },
         ],
       },
+    });
+    useProjectAllowedActionsQueryMock.mockReturnValue({
+      data: {
+        allowed_actions: ['run'],
+      },
+      isLoading: false,
+      error: undefined,
     });
   });
 
@@ -130,6 +145,21 @@ describe('dashboard route/query state persistence', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('project-run-monitor-route')).toBeInTheDocument();
+    });
+  });
+
+  it('renders row-level quick actions from project actions endpoint', async () => {
+    const user = userEvent.setup();
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(useProjectAllowedActionsQueryMock).toHaveBeenCalledWith(101);
+    });
+
+    await user.click(screen.getByTestId('dashboard-row-quick-action-101-run'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('project-pipeline-setup-route')).toBeInTheDocument();
     });
   });
 

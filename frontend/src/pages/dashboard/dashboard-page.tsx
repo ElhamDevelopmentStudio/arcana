@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
   projectControlPanelProjectListRequestSchema,
+  type ProjectAllowedActionDto,
+  type ProjectControlPanelProjectListItemDto,
   type ProjectControlPanelProjectListRequestDto,
 } from '@/app/schemas/api';
 import { useUiRouteStateStore, type DashboardListQueryState } from '@/app/state/ui-route-state-store';
@@ -15,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  useProjectAllowedActionsQuery,
   useProjectControlPanelProjectListQuery,
   useProjectControlPanelSummaryQuery,
 } from '@/features/workflow/api/workflow-hooks';
@@ -52,6 +55,12 @@ const nextRequiredActionFilterOptions: NonNullable<ProjectControlPanelProjectLis
 
 const dashboardPageSizeOptions = [10, 20, 50, 100] as const;
 
+type DashboardQuickAction = {
+  action: ProjectAllowedActionDto;
+  label: string;
+  route: string;
+};
+
 function toWorkflowRoute(projectId: number, nextRequiredAction: string) {
   if (nextRequiredAction === 'select_mode') {
     return `/projects/${projectId}/mode`;
@@ -66,6 +75,28 @@ function toWorkflowRoute(projectId: number, nextRequiredAction: string) {
     return `/projects/${projectId}/run-monitor`;
   }
   return '/projects/new';
+}
+
+function resolveDashboardQuickAction(projectId: number, action: ProjectAllowedActionDto): DashboardQuickAction | null {
+  if (action === 'ingest') {
+    return { action, label: 'Ingest', route: `/projects/${projectId}/pipeline-setup` };
+  }
+  if (action === 'select_mode') {
+    return { action, label: 'Select mode', route: `/projects/${projectId}/mode` };
+  }
+  if (action === 'configure') {
+    return { action, label: 'Configure', route: `/projects/${projectId}/pipeline-setup` };
+  }
+  if (action === 'run') {
+    return { action, label: 'Run', route: `/projects/${projectId}/pipeline-setup` };
+  }
+  if (action === 'rerun') {
+    return { action, label: 'Rerun', route: `/projects/${projectId}/run-monitor` };
+  }
+  if (action === 'export') {
+    return { action, label: 'Export', route: `/projects/${projectId}/export` };
+  }
+  return null;
 }
 
 function readDashboardQueryFromSearchParams(
@@ -138,6 +169,65 @@ function hasAnyDashboardQueryParams(searchParams: URLSearchParams): boolean {
 function toOptionalQueryText(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function DashboardProjectListRow({
+  item,
+  onNavigateProjectRoute,
+  onOpenProject,
+}: {
+  item: ProjectControlPanelProjectListItemDto;
+  onNavigateProjectRoute: (route: string) => void;
+  onOpenProject: () => void;
+}) {
+  const projectActionsQuery = useProjectAllowedActionsQuery(item.project_id);
+  const quickActions = useMemo(() => {
+    const allowedActions = projectActionsQuery.data?.allowed_actions ?? [];
+    return allowedActions
+      .map((action) => resolveDashboardQuickAction(item.project_id, action))
+      .filter((action): action is DashboardQuickAction => action !== null)
+      .slice(0, 2);
+  }, [item.project_id, projectActionsQuery.data?.allowed_actions]);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-panel-border/70 px-4 py-3">
+      <div className="space-y-1">
+        <p className="text-sm font-semibold text-foreground">
+          Project #{item.project_id}
+        </p>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Badge variant="secondary">{item.status}</Badge>
+          <span>mode: {item.selected_mode}</span>
+          <span>next: {item.next_required_action}</span>
+          <span>updated: {new Date(item.updated_at).toLocaleString()}</span>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {projectActionsQuery.isLoading ? (
+          <span className="text-xs text-muted-foreground" data-testid={`dashboard-row-actions-loading-${item.project_id}`}>
+            Loading actions...
+          </span>
+        ) : null}
+        {quickActions.map((quickAction) => (
+          <Button
+            data-testid={`dashboard-row-quick-action-${item.project_id}-${quickAction.action}`}
+            key={`${item.project_id}-${quickAction.action}`}
+            onClick={() => {
+              onNavigateProjectRoute(quickAction.route);
+            }}
+            size="sm"
+            type="button"
+            variant="secondary"
+          >
+            {quickAction.label}
+          </Button>
+        ))}
+        <Button onClick={onOpenProject} size="sm" variant="outline">
+          Open
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function DashboardPage() {
@@ -469,37 +559,27 @@ export function DashboardPage() {
           ) : (
             <div className="space-y-3" data-testid="dashboard-project-list">
               {listItems.map((item) => (
-                <div
+                <DashboardProjectListRow
+                  item={item}
                   key={item.project_id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-panel-border/70 px-4 py-3"
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground">
-                      Project #{item.project_id}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="secondary">{item.status}</Badge>
-                      <span>mode: {item.selected_mode}</span>
-                      <span>next: {item.next_required_action}</span>
-                      <span>updated: {new Date(item.updated_at).toLocaleString()}</span>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => {
-                      setProject({
-                        projectId: item.project_id,
-                        projectTitle: `Project ${item.project_id}`,
-                        selectedMode: item.selected_mode,
-                      });
-                      const rememberedRoute = getProjectLastRoute(item.project_id);
-                      navigate(rememberedRoute ?? toWorkflowRoute(item.project_id, item.next_required_action));
-                    }}
-                    size="sm"
-                    variant="outline"
-                  >
-                    Open
-                  </Button>
-                </div>
+                  onNavigateProjectRoute={(route) => {
+                    setProject({
+                      projectId: item.project_id,
+                      projectTitle: `Project ${item.project_id}`,
+                      selectedMode: item.selected_mode,
+                    });
+                    navigate(route);
+                  }}
+                  onOpenProject={() => {
+                    setProject({
+                      projectId: item.project_id,
+                      projectTitle: `Project ${item.project_id}`,
+                      selectedMode: item.selected_mode,
+                    });
+                    const rememberedRoute = getProjectLastRoute(item.project_id);
+                    navigate(rememberedRoute ?? toWorkflowRoute(item.project_id, item.next_required_action));
+                  }}
+                />
               ))}
             </div>
           )}

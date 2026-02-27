@@ -8,6 +8,7 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useProjectControlPanelSummaryQueryMock = vi.fn();
 const useProjectControlPanelProjectListQueryMock = vi.fn();
+const useProjectAllowedActionsQueryMock = vi.fn();
 const summaryMutateMock = vi.fn();
 const listMutateMock = vi.fn();
 
@@ -16,6 +17,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useProjectControlPanelSummaryQueryMock(...args),
   useProjectControlPanelProjectListQuery: (...args: Parameters<typeof useProjectControlPanelProjectListQueryMock>) =>
     useProjectControlPanelProjectListQueryMock(...args),
+  useProjectAllowedActionsQuery: (...args: Parameters<typeof useProjectAllowedActionsQueryMock>) =>
+    useProjectAllowedActionsQueryMock(...args),
 }));
 
 function renderDashboard() {
@@ -40,8 +43,16 @@ describe('dashboard api panel state primitives', () => {
     resetWorkspaceStore();
     useProjectControlPanelSummaryQueryMock.mockReset();
     useProjectControlPanelProjectListQueryMock.mockReset();
+    useProjectAllowedActionsQueryMock.mockReset();
     summaryMutateMock.mockReset();
     listMutateMock.mockReset();
+    useProjectAllowedActionsQueryMock.mockReturnValue({
+      data: {
+        allowed_actions: ['run'],
+      },
+      isLoading: false,
+      error: undefined,
+    });
   });
 
   it('renders loading states for summary and list panels', () => {
