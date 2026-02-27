@@ -86,7 +86,9 @@ export type WorkspaceMutationName =
   | 'restore_project'
   | 'switch_mode'
   | 'run_pipeline'
-  | 'cancel_run';
+  | 'cancel_run'
+  | 'rerun_run'
+  | 'recover_run';
 
 type WorkspaceMutationInvalidationResolver = (
   context: WorkspaceMutationContext,
@@ -201,6 +203,26 @@ export const workspaceMutationInvalidationMap: Record<
     ];
   },
   cancel_run: ({ projectId }) => {
+    if (projectId === null || projectId === undefined) {
+      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
+    }
+    return [
+      workspaceKeys.projectControlPanelSummary,
+      workspaceKeyMatchers.projectControlPanelProjectList,
+      workspaceKeyMatchers.projectScopedRunData(projectId),
+    ];
+  },
+  rerun_run: ({ projectId }) => {
+    if (projectId === null || projectId === undefined) {
+      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
+    }
+    return [
+      workspaceKeys.projectControlPanelSummary,
+      workspaceKeyMatchers.projectControlPanelProjectList,
+      workspaceKeyMatchers.projectScopedRunData(projectId),
+    ];
+  },
+  recover_run: ({ projectId }) => {
     if (projectId === null || projectId === undefined) {
       return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
     }

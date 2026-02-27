@@ -11,6 +11,7 @@ const useRunDetailQueryMock = vi.fn();
 const useRunConfigDiffQueryMock = vi.fn();
 const useRunConfigPresetMutationMock = vi.fn();
 const useRerunRunMutationMock = vi.fn();
+const useRecoverRunMutationMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) =>
@@ -21,6 +22,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useRunConfigPresetMutationMock(...args),
   useRerunRunMutation: (...args: Parameters<typeof useRerunRunMutationMock>) =>
     useRerunRunMutationMock(...args),
+  useRecoverRunMutation: (...args: Parameters<typeof useRecoverRunMutationMock>) =>
+    useRecoverRunMutationMock(...args),
 }));
 
 function renderRunMonitorPage() {
@@ -67,6 +70,7 @@ describe('project run monitor page', () => {
     useRunConfigDiffQueryMock.mockReset();
     useRunConfigPresetMutationMock.mockReset();
     useRerunRunMutationMock.mockReset();
+    useRecoverRunMutationMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
@@ -82,6 +86,16 @@ describe('project run monitor page', () => {
       error: null,
       trigger: vi.fn().mockResolvedValue({
         run_id: 304,
+        project_id: 303,
+        status: 'completed',
+        segment_count: 8,
+      }),
+    });
+    useRecoverRunMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: vi.fn().mockResolvedValue({
+        run_id: 305,
         project_id: 303,
         status: 'completed',
         segment_count: 8,
@@ -184,5 +198,31 @@ describe('project run monitor page', () => {
 
     expect(rerunTrigger).toHaveBeenCalledTimes(1);
     expect(useWorkspaceStore.getState().runId).toBe(404);
+  });
+
+  it('triggers recover mutation from run monitor action bar', async () => {
+    const user = userEvent.setup();
+    const recoverTrigger = vi.fn().mockResolvedValue({
+      run_id: 405,
+      project_id: 303,
+      status: 'completed',
+      segment_count: 6,
+    });
+    useRecoverRunMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: recoverTrigger,
+    });
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    await user.click(screen.getByRole('button', { name: 'Recover run' }));
+
+    expect(recoverTrigger).toHaveBeenCalledTimes(1);
+    expect(useWorkspaceStore.getState().runId).toBe(405);
   });
 });

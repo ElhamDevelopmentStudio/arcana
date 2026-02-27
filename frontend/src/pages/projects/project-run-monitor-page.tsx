@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
+  useRecoverRunMutation,
   useRerunRunMutation,
   useRunConfigDiffQuery,
   useRunConfigPresetMutation,
@@ -29,6 +30,7 @@ export function ProjectRunMonitorPage() {
   const runDetailQuery = useRunDetailQuery(projectId, runId);
   const runConfigPresetMutation = useRunConfigPresetMutation(projectId, runId);
   const rerunRunMutation = useRerunRunMutation(projectId, runId);
+  const recoverRunMutation = useRecoverRunMutation(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
     const trimmed = comparisonRunIdInput.trim();
@@ -96,6 +98,18 @@ export function ProjectRunMonitorPage() {
     }
   }
 
+  async function handleRecoverRun() {
+    if (projectId === null || runId === null) {
+      return;
+    }
+    try {
+      const recoveredRun = await recoverRunMutation.trigger();
+      setRunId(recoveredRun.run_id);
+    } catch {
+      // surfaced via mutation event bus
+    }
+  }
+
   return (
     <WorkflowPageShell
       step="Step 05"
@@ -111,6 +125,13 @@ export function ProjectRunMonitorPage() {
               variant="outline"
             >
               {rerunRunMutation.isMutating ? 'Rerunning...' : 'Rerun run'}
+            </Button>
+            <Button
+              disabled={runId === null || recoverRunMutation.isMutating}
+              onClick={handleRecoverRun}
+              variant="outline"
+            >
+              {recoverRunMutation.isMutating ? 'Recovering...' : 'Recover run'}
             </Button>
             <Button
               disabled={runId === null}
@@ -195,6 +216,7 @@ export function ProjectRunMonitorPage() {
             {runDetailQuery.error ? <p className="text-destructive">{runDetailQuery.error.message}</p> : null}
             {runConfigPresetMutation.error ? <p className="text-destructive">{runConfigPresetMutation.error.message}</p> : null}
             {rerunRunMutation.error ? <p className="text-destructive">{rerunRunMutation.error.message}</p> : null}
+            {recoverRunMutation.error ? <p className="text-destructive">{recoverRunMutation.error.message}</p> : null}
 
             {runDetailQuery.data ? (
               <pre className="max-h-72 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
