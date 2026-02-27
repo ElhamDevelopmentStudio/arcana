@@ -73,6 +73,20 @@ export function useProjectAllowedActionsQuery(projectId: number | null) {
   );
 }
 
+export function useProjectDetailQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? workspaceKeys.projectDetail(projectId) : null,
+    async ([, currentProjectId]) => nipeApiClient.getProjectDetail(currentProjectId),
+  );
+}
+
+export function useProjectWorkspaceSummaryQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? workspaceKeys.projectWorkspaceSummary(projectId) : null,
+    async ([, currentProjectId]) => nipeApiClient.getProjectWorkspaceSummary(currentProjectId),
+  );
+}
+
 export function useProjectSetupStatusQuery(projectId: number | null) {
   return useSWR(
     projectId !== null ? workspaceKeys.projectSetupStatus(projectId) : null,

@@ -822,6 +822,34 @@ export const projectAllowedActionsResponseSchema = z.object({
   required_step: projectActionRequiredStepSchema.nullable().optional().default(null),
 });
 
+export const projectDetailResponseSchema = z.object({
+  schema_version: z.string().min(1),
+  output_schema: z.string().min(1),
+  output_format: z.string().min(1),
+  output_id: z.string().min(1),
+  output_name: z.string().min(1),
+  generated_at: z.string().min(1),
+  generated_by: z.string().min(1),
+  project_id: z.number().int().positive(),
+  title: z.string().min(1).max(255),
+  description: z.string().nullable().optional().default(null),
+  tags: z.array(z.string()).default([]),
+  lifecycle_state: projectLifecycleStateSchema,
+  last_run_status: runStatusSchema.nullable().optional().default(null),
+  next_required_action: projectNextRequiredActionSchema,
+  allowed_actions: z.array(projectAllowedActionSchema).default([]),
+  selected_mode: z.string().min(1).max(50),
+  selected_modes: z.array(z.string()).default([]),
+  llm_enabled: z.boolean(),
+  do_not_store_source_text: z.boolean(),
+  character_map_finalized: z.boolean(),
+  configuration_snapshot_id: z.string().nullable().optional().default(null),
+  ingestion_timestamp: z.string().nullable().optional().default(null),
+  last_export_at: z.string().nullable().optional().default(null),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1),
+});
+
 export const projectSetupStepStatusSchema = z.object({
   step_id: projectSetupStepIdSchema,
   label: z.string().min(1).max(80),
@@ -842,6 +870,28 @@ export const projectSetupStatusResponseSchema = z.object({
   next_required_action: projectNextRequiredActionSchema,
   is_complete: z.boolean(),
   steps: z.array(projectSetupStepStatusSchema).default([]),
+});
+
+export const projectWorkspaceSummaryResponseSchema = z.object({
+  schema_version: z.string().min(1),
+  output_schema: z.string().min(1),
+  output_format: z.string().min(1),
+  output_id: z.string().min(1),
+  output_name: z.string().min(1),
+  generated_at: z.string().min(1),
+  generated_by: z.string().min(1),
+  project_id: z.number().int().positive(),
+  lifecycle_state: projectLifecycleStateSchema,
+  last_run_status: runStatusSchema.nullable().optional().default(null),
+  next_required_action: projectNextRequiredActionSchema,
+  is_setup_complete: z.boolean(),
+  chapters_count: z.number().int().nonnegative(),
+  characters_count: z.number().int().nonnegative(),
+  voice_mappings_count: z.number().int().nonnegative(),
+  runs_total_count: z.number().int().nonnegative(),
+  runs_completed_count: z.number().int().nonnegative(),
+  runs_failed_count: z.number().int().nonnegative(),
+  last_export_at: z.string().nullable().optional().default(null),
 });
 
 export const characterGenderComparisonRequestSchema = z.object({
@@ -904,9 +954,11 @@ export type ProjectControlPanelProjectListRequestDto = z.infer<typeof projectCon
 export type ProjectAllowedActionDto = z.infer<typeof projectAllowedActionSchema>;
 export type ProjectActionRequiredStepDto = z.infer<typeof projectActionRequiredStepSchema>;
 export type ProjectAllowedActionsResponseDto = z.infer<typeof projectAllowedActionsResponseSchema>;
+export type ProjectDetailResponseDto = z.infer<typeof projectDetailResponseSchema>;
 export type ProjectSetupStepIdDto = z.infer<typeof projectSetupStepIdSchema>;
 export type ProjectSetupStepStatusDto = z.infer<typeof projectSetupStepStatusSchema>;
 export type ProjectSetupStatusResponseDto = z.infer<typeof projectSetupStatusResponseSchema>;
+export type ProjectWorkspaceSummaryResponseDto = z.infer<typeof projectWorkspaceSummaryResponseSchema>;
 export type CharacterGenderComparisonRequestDto = z.infer<typeof characterGenderComparisonRequestSchema>;
 export type CharacterMentionsByChapterItemDto = z.infer<typeof characterMentionsByChapterItemSchema>;
 export type CharacterAnalyticsResponseDto = z.infer<typeof characterAnalyticsResponseSchema>;
