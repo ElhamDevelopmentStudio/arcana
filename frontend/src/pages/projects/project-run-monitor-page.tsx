@@ -16,6 +16,7 @@ import {
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 import { cn } from '@/lib/utils';
+import { useJobNotificationStore } from '@/features/workflow/state/job-notification-store';
 
 const REFRESH_INTERVAL_MS = 4000;
 
@@ -44,6 +45,7 @@ export function ProjectRunMonitorPage() {
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const storeRunId = useWorkspaceStore((state) => state.runId);
   const setRunId = useWorkspaceStore((state) => state.setRunId);
+  const registerJob = useJobNotificationStore((state) => state.registerJob);
 
   const projectId = routeProjectId ?? storeProjectId;
   const urlRunId = searchParams.get('run_id') ? Number(searchParams.get('run_id')) : null;
@@ -82,6 +84,21 @@ export function ProjectRunMonitorPage() {
     return () => window.clearInterval(id);
   }, [isActive, runDetailQuery]);
 
+  useEffect(() => {
+    if (projectId === null || activeRunId === null || !runStatus) {
+      return;
+    }
+    if (!isActiveStatus(runStatus)) {
+      return;
+    }
+    registerJob({
+      type: 'pipeline',
+      projectId,
+      jobId: String(activeRunId),
+      status: runStatus,
+    });
+  }, [activeRunId, projectId, registerJob, runStatus]);
+
   const llmCalls = runDetail?.llm_calls ?? [];
   const successfulCalls = llmCalls.filter((c) => c.success).length;
   const changelogEntries = runDetail?.changelog_entries ?? [];
@@ -101,6 +118,14 @@ export function ProjectRunMonitorPage() {
       const res = await rerunMutation.trigger();
       setRunId(res.run_id);
       setActiveRunId(res.run_id);
+      if (projectId !== null) {
+        registerJob({
+          type: 'pipeline',
+          projectId,
+          jobId: String(res.run_id),
+          status: res.status,
+        });
+      }
       toast.success(`Rerun #${res.run_id} started.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Rerun failed');
@@ -112,6 +137,14 @@ export function ProjectRunMonitorPage() {
       const res = await recoverMutation.trigger();
       setRunId(res.run_id);
       setActiveRunId(res.run_id);
+      if (projectId !== null) {
+        registerJob({
+          type: 'pipeline',
+          projectId,
+          jobId: String(res.run_id),
+          status: res.status,
+        });
+      }
       toast.success(`Recovery run #${res.run_id} started.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Recovery failed');

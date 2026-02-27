@@ -5,8 +5,10 @@ import { runRequestSchema, type RunRequestDto } from '@/app/schemas/api';
 import { nipeApiClient } from '@/services/api-client';
 import type { VoiceConfigDto } from '@/app/schemas/api';
 import type { CharacterMapUpdateDto } from '@/app/schemas/api';
+import type { CharacterExtractionRequestDto } from '@/app/schemas/api';
 import type { CharacterScrapeRequestDto } from '@/app/schemas/api';
 import type { CharacterCandidatesMergeRequestDto } from '@/app/schemas/api';
+import type { CharacterProposalReviewRequestDto } from '@/app/schemas/api';
 import type { PronunciationDictionaryPreviewRequestDto } from '@/app/schemas/api';
 import { useMutationEventBus } from '@/features/workflow/events/mutation-event-bus';
 import {
@@ -680,6 +682,55 @@ export function useSwitchModeMutation(projectId: number | null) {
   );
 }
 
+export function useStartProjectIngestionJobMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['start-project-ingestion-job', projectId] : null,
+    async (
+      _,
+      {
+        arg,
+      }: {
+        arg: {
+          source: 'txt' | 'markdown' | 'epub' | 'chapters-dir' | 'append-chapter';
+          file?: File;
+          files?: File[];
+        };
+      },
+    ) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before ingestion.');
+      }
+      return nipeApiClient.startProjectIngestionJob(projectId, arg.source, {
+        file: arg.file,
+        files: arg.files,
+      });
+    },
+  );
+}
+
+export function useProjectIngestionJobStatusQuery(
+  projectId: number | null,
+  jobId: string | null,
+  enabled: boolean = true,
+) {
+  return useSWR(
+    projectId !== null && jobId !== null && enabled
+      ? workspaceKeys.projectIngestionJobStatus(projectId, jobId)
+      : null,
+    async ([, currentProjectId, currentJobId]) =>
+      nipeApiClient.getProjectIngestionJobStatus(currentProjectId, currentJobId),
+    {
+      refreshInterval: (latest) => {
+        if (!latest) {
+          return 1200;
+        }
+        return latest.status === 'queued' || latest.status === 'running' ? 1200 : 0;
+      },
+      revalidateOnFocus: false,
+    },
+  );
+}
+
 export function useIngestTxtMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['ingest-txt', projectId] : null,
@@ -771,6 +822,16 @@ export function useCharacterMapQuery(projectId: number | null) {
   );
 }
 
+export function useCharacterProposalsQuery(
+  projectId: number | null,
+  statuses: Array<'proposed' | 'approved' | 'rejected'> = ['proposed'],
+) {
+  return useSWR(
+    projectId !== null ? workspaceKeys.characterProposals(projectId, statuses) : null,
+    async ([, currentProjectId]) => nipeApiClient.getCharacterProposals(currentProjectId, statuses),
+  );
+}
+
 export function useCharacterGenderComparisonQuery(projectId: number | null) {
   return useSWR(
     projectId !== null ? workspaceKeys.characterGenderComparison(projectId) : null,
@@ -853,11 +914,58 @@ export function useFinalizeCharacterMapMutation(projectId: number | null) {
 export function useAutoExtractCharactersMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['extract-characters', projectId] : null,
-    async () => {
+    async (_, { arg }: { arg?: CharacterExtractionRequestDto } = {}) => {
       if (projectId === null) {
         throw new Error('Project must exist before extracting characters.');
       }
-      return nipeApiClient.extractCharacters(projectId);
+      return nipeApiClient.extractCharacters(projectId, arg);
+    },
+  );
+}
+
+export function useStartCharacterExtractionJobMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['start-character-extraction-job', projectId] : null,
+    async (_, { arg }: { arg?: CharacterExtractionRequestDto } = {}) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before extracting characters.');
+      }
+      return nipeApiClient.startCharacterExtractionJob(projectId, arg);
+    },
+  );
+}
+
+export function useCharacterExtractionJobStatusQuery(
+  projectId: number | null,
+  jobId: string | null,
+  enabled: boolean = true,
+) {
+  return useSWR(
+    projectId !== null && jobId !== null && enabled
+      ? workspaceKeys.characterExtractionJobStatus(projectId, jobId)
+      : null,
+    async ([, currentProjectId, currentJobId]) =>
+      nipeApiClient.getCharacterExtractionJobStatus(currentProjectId, currentJobId),
+    {
+      refreshInterval: (latest) => {
+        if (!latest) {
+          return 1200;
+        }
+        return latest.status === 'queued' || latest.status === 'running' ? 1200 : 0;
+      },
+      revalidateOnFocus: false,
+    },
+  );
+}
+
+export function useReviewCharacterProposalsMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['review-character-proposals', projectId] : null,
+    async (_, { arg }: { arg: CharacterProposalReviewRequestDto }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before reviewing character proposals.');
+      }
+      return nipeApiClient.reviewCharacterProposals(projectId, arg);
     },
   );
 }

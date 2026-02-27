@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -17,7 +17,9 @@ import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  useAutoExtractCharactersMutation,
+  useCharacterExtractionJobStatusQuery,
+  useStartCharacterExtractionJobMutation,
+  useCharacterProposalsQuery,
   useCharacterMapQuery,
   useFinalizeCharacterMapMutation,
   useImportCharactersMutation,
@@ -25,11 +27,13 @@ import {
   useMergeCharactersMutation,
   useInferCharacterGendersMutation,
   useLookupCharacterAliasMutation,
+  useReviewCharacterProposalsMutation,
   useCharacterAliasCollisionsQuery,
   useCharacterGenderComparisonQuery,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 import { cn } from '@/lib/utils';
+import { useJobNotificationStore } from '@/features/workflow/state/job-notification-store';
 
 const GENDER_BADGE: Record<string, string> = {
   male: 'bg-blue-400/10 text-blue-400',
@@ -54,19 +58,30 @@ export function ProjectCharactersPage() {
   const [aliasResult, setAliasResult] = useState<{ canonical_name: string | null; match_source: string } | null>(null);
   const [activeTool, setActiveTool] = useState<ActiveTool>('none');
   const [lastExtractionResult, setLastExtractionResult] = useState<{ canonical_merge_suggestions: Array<{ canonical_name: string; alias_name: string; score: number; reason: string }> } | null>(null);
+  const [selectedProposalIds, setSelectedProposalIds] = useState<number[]>([]);
+  const registerJob = useJobNotificationStore((state) => state.registerJob);
 
   const characterMapQuery = useCharacterMapQuery(projectId);
+  const characterProposalsQuery = useCharacterProposalsQuery(projectId, ['proposed']);
   const aliasCollisionsQuery = useCharacterAliasCollisionsQuery(projectId);
   const genderComparisonQuery = useCharacterGenderComparisonQuery(projectId);
-  const extractMutation = useAutoExtractCharactersMutation(projectId);
+  const startExtractionJobMutation = useStartCharacterExtractionJobMutation(projectId);
   const finalizeMutation = useFinalizeCharacterMapMutation(projectId);
   const importMutation = useImportCharactersMutation(projectId);
   const scrapeMutation = useScrapeCharactersMutation(projectId);
   const mergeMutation = useMergeCharactersMutation(projectId);
   const inferGendersMutation = useInferCharacterGendersMutation(projectId);
   const lookupAliasMutation = useLookupCharacterAliasMutation(projectId);
+  const reviewProposalsMutation = useReviewCharacterProposalsMutation(projectId);
+  const [activeExtractionJobId, setActiveExtractionJobId] = useState<string | null>(null);
+  const extractionCompletionJobRef = useRef<string | null>(null);
+  const extractionJobStatus = useCharacterExtractionJobStatusQuery(projectId, activeExtractionJobId).data;
+  const extractionJobIsActive =
+    extractionJobStatus?.status === 'queued' || extractionJobStatus?.status === 'running';
+  const extractionProgress = extractionJobStatus?.progress ?? 0;
 
   const characters = characterMapQuery.data?.characters ?? [];
+  const proposals = characterProposalsQuery.data?.proposals ?? [];
   const mergeWarnings = lastExtractionResult?.canonical_merge_suggestions ?? [];
   const aliasCollisions = aliasCollisionsQuery.data?.collisions ?? [];
 
@@ -78,12 +93,58 @@ export function ProjectCharactersPage() {
     : characters;
 
   const isBusy =
-    extractMutation.isMutating ||
+    startExtractionJobMutation.isMutating ||
+    extractionJobIsActive ||
     finalizeMutation.isMutating ||
     importMutation.isMutating ||
     scrapeMutation.isMutating ||
     mergeMutation.isMutating ||
-    inferGendersMutation.isMutating;
+    inferGendersMutation.isMutating ||
+    reviewProposalsMutation.isMutating;
+
+  useEffect(() => {
+    if (!activeExtractionJobId || !extractionJobStatus) {
+      return;
+    }
+
+    if (extractionCompletionJobRef.current === activeExtractionJobId) {
+      return;
+    }
+
+    if (extractionJobStatus.status === 'completed') {
+      extractionCompletionJobRef.current = activeExtractionJobId;
+      const completedResult = extractionJobStatus.result;
+      queueMicrotask(() => {
+        setActiveExtractionJobId(null);
+      });
+      if (completedResult) {
+        queueMicrotask(() => {
+          setLastExtractionResult(completedResult);
+        });
+      }
+      queueMicrotask(() => {
+        setSelectedProposalIds([]);
+      });
+      void Promise.all([characterMapQuery.mutate(), characterProposalsQuery.mutate()]).then(() => {
+        toast.success('Character extraction complete.');
+      });
+      return;
+    }
+
+    if (extractionJobStatus.status === 'failed') {
+      extractionCompletionJobRef.current = activeExtractionJobId;
+      queueMicrotask(() => {
+        setActiveExtractionJobId(null);
+      });
+      const errorMessage = extractionJobStatus.error_message || 'Extraction failed';
+      toast.error(errorMessage);
+    }
+  }, [
+    activeExtractionJobId,
+    characterMapQuery,
+    characterProposalsQuery,
+    extractionJobStatus,
+  ]);
 
   function toggleTool(tool: ActiveTool) {
     setActiveTool((prev) => (prev === tool ? 'none' : tool));
@@ -91,10 +152,18 @@ export function ProjectCharactersPage() {
 
   async function handleExtract() {
     try {
-      const result = await extractMutation.trigger();
-      setLastExtractionResult(result ?? null);
-      await characterMapQuery.mutate();
-      toast.success('Character extraction complete.');
+      const startPayload = await startExtractionJobMutation.trigger();
+      extractionCompletionJobRef.current = null;
+      setActiveExtractionJobId(startPayload.job_id);
+      if (projectId !== null) {
+        registerJob({
+          type: 'extraction',
+          projectId,
+          jobId: startPayload.job_id,
+          status: startPayload.status,
+        });
+      }
+      toast.success('Character extraction started.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Extraction failed');
     }
@@ -135,6 +204,7 @@ export function ProjectCharactersPage() {
     try {
       await mergeMutation.trigger({ include_auto: true, acknowledge_source_risk: false });
       await characterMapQuery.mutate();
+      await characterProposalsQuery.mutate();
       toast.success('Character candidates merged.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Merge failed');
@@ -157,6 +227,52 @@ export function ProjectCharactersPage() {
       toast.success('Character map finalized.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Finalization failed');
+    }
+  }
+
+  async function handleReviewProposals(review: 'approve' | 'reject') {
+    if (selectedProposalIds.length === 0) {
+      toast.error('Select at least one proposal first.');
+      return;
+    }
+    try {
+      await reviewProposalsMutation.trigger({
+        approve_ids: review === 'approve' ? selectedProposalIds : [],
+        reject_ids: review === 'reject' ? selectedProposalIds : [],
+      });
+      setSelectedProposalIds([]);
+      await Promise.all([
+        characterMapQuery.mutate(),
+        characterProposalsQuery.mutate(),
+      ]);
+      toast.success(review === 'approve' ? 'Selected proposals approved.' : 'Selected proposals rejected.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Proposal review failed');
+    }
+  }
+
+  async function handleApproveHighConfidenceProposals() {
+    const highConfidenceIds = proposals
+      .filter((proposal) => proposal.confidence >= 0.7)
+      .map((proposal) => proposal.id);
+    if (highConfidenceIds.length === 0) {
+      toast.error('No high-confidence proposals available.');
+      return;
+    }
+
+    try {
+      await reviewProposalsMutation.trigger({
+        approve_ids: highConfidenceIds,
+        reject_ids: [],
+      });
+      setSelectedProposalIds([]);
+      await Promise.all([
+        characterMapQuery.mutate(),
+        characterProposalsQuery.mutate(),
+      ]);
+      toast.success(`Approved ${highConfidenceIds.length} high-confidence proposal(s).`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'High-confidence approval failed');
     }
   }
 
@@ -272,7 +388,7 @@ export function ProjectCharactersPage() {
             variant="outline"
           >
             <UserCheck size={13} />
-            {inferGendersMutation.isMutating ? 'Inferring…' : 'Infer Genders'}
+            {inferGendersMutation.isMutating ? 'Inferring…' : 'Infer Character Genders'}
           </Button>
         </div>
       </div>
@@ -385,6 +501,89 @@ export function ProjectCharactersPage() {
         </div>
       )}
 
+      {/* Proposed candidates review queue */}
+      {proposals.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-card p-4" data-testid="character-proposals-panel">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-foreground">
+              Proposed characters
+              <span className="ml-2 text-xs font-normal text-muted-foreground">{proposals.length} pending</span>
+            </p>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Button
+                data-testid="approve-selected-proposals-button"
+                disabled={isBusy || selectedProposalIds.length === 0}
+                onClick={() => void handleReviewProposals('approve')}
+                size="sm"
+                variant="outline"
+              >
+                Approve Selected
+              </Button>
+              <Button
+                data-testid="reject-selected-proposals-button"
+                disabled={isBusy || selectedProposalIds.length === 0}
+                onClick={() => void handleReviewProposals('reject')}
+                size="sm"
+                variant="outline"
+              >
+                Reject Selected
+              </Button>
+              <Button
+                data-testid="approve-high-confidence-proposals-button"
+                disabled={isBusy}
+                onClick={() => void handleApproveHighConfidenceProposals()}
+                size="sm"
+              >
+                Approve ≥ 70%
+              </Button>
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto divide-y divide-white/5">
+            {proposals.map((proposal) => {
+              const trace = proposal.source_trace?.[0];
+              const isSelected = selectedProposalIds.includes(proposal.id);
+              return (
+                <label
+                  className="flex cursor-pointer items-start gap-3 py-2 text-sm"
+                  data-testid={`character-proposal-row-${proposal.id}`}
+                  key={proposal.id}
+                >
+                  <input
+                    checked={isSelected}
+                    className="mt-0.5"
+                    disabled={isBusy}
+                    onChange={(event) => {
+                      if (event.target.checked) {
+                        setSelectedProposalIds((current) => [...current, proposal.id]);
+                        return;
+                      }
+                      setSelectedProposalIds((current) => current.filter((id) => id !== proposal.id));
+                    }}
+                    type="checkbox"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-foreground">{proposal.name}</span>
+                      <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-muted-foreground">
+                        {Math.round(proposal.confidence * 100)}%
+                      </span>
+                      <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-muted-foreground">
+                        {proposal.source}
+                      </span>
+                    </div>
+                    {trace?.excerpt && (
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                        {trace.excerpt}
+                      </p>
+                    )}
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       {characterMapQuery.isLoading && characters.length === 0 ? (
         <div className="space-y-2" data-testid="characters-loading">
@@ -403,7 +602,11 @@ export function ProjectCharactersPage() {
               onClick={() => void handleExtract()}
             >
               <WandSparkles size={14} />
-              {extractMutation.isMutating ? 'Extracting…' : 'Extract from text'}
+              {startExtractionJobMutation.isMutating
+                ? 'Starting…'
+                : extractionJobIsActive
+                  ? `Extracting ${extractionProgress}%`
+                  : 'Extract from text'}
             </Button>
             <Button
               disabled={isBusy}
@@ -472,7 +675,11 @@ export function ProjectCharactersPage() {
           variant="outline"
         >
           <WandSparkles size={13} />
-          {extractMutation.isMutating ? 'Extracting…' : 'Extract'}
+          {startExtractionJobMutation.isMutating
+            ? 'Starting…'
+            : extractionJobIsActive
+              ? `Extracting ${extractionProgress}%`
+              : 'Extract'}
         </Button>
 
         <div className="flex items-center gap-2">

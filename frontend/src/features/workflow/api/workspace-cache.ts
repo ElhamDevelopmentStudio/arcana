@@ -37,6 +37,14 @@ export const workspaceKeys = {
   pipelineStageDurationsDashboard: (projectId: number, runId: number) =>
     ['pipeline-stage-durations-dashboard', projectId, runId] as const,
   characterMap: (projectId: number) => ['character-map', projectId] as const,
+  characterProposals: (
+    projectId: number,
+    statuses: Array<'proposed' | 'approved' | 'rejected'> = ['proposed'],
+  ) => ['character-proposals', projectId, statuses.join(',')] as const,
+  projectIngestionJobStatus: (projectId: number, jobId: string) =>
+    ['project-ingestion-job-status', projectId, jobId] as const,
+  characterExtractionJobStatus: (projectId: number, jobId: string) =>
+    ['character-extraction-job-status', projectId, jobId] as const,
   characterGenderComparison: (projectId: number) => ['character-gender-comparison', projectId] as const,
   comparisonWorkspaceDetail: (workspaceId: number) => ['comparison-workspace-detail', workspaceId] as const,
   comparisonWorkspaceAlignedCurves: (workspaceId: number, metricsCsv: string, alignedPoints: number | null) =>

@@ -327,6 +327,33 @@ class IngestResponse(BaseModel):
     normalization_report: dict[str, Any] = Field(default_factory=dict)
 
 
+class ProjectIngestionJobStartResponse(BaseModel):
+    project_id: int
+    source: str = Field(min_length=1, max_length=40)
+    job_id: str = Field(min_length=1, max_length=64)
+    status: str = Field(min_length=1, max_length=40)
+    executor_name: str = Field(min_length=1, max_length=40)
+    task_id: str | None = Field(default=None, max_length=255)
+    created_at: datetime
+
+
+class ProjectIngestionJobStatusResponse(BaseModel):
+    project_id: int
+    source: str = Field(min_length=1, max_length=40)
+    job_id: str = Field(min_length=1, max_length=64)
+    status: str = Field(min_length=1, max_length=40)
+    progress: int = Field(ge=0, le=100)
+    message: str | None = Field(default=None, max_length=255)
+    executor_name: str = Field(min_length=1, max_length=40)
+    task_id: str | None = Field(default=None, max_length=255)
+    error_message: str | None = None
+    result: IngestResponse | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime
+
+
 class CharacterImportResponse(BaseModel):
     project_id: int
     imported_count: int
@@ -571,6 +598,23 @@ class CharacterMapFinalizeResponse(BaseModel):
     character_map_finalized: bool
 
 
+class CharacterExtractionRequest(BaseModel):
+    persist_proposals: bool = True
+    min_confidence: float = Field(default=0.35, ge=0.0, le=1.0)
+    max_candidates: int = Field(default=250, ge=1, le=1000)
+    auto_apply_to_character_map: bool = True
+    auto_apply_min_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
+    llm_primary_extraction_enabled: bool = True
+    llm_verification_enabled: bool = True
+    llm_chunk_max_chars: int = Field(default=5600, ge=1200, le=20000)
+    llm_max_chunks: int = Field(default=120, ge=1, le=500)
+    llm_verification_batch_size: int = Field(default=24, ge=1, le=200)
+    llm_refinement_enabled: bool = False
+    llm_refinement_min_confidence: float = Field(default=0.45, ge=0.0, le=1.0)
+    llm_refinement_max_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
+    llm_refinement_max_candidates: int = Field(default=24, ge=1, le=200)
+
+
 class CharacterScrapeRequest(BaseModel):
     source_url: str = Field(min_length=1, max_length=2048)
     acknowledge_source_risk: bool
@@ -615,10 +659,109 @@ class CharacterExtractionResponse(BaseModel):
     project_id: int
     status: str
     candidate_count: int
+    auto_applied_count: int = Field(default=0, ge=0)
     candidates: list[CharacterMapItem]
+    extraction_batch_id: str | None = Field(default=None, min_length=1, max_length=64)
+    proposal_count: int = Field(default=0, ge=0)
     proposed_characters: list[CharacterMapItem] = Field(default_factory=list)
     canonical_merge_suggestions: list[CanonicalNameMergeSuggestion] = Field(default_factory=list)
     warnings: list[CharacterWarning] = Field(default_factory=list)
+
+
+class CharacterExtractionJobStartResponse(BaseModel):
+    project_id: int
+    job_id: str = Field(min_length=1, max_length=64)
+    status: str = Field(min_length=1, max_length=40)
+    executor_name: str = Field(min_length=1, max_length=40)
+    task_id: str | None = Field(default=None, max_length=255)
+    created_at: datetime
+
+
+class CharacterExtractionJobStatusResponse(BaseModel):
+    project_id: int
+    job_id: str = Field(min_length=1, max_length=64)
+    status: str = Field(min_length=1, max_length=40)
+    progress: int = Field(ge=0, le=100)
+    message: str | None = Field(default=None, max_length=255)
+    executor_name: str = Field(min_length=1, max_length=40)
+    task_id: str | None = Field(default=None, max_length=255)
+    error_message: str | None = None
+    result: CharacterExtractionResponse | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime
+
+
+class CharacterProposalItem(BaseModel):
+    id: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=255)
+    verbalized_form: str = Field(min_length=1, max_length=255)
+    gender: str = Field(default="unknown", min_length=1, max_length=50)
+    aliases: list[str] = Field(default_factory=list)
+    notes: str | None = None
+    source: str = Field(default="auto", min_length=1, max_length=120)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    source_trace: list[CharacterSourceTrace] = Field(default_factory=list)
+    inferred_gender: str = Field(default="unknown", min_length=1, max_length=50)
+    inferred_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    inferred_source_trace: list[CharacterSourceTrace] = Field(default_factory=list)
+    status: str = Field(default="proposed", min_length=1, max_length=40)
+    extractor_version: str = Field(default="v2", min_length=1, max_length=80)
+    extraction_batch_id: str = Field(min_length=1, max_length=64)
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = Field(default=None, max_length=255)
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("gender")
+    @classmethod
+    def gender_normalized(cls, value: str) -> str:
+        return _normalize_gender_or_raise(value)
+
+    @field_validator("inferred_gender")
+    @classmethod
+    def inferred_gender_normalized(cls, value: str) -> str:
+        return _normalize_gender_or_raise(value)
+
+    @field_validator("status")
+    @classmethod
+    def status_normalized(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"proposed", "approved", "rejected"}:
+            raise ValueError("status must be one of: proposed, approved, rejected")
+        return normalized
+
+
+class CharacterProposalListResponse(BaseModel):
+    project_id: int
+    proposal_count: int = Field(ge=0)
+    proposals: list[CharacterProposalItem] = Field(default_factory=list)
+
+
+class CharacterProposalReviewRequest(BaseModel):
+    approve_ids: list[int] = Field(default_factory=list)
+    reject_ids: list[int] = Field(default_factory=list)
+    reviewed_by: str | None = Field(default=None, max_length=255)
+
+    @field_validator("approve_ids", "reject_ids")
+    @classmethod
+    def ids_must_be_positive_unique(cls, values: list[int]) -> list[int]:
+        deduped = list(dict.fromkeys(values))
+        for value in deduped:
+            if value <= 0:
+                raise ValueError("proposal IDs must be positive integers")
+        return deduped
+
+
+class CharacterProposalReviewResponse(BaseModel):
+    project_id: int
+    approved_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    character_map_finalized: bool
+    characters: list[CharacterMapItem] = Field(default_factory=list)
+    proposal_count: int = Field(ge=0)
+    proposals: list[CharacterProposalItem] = Field(default_factory=list)
 
 
 class VoiceConfigRequest(BaseModel):

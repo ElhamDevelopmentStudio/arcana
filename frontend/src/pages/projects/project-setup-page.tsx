@@ -1,4 +1,4 @@
-import { type FormEvent, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Upload, FileText, CheckCircle2 } from 'lucide-react';
@@ -7,15 +7,13 @@ import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Button } from '@/components/ui/button';
 import {
-  useIngestTxtMutation,
-  useIngestMarkdownMutation,
-  useIngestEpubMutation,
-  useIngestChapterDirectoryMutation,
-  useAppendChapterMutation,
+  useProjectIngestionJobStatusQuery,
+  useStartProjectIngestionJobMutation,
   useProjectSetupStatusQuery,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 import { cn } from '@/lib/utils';
+import { useJobNotificationStore } from '@/features/workflow/state/job-notification-store';
 
 type IngestionSource = 'txt' | 'markdown' | 'epub' | 'directory';
 
@@ -40,18 +38,74 @@ export function ProjectSetupPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [appendFile, setAppendFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [activeIngestionJobId, setActiveIngestionJobId] = useState<string | null>(null);
+  const [activeIngestionSource, setActiveIngestionSource] = useState<
+    'txt' | 'markdown' | 'epub' | 'chapters-dir' | 'append-chapter' | null
+  >(null);
+  const ingestionCompletionJobRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const registerJob = useJobNotificationStore((state) => state.registerJob);
 
   const setupStatusQuery = useProjectSetupStatusQuery(projectId);
-  const ingestTxtMutation = useIngestTxtMutation(projectId);
-  const ingestMarkdownMutation = useIngestMarkdownMutation(projectId);
-  const ingestEpubMutation = useIngestEpubMutation(projectId);
-  const ingestDirectoryMutation = useIngestChapterDirectoryMutation(projectId);
-  const appendMutation = useAppendChapterMutation(projectId);
+  const startIngestionJobMutation = useStartProjectIngestionJobMutation(projectId);
+  const ingestionJobStatus = useProjectIngestionJobStatusQuery(projectId, activeIngestionJobId).data;
+  const ingestionJobIsActive = ingestionJobStatus?.status === 'queued' || ingestionJobStatus?.status === 'running';
+  const ingestionProgress = ingestionJobStatus?.progress ?? 0;
 
   const ingestionReady = setupStatusQuery.data?.steps?.some((s) => s.step_id === 'ingestion' && s.ready) ?? false;
-  const isBusy = ingestTxtMutation.isMutating || ingestMarkdownMutation.isMutating ||
-    ingestEpubMutation.isMutating || ingestDirectoryMutation.isMutating || appendMutation.isMutating;
+  const isBusy = startIngestionJobMutation.isMutating || ingestionJobIsActive;
+
+  useEffect(() => {
+    if (!activeIngestionJobId || !ingestionJobStatus) {
+      return;
+    }
+    if (ingestionCompletionJobRef.current === activeIngestionJobId) {
+      return;
+    }
+
+    if (ingestionJobStatus.status === 'completed') {
+      ingestionCompletionJobRef.current = activeIngestionJobId;
+      const result = ingestionJobStatus.result;
+      queueMicrotask(() => {
+        setActiveIngestionJobId(null);
+        setActiveIngestionSource(null);
+      });
+
+      if (result) {
+        setChapterCount(result.chapter_count);
+      }
+
+      if (activeIngestionSource === 'append-chapter') {
+        queueMicrotask(() => {
+          setAppendFile(null);
+        });
+        toast.success(result ? `Chapter appended. Total: ${result.chapter_count}.` : 'Chapter appended.');
+      } else {
+        queueMicrotask(() => {
+          setFile(null);
+          setFiles([]);
+        });
+        toast.success(result ? `Ingested ${result.chapter_count} chapters.` : 'Ingestion completed.');
+      }
+      void setupStatusQuery.mutate();
+      return;
+    }
+
+    if (ingestionJobStatus.status === 'failed') {
+      ingestionCompletionJobRef.current = activeIngestionJobId;
+      queueMicrotask(() => {
+        setActiveIngestionJobId(null);
+        setActiveIngestionSource(null);
+      });
+      toast.error(ingestionJobStatus.error_message || 'Ingestion failed');
+    }
+  }, [
+    activeIngestionJobId,
+    activeIngestionSource,
+    ingestionJobStatus,
+    setChapterCount,
+    setupStatusQuery,
+  ]);
 
   const tab = SOURCE_TABS.find((t) => t.id === source)!;
 
@@ -59,15 +113,24 @@ export function ProjectSetupPage() {
     e.preventDefault();
     if (projectId === null) { toast.error('No project found.'); return; }
     try {
-      let result;
-      if (source === 'txt' && file) result = await ingestTxtMutation.trigger({ file });
-      else if (source === 'markdown' && file) result = await ingestMarkdownMutation.trigger({ file });
-      else if (source === 'epub' && file) result = await ingestEpubMutation.trigger({ file });
-      else if (source === 'directory' && files.length) result = await ingestDirectoryMutation.trigger({ files });
+      let payload: { source: 'txt' | 'markdown' | 'epub' | 'chapters-dir'; file?: File; files?: File[] } | null = null;
+      if (source === 'txt' && file) payload = { source: 'txt', file };
+      else if (source === 'markdown' && file) payload = { source: 'markdown', file };
+      else if (source === 'epub' && file) payload = { source: 'epub', file };
+      else if (source === 'directory' && files.length) payload = { source: 'chapters-dir', files };
       else { toast.error('Select a file first.'); return; }
-      setChapterCount(result.chapter_count);
-      toast.success(`Ingested ${result.chapter_count} chapters.`);
-      await setupStatusQuery.mutate();
+
+      const job = await startIngestionJobMutation.trigger(payload);
+      ingestionCompletionJobRef.current = null;
+      setActiveIngestionSource(payload.source);
+      setActiveIngestionJobId(job.job_id);
+      registerJob({
+        type: 'ingestion',
+        projectId,
+        jobId: job.job_id,
+        status: job.status,
+      });
+      toast.success('Ingestion started.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ingestion failed');
     }
@@ -76,11 +139,20 @@ export function ProjectSetupPage() {
   async function handleAppend() {
     if (!appendFile || projectId === null) { toast.error('Select a chapter file.'); return; }
     try {
-      const result = await appendMutation.trigger({ file: appendFile });
-      setChapterCount(result.chapter_count);
-      setAppendFile(null);
-      toast.success(`Chapter appended. Total: ${result.chapter_count}.`);
-      await setupStatusQuery.mutate();
+      const job = await startIngestionJobMutation.trigger({
+        source: 'append-chapter',
+        file: appendFile,
+      });
+      ingestionCompletionJobRef.current = null;
+      setActiveIngestionSource('append-chapter');
+      setActiveIngestionJobId(job.job_id);
+      registerJob({
+        type: 'ingestion',
+        projectId,
+        jobId: job.job_id,
+        status: job.status,
+      });
+      toast.success('Append chapter started.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Append failed');
     }
@@ -186,8 +258,13 @@ export function ProjectSetupPage() {
           disabled={isBusy || (source === 'directory' ? files.length === 0 : !file)}
           type="submit"
         >
-          {isBusy ? 'Uploading…' : 'Upload & Parse'}
+          {isBusy ? 'Processing…' : 'Upload & Parse'}
         </Button>
+        {ingestionJobIsActive && (
+          <p className="text-center text-xs text-muted-foreground">
+            Ingestion progress: {ingestionProgress}%
+          </p>
+        )}
       </form>
 
       {/* Append chapter */}
@@ -220,7 +297,7 @@ export function ProjectSetupPage() {
               size="sm"
               variant="outline"
             >
-              {appendMutation.isMutating ? 'Appending…' : 'Append Chapter'}
+              {isBusy && activeIngestionSource === 'append-chapter' ? 'Appending…' : 'Append Chapter'}
             </Button>
           </div>
         </div>
