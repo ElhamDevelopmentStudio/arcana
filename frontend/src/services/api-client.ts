@@ -826,6 +826,17 @@ export class NipeApiClient {
     }
   }
 
+  async getExportCsv(projectId: number, runId: number): Promise<string> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/exports/${runId}.csv`, {
+        responseType: 'text',
+      });
+      return typeof response.data === 'string' ? response.data : String(response.data ?? '');
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async getTensionGraph(projectId: number, runId: number): Promise<TensionGraphResponseDto> {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/runs/${runId}/tension-graph`);

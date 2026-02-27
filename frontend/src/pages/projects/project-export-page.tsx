@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useExportPayloadQuery } from '@/features/workflow/api/workflow-hooks';
+import { useExportCsvMutation, useExportPayloadQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Download } from 'lucide-react';
@@ -79,6 +79,7 @@ export function ProjectExportPage() {
 
   const projectId = routeProjectId ?? storeProjectId;
   const exportPayloadQuery = useExportPayloadQuery(projectId, runId);
+  const exportCsvMutation = useExportCsvMutation(projectId, runId);
   const [minimumConfidence, setMinimumConfidence] = useState(0.8);
   const [showBelowThreshold, setShowBelowThreshold] = useState(true);
 
@@ -138,6 +139,24 @@ export function ProjectExportPage() {
     URL.revokeObjectURL(url);
   }
 
+  async function downloadExportCsv() {
+    if (projectId === null || runId === null) {
+      return;
+    }
+    try {
+      const csvPayload = await exportCsvMutation.trigger();
+      const blob = new Blob([csvPayload], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `project-${projectId}-run-${runId}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // surfaced via exportCsvMutation.error
+    }
+  }
+
   return (
     <WorkflowPageShell
       step="Step 06"
@@ -161,13 +180,24 @@ export function ProjectExportPage() {
           <p>Run: {runId ?? 'n/a'}</p>
           <p>{exportPayloadQuery.data ? 'Export payload is ready for download.' : 'Awaiting run/export data.'}</p>
 
-          <Button disabled={!exportPayloadQuery.data} onClick={downloadExportJson}>
-            <Download className="size-4" />
-            Download JSON
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={!exportPayloadQuery.data} onClick={downloadExportJson}>
+              <Download className="size-4" />
+              Download JSON
+            </Button>
+            <Button
+              disabled={!exportPayloadQuery.data || exportCsvMutation.isMutating}
+              onClick={downloadExportCsv}
+              variant="outline"
+            >
+              <Download className="size-4" />
+              {exportCsvMutation.isMutating ? 'Downloading CSV...' : 'Download CSV'}
+            </Button>
+          </div>
 
           {exportPayloadQuery.isLoading ? <p>Loading export payload...</p> : null}
           {exportPayloadQuery.error ? <p className="text-destructive">{exportPayloadQuery.error.message}</p> : null}
+          {exportCsvMutation.error ? <p className="text-destructive">{exportCsvMutation.error.message}</p> : null}
           {exportPayloadQuery.data ? (
             <>
               <Card className="border-dashed">
