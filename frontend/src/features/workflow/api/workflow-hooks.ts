@@ -498,6 +498,13 @@ export function useArtifactPronunciationDictionaryQuery(projectId: number | null
   );
 }
 
+export function useInventedPronunciationDictionaryQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? ['pronunciation-dictionary-invented', projectId] : null,
+    async ([, currentProjectId]) => nipeApiClient.getInventedPronunciationDictionary(currentProjectId),
+  );
+}
+
 export function useSaveCharacterMapMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['save-characters', projectId] : null,
@@ -597,6 +604,25 @@ export function useSaveArtifactPronunciationDictionaryMutation(projectId: number
         throw new Error('Project must exist before saving artifact pronunciation dictionary.');
       }
       return nipeApiClient.updateArtifactPronunciationDictionary(projectId, arg);
+    },
+  );
+}
+
+export function useSaveInventedPronunciationDictionaryMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['save-pronunciation-dictionary-invented', projectId] : null,
+    async (
+      _,
+      {
+        arg,
+      }: {
+        arg: { entries: Array<{ term: string; verbalized_form: string; source: string; confidence: number }> };
+      },
+    ) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before saving invented pronunciation dictionary.');
+      }
+      return nipeApiClient.updateInventedPronunciationDictionary(projectId, arg);
     },
   );
 }
