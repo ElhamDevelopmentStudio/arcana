@@ -591,7 +591,7 @@ Definition of done for each task:
 - [x] [FE-184] Add post-setup routing rule: redirect from setup to `/projects/{project_id}/overview` when setup becomes complete.
 - [x] [FE-185] Add setup-step UI for source attach + ingestion initiation, including completion polling from setup-status.
 - [x] [FE-186] Add setup-step UI for mode selection completion using current project mode endpoints and setup-status refresh.
-- [ ] [FE-187] Add setup-step UI for baseline character/voice readiness checks with explicit next-action CTAs.
+- [x] [FE-187] Add setup-step UI for baseline character/voice readiness checks with explicit next-action CTAs.
 - [ ] [FE-188] Build `/projects/{project_id}/overview` page using project detail plus `GET /api/projects/{project_id}/workspace-summary`.
 - [ ] [FE-189] Add project sidebar groups for overview/setup/characters/voice/runs/exports/settings with stable route mapping.
 - [ ] [FE-190] Add sidebar item lock states and tooltips/messages using `setup-status` and action gating metadata.

@@ -37,6 +37,14 @@ function renderProjectSetupPage() {
         path: '/projects/:project_id/overview',
         element: <div data-testid="project-overview-route">Project overview route</div>,
       },
+      {
+        path: '/projects/:project_id/characters',
+        element: <div data-testid="project-characters-route">Project characters route</div>,
+      },
+      {
+        path: '/projects/:project_id/pipeline-setup',
+        element: <div data-testid="project-pipeline-setup-route">Project pipeline setup route</div>,
+      },
     ],
     { initialEntries: ['/projects/77/setup'] },
   );
@@ -137,6 +145,64 @@ describe('project setup page', () => {
     expect(screen.getByTestId('project-setup-step-mode_selection')).toBeInTheDocument();
     expect(screen.getByTestId('project-setup-step-initial_run')).toBeInTheDocument();
     expect(screen.getByText('Mode Selection')).toBeInTheDocument();
+  });
+
+  it('renders character and voice readiness with explicit CTAs', async () => {
+    const user = userEvent.setup();
+    useProjectSetupStatusQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: setupStatusMutateMock,
+      data: {
+        project_id: 77,
+        lifecycle_state: 'configured',
+        next_required_action: 'run',
+        is_complete: false,
+        steps: [
+          { step_id: 'ingestion', label: 'Ingestion', ready: true, required: true },
+          { step_id: 'mode_selection', label: 'Mode Selection', ready: true, required: true },
+          { step_id: 'initial_run', label: 'Initial Run', ready: false, required: true },
+          { step_id: 'character_mapping', label: 'Character Mapping', ready: false, required: false },
+          { step_id: 'voice_mapping', label: 'Voice Mapping', ready: true, required: false },
+        ],
+      },
+    });
+
+    renderProjectSetupPage();
+
+    expect(screen.getByTestId('project-setup-character-voice-readiness')).toBeInTheDocument();
+    expect(screen.getByTestId('project-setup-character-readiness')).toBeInTheDocument();
+    expect(screen.getByTestId('project-setup-voice-readiness')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('project-setup-go-characters'));
+    expect(await screen.findByTestId('project-characters-route')).toBeInTheDocument();
+  });
+
+  it('navigates to pipeline setup from voice readiness CTA', async () => {
+    const user = userEvent.setup();
+    useProjectSetupStatusQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: setupStatusMutateMock,
+      data: {
+        project_id: 77,
+        lifecycle_state: 'configured',
+        next_required_action: 'run',
+        is_complete: false,
+        steps: [
+          { step_id: 'ingestion', label: 'Ingestion', ready: true, required: true },
+          { step_id: 'mode_selection', label: 'Mode Selection', ready: true, required: true },
+          { step_id: 'initial_run', label: 'Initial Run', ready: false, required: true },
+          { step_id: 'character_mapping', label: 'Character Mapping', ready: false, required: false },
+          { step_id: 'voice_mapping', label: 'Voice Mapping', ready: false, required: false },
+        ],
+      },
+    });
+
+    renderProjectSetupPage();
+
+    await user.click(screen.getByTestId('project-setup-go-pipeline-setup'));
+    expect(await screen.findByTestId('project-pipeline-setup-route')).toBeInTheDocument();
   });
 
   it('attaches source and ingests txt from setup step form', async () => {
