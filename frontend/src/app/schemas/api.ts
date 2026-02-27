@@ -375,6 +375,17 @@ export const characterCandidatesMergeRequestSchema = z.object({
   acknowledge_source_risk: z.boolean(),
 });
 
+export const characterAliasLookupRequestSchema = z.object({
+  alias: z.string().trim().min(1).max(255),
+});
+
+export const characterAliasLookupResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  alias: z.string().trim().min(1).max(255),
+  canonical_name: z.string().trim().min(1).nullable().optional().default(null),
+  match_source: z.string().trim().min(1).max(20),
+});
+
 export const pronunciationDictionaryPreviewItemSchema = z.object({
   term: z.string().min(1),
   verbalized_form: z.string().min(1),
@@ -1026,6 +1037,8 @@ export type CharacterMapUpdateDto = z.infer<typeof characterMapUpdateSchema>;
 export type CharacterMapFinalizeDto = z.infer<typeof characterMapFinalizeSchema>;
 export type CharacterScrapeRequestDto = z.infer<typeof characterScrapeRequestSchema>;
 export type CharacterCandidatesMergeRequestDto = z.infer<typeof characterCandidatesMergeRequestSchema>;
+export type CharacterAliasLookupRequestDto = z.infer<typeof characterAliasLookupRequestSchema>;
+export type CharacterAliasLookupResponseDto = z.infer<typeof characterAliasLookupResponseSchema>;
 export type PronunciationDictionaryPreviewItemDto = z.infer<typeof pronunciationDictionaryPreviewItemSchema>;
 export type PronunciationDictionaryPreviewWarningDto = z.infer<typeof pronunciationDictionaryPreviewWarningSchema>;
 export type PronunciationDictionaryPreviewRequestDto = z.infer<typeof pronunciationDictionaryPreviewRequestSchema>;

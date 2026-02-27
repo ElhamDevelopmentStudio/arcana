@@ -556,6 +556,18 @@ export function useInferCharacterGendersMutation(projectId: number | null) {
   );
 }
 
+export function useLookupCharacterAliasMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['lookup-character-alias', projectId] : null,
+    async (_, { arg }: { arg: { alias: string } }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before alias lookup.');
+      }
+      return nipeApiClient.lookupCharacterAlias(projectId, arg);
+    },
+  );
+}
+
 export function usePronunciationPreviewMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['preview-pronunciation-dictionary', projectId] : null,

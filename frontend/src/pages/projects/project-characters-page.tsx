@@ -8,6 +8,7 @@ import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { appEnv } from '@/app/config/env';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import type {
+  CharacterAliasLookupResponseDto,
   CharacterExtractionDto,
   CharacterMapDto,
   PronunciationDictionaryPreviewRequestDto,
@@ -27,6 +28,7 @@ import {
   useScrapeCharactersMutation,
   useMergeCharactersMutation,
   useInferCharacterGendersMutation,
+  useLookupCharacterAliasMutation,
   useImportCharactersMutation,
   useSaveCharacterMapMutation,
   useFinalizeCharacterMapMutation,
@@ -169,6 +171,8 @@ export function ProjectCharactersPage() {
   const [mergeUndoHistory, setMergeUndoHistory] = useState<CharacterMergeUndoEntry[]>([]);
   const [mergeScrapeUrl, setMergeScrapeUrl] = useState<string>('');
   const [mergeScrapeAcknowledged, setMergeScrapeAcknowledged] = useState<boolean>(false);
+  const [aliasLookupInput, setAliasLookupInput] = useState<string>('');
+  const [aliasLookupResult, setAliasLookupResult] = useState<CharacterAliasLookupResponseDto | null>(null);
   const [pronunciationPreviewText, setPronunciationPreviewText] = useState<string>('');
   const [includeGlobalPronunciationScope, setIncludeGlobalPronunciationScope] = useState<boolean>(true);
   const [includeCharacterPronunciationScope, setIncludeCharacterPronunciationScope] = useState<boolean>(false);
@@ -262,6 +266,7 @@ export function ProjectCharactersPage() {
   const scrapeCharactersMutation = useScrapeCharactersMutation(projectId);
   const mergeCharactersMutation = useMergeCharactersMutation(projectId);
   const inferCharacterGendersMutation = useInferCharacterGendersMutation(projectId);
+  const lookupCharacterAliasMutation = useLookupCharacterAliasMutation(projectId);
   const finalizeCharactersMutation = useFinalizeCharacterMapMutation(projectId);
   const pronunciationPreviewMutation = usePronunciationPreviewMutation(projectId);
   const isCharacterMapFinalized = characterMapQuery.data?.character_map_finalized ?? false;
@@ -536,6 +541,29 @@ export function ProjectCharactersPage() {
       toast.success('Character genders inferred.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to infer character genders.');
+    }
+  }
+
+  async function handleLookupAlias(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    if (!aliasLookupInput.trim()) {
+      toast.error('Provide an alias to look up.');
+      return;
+    }
+
+    try {
+      const result = await lookupCharacterAliasMutation.trigger({
+        alias: aliasLookupInput.trim(),
+      });
+      setAliasLookupResult(result);
+      toast.success('Alias lookup complete.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Alias lookup failed.');
     }
   }
 
@@ -981,6 +1009,32 @@ export function ProjectCharactersPage() {
                 ? 'Loading saved character map.'
                 : `${characterMapQuery.data?.characters.length ?? 0} row(s) loaded.`}
             </div>
+            <form className="grid gap-2 rounded-md border border-panel-border/70 bg-muted/30 px-3 py-2" onSubmit={handleLookupAlias}>
+              <p className="text-xs font-medium text-foreground">Alias lookup utility</p>
+              <Input
+                aria-label="Alias lookup input"
+                data-testid="character-alias-lookup-input"
+                onChange={(event) => setAliasLookupInput(event.target.value)}
+                placeholder="Alias to resolve"
+                value={aliasLookupInput}
+              />
+              <Button
+                data-testid="character-alias-lookup-button"
+                disabled={lookupCharacterAliasMutation.isMutating || projectId === null || !aliasLookupInput.trim()}
+                size="sm"
+                type="submit"
+                variant="outline"
+              >
+                {lookupCharacterAliasMutation.isMutating ? 'Looking up...' : 'Lookup alias'}
+              </Button>
+              <p className="text-xs text-muted-foreground" data-testid="character-alias-lookup-state">
+                {aliasLookupResult === null
+                  ? 'No alias lookup results yet.'
+                  : aliasLookupResult.canonical_name
+                    ? `${aliasLookupResult.alias} → ${aliasLookupResult.canonical_name} (${aliasLookupResult.match_source})`
+                    : `${aliasLookupResult.alias} not found (${aliasLookupResult.match_source})`}
+              </p>
+            </form>
           </CardContent>
         </Card>
 
