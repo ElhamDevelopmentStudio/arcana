@@ -10,6 +10,7 @@ type WorkspaceNavItem = {
 
 const PROJECT_WORKSPACE_NAV_ITEMS: WorkspaceNavItem[] = [
   { to: '.', label: 'Workspace', end: true },
+  { to: 'setup', label: 'Setup' },
   { to: 'mode', label: 'Mode' },
   { to: 'characters', label: 'Characters' },
   { to: 'pipeline-setup', label: 'Pipeline Setup' },

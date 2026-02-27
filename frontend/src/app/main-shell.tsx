@@ -33,6 +33,11 @@ const ROUTE_META: Array<{ pattern: RegExp; title: string; description: string }>
     description: 'Start by creating a project and ingesting source text.',
   },
   {
+    pattern: /\/projects\/[^/]+\/setup$/,
+    title: 'Project Setup',
+    description: 'Track backend-driven readiness steps before advanced project workspace operations.',
+  },
+  {
     pattern: /\/projects\/[^/]+\/mode$/,
     title: 'Mode Calibration',
     description: 'Set the narrative processing mode before downstream steps.',

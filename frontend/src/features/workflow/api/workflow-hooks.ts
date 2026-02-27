@@ -73,6 +73,13 @@ export function useProjectAllowedActionsQuery(projectId: number | null) {
   );
 }
 
+export function useProjectSetupStatusQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? workspaceKeys.projectSetupStatus(projectId) : null,
+    async ([, currentProjectId]) => nipeApiClient.getProjectSetupStatus(currentProjectId),
+  );
+}
+
 export function useRunDetailQuery(projectId: number | null, runId: number | null) {
   return useSWR(
     projectId !== null && runId !== null ? workspaceKeys.runDetail(projectId, runId) : null,
