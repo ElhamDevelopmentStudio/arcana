@@ -1660,6 +1660,100 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('mode-continue-button')).toBeEnabled();
   });
 
+  test('projects/:project_id/characters route reads and saves character map through backend endpoints', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-characters-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Alice',
+            verbalized_form: 'Alice',
+            gender: 'female',
+            aliases: ['Al'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
+    const charactersGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/characters`),
+    );
+    const charactersGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters`),
+    );
+
+    await page.goto(`/projects/${projectId}/characters`);
+    await expect(page.getByTestId('character-map-save-button')).toBeVisible();
+
+    await charactersGetRequestPromise;
+    const charactersGetResponse = await charactersGetResponsePromise;
+    expect(charactersGetResponse.status()).toBe(200);
+    await expect(page.getByTestId('character-list-state')).toContainText('1 row(s) loaded.');
+
+    const charactersPutRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/characters`),
+    );
+    const charactersPutResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters`),
+    );
+
+    await page.getByTestId('character-map-save-button').click();
+
+    const charactersPutRequest = await charactersPutRequestPromise;
+    const charactersPutPayload = charactersPutRequest.postDataJSON() as {
+      characters: Array<{ name: string; verbalized_form: string; gender: string }>;
+    };
+    expect(charactersPutPayload.characters.length).toBeGreaterThan(0);
+    expect(charactersPutPayload.characters[0]?.name).toBe('Alice');
+    expect(charactersPutPayload.characters[0]?.verbalized_form).toBe('Alice');
+    expect(charactersPutPayload.characters[0]?.gender).toBe('female');
+
+    const charactersPutResponse = await charactersPutResponsePromise;
+    expect(charactersPutResponse.status()).toBe(200);
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,

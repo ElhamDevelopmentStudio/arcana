@@ -633,7 +633,7 @@ Definition of done for each task:
 - [x] [FE-134] Add no-auth workspace messaging for access model behavior and scope.
 
 ### 13.6 Character, Pronunciation, Gender, and Voice Workflows
-- [ ] [FE-135] Build character map editor route `/projects/{project_id}/characters` using `GET/PUT /api/projects/{project_id}/characters`.
+- [x] [FE-135] Build character map editor route `/projects/{project_id}/characters` using `GET/PUT /api/projects/{project_id}/characters`.
 - [ ] [FE-136] Build character import flow using `POST /api/projects/{project_id}/characters/import`.
 - [ ] [FE-137] Build character extraction flow using `POST /api/projects/{project_id}/characters/extract`.
 - [ ] [FE-138] Build scrape-assisted candidate flow using `POST /api/projects/{project_id}/characters/scrape`.
