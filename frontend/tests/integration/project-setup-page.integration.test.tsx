@@ -542,6 +542,78 @@ describe('project setup page', () => {
     expect(setupStatusMutateMock).toHaveBeenCalledTimes(1);
   });
 
+  it('surfaces ingestion-in-progress conflicts with explicit retry guidance', async () => {
+    const user = userEvent.setup();
+    ingestTxtTriggerMock.mockRejectedValue(
+      new Error('Ingestion is already running for this project. Wait for completion before uploading again.'),
+    );
+    useProjectSetupStatusQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: setupStatusMutateMock,
+      data: {
+        project_id: 77,
+        lifecycle_state: 'ingested',
+        next_required_action: 'select_mode',
+        is_complete: false,
+        steps: [
+          { step_id: 'ingestion', label: 'Ingestion', ready: true, required: true },
+          { step_id: 'mode_selection', label: 'Mode Selection', ready: false, required: true },
+          { step_id: 'initial_run', label: 'Initial Run', ready: false, required: true },
+          { step_id: 'character_mapping', label: 'Character Mapping', ready: false, required: false },
+          { step_id: 'voice_mapping', label: 'Voice Mapping', ready: false, required: false },
+        ],
+      },
+    });
+
+    renderProjectSetupPage();
+
+    const txtFile = new File(['chapter'], 'novel.txt', { type: 'text/plain' });
+    await user.upload(screen.getByTestId('project-setup-ingestion-file-input'), txtFile);
+    await user.click(screen.getByTestId('project-setup-ingestion-submit'));
+
+    expect(screen.getByTestId('project-setup-ingestion-error-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('project-setup-ingestion-error-kind')).toHaveTextContent('in_progress');
+    expect(
+      screen.getByText('An ingestion task is already running for this project. Wait for completion before submitting another upload.'),
+    ).toBeInTheDocument();
+  });
+
+  it('disables all ingestion actions while any ingestion upload request is in progress', () => {
+    useIngestTxtMutationMock.mockReturnValue({
+      isMutating: true,
+      trigger: ingestTxtTriggerMock,
+    });
+    useProjectSetupStatusQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: setupStatusMutateMock,
+      data: {
+        project_id: 77,
+        lifecycle_state: 'ingested',
+        next_required_action: 'select_mode',
+        is_complete: false,
+        steps: [
+          { step_id: 'ingestion', label: 'Ingestion', ready: true, required: true },
+          { step_id: 'mode_selection', label: 'Mode Selection', ready: false, required: true },
+          { step_id: 'initial_run', label: 'Initial Run', ready: false, required: true },
+          { step_id: 'character_mapping', label: 'Character Mapping', ready: false, required: false },
+          { step_id: 'voice_mapping', label: 'Voice Mapping', ready: false, required: false },
+        ],
+      },
+    });
+
+    renderProjectSetupPage();
+
+    expect(screen.getByTestId('project-setup-ingestion-running-hint')).toBeInTheDocument();
+    expect(screen.getByTestId('project-setup-source-attach-submit')).toBeDisabled();
+    expect(screen.getByTestId('project-setup-ingestion-submit')).toBeDisabled();
+    expect(screen.getByTestId('project-setup-markdown-ingestion-submit')).toBeDisabled();
+    expect(screen.getByTestId('project-setup-epub-ingestion-submit')).toBeDisabled();
+    expect(screen.getByTestId('project-setup-chapters-dir-ingestion-submit')).toBeDisabled();
+    expect(screen.getByTestId('project-setup-append-chapter-submit')).toBeDisabled();
+  });
+
   it('surfaces overlap-conflict failures for append-chapter ingestion', async () => {
     const user = userEvent.setup();
     appendChapterTriggerMock.mockRejectedValue(new Error('409 overlap conflict: chapter overlaps existing ranges'));
