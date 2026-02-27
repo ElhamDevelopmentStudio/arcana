@@ -1682,6 +1682,75 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByText(new RegExp(`Status:\\s*${runPayload.status}`, 'i'))).toBeVisible();
   });
 
+  test('projects/:project_id/export route loads JSON export payload through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-export-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: 'Export route contract project',
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: runPayload.run_id },
+    );
+
+    const exportGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/exports/${runPayload.run_id}.json`),
+    );
+
+    await page.goto(`/projects/${projectId}/export`);
+    await expect(page.getByRole('heading', { name: 'Exports' })).toBeVisible();
+
+    const exportGetResponse = await exportGetResponsePromise;
+    expect(exportGetResponse.status()).toBe(200);
+    const exportPayload = (await exportGetResponse.json()) as { project_id: number; run_id: number };
+    expect(exportPayload.project_id).toBe(projectId);
+    expect(exportPayload.run_id).toBe(runPayload.run_id);
+    await expect(page.getByRole('button', { name: /Download JSON/i })).toBeEnabled();
+  });
+
   test('projects/:project_id/run-monitor route reruns an existing run through backend endpoint', async ({
     page,
     request,
