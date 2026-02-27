@@ -1736,6 +1736,9 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('project-settings-llm-panel')).toBeVisible();
     await expect(page.getByTestId('project-settings-providers-panel')).toBeVisible();
     await expect(page.getByTestId('project-settings-access-panel')).toBeVisible();
+    await expect(page.getByTestId('project-settings-access-no-auth-notice')).toContainText(
+      'Authentication is not enabled in this environment.',
+    );
 
     await llmSettingsGetRequestPromise;
     const llmSettingsGetResponse = await llmSettingsGetResponsePromise;
