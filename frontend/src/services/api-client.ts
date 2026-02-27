@@ -33,6 +33,7 @@ import {
   projectWorkspaceSummaryResponseSchema,
   projectIngestionSourceAttachRequestSchema,
   projectIngestionSourceAttachResponseSchema,
+  projectAccessListResponseSchema,
   projectCreateRequestSchema,
   projectMetadataUpdateRequestSchema,
   projectMetadataUpdateResponseSchema,
@@ -76,6 +77,7 @@ import {
   type ProjectWorkspaceSummaryResponseDto,
   type ProjectIngestionSourceAttachRequestDto,
   type ProjectIngestionSourceAttachResponseDto,
+  type ProjectAccessListResponseDto,
   type ProjectMetadataUpdateRequestDto,
   type ProjectMetadataUpdateResponseDto,
   type VoiceConfigDto,
@@ -270,6 +272,15 @@ export class NipeApiClient {
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/source`, parsedPayload);
       return projectIngestionSourceAttachResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getProjectAccessList(projectId: number): Promise<ProjectAccessListResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/access`);
+      return projectAccessListResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

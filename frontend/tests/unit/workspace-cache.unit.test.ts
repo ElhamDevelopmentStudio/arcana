@@ -12,6 +12,7 @@ describe('workspace key factory', () => {
     expect(workspaceKeys.projectControlPanelSummary).toEqual(['project-control-panel-summary']);
     expect(workspaceKeys.llmProviders).toEqual(['llm-providers']);
     expect(workspaceKeys.runDetail(11, 42)).toEqual(['run-detail', 11, 42]);
+    expect(workspaceKeys.projectAccessList(11)).toEqual(['project-access-list', 11]);
     expect(workspaceKeys.projectLLMSettings(11)).toEqual(['project-llm-settings', 11]);
     expect(workspaceKeys.projectControlPanelProjectList({ page: 1, page_size: 20 })).toEqual([
       'project-control-panel-project-list',

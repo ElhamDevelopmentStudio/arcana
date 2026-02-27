@@ -16,6 +16,7 @@ export const workspaceKeys = {
   projectActivityTimeline: (projectId: number, params: ProjectActivityTimelineRequestDto) =>
     ['project-activity-timeline', projectId, params] as const,
   projectDetail: (projectId: number) => ['project-detail', projectId] as const,
+  projectAccessList: (projectId: number) => ['project-access-list', projectId] as const,
   projectLLMSettings: (projectId: number) => ['project-llm-settings', projectId] as const,
   projectWorkspaceSummary: (projectId: number) => ['project-workspace-summary', projectId] as const,
   projectSetupStatus: (projectId: number) => ['project-setup-status', projectId] as const,

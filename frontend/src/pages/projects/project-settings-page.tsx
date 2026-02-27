@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
   useLLMProvidersQuery,
+  useProjectAccessListQuery,
   useProjectLLMSettingsQuery,
   useUpdateLLMProviderStatusMutation,
   useUpdateProjectLLMSettingsMutation,
@@ -22,6 +23,7 @@ export function ProjectSettingsPage() {
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const projectId = routeProjectId ?? storeProjectId;
+  const projectAccessListQuery = useProjectAccessListQuery(projectId);
   const projectLLMSettingsQuery = useProjectLLMSettingsQuery(projectId);
   const llmProvidersQuery = useLLMProvidersQuery(projectId !== null);
   const updateProjectLLMSettingsMutation = useUpdateProjectLLMSettingsMutation(projectId);
@@ -98,7 +100,41 @@ export function ProjectSettingsPage() {
       step="Settings"
       title="Project Settings"
     >
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Card data-testid="project-settings-access-panel">
+          <CardHeader>
+            <CardTitle>Project Access</CardTitle>
+            <CardDescription>
+              Read current access grants via `GET /api/projects/:project_id/access`.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            {projectAccessListQuery.isLoading ? (
+              <p data-testid="project-settings-access-loading">Loading access grants...</p>
+            ) : null}
+            {projectAccessListQuery.error ? (
+              <p className="text-destructive" data-testid="project-settings-access-error">
+                {projectAccessListQuery.error.message}
+              </p>
+            ) : null}
+            {projectAccessListQuery.data && projectAccessListQuery.data.grants.length === 0 ? (
+              <p data-testid="project-settings-access-empty">No access grants configured.</p>
+            ) : null}
+            {(projectAccessListQuery.data?.grants ?? []).map((grant) => (
+              <div
+                key={grant.id}
+                className="rounded-xl border border-panel-border/70 bg-muted/35 p-3"
+                data-testid={`project-settings-access-grant-${grant.id}`}
+              >
+                <p className="font-medium text-foreground">{grant.principal_id}</p>
+                <p className="text-xs text-muted-foreground">
+                  {grant.principal_type} · role: {grant.role}
+                </p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
         <Card data-testid="project-settings-llm-panel">
           <CardHeader>
             <CardTitle>LLM Settings</CardTitle>

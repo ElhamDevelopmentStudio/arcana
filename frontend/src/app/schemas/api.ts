@@ -176,6 +176,20 @@ export const projectMetadataUpdateResponseSchema = z.object({
   updated_at: z.string().min(1),
 });
 
+export const projectAccessGrantResponseSchema = z.object({
+  id: z.number().int().positive(),
+  project_id: z.number().int().positive(),
+  principal_type: z.string().trim().min(1),
+  principal_id: z.string().trim().min(1),
+  role: z.string().trim().min(1),
+  created_at: z.string().min(1),
+});
+
+export const projectAccessListResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  grants: z.array(projectAccessGrantResponseSchema),
+});
+
 export const projectIngestionSourceAttachRequestSchema = z.object({
   source: z.enum(['txt', 'markdown', 'epub', 'chapters-dir']),
   source_filename: z.string().trim().min(1).max(255).optional(),
@@ -982,6 +996,8 @@ export type ProjectDto = z.infer<typeof projectSchema>;
 export type ProjectCreateRequestDto = z.infer<typeof projectCreateRequestSchema>;
 export type ProjectMetadataUpdateRequestDto = z.infer<typeof projectMetadataUpdateRequestSchema>;
 export type ProjectMetadataUpdateResponseDto = z.infer<typeof projectMetadataUpdateResponseSchema>;
+export type ProjectAccessGrantResponseDto = z.infer<typeof projectAccessGrantResponseSchema>;
+export type ProjectAccessListResponseDto = z.infer<typeof projectAccessListResponseSchema>;
 export type ProjectIngestionSourceAttachRequestDto = z.infer<typeof projectIngestionSourceAttachRequestSchema>;
 export type ProjectIngestionSourceAttachResponseDto = z.infer<typeof projectIngestionSourceAttachResponseSchema>;
 export type ProjectLLMSettingsRequestDto = z.infer<typeof projectLLMSettingsRequestSchema>;

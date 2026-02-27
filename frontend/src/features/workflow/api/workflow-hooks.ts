@@ -97,6 +97,13 @@ export function useProjectDetailQuery(projectId: number | null) {
   );
 }
 
+export function useProjectAccessListQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? workspaceKeys.projectAccessList(projectId) : null,
+    async ([, currentProjectId]) => nipeApiClient.getProjectAccessList(currentProjectId),
+  );
+}
+
 export function useProjectLLMSettingsQuery(projectId: number | null) {
   return useSWR(
     projectId !== null ? workspaceKeys.projectLLMSettings(projectId) : null,
