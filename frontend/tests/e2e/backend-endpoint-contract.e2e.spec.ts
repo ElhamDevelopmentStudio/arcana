@@ -1608,6 +1608,80 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByRole('button', { name: /Download JSON/i })).toBeEnabled();
   });
 
+  test('projects/:project_id/run-monitor route loads run detail through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-run-monitor-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number; status: string };
+    expect(runPayload.run_id).toBeGreaterThan(0);
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: 'Run monitor contract project',
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: runPayload.run_id },
+    );
+
+    const runDetailGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/runs/${runPayload.run_id}`),
+    );
+    const runDetailGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/runs/${runPayload.run_id}`),
+    );
+
+    await page.goto(`/projects/${projectId}/run-monitor`);
+    await runDetailGetRequestPromise;
+    const runDetailGetResponse = await runDetailGetResponsePromise;
+    expect(runDetailGetResponse.status()).toBe(200);
+
+    await expect(page.getByRole('heading', { name: 'Run Monitor' })).toBeVisible();
+    await expect(page.getByText(`Run: ${runPayload.run_id}`)).toBeVisible();
+    await expect(page.getByText(new RegExp(`Status:\\s*${runPayload.status}`, 'i'))).toBeVisible();
+  });
+
   test('projects/:project_id/pipeline-setup route updates voice configuration through backend endpoint', async ({
     page,
     request,
