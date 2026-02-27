@@ -663,7 +663,7 @@ Definition of done for each task:
 - [x] [FE-160] Build audiobook prep dashboard from `GET /api/projects/{project_id}/runs/{run_id}/audiobook-prep-dashboard`.
 - [x] [FE-161] Build character analytics dashboard from `GET /api/projects/{project_id}/runs/{run_id}/character-analytics`.
 - [x] [FE-162] Build co-occurrence graph view from `GET /api/projects/{project_id}/runs/{run_id}/character-cooccurrence-graph`.
-- [ ] [FE-163] Build tension graph view from `GET /api/projects/{project_id}/runs/{run_id}/tension-graph`.
+- [x] [FE-163] Build tension graph view from `GET /api/projects/{project_id}/runs/{run_id}/tension-graph`.
 - [ ] [FE-164] Build polarity graph view from `GET /api/projects/{project_id}/runs/{run_id}/polarity-graph`.
 - [ ] [FE-165] Build JSON export center path using `GET /api/projects/{project_id}/exports/{run_id}.json`.
 - [ ] [FE-166] Build CSV export center path using `GET /api/projects/{project_id}/exports/{run_id}.csv`.

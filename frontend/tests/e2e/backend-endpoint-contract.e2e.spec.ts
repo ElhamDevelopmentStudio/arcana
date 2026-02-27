@@ -2398,6 +2398,79 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(cooccurrencePayload.run_id).toBe(runPayload.run_id);
   });
 
+  test('projects/:project_id/run-monitor route loads tension graph through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-run-monitor-tension-graph-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: 'Run monitor tension graph project',
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: runPayload.run_id },
+    );
+
+    const tensionGraphGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/runs/${runPayload.run_id}/tension-graph`),
+    );
+
+    await page.goto(`/projects/${projectId}/run-monitor`);
+    await expect(page.getByText('Tension Graph')).toBeVisible();
+
+    const tensionGraphGetResponse = await tensionGraphGetResponsePromise;
+    expect(tensionGraphGetResponse.status()).toBe(200);
+    const tensionGraphPayload = (await tensionGraphGetResponse.json()) as {
+      metric_id: string;
+      value_key: string;
+      points: Array<{ position: number; smoothed_tension: number }>;
+    };
+    expect(tensionGraphPayload.metric_id).toBe('smoothed_tension_curve');
+    expect(tensionGraphPayload.value_key).toBe('smoothed_tension');
+    expect(tensionGraphPayload.points.length).toBeGreaterThan(0);
+  });
+
   test('projects/:project_id/pipeline-setup route updates voice configuration through backend endpoint', async ({
     page,
     request,
