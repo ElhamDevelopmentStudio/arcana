@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,6 +43,7 @@ function renderDashboard(initialEntry: string = '/dashboard') {
   );
 
   render(<RouterProvider router={router} />);
+  return router;
 }
 
 describe('dashboard route/query state persistence', () => {
@@ -129,6 +130,51 @@ describe('dashboard route/query state persistence', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('project-run-monitor-route')).toBeInTheDocument();
+    });
+  });
+
+  it('applies dashboard filters and syncs them into URL params', async () => {
+    const user = userEvent.setup();
+    const router = renderDashboard();
+
+    await waitFor(() => {
+      expect(useProjectControlPanelProjectListQueryMock).toHaveBeenCalled();
+    });
+
+    await user.selectOptions(screen.getByTestId('dashboard-filter-status'), 'running');
+    fireEvent.change(screen.getByTestId('dashboard-filter-selected-mode'), { target: { value: 'author' } });
+    await user.selectOptions(screen.getByTestId('dashboard-filter-last-run-status'), 'failed');
+    await user.selectOptions(screen.getByTestId('dashboard-filter-next-required-action'), 'export');
+
+    await waitFor(() => {
+      const lastCall = useProjectControlPanelProjectListQueryMock.mock.calls.at(-1);
+      expect(lastCall?.[1]).toMatchObject({
+        page: 1,
+        page_size: 20,
+        status: 'running',
+        selected_mode: 'author',
+        last_run_status: 'failed',
+        next_required_action: 'export',
+      });
+      expect(router.state.location.search).toContain('status=running');
+      expect(router.state.location.search).toContain('selected_mode=author');
+      expect(router.state.location.search).toContain('last_run_status=failed');
+      expect(router.state.location.search).toContain('next_required_action=export');
+    });
+
+    await user.click(screen.getByTestId('dashboard-filter-clear'));
+
+    await waitFor(() => {
+      const lastCall = useProjectControlPanelProjectListQueryMock.mock.calls.at(-1);
+      expect(lastCall?.[1]).toMatchObject({
+        page: 1,
+        page_size: 20,
+        status: undefined,
+        selected_mode: undefined,
+        last_run_status: undefined,
+        next_required_action: undefined,
+      });
+      expect(router.state.location.search).toBe('?page=1&page_size=20');
     });
   });
 });

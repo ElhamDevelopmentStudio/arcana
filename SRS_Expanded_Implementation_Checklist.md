@@ -570,7 +570,7 @@ Definition of done for each task:
 - [x] [FE-102] Wire landing secondary CTA to `POST /api/projects/drafts` then route to project workflow.
 - [x] [FE-103] Build `/dashboard` summary layer from `GET /api/dashboard/project-control-panel/summary`.
 - [x] [FE-104] Build dashboard project table from `GET /api/dashboard/project-control-panel/projects`.
-- [ ] [FE-105] Add dashboard filter controls for status/mode/last_run_status/next_required_action with URL state sync.
+- [x] [FE-105] Add dashboard filter controls for status/mode/last_run_status/next_required_action with URL state sync.
 - [ ] [FE-106] Add dashboard pagination controls mapped to `page` and `page_size`.
 - [ ] [FE-107] Add row-level quick actions driven by `GET /api/projects/{project_id}/actions`.
 - [ ] [FE-108] Add dashboard refresh strategy for active runs and stale row states.
