@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { ProjectStepNav } from '@/app/project-step-nav';
+import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
+import { useCriticalRoutePrefetch } from '@/features/workflow/prefetch/critical-route-prefetch';
 
 function getProjectIdFromPath(pathname: string, fallback: string | undefined): string | null {
   if (fallback) {
@@ -97,7 +99,13 @@ export function MainShell() {
   const location = useLocation();
   const params = useParams<{ project_id?: string }>();
   const projectId = getProjectIdFromPath(location.pathname, params.project_id);
+  const currentProjectId = parseProjectIdParam(projectId ?? undefined);
   const routeMeta = resolveRouteMeta(location.pathname);
+
+  useCriticalRoutePrefetch({
+    pathname: location.pathname,
+    projectId: currentProjectId,
+  });
 
   return (
     <div className="min-h-screen bg-background text-foreground">
