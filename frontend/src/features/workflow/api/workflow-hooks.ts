@@ -93,6 +93,13 @@ export function useProjectDetailQuery(projectId: number | null) {
   );
 }
 
+export function useProjectLLMSettingsQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? workspaceKeys.projectLLMSettings(projectId) : null,
+    async ([, currentProjectId]) => nipeApiClient.getProjectLLMSettings(currentProjectId),
+  );
+}
+
 export function useProjectWorkspaceSummaryQuery(projectId: number | null) {
   return useSWR(
     projectId !== null ? workspaceKeys.projectWorkspaceSummary(projectId) : null,
@@ -252,6 +259,24 @@ export function useUpdateProjectMetadataMutation(projectId: number | null) {
     {
       onSuccess: async () => {
         await invalidateWorkspaceMutation('update_project_metadata', { projectId });
+      },
+    },
+  );
+}
+
+export function useUpdateProjectLLMSettingsMutation(projectId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  return useSWRMutation(
+    projectId !== null ? ['update-project-llm-settings', projectId] : null,
+    async (_, { arg }: { arg: { llm_enabled: boolean } }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before updating LLM settings.');
+      }
+      return nipeApiClient.updateProjectLLMSettings(projectId, arg);
+    },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('update_project_llm_settings', { projectId });
       },
     },
   );

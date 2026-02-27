@@ -11,6 +11,7 @@ describe('workspace key factory', () => {
     expect(workspaceKeys.health).toEqual(['health']);
     expect(workspaceKeys.projectControlPanelSummary).toEqual(['project-control-panel-summary']);
     expect(workspaceKeys.runDetail(11, 42)).toEqual(['run-detail', 11, 42]);
+    expect(workspaceKeys.projectLLMSettings(11)).toEqual(['project-llm-settings', 11]);
     expect(workspaceKeys.projectControlPanelProjectList({ page: 1, page_size: 20 })).toEqual([
       'project-control-panel-project-list',
       { page: 1, page_size: 20 },
@@ -43,5 +44,13 @@ describe('workspace mutation invalidation map', () => {
     expect((projectRunMatcher as (key: unknown) => boolean)(['run-detail', 21, 9])).toBe(true);
     expect((projectRunMatcher as (key: unknown) => boolean)(['run-detail', 99, 9])).toBe(false);
     expect((projectRunMatcher as (key: unknown) => boolean)(['project-control-panel-summary'])).toBe(false);
+  });
+
+  it('invalidates project llm settings key on llm settings mutation', () => {
+    const targets = resolveWorkspaceMutationInvalidationTargets('update_project_llm_settings', { projectId: 21 });
+
+    expect(targets).toContainEqual(workspaceKeys.projectLLMSettings(21));
+    expect(targets).toContainEqual(workspaceKeys.projectDetail(21));
+    expect(targets).toContainEqual(workspaceKeys.projectWorkspaceSummary(21));
   });
 });

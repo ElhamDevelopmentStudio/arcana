@@ -15,6 +15,7 @@ export const workspaceKeys = {
   projectActivityTimeline: (projectId: number, params: ProjectActivityTimelineRequestDto) =>
     ['project-activity-timeline', projectId, params] as const,
   projectDetail: (projectId: number) => ['project-detail', projectId] as const,
+  projectLLMSettings: (projectId: number) => ['project-llm-settings', projectId] as const,
   projectWorkspaceSummary: (projectId: number) => ['project-workspace-summary', projectId] as const,
   projectSetupStatus: (projectId: number) => ['project-setup-status', projectId] as const,
   runDetail: (projectId: number, runId: number) => ['run-detail', projectId, runId] as const,
@@ -76,6 +77,7 @@ export type WorkspaceMutationName =
   | 'create_project'
   | 'create_project_draft'
   | 'update_project_metadata'
+  | 'update_project_llm_settings'
   | 'archive_project'
   | 'restore_project'
   | 'switch_mode'
@@ -103,6 +105,20 @@ export const workspaceMutationInvalidationMap: Record<
       workspaceKeys.projectDetail(projectId),
       workspaceKeys.projectWorkspaceSummary(projectId),
       workspaceKeys.projectSetupStatus(projectId),
+    ];
+  },
+  update_project_llm_settings: ({ projectId }) => {
+    if (projectId === null || projectId === undefined) {
+      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
+    }
+    return [
+      workspaceKeys.projectControlPanelSummary,
+      workspaceKeyMatchers.projectControlPanelProjectList,
+      workspaceKeys.projectDetail(projectId),
+      workspaceKeys.projectLLMSettings(projectId),
+      workspaceKeys.projectWorkspaceSummary(projectId),
+      workspaceKeys.projectSetupStatus(projectId),
+      workspaceKeyMatchers.projectActivityTimeline(projectId),
     ];
   },
   archive_project: ({ projectId }) => {
