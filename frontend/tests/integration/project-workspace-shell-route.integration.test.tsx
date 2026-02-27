@@ -7,10 +7,13 @@ import { ProjectWorkspaceShell } from '@/app/project-workspace-shell';
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 
 const useProjectSetupStatusQueryMock = vi.fn();
+const useProjectAllowedActionsQueryMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useProjectSetupStatusQuery: (...args: Parameters<typeof useProjectSetupStatusQueryMock>) =>
     useProjectSetupStatusQueryMock(...args),
+  useProjectAllowedActionsQuery: (...args: Parameters<typeof useProjectAllowedActionsQueryMock>) =>
+    useProjectAllowedActionsQueryMock(...args),
 }));
 
 function renderProjectWorkspace(pathname: string) {
@@ -70,12 +73,28 @@ describe('project workspace shell route', () => {
   beforeEach(() => {
     resetWorkspaceStore();
     useProjectSetupStatusQueryMock.mockReset();
+    useProjectAllowedActionsQueryMock.mockReset();
     useProjectSetupStatusQueryMock.mockReturnValue({
       isLoading: false,
       error: undefined,
       mutate: vi.fn(),
       data: {
         is_complete: true,
+        steps: [
+          { step_id: 'ingestion', ready: true },
+          { step_id: 'mode_selection', ready: true },
+          { step_id: 'initial_run', ready: true },
+          { step_id: 'character_mapping', ready: false },
+          { step_id: 'voice_mapping', ready: false },
+        ],
+      },
+    });
+    useProjectAllowedActionsQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      data: {
+        required_step: null,
+        blocked_reason: null,
       },
     });
   });
@@ -116,6 +135,13 @@ describe('project workspace shell route', () => {
       mutate: vi.fn(),
       data: {
         is_complete: false,
+        steps: [
+          { step_id: 'ingestion', ready: false },
+          { step_id: 'mode_selection', ready: false },
+          { step_id: 'initial_run', ready: false },
+          { step_id: 'character_mapping', ready: false },
+          { step_id: 'voice_mapping', ready: false },
+        ],
       },
     });
 
@@ -123,6 +149,44 @@ describe('project workspace shell route', () => {
 
     expect(await screen.findByTestId('project-setup-route')).toBeInTheDocument();
     expect(screen.queryByTestId('project-mode-route')).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/projects/321/setup');
+  });
+
+  it('shows lock reason and blocks locked exports navigation using action gating metadata', async () => {
+    const user = userEvent.setup();
+    useProjectSetupStatusQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: vi.fn(),
+      data: {
+        is_complete: false,
+        steps: [
+          { step_id: 'ingestion', ready: true },
+          { step_id: 'mode_selection', ready: true },
+          { step_id: 'initial_run', ready: false },
+          { step_id: 'character_mapping', ready: false },
+          { step_id: 'voice_mapping', ready: false },
+        ],
+      },
+    });
+    useProjectAllowedActionsQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      data: {
+        required_step: 'initial_run',
+        blocked_reason: 'An initial run is required (or must be rerun) before downstream actions are unlocked.',
+      },
+    });
+
+    const router = renderProjectWorkspace('/projects/321/setup');
+
+    expect(await screen.findByTestId('project-setup-route')).toBeInTheDocument();
+    expect(screen.getByTestId('project-workspace-nav-exports')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('project-workspace-nav-locked-reason-exports')).toHaveTextContent(
+      'An initial run is required (or must be rerun) before downstream actions are unlocked.',
+    );
+
+    await user.click(screen.getByTestId('project-workspace-nav-exports'));
     expect(router.state.location.pathname).toBe('/projects/321/setup');
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import { useProjectSetupStatusQuery } from '@/features/workflow/api/workflow-hooks';
+import { useProjectAllowedActionsQuery, useProjectSetupStatusQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
 type WorkspaceNavItem = {
@@ -45,6 +45,13 @@ const PROJECT_WORKSPACE_NAV_GROUPS: WorkspaceNavGroup[] = [
   },
 ];
 
+const ACTION_GATED_ITEM_IDS_BY_REQUIRED_STEP: Record<string, ReadonlySet<WorkspaceNavItem['id']>> = {
+  ingestion: new Set<WorkspaceNavItem['id']>(['characters', 'voice', 'runs', 'exports']),
+  mode_selection: new Set<WorkspaceNavItem['id']>(['voice', 'runs', 'exports']),
+  initial_run: new Set<WorkspaceNavItem['id']>(['exports']),
+  restore: new Set<WorkspaceNavItem['id']>([]),
+};
+
 function toProjectSetupPath(projectId: number) {
   return `/projects/${projectId}/setup`;
 }
@@ -54,12 +61,56 @@ function isSetupPath(pathname: string, projectId: number) {
   return pathname === setupPath || pathname.startsWith(`${setupPath}/`);
 }
 
+function resolveStepReady(stepId: string, steps: Array<{ step_id: string; ready: boolean }> | undefined): boolean {
+  if (!steps || steps.length === 0) {
+    return false;
+  }
+  const step = steps.find((candidate) => candidate.step_id === stepId);
+  return step?.ready === true;
+}
+
+function resolveSetupStepLockReason(
+  itemId: WorkspaceNavItem['id'],
+  steps: Array<{ step_id: string; ready: boolean }> | undefined,
+): string | null {
+  const ingestionReady = resolveStepReady('ingestion', steps);
+  const modeSelectionReady = resolveStepReady('mode_selection', steps);
+  const initialRunReady = resolveStepReady('initial_run', steps);
+
+  if (itemId === 'characters' && !ingestionReady) {
+    return 'Locked: complete ingestion setup first.';
+  }
+  if ((itemId === 'voice' || itemId === 'runs') && !modeSelectionReady) {
+    return 'Locked: complete mode selection setup first.';
+  }
+  if (itemId === 'exports' && !initialRunReady) {
+    return 'Locked: complete initial run setup first.';
+  }
+  return null;
+}
+
+function resolveActionGatingLockReason(
+  itemId: WorkspaceNavItem['id'],
+  requiredStep: string | null | undefined,
+  blockedReason: string | null | undefined,
+): string | null {
+  if (!requiredStep || !blockedReason) {
+    return null;
+  }
+  const affectedItemIds = ACTION_GATED_ITEM_IDS_BY_REQUIRED_STEP[requiredStep];
+  if (!affectedItemIds || !affectedItemIds.has(itemId)) {
+    return null;
+  }
+  return blockedReason;
+}
+
 export function ProjectWorkspaceShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
   const projectId = parseProjectIdParam(params.project_id);
   const setupStatusQuery = useProjectSetupStatusQuery(projectId);
+  const projectActionsQuery = useProjectAllowedActionsQuery(projectId);
 
   useEffect(() => {
     if (projectId === null || setupStatusQuery.error || setupStatusQuery.isLoading || setupStatusQuery.data === undefined) {
@@ -95,19 +146,60 @@ export function ProjectWorkspaceShell() {
               <ul className="space-y-1.5">
                 {group.items.map((item) => (
                   <li key={item.id}>
+                    {(() => {
+                      const setupStepLockReason = resolveSetupStepLockReason(item.id, setupStatusQuery.data?.steps);
+                      const actionGatingLockReason = resolveActionGatingLockReason(
+                        item.id,
+                        projectActionsQuery.data?.required_step,
+                        projectActionsQuery.data?.blocked_reason,
+                      );
+                      const lockReason = actionGatingLockReason ?? setupStepLockReason;
+                      const locked = lockReason !== null;
+                      return (
                     <NavLink
                       className={({ isActive }) =>
                         [
                           'flex rounded-lg px-2.5 py-2 text-sm transition',
                           isActive ? 'bg-sidebar-active/12 text-sidebar-active' : 'text-sidebar-foreground hover:bg-background/75',
+                          locked ? 'opacity-55' : '',
                         ].join(' ')
                       }
+                      aria-disabled={locked}
                       data-testid={`project-workspace-nav-${item.id}`}
                       end={item.end}
+                      onClick={(event) => {
+                        if (!locked) {
+                          return;
+                        }
+                        event.preventDefault();
+                      }}
+                      title={lockReason ?? undefined}
                       to={item.to}
                     >
                       {item.label}
                     </NavLink>
+                      );
+                    })()}
+                    {(() => {
+                      const setupStepLockReason = resolveSetupStepLockReason(item.id, setupStatusQuery.data?.steps);
+                      const actionGatingLockReason = resolveActionGatingLockReason(
+                        item.id,
+                        projectActionsQuery.data?.required_step,
+                        projectActionsQuery.data?.blocked_reason,
+                      );
+                      const lockReason = actionGatingLockReason ?? setupStepLockReason;
+                      if (!lockReason) {
+                        return null;
+                      }
+                      return (
+                        <p
+                          className="mt-1 px-2 text-[11px] text-muted-foreground"
+                          data-testid={`project-workspace-nav-locked-reason-${item.id}`}
+                        >
+                          {lockReason}
+                        </p>
+                      );
+                    })()}
                   </li>
                 ))}
               </ul>
