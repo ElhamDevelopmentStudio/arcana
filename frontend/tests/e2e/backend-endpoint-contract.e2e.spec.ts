@@ -2911,6 +2911,103 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('pronunciation-character-state')).toContainText('Saved entries: 1');
   });
 
+  test('projects/:project_id/characters route runs pronunciation preview through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-pronunciation-preview-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const globalDictionaryPutResponse = await request.put(
+      `${backendBaseUrl}/api/projects/${projectId}/pronunciation-dictionary/global`,
+      {
+        data: {
+          entries: [
+            {
+              term: 'Aegis',
+              verbalized_form: 'EE-gis',
+              source: 'user',
+              confidence: 1,
+            },
+          ],
+        },
+      },
+    );
+    expect(globalDictionaryPutResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}/characters`);
+    await expect(page.getByTestId('pronunciation-preview-text')).toBeVisible();
+
+    const previewPostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST'
+        && networkRequest.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/preview`),
+    );
+    const previewPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/preview`),
+    );
+
+    await page.getByTestId('pronunciation-preview-text').fill('The Aegis hummed in silence.');
+    await page.getByTestId('pronunciation-preview-button').click();
+
+    const previewPostRequest = await previewPostRequestPromise;
+    const previewPostPayload = previewPostRequest.postDataJSON() as {
+      text: string;
+      include_global_scope: boolean;
+      include_character_scope: boolean;
+      include_place_scope: boolean;
+      include_artifact_scope: boolean;
+      include_invented_scope: boolean;
+      match_whole_words: boolean;
+      case_sensitive: boolean;
+      alias_aware: boolean;
+    };
+    expect(previewPostPayload).toMatchObject({
+      text: 'The Aegis hummed in silence.',
+      include_global_scope: true,
+      include_character_scope: false,
+      include_place_scope: false,
+      include_artifact_scope: false,
+      include_invented_scope: false,
+      match_whole_words: true,
+      case_sensitive: true,
+      alias_aware: false,
+    });
+
+    const previewPostResponse = await previewPostResponsePromise;
+    expect(previewPostResponse.status()).toBe(200);
+    await expect(page.getByTestId('pronunciation-preview-before')).toHaveValue('The Aegis hummed in silence.');
+    await expect(page.getByTestId('pronunciation-preview-after')).toHaveValue('The EE-gis hummed in silence.');
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,
