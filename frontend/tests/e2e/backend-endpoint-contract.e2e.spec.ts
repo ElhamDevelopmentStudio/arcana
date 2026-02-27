@@ -1880,6 +1880,92 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('character-auto-extract-state')).toBeVisible();
   });
 
+  test('projects/:project_id/characters route runs scrape-assisted candidate flow through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-characters-scrape-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const charactersGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters`),
+    );
+    await page.goto(`/projects/${projectId}/characters`);
+    await charactersGetResponsePromise;
+    const scrapeSourceUrl = `${backendBaseUrl}/health`;
+
+    const scrapeInput = page.getByLabel('Character scrape source URL');
+    if ((await scrapeInput.count()) > 0) {
+      const scrapeRequestPromise = page.waitForRequest(
+        (networkRequest) =>
+          networkRequest.method() === 'POST' &&
+          networkRequest.url().endsWith(`/api/projects/${projectId}/characters/scrape`),
+      );
+      const scrapeResponsePromise = page.waitForResponse(
+        (networkResponse) =>
+          networkResponse.request().method() === 'POST' &&
+          networkResponse.url().endsWith(`/api/projects/${projectId}/characters/scrape`),
+      );
+
+      await scrapeInput.fill(scrapeSourceUrl);
+      await page.getByLabel('Acknowledge scrape warning').click();
+      await page.getByRole('button', { name: 'Scrape candidates' }).click();
+
+      const scrapeRequest = await scrapeRequestPromise;
+      const scrapePayload = scrapeRequest.postDataJSON() as { source_url: string; acknowledge_source_risk: boolean };
+      expect(scrapePayload.source_url).toBe(scrapeSourceUrl);
+      expect(scrapePayload.acknowledge_source_risk).toBe(true);
+
+      const scrapeResponse = await scrapeResponsePromise;
+      expect(scrapeResponse.status()).toBe(200);
+      const scrapeResponsePayload = (await scrapeResponse.json()) as { status: string; candidate_count: number };
+      expect(scrapeResponsePayload.status).toBe('complete');
+      expect(scrapeResponsePayload.candidate_count).toBeGreaterThanOrEqual(0);
+      await expect(page.getByTestId('character-scrape-state')).toBeVisible();
+      return;
+    }
+
+    await expect(page.getByText('Disabled by environment flag')).toBeVisible();
+    const fallbackScrapeResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/characters/scrape`, {
+      data: {
+        source_url: scrapeSourceUrl,
+        acknowledge_source_risk: true,
+      },
+    });
+    expect(fallbackScrapeResponse.status()).toBe(200);
+    const fallbackScrapePayload = (await fallbackScrapeResponse.json()) as { status: string; candidate_count: number };
+    expect(fallbackScrapePayload.status).toBe('complete');
+    expect(fallbackScrapePayload.candidate_count).toBeGreaterThanOrEqual(0);
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,
