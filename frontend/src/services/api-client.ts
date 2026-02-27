@@ -39,6 +39,9 @@ import {
   projectSchema,
   projectLLMSettingsRequestSchema,
   projectLLMSettingsResponseSchema,
+  llmProviderStatusSchema,
+  llmProviderStatusUpdateRequestSchema,
+  llmProvidersResponseSchema,
   projectModeSwitchRequestSchema,
   projectModeSwitchResponseSchema,
   runDetailSchema,
@@ -57,6 +60,9 @@ import {
   type RunConfigPresetResponseDto,
   type ProjectLLMSettingsRequestDto,
   type ProjectLLMSettingsResponseDto,
+  type LLMProviderStatusDto,
+  type LLMProviderStatusUpdateRequestDto,
+  type LLMProvidersResponseDto,
   type HealthDto,
   type ProjectControlPanelSummaryResponseDto,
   type ProjectControlPanelProjectListRequestDto,
@@ -286,6 +292,28 @@ export class NipeApiClient {
     try {
       const response = await this.client.put(`/api/projects/${projectId}/llm`, parsedPayload);
       return projectLLMSettingsResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getLLMProviderStatuses(): Promise<LLMProvidersResponseDto> {
+    try {
+      const response = await this.client.get('/api/llm/providers');
+      return llmProvidersResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async updateLLMProviderStatus(
+    providerName: string,
+    payload: LLMProviderStatusUpdateRequestDto,
+  ): Promise<LLMProviderStatusDto> {
+    const parsedPayload = llmProviderStatusUpdateRequestSchema.parse(payload);
+    try {
+      const response = await this.client.put(`/api/llm/providers/${providerName}`, parsedPayload);
+      return llmProviderStatusSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

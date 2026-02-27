@@ -197,6 +197,19 @@ export const projectLLMSettingsResponseSchema = z.object({
   llm_enabled: z.boolean(),
 });
 
+export const llmProviderStatusSchema = z.object({
+  provider: z.string().min(1),
+  enabled: z.boolean(),
+});
+
+export const llmProviderStatusUpdateRequestSchema = z.object({
+  enabled: z.boolean(),
+});
+
+export const llmProvidersResponseSchema = z.object({
+  providers: z.array(llmProviderStatusSchema),
+});
+
 export const llmTaskTypeSchema = z.enum([
   'sentiment_probe',
   'emotion_refinement',
@@ -973,6 +986,9 @@ export type ProjectIngestionSourceAttachRequestDto = z.infer<typeof projectInges
 export type ProjectIngestionSourceAttachResponseDto = z.infer<typeof projectIngestionSourceAttachResponseSchema>;
 export type ProjectLLMSettingsRequestDto = z.infer<typeof projectLLMSettingsRequestSchema>;
 export type ProjectLLMSettingsResponseDto = z.infer<typeof projectLLMSettingsResponseSchema>;
+export type LLMProviderStatusDto = z.infer<typeof llmProviderStatusSchema>;
+export type LLMProviderStatusUpdateRequestDto = z.infer<typeof llmProviderStatusUpdateRequestSchema>;
+export type LLMProvidersResponseDto = z.infer<typeof llmProvidersResponseSchema>;
 export type ProjectModeSwitchResponseDto = z.infer<typeof projectModeSwitchResponseSchema>;
 export type ProjectModeSwitchRequestDto = z.infer<typeof projectModeSwitchRequestSchema>;
 export type IngestResponseDto = z.infer<typeof ingestResponseSchema>;

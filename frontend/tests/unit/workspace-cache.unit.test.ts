@@ -10,6 +10,7 @@ describe('workspace key factory', () => {
   it('builds deterministic project/run/dashboard keys', () => {
     expect(workspaceKeys.health).toEqual(['health']);
     expect(workspaceKeys.projectControlPanelSummary).toEqual(['project-control-panel-summary']);
+    expect(workspaceKeys.llmProviders).toEqual(['llm-providers']);
     expect(workspaceKeys.runDetail(11, 42)).toEqual(['run-detail', 11, 42]);
     expect(workspaceKeys.projectLLMSettings(11)).toEqual(['project-llm-settings', 11]);
     expect(workspaceKeys.projectControlPanelProjectList({ page: 1, page_size: 20 })).toEqual([
@@ -51,6 +52,15 @@ describe('workspace mutation invalidation map', () => {
 
     expect(targets).toContainEqual(workspaceKeys.projectLLMSettings(21));
     expect(targets).toContainEqual(workspaceKeys.projectDetail(21));
+    expect(targets).toContainEqual(workspaceKeys.projectWorkspaceSummary(21));
+  });
+
+  it('invalidates provider and project scoped keys on provider status mutation', () => {
+    const targets = resolveWorkspaceMutationInvalidationTargets('update_llm_provider_status', { projectId: 21 });
+
+    expect(targets).toContainEqual(workspaceKeys.llmProviders);
+    expect(targets).toContainEqual(workspaceKeys.projectDetail(21));
+    expect(targets).toContainEqual(workspaceKeys.projectLLMSettings(21));
     expect(targets).toContainEqual(workspaceKeys.projectWorkspaceSummary(21));
   });
 });

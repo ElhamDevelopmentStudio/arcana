@@ -42,6 +42,10 @@ export function useHealthQuery(enabled: boolean) {
   return useSWR(enabled ? workspaceKeys.health : null, async () => nipeApiClient.getHealth());
 }
 
+export function useLLMProvidersQuery(enabled: boolean) {
+  return useSWR(enabled ? workspaceKeys.llmProviders : null, async () => nipeApiClient.getLLMProviderStatuses());
+}
+
 export function useProjectControlPanelSummaryQuery(enabled: boolean) {
   return useSWR(
     enabled ? workspaceKeys.projectControlPanelSummary : null,
@@ -277,6 +281,20 @@ export function useUpdateProjectLLMSettingsMutation(projectId: number | null) {
     {
       onSuccess: async () => {
         await invalidateWorkspaceMutation('update_project_llm_settings', { projectId });
+      },
+    },
+  );
+}
+
+export function useUpdateLLMProviderStatusMutation(projectId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  return useSWRMutation(
+    ['update-llm-provider-status'],
+    async (_, { arg }: { arg: { provider_name: string; enabled: boolean } }) =>
+      nipeApiClient.updateLLMProviderStatus(arg.provider_name, { enabled: arg.enabled }),
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('update_llm_provider_status', { projectId });
       },
     },
   );

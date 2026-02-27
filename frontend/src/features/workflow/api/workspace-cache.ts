@@ -8,6 +8,7 @@ import type {
 export const workspaceKeys = {
   health: ['health'] as const,
   modeCatalog: ['mode-catalog'] as const,
+  llmProviders: ['llm-providers'] as const,
   projectControlPanelSummary: ['project-control-panel-summary'] as const,
   projectControlPanelProjectList: (params: ProjectControlPanelProjectListRequestDto) =>
     ['project-control-panel-project-list', params] as const,
@@ -78,6 +79,7 @@ export type WorkspaceMutationName =
   | 'create_project_draft'
   | 'update_project_metadata'
   | 'update_project_llm_settings'
+  | 'update_llm_provider_status'
   | 'archive_project'
   | 'restore_project'
   | 'switch_mode'
@@ -112,6 +114,21 @@ export const workspaceMutationInvalidationMap: Record<
       return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
     }
     return [
+      workspaceKeys.projectControlPanelSummary,
+      workspaceKeyMatchers.projectControlPanelProjectList,
+      workspaceKeys.projectDetail(projectId),
+      workspaceKeys.projectLLMSettings(projectId),
+      workspaceKeys.projectWorkspaceSummary(projectId),
+      workspaceKeys.projectSetupStatus(projectId),
+      workspaceKeyMatchers.projectActivityTimeline(projectId),
+    ];
+  },
+  update_llm_provider_status: ({ projectId }) => {
+    if (projectId === null || projectId === undefined) {
+      return [workspaceKeys.llmProviders, workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
+    }
+    return [
+      workspaceKeys.llmProviders,
       workspaceKeys.projectControlPanelSummary,
       workspaceKeyMatchers.projectControlPanelProjectList,
       workspaceKeys.projectDetail(projectId),
