@@ -136,6 +136,11 @@ export const projectSchema = z.object({
   created_at: z.string(),
 });
 
+export const projectCreateRequestSchema = z.object({
+  title: z.string().trim().min(1),
+  do_not_store_source_text: z.boolean().default(false),
+});
+
 export const projectLLMSettingsRequestSchema = z.object({
   llm_enabled: z.boolean(),
 });
@@ -164,9 +169,25 @@ export const projectModeSwitchResponseSchema = z.object({
   stale_runs_marked: z.number().int().nonnegative(),
 });
 
+export const projectModeSwitchRequestSchema = z.object({
+  mode: z.string().trim().min(1),
+});
+
 export const ingestResponseSchema = z.object({
   project_id: z.number().int(),
   chapter_count: z.number().int().nonnegative(),
+});
+
+export const singleFileUploadRequestSchema = z.object({
+  file: z.custom<File>((value) => typeof File !== 'undefined' && value instanceof File, {
+    message: 'Expected a File payload.',
+  }),
+});
+
+export const multiFileUploadRequestSchema = z.object({
+  files: z
+    .array(z.custom<File>((value) => typeof File !== 'undefined' && value instanceof File))
+    .min(1),
 });
 
 export const characterImportSchema = z.object({
@@ -444,6 +465,11 @@ export const runConfigDiffResponseSchema = z.object({
   changed_fields: z.array(runConfigFieldDiffSchema),
   base_only_fields: z.array(z.string()),
   target_only_fields: z.array(z.string()),
+});
+
+export const runConfigDiffRequestSchema = z.object({
+  base_run_id: z.number().int().positive(),
+  target_run_id: z.number().int().positive(),
 });
 
 export const runConfigPresetResponseSchema = z.object({
@@ -746,13 +772,30 @@ export const projectControlPanelProjectListResponseSchema = z.object({
   items: z.array(projectControlPanelProjectListItemSchema),
 });
 
+export const projectControlPanelProjectListRequestSchema = z.object({
+  page: z.number().int().positive().optional(),
+  page_size: z.number().int().positive().optional(),
+  status: projectLifecycleStateSchema.optional(),
+  selected_mode: z.string().trim().min(1).optional(),
+  last_run_status: runStatusSchema.optional(),
+  next_required_action: projectNextRequiredActionSchema.optional(),
+});
+
+export const characterGenderComparisonRequestSchema = z.object({
+  include_only_conflicts: z.boolean().default(false),
+});
+
 export type ModeCatalogDto = z.infer<typeof modeCatalogSchema>;
 export type HealthDto = z.infer<typeof healthSchema>;
 export type ProjectDto = z.infer<typeof projectSchema>;
+export type ProjectCreateRequestDto = z.infer<typeof projectCreateRequestSchema>;
 export type ProjectLLMSettingsRequestDto = z.infer<typeof projectLLMSettingsRequestSchema>;
 export type ProjectLLMSettingsResponseDto = z.infer<typeof projectLLMSettingsResponseSchema>;
 export type ProjectModeSwitchResponseDto = z.infer<typeof projectModeSwitchResponseSchema>;
+export type ProjectModeSwitchRequestDto = z.infer<typeof projectModeSwitchRequestSchema>;
 export type IngestResponseDto = z.infer<typeof ingestResponseSchema>;
+export type SingleFileUploadRequestDto = z.infer<typeof singleFileUploadRequestSchema>;
+export type MultiFileUploadRequestDto = z.infer<typeof multiFileUploadRequestSchema>;
 export type CharacterImportDto = z.infer<typeof characterImportSchema>;
 export type CharacterMapItemDto = z.infer<typeof characterMapItemSchema>;
 export type CharacterMapDto = z.infer<typeof characterMapSchema>;
@@ -773,6 +816,7 @@ export type RunResponseDto = z.infer<typeof runResponseSchema>;
 export type RunDetailDto = z.infer<typeof runDetailSchema>;
 export type RunConfigFieldDiffDto = z.infer<typeof runConfigFieldDiffSchema>;
 export type RunConfigDiffResponseDto = z.infer<typeof runConfigDiffResponseSchema>;
+export type RunConfigDiffRequestDto = z.infer<typeof runConfigDiffRequestSchema>;
 export type RunConfigPresetResponseDto = z.infer<typeof runConfigPresetResponseSchema>;
 export type ExportDto = z.infer<typeof exportSchema>;
 export type TensionGraphPointDto = z.infer<typeof tensionGraphPointSchema>;
@@ -791,6 +835,8 @@ export type ProjectControlPanelRecentFailureDto = z.infer<typeof projectControlP
 export type ProjectControlPanelSummaryResponseDto = z.infer<typeof projectControlPanelSummaryResponseSchema>;
 export type ProjectControlPanelProjectListItemDto = z.infer<typeof projectControlPanelProjectListItemSchema>;
 export type ProjectControlPanelProjectListResponseDto = z.infer<typeof projectControlPanelProjectListResponseSchema>;
+export type ProjectControlPanelProjectListRequestDto = z.infer<typeof projectControlPanelProjectListRequestSchema>;
+export type CharacterGenderComparisonRequestDto = z.infer<typeof characterGenderComparisonRequestSchema>;
 export type CharacterMentionsByChapterItemDto = z.infer<typeof characterMentionsByChapterItemSchema>;
 export type CharacterAnalyticsResponseDto = z.infer<typeof characterAnalyticsResponseSchema>;
 export type CharacterCooccurrenceGraphNodeDto = z.infer<typeof characterCooccurrenceGraphNodeSchema>;
