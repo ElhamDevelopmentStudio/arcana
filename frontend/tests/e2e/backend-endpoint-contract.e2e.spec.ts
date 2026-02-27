@@ -2409,6 +2409,82 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('character-alias-collision-inspector-count')).toContainText('collision group(s)');
   });
 
+  test('projects/:project_id/characters route finalizes character map through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-characters-finalize-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}/characters`);
+
+    const finalizeRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/characters/finalize`),
+    );
+    const finalizeResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters/finalize`),
+    );
+
+    await page.getByRole('button', { name: 'Finalize Character Map' }).click();
+
+    await finalizeRequestPromise;
+    const finalizeResponse = await finalizeResponsePromise;
+    expect(finalizeResponse.status()).toBe(200);
+    const finalizePayload = (await finalizeResponse.json()) as {
+      project_id: number;
+      character_map_finalized: boolean;
+    };
+    expect(finalizePayload.project_id).toBe(projectId);
+    expect(finalizePayload.character_map_finalized).toBe(true);
+    await expect(page.getByRole('button', { name: 'Character Map Finalized' })).toBeVisible();
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,
