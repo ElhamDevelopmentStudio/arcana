@@ -240,6 +240,15 @@ describe('project characters page manual editor', () => {
     expect(inferCharacterGendersMutationTrigger).toHaveBeenCalledTimes(1);
   });
 
+  it('renders gender comparison review panel rows', () => {
+    renderCharacterPage();
+
+    expect(screen.getByTestId('character-gender-comparison-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('character-gender-comparison-count')).toHaveTextContent('1 comparison row(s)');
+    expect(screen.getByTestId('character-gender-comparison-row-0')).toHaveTextContent('Kai');
+    expect(screen.getByTestId('character-gender-comparison-row-0')).toHaveTextContent('review required');
+  });
+
   it('validates manual editor rows inline before save', async () => {
     const user = userEvent.setup();
     renderCharacterPage();

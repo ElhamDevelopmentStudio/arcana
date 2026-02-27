@@ -2182,6 +2182,76 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(inferPayload.characters.length).toBeGreaterThanOrEqual(0);
   });
 
+  test('projects/:project_id/characters route renders gender comparison review panel from backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-characters-gender-panel-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+    const inferResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/characters/infer`);
+    expect(inferResponse.status()).toBe(200);
+
+    const comparisonGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().includes(`/api/projects/${projectId}/characters/gender-comparison`),
+    );
+    const comparisonGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().includes(`/api/projects/${projectId}/characters/gender-comparison`),
+    );
+
+    await page.goto(`/projects/${projectId}/characters`);
+    await comparisonGetRequestPromise;
+    const comparisonGetResponse = await comparisonGetResponsePromise;
+    expect(comparisonGetResponse.status()).toBe(200);
+    await expect(page.getByTestId('character-gender-comparison-panel')).toBeVisible();
+    await expect(page.getByTestId('character-gender-comparison-count')).toContainText('comparison row(s)');
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,
