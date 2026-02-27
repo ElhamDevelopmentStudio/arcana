@@ -597,7 +597,7 @@ Definition of done for each task:
 - [x] [FE-190] Add sidebar item lock states and tooltips/messages using `setup-status` and action gating metadata.
 - [x] [FE-191] Add deep-link guard panel for locked routes with “go to required step” action.
 - [x] [FE-192] Add integration tests for setup gate redirects, unlock transitions, and deep-link guard behavior.
-- [ ] [PW-033] Add Playwright real-backend E2E: create draft -> setup-gated routing -> setup completion -> project overview access.
+- [x] [PW-033] Add Playwright real-backend E2E: create draft -> setup-gated routing -> setup completion -> project overview access.
 - [ ] [PW-034] Add Playwright real-backend E2E: locked domain route shows guard before setup and unlocks after completion.
 
 ### 13.3 Project Management and Lifecycle
