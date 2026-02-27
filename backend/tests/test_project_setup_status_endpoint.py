@@ -104,6 +104,87 @@ def test_integration_project_setup_status_endpoint_marks_required_steps_complete
     assert steps["initial_run"]["ready"] is True
 
 
+def test_integration_project_setup_status_endpoint_for_partially_configured_project() -> None:
+    with TestClient(app) as client:
+        create_resp = client.post("/api/projects/drafts", json={"title": "Setup Status Partially Configured"})
+        assert create_resp.status_code == 201
+        project_id = create_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("setup-status-partial.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        setup_status_resp = client.get(f"/api/projects/{project_id}/setup-status")
+        assert setup_status_resp.status_code == 200
+        payload = setup_status_resp.json()
+        parsed = ProjectSetupStatusResponse.model_validate(payload)
+
+    assert parsed.lifecycle_state == "ingested"
+    assert parsed.next_required_action == "run"
+    assert parsed.is_complete is False
+
+    steps = _setup_steps_by_id(payload)
+    assert steps["ingestion"]["ready"] is True
+    assert steps["mode_selection"]["ready"] is True
+    assert steps["initial_run"]["ready"] is False
+
+
+def test_integration_project_setup_status_endpoint_for_fully_configured_project() -> None:
+    with TestClient(app) as client:
+        create_resp = client.post("/api/projects/drafts", json={"title": "Setup Status Fully Configured"})
+        assert create_resp.status_code == 201
+        project_id = create_resp.json()["id"]
+
+        ingest_resp = client.post(
+            f"/api/projects/{project_id}/ingest/txt",
+            files={"file": ("setup-status-configured.txt", io.BytesIO(_sample_txt().encode("utf-8")), "text/plain")},
+        )
+        assert ingest_resp.status_code == 200
+
+        mode_resp = client.put(f"/api/projects/{project_id}/mode", json={"mode": "audiobook"})
+        assert mode_resp.status_code == 200
+
+        setup_status_resp = client.get(f"/api/projects/{project_id}/setup-status")
+        assert setup_status_resp.status_code == 200
+        payload = setup_status_resp.json()
+        parsed = ProjectSetupStatusResponse.model_validate(payload)
+
+    assert parsed.lifecycle_state == "configured"
+    assert parsed.next_required_action == "run"
+    assert parsed.is_complete is False
+
+    steps = _setup_steps_by_id(payload)
+    assert steps["ingestion"]["ready"] is True
+    assert steps["mode_selection"]["ready"] is True
+    assert steps["initial_run"]["ready"] is False
+
+
+def test_integration_project_setup_status_endpoint_for_archived_project() -> None:
+    with TestClient(app) as client:
+        create_resp = client.post("/api/projects/drafts", json={"title": "Setup Status Archived"})
+        assert create_resp.status_code == 201
+        project_id = create_resp.json()["id"]
+
+        archive_resp = client.post(f"/api/projects/{project_id}/archive")
+        assert archive_resp.status_code == 200
+
+        setup_status_resp = client.get(f"/api/projects/{project_id}/setup-status")
+        assert setup_status_resp.status_code == 200
+        payload = setup_status_resp.json()
+        parsed = ProjectSetupStatusResponse.model_validate(payload)
+
+    assert parsed.lifecycle_state == "archived"
+    assert parsed.next_required_action == "archived"
+    assert parsed.is_complete is False
+
+    steps = _setup_steps_by_id(payload)
+    assert steps["ingestion"]["ready"] is False
+    assert steps["mode_selection"]["ready"] is True
+    assert steps["initial_run"]["ready"] is False
+
+
 def test_regression_project_setup_status_endpoint_rejects_unknown_project() -> None:
     with TestClient(app) as client:
         setup_status_resp = client.get("/api/projects/999999999/setup-status")
