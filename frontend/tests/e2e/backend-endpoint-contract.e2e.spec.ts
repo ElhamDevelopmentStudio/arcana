@@ -1754,6 +1754,69 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(charactersPutResponse.status()).toBe(200);
   });
 
+  test('projects/:project_id/characters route imports character map through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-characters-import-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const charactersGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters`),
+    );
+    await page.goto(`/projects/${projectId}/characters`);
+    await charactersGetResponsePromise;
+
+    const importRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/characters/import`),
+    );
+    const importResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters/import`),
+    );
+
+    await page.getByTestId('character-file-input').setInputFiles(fixtureCharactersPath);
+    await page.getByTestId('character-import-button').click();
+
+    await importRequestPromise;
+    const importResponse = await importResponsePromise;
+    expect(importResponse.status()).toBe(200);
+    const importPayload = (await importResponse.json()) as { imported_count: number };
+    expect(importPayload.imported_count).toBeGreaterThan(0);
+    await expect(page.getByTestId('character-import-state')).toContainText('Imported');
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,
