@@ -1,6 +1,9 @@
 import type { Key } from 'swr';
 
-import type { ProjectControlPanelProjectListRequestDto } from '@/app/schemas/api';
+import type {
+  ProjectActivityTimelineRequestDto,
+  ProjectControlPanelProjectListRequestDto,
+} from '@/app/schemas/api';
 
 export const workspaceKeys = {
   health: ['health'] as const,
@@ -8,6 +11,8 @@ export const workspaceKeys = {
   projectControlPanelSummary: ['project-control-panel-summary'] as const,
   projectControlPanelProjectList: (params: ProjectControlPanelProjectListRequestDto) =>
     ['project-control-panel-project-list', params] as const,
+  projectActivityTimeline: (projectId: number, params: ProjectActivityTimelineRequestDto) =>
+    ['project-activity-timeline', projectId, params] as const,
   projectDetail: (projectId: number) => ['project-detail', projectId] as const,
   projectWorkspaceSummary: (projectId: number) => ['project-workspace-summary', projectId] as const,
   projectSetupStatus: (projectId: number) => ['project-setup-status', projectId] as const,
@@ -55,6 +60,8 @@ function isProjectScopedRunKey(key: unknown, projectId: number): boolean {
 export const workspaceKeyMatchers = {
   projectControlPanelProjectList: (key: unknown) =>
     Array.isArray(key) && key.length > 0 && key[0] === 'project-control-panel-project-list',
+  projectActivityTimeline: (projectId: number) => (key: unknown) =>
+    Array.isArray(key) && key.length > 1 && key[0] === 'project-activity-timeline' && key[1] === projectId,
   projectScopedRunData: (projectId: number) => (key: unknown) => isProjectScopedRunKey(key, projectId),
 };
 
@@ -89,6 +96,7 @@ export const workspaceMutationInvalidationMap: Record<
     return [
       workspaceKeys.projectControlPanelSummary,
       workspaceKeyMatchers.projectControlPanelProjectList,
+      workspaceKeyMatchers.projectActivityTimeline(projectId),
       workspaceKeys.projectDetail(projectId),
       workspaceKeys.projectWorkspaceSummary(projectId),
       workspaceKeys.projectSetupStatus(projectId),

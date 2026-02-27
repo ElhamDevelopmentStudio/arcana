@@ -828,6 +828,36 @@ export const projectControlPanelProjectListRequestSchema = z.object({
   next_required_action: projectNextRequiredActionSchema.optional(),
 });
 
+export const projectActivityTimelineRequestSchema = z.object({
+  page: z.number().int().positive().optional(),
+  page_size: z.number().int().positive().max(200).optional(),
+});
+
+export const projectActivityTimelineItemSchema = z.object({
+  event_id: z.number().int().positive(),
+  event_type: z.string().min(1),
+  actor: z.string().min(1),
+  run_id: z.number().int().positive().nullable().optional().default(null),
+  created_at: z.string().min(1),
+  event_metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
+export const projectActivityTimelineResponseSchema = z.object({
+  schema_version: z.string().min(1),
+  output_schema: z.string().min(1),
+  output_format: z.string().min(1),
+  output_id: z.string().min(1),
+  output_name: z.string().min(1),
+  generated_at: z.string().min(1),
+  generated_by: z.string().min(1),
+  project_id: z.number().int().positive(),
+  total_items: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  page_size: z.number().int().positive(),
+  has_next_page: z.boolean(),
+  items: z.array(projectActivityTimelineItemSchema).default([]),
+});
+
 export const projectAllowedActionsResponseSchema = z.object({
   schema_version: z.string().min(1),
   output_schema: z.string().min(1),
@@ -976,6 +1006,9 @@ export type ProjectControlPanelSummaryResponseDto = z.infer<typeof projectContro
 export type ProjectControlPanelProjectListItemDto = z.infer<typeof projectControlPanelProjectListItemSchema>;
 export type ProjectControlPanelProjectListResponseDto = z.infer<typeof projectControlPanelProjectListResponseSchema>;
 export type ProjectControlPanelProjectListRequestDto = z.infer<typeof projectControlPanelProjectListRequestSchema>;
+export type ProjectActivityTimelineRequestDto = z.infer<typeof projectActivityTimelineRequestSchema>;
+export type ProjectActivityTimelineItemDto = z.infer<typeof projectActivityTimelineItemSchema>;
+export type ProjectActivityTimelineResponseDto = z.infer<typeof projectActivityTimelineResponseSchema>;
 export type ProjectAllowedActionDto = z.infer<typeof projectAllowedActionSchema>;
 export type ProjectActionRequiredStepDto = z.infer<typeof projectActionRequiredStepSchema>;
 export type ProjectAllowedActionsResponseDto = z.infer<typeof projectAllowedActionsResponseSchema>;

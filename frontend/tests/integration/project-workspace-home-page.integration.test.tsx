@@ -9,8 +9,10 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 const useProjectDetailQueryMock = vi.fn();
 const useUpdateProjectMetadataMutationMock = vi.fn();
 const useProjectAllowedActionsQueryMock = vi.fn();
+const useProjectActivityTimelineQueryMock = vi.fn();
 const projectDetailMutateMock = vi.fn();
 const projectAllowedActionsMutateMock = vi.fn();
+const projectActivityTimelineMutateMock = vi.fn();
 const updateProjectMetadataTriggerMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
@@ -19,6 +21,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useUpdateProjectMetadataMutationMock(...args),
   useProjectAllowedActionsQuery: (...args: Parameters<typeof useProjectAllowedActionsQueryMock>) =>
     useProjectAllowedActionsQueryMock(...args),
+  useProjectActivityTimelineQuery: (...args: Parameters<typeof useProjectActivityTimelineQueryMock>) =>
+    useProjectActivityTimelineQueryMock(...args),
 }));
 
 function renderProjectWorkspaceHomePage() {
@@ -53,8 +57,10 @@ describe('project workspace home page', () => {
     useProjectDetailQueryMock.mockReset();
     useUpdateProjectMetadataMutationMock.mockReset();
     useProjectAllowedActionsQueryMock.mockReset();
+    useProjectActivityTimelineQueryMock.mockReset();
     projectDetailMutateMock.mockReset();
     projectAllowedActionsMutateMock.mockReset();
+    projectActivityTimelineMutateMock.mockReset();
     updateProjectMetadataTriggerMock.mockReset();
     useUpdateProjectMetadataMutationMock.mockReturnValue({
       isMutating: false,
@@ -86,6 +92,43 @@ describe('project workspace home page', () => {
         allowed_actions: ['run', 'export', 'configure', 'archive'],
         blocked_reason: null,
         required_step: null,
+      },
+    });
+    useProjectActivityTimelineQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectActivityTimelineMutateMock,
+      data: {
+        schema_version: '1.0',
+        output_schema: 'project_activity_timeline_json',
+        output_format: 'json',
+        output_id: 'project-timeline-77-page-1',
+        output_name: 'Project Activity Timeline',
+        generated_at: '2026-02-27T00:15:00Z',
+        generated_by: 'project_activity_timeline_endpoint',
+        project_id: 77,
+        total_items: 2,
+        page: 1,
+        page_size: 5,
+        has_next_page: false,
+        items: [
+          {
+            event_id: 2,
+            event_type: 'manual_edit',
+            actor: 'system',
+            run_id: null,
+            created_at: '2026-02-27T00:14:00Z',
+            event_metadata: { updated_fields: ['title'] },
+          },
+          {
+            event_id: 1,
+            event_type: 'create_project',
+            actor: 'system',
+            run_id: null,
+            created_at: '2026-02-27T00:10:00Z',
+            event_metadata: {},
+          },
+        ],
       },
     });
   });
@@ -166,6 +209,12 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-command-panel-open-runs')).toHaveAttribute('href', '/projects/77/runs');
     expect(screen.getByTestId('project-command-panel-open-exports')).toHaveAttribute('href', '/projects/77/exports');
     expect(screen.getByTestId('project-command-panel-open-settings')).toHaveAttribute('href', '/projects/77/settings');
+    expect(screen.getByTestId('project-timeline-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('project-timeline-pagination-state')).toHaveTextContent('Page 1 / size 5 / total 2');
+    expect(screen.getByTestId('project-timeline-item-2')).toHaveTextContent('manual_edit');
+    expect(screen.getByTestId('project-timeline-item-1')).toHaveTextContent('create_project');
+    expect(screen.getByTestId('project-timeline-prev-page')).toBeDisabled();
+    expect(screen.getByTestId('project-timeline-next-page')).toBeDisabled();
   });
 
   it('renders blocked action state with reason and disabled commands', () => {
@@ -271,5 +320,73 @@ describe('project workspace home page', () => {
       tags: ['arc', 'research'],
     });
     expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('requests next timeline page when next pagination action is available', async () => {
+    const user = userEvent.setup();
+    useProjectActivityTimelineQueryMock.mockImplementation(
+      (_projectId: number | null, params: { page: number; page_size: number }) => ({
+        isLoading: false,
+        error: undefined,
+        mutate: projectActivityTimelineMutateMock,
+        data: {
+          schema_version: '1.0',
+          output_schema: 'project_activity_timeline_json',
+          output_format: 'json',
+          output_id: `project-timeline-77-page-${params.page}`,
+          output_name: 'Project Activity Timeline',
+          generated_at: '2026-02-27T00:15:00Z',
+          generated_by: 'project_activity_timeline_endpoint',
+          project_id: 77,
+          total_items: 8,
+          page: params.page,
+          page_size: params.page_size,
+          has_next_page: params.page < 2,
+          items: [
+            {
+              event_id: 20 - params.page,
+              event_type: 'run_complete',
+              actor: 'system',
+              run_id: 900,
+              created_at: '2026-02-27T00:20:00Z',
+              event_metadata: {},
+            },
+          ],
+        },
+      }),
+    );
+    useProjectDetailQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectDetailMutateMock,
+      data: {
+        project_id: 77,
+        title: 'Shadow Slave Workspace',
+        description: 'workspace-home detail',
+        tags: ['poc'],
+        lifecycle_state: 'configured',
+        last_run_status: 'completed',
+        next_required_action: 'export',
+        allowed_actions: ['run', 'export', 'archive'],
+        selected_mode: 'author',
+        selected_modes: ['author'],
+        llm_enabled: true,
+        do_not_store_source_text: false,
+        character_map_finalized: false,
+        configuration_snapshot_id: null,
+        ingestion_timestamp: null,
+        last_export_at: null,
+        created_at: '2026-02-27T00:00:00Z',
+        updated_at: '2026-02-27T00:10:00Z',
+      },
+    });
+
+    renderProjectWorkspaceHomePage();
+
+    expect(screen.getByTestId('project-timeline-pagination-state')).toHaveTextContent('Page 1 / size 5 / total 8');
+    await user.click(screen.getByTestId('project-timeline-next-page'));
+    expect(screen.getByTestId('project-timeline-pagination-state')).toHaveTextContent('Page 2 / size 5 / total 8');
+    expect(screen.getByTestId('project-timeline-prev-page')).toBeEnabled();
+    expect(screen.getByTestId('project-timeline-next-page')).toBeDisabled();
   });
 });

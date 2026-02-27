@@ -24,6 +24,8 @@ import {
   projectControlPanelSummaryResponseSchema,
   projectControlPanelProjectListRequestSchema,
   projectControlPanelProjectListResponseSchema,
+  projectActivityTimelineRequestSchema,
+  projectActivityTimelineResponseSchema,
   projectAllowedActionsResponseSchema,
   projectDetailResponseSchema,
   projectSetupStatusResponseSchema,
@@ -58,6 +60,8 @@ import {
   type ProjectControlPanelSummaryResponseDto,
   type ProjectControlPanelProjectListRequestDto,
   type ProjectControlPanelProjectListResponseDto,
+  type ProjectActivityTimelineRequestDto,
+  type ProjectActivityTimelineResponseDto,
   type ProjectAllowedActionsResponseDto,
   type ProjectDetailResponseDto,
   type ProjectSetupStatusResponseDto,
@@ -174,6 +178,22 @@ export class NipeApiClient {
         params: hasParams ? parsedParams : undefined,
       });
       return projectControlPanelProjectListResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getProjectActivityTimeline(
+    projectId: number,
+    params?: ProjectActivityTimelineRequestDto,
+  ): Promise<ProjectActivityTimelineResponseDto> {
+    const parsedParams = projectActivityTimelineRequestSchema.parse(params ?? {});
+    const hasParams = Object.keys(parsedParams).length > 0;
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/timeline`, {
+        params: hasParams ? parsedParams : undefined,
+      });
+      return projectActivityTimelineResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

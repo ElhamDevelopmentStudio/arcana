@@ -66,6 +66,19 @@ export function useProjectControlPanelProjectListQuery(
   );
 }
 
+export function useProjectActivityTimelineQuery(
+  projectId: number | null,
+  params: {
+    page: number;
+    page_size: number;
+  },
+) {
+  return useSWR(
+    projectId !== null ? workspaceKeys.projectActivityTimeline(projectId, params) : null,
+    async ([, currentProjectId, currentParams]) => nipeApiClient.getProjectActivityTimeline(currentProjectId, currentParams),
+  );
+}
+
 export function useProjectAllowedActionsQuery(projectId: number | null) {
   return useSWR(
     projectId !== null ? ['project-allowed-actions', projectId] : null,

@@ -605,7 +605,7 @@ Definition of done for each task:
 - [x] [FE-111] Build `/projects/{project_id}` detail page using `GET /api/projects/{project_id}`.
 - [x] [FE-112] Build metadata editing flow using `PATCH /api/projects/{project_id}/metadata`.
 - [x] [FE-113] Build action-gated command panel using `GET /api/projects/{project_id}/actions`.
-- [ ] [FE-114] Build activity timeline module using `GET /api/projects/{project_id}/timeline` with pagination.
+- [x] [FE-114] Build activity timeline module using `GET /api/projects/{project_id}/timeline` with pagination.
 - [ ] [FE-115] Build archive flow using `POST /api/projects/{project_id}/archive`.
 - [ ] [FE-116] Build restore flow using `POST /api/projects/{project_id}/restore`.
 - [ ] [FE-117] Add lifecycle transition confirmations/conflict handling for archive and restore.
