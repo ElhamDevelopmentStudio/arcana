@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
+  useCancelRunMutation,
   useRecoverRunMutation,
   useRerunRunMutation,
   useRunConfigDiffQuery,
@@ -31,6 +32,7 @@ export function ProjectRunMonitorPage() {
   const runConfigPresetMutation = useRunConfigPresetMutation(projectId, runId);
   const rerunRunMutation = useRerunRunMutation(projectId, runId);
   const recoverRunMutation = useRecoverRunMutation(projectId, runId);
+  const cancelRunMutation = useCancelRunMutation(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
     const trimmed = comparisonRunIdInput.trim();
@@ -67,6 +69,17 @@ export function ProjectRunMonitorPage() {
 
   const runStatus = runDetailQuery.data?.status ?? 'not-started';
   const segmentCount = runDetailQuery.data?.segment_count ?? 0;
+
+  async function handleLoadRunConfigPreset() {
+    if (projectId === null || runId === null) {
+      return;
+    }
+    try {
+      await runConfigPresetMutation.trigger();
+    } catch {
+      // errors are surfaced from runConfigPresetMutation.error in the page body
+    }
+  }
 
   async function handleExportRunConfigPreset() {
     if (projectId === null || runId === null) {
@@ -110,6 +123,18 @@ export function ProjectRunMonitorPage() {
     }
   }
 
+  async function handleCancelRun() {
+    if (projectId === null || runId === null) {
+      return;
+    }
+    try {
+      const cancelledRun = await cancelRunMutation.trigger();
+      setRunId(cancelledRun.run_id);
+    } catch {
+      // surfaced via mutation event bus
+    }
+  }
+
   return (
     <WorkflowPageShell
       step="Step 05"
@@ -132,6 +157,13 @@ export function ProjectRunMonitorPage() {
               variant="outline"
             >
               {recoverRunMutation.isMutating ? 'Recovering...' : 'Recover run'}
+            </Button>
+            <Button
+              disabled={runId === null || cancelRunMutation.isMutating}
+              onClick={handleCancelRun}
+              variant="outline"
+            >
+              {cancelRunMutation.isMutating ? 'Cancelling...' : 'Cancel run'}
             </Button>
             <Button
               disabled={runId === null}
@@ -162,13 +194,6 @@ export function ProjectRunMonitorPage() {
               variant="outline"
             >
               How to review low-confidence outputs
-            </Button>
-            <Button
-              disabled={runId === null || runConfigPresetMutation.isMutating}
-              onClick={handleExportRunConfigPreset}
-              variant="outline"
-            >
-              {runConfigPresetMutation.isMutating ? 'Exporting preset...' : 'Export run config preset'}
             </Button>
             <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>
               Continue to Export <ChevronRight className="size-4" />
@@ -217,6 +242,39 @@ export function ProjectRunMonitorPage() {
             {runConfigPresetMutation.error ? <p className="text-destructive">{runConfigPresetMutation.error.message}</p> : null}
             {rerunRunMutation.error ? <p className="text-destructive">{rerunRunMutation.error.message}</p> : null}
             {recoverRunMutation.error ? <p className="text-destructive">{recoverRunMutation.error.message}</p> : null}
+            {cancelRunMutation.error ? <p className="text-destructive">{cancelRunMutation.error.message}</p> : null}
+
+            <div className="space-y-2 rounded-xl border border-border/60 bg-background/60 p-3">
+              <p className="font-medium text-foreground">Run Config Preset Panel</p>
+              <p className="text-xs text-muted-foreground">
+                Load and review the backend run config preset for this run before exporting it.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  disabled={runId === null || runConfigPresetMutation.isMutating}
+                  onClick={handleLoadRunConfigPreset}
+                  size="sm"
+                  variant="outline"
+                >
+                  {runConfigPresetMutation.isMutating ? 'Loading preset...' : 'Load run config preset'}
+                </Button>
+                <Button
+                  disabled={runId === null || runConfigPresetMutation.isMutating}
+                  onClick={handleExportRunConfigPreset}
+                  size="sm"
+                  variant="outline"
+                >
+                  Export preset JSON
+                </Button>
+              </div>
+              {runConfigPresetMutation.data ? (
+                <pre className="max-h-56 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
+                  {JSON.stringify(runConfigPresetMutation.data, null, 2)}
+                </pre>
+              ) : (
+                <p className="text-xs text-muted-foreground">No preset loaded yet.</p>
+              )}
+            </div>
 
             {runDetailQuery.data ? (
               <pre className="max-h-72 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">

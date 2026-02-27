@@ -12,6 +12,7 @@ const useRunConfigDiffQueryMock = vi.fn();
 const useRunConfigPresetMutationMock = vi.fn();
 const useRerunRunMutationMock = vi.fn();
 const useRecoverRunMutationMock = vi.fn();
+const useCancelRunMutationMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useRunDetailQuery: (...args: Parameters<typeof useRunDetailQueryMock>) =>
@@ -24,6 +25,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useRerunRunMutationMock(...args),
   useRecoverRunMutation: (...args: Parameters<typeof useRecoverRunMutationMock>) =>
     useRecoverRunMutationMock(...args),
+  useCancelRunMutation: (...args: Parameters<typeof useCancelRunMutationMock>) =>
+    useCancelRunMutationMock(...args),
 }));
 
 function renderRunMonitorPage() {
@@ -71,6 +74,7 @@ describe('project run monitor page', () => {
     useRunConfigPresetMutationMock.mockReset();
     useRerunRunMutationMock.mockReset();
     useRecoverRunMutationMock.mockReset();
+    useCancelRunMutationMock.mockReset();
     useRunConfigDiffQueryMock.mockReturnValue({
       data: null,
       isLoading: false,
@@ -79,6 +83,7 @@ describe('project run monitor page', () => {
     useRunConfigPresetMutationMock.mockReturnValue({
       isMutating: false,
       error: null,
+      data: undefined,
       trigger: vi.fn(),
     });
     useRerunRunMutationMock.mockReturnValue({
@@ -99,6 +104,16 @@ describe('project run monitor page', () => {
         project_id: 303,
         status: 'completed',
         segment_count: 8,
+      }),
+    });
+    useCancelRunMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: vi.fn().mockResolvedValue({
+        run_id: 303,
+        project_id: 303,
+        status: 'cancelled',
+        segment_count: 0,
       }),
     });
   });
@@ -224,5 +239,58 @@ describe('project run monitor page', () => {
 
     expect(recoverTrigger).toHaveBeenCalledTimes(1);
     expect(useWorkspaceStore.getState().runId).toBe(405);
+  });
+
+  it('triggers cancel mutation from run monitor action bar', async () => {
+    const user = userEvent.setup();
+    const cancelTrigger = vi.fn().mockResolvedValue({
+      run_id: 303,
+      project_id: 303,
+      status: 'cancelled',
+      segment_count: 0,
+    });
+    useCancelRunMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      trigger: cancelTrigger,
+    });
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    await user.click(screen.getByRole('button', { name: 'Cancel run' }));
+
+    expect(cancelTrigger).toHaveBeenCalledTimes(1);
+    expect(useWorkspaceStore.getState().runId).toBe(303);
+  });
+
+  it('loads run config preset from the run config preset panel', async () => {
+    const user = userEvent.setup();
+    const presetTrigger = vi.fn().mockResolvedValue({
+      project_id: 303,
+      run_id: 303,
+      preset_name: 'author-default',
+      config: { mode: 'author' },
+    });
+    useRunConfigPresetMutationMock.mockReturnValue({
+      isMutating: false,
+      error: null,
+      data: undefined,
+      trigger: presetTrigger,
+    });
+    useRunDetailQueryMock.mockReturnValue({
+      data: createRunDetail(),
+      isLoading: false,
+      error: null,
+    });
+
+    renderRunMonitorPage();
+    expect(screen.getByText(/Run Config Preset Panel/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Load run config preset' }));
+
+    expect(presetTrigger).toHaveBeenCalledTimes(1);
   });
 });
