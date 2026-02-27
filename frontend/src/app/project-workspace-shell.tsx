@@ -1,5 +1,7 @@
-import { NavLink, Outlet, useParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 
+import { useProjectSetupStatusQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
 type WorkspaceNavItem = {
@@ -19,9 +21,38 @@ const PROJECT_WORKSPACE_NAV_ITEMS: WorkspaceNavItem[] = [
   { to: 'dashboards', label: 'Dashboards' },
 ];
 
+function toProjectSetupPath(projectId: number) {
+  return `/projects/${projectId}/setup`;
+}
+
+function isSetupPath(pathname: string, projectId: number) {
+  const setupPath = toProjectSetupPath(projectId);
+  return pathname === setupPath || pathname.startsWith(`${setupPath}/`);
+}
+
 export function ProjectWorkspaceShell() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
   const projectId = parseProjectIdParam(params.project_id);
+  const setupStatusQuery = useProjectSetupStatusQuery(projectId);
+
+  useEffect(() => {
+    if (projectId === null || setupStatusQuery.error || setupStatusQuery.isLoading || setupStatusQuery.data === undefined) {
+      return;
+    }
+    if (setupStatusQuery.data.is_complete || isSetupPath(location.pathname, projectId)) {
+      return;
+    }
+    navigate(toProjectSetupPath(projectId), { replace: true });
+  }, [
+    location.pathname,
+    navigate,
+    projectId,
+    setupStatusQuery.data,
+    setupStatusQuery.error,
+    setupStatusQuery.isLoading,
+  ]);
 
   return (
     <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]" data-testid="project-workspace-shell">
