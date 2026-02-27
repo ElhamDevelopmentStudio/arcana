@@ -368,9 +368,20 @@ export function ProjectExportPage() {
             <p className="text-destructive">{createComparisonWorkspaceMutation.error.message}</p>
           ) : null}
           {createdComparisonWorkspaceId !== null ? (
-            <p data-testid="comparison-workspace-created-id">
-              Workspace created: <strong className="text-foreground">#{createdComparisonWorkspaceId}</strong>
-            </p>
+            <div className="space-y-2">
+              <p data-testid="comparison-workspace-created-id">
+                Workspace created: <strong className="text-foreground">#{createdComparisonWorkspaceId}</strong>
+              </p>
+              <Button
+                data-testid="comparison-workspace-open-button"
+                onClick={() => navigate(`/comparison-workspaces/${createdComparisonWorkspaceId}`)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Open comparison workspace
+              </Button>
+            </div>
           ) : null}
         </CardContent>
       </Card>

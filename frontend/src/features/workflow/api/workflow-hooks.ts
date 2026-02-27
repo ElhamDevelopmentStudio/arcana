@@ -34,6 +34,168 @@ function useWorkspaceMutationInvalidator() {
   };
 }
 
+type OptimisticProjectCachePatch = {
+  lifecycleState?: string;
+  nextRequiredAction?: string;
+  allowedActions?: string[];
+  blockedReason?: string | null;
+  requiredStep?: string | null;
+  selectedMode?: string;
+  selectedModes?: string[];
+  title?: string;
+  description?: string | null;
+  tags?: string[];
+};
+
+function isProjectControlPanelListCacheKey(key: unknown) {
+  return Array.isArray(key) && key.length > 0 && key[0] === 'project-control-panel-project-list';
+}
+
+function useProjectCrossRouteOptimisticCacheBridge(projectId: number | null) {
+  const { mutate } = useSWRConfig();
+
+  const applyPatch = async (patch: OptimisticProjectCachePatch) => {
+    if (projectId === null) {
+      return;
+    }
+
+    const updatedAt = new Date().toISOString();
+    await Promise.all([
+      mutate(
+        workspaceKeys.projectDetail(projectId),
+        (current: unknown) => {
+          if (!current || typeof current !== 'object') {
+            return current;
+          }
+          const next = { ...(current as Record<string, unknown>) };
+          if (patch.lifecycleState !== undefined) {
+            next.lifecycle_state = patch.lifecycleState;
+          }
+          if (patch.nextRequiredAction !== undefined) {
+            next.next_required_action = patch.nextRequiredAction;
+          }
+          if (patch.allowedActions !== undefined) {
+            next.allowed_actions = patch.allowedActions;
+          }
+          if (patch.selectedMode !== undefined) {
+            next.selected_mode = patch.selectedMode;
+          }
+          if (patch.selectedModes !== undefined) {
+            next.selected_modes = patch.selectedModes;
+          }
+          if (patch.title !== undefined) {
+            next.title = patch.title;
+          }
+          if (patch.description !== undefined) {
+            next.description = patch.description;
+          }
+          if (patch.tags !== undefined) {
+            next.tags = patch.tags;
+          }
+          next.updated_at = updatedAt;
+          return next;
+        },
+        { revalidate: false },
+      ),
+      mutate(
+        workspaceKeys.projectAllowedActions(projectId),
+        (current: unknown) => {
+          if (!current || typeof current !== 'object') {
+            return current;
+          }
+          const next = { ...(current as Record<string, unknown>) };
+          if (patch.lifecycleState !== undefined) {
+            next.lifecycle_state = patch.lifecycleState;
+          }
+          if (patch.nextRequiredAction !== undefined) {
+            next.next_required_action = patch.nextRequiredAction;
+          }
+          if (patch.allowedActions !== undefined) {
+            next.allowed_actions = patch.allowedActions;
+          }
+          if (patch.blockedReason !== undefined) {
+            next.blocked_reason = patch.blockedReason;
+          }
+          if (patch.requiredStep !== undefined) {
+            next.required_step = patch.requiredStep;
+          }
+          return next;
+        },
+        { revalidate: false },
+      ),
+      mutate(
+        workspaceKeys.projectWorkspaceSummary(projectId),
+        (current: unknown) => {
+          if (!current || typeof current !== 'object') {
+            return current;
+          }
+          const next = { ...(current as Record<string, unknown>) };
+          if (patch.lifecycleState !== undefined) {
+            next.lifecycle_state = patch.lifecycleState;
+          }
+          if (patch.nextRequiredAction !== undefined) {
+            next.next_required_action = patch.nextRequiredAction;
+          }
+          return next;
+        },
+        { revalidate: false },
+      ),
+      mutate(
+        (key: unknown) => isProjectControlPanelListCacheKey(key),
+        (current: unknown) => {
+          if (!current || typeof current !== 'object') {
+            return current;
+          }
+          const response = current as { items?: unknown[] };
+          if (!Array.isArray(response.items)) {
+            return current;
+          }
+          const nextItems = response.items.map((item) => {
+            if (!item || typeof item !== 'object') {
+              return item;
+            }
+            const nextItem = { ...(item as Record<string, unknown>) };
+            if (nextItem.project_id !== projectId) {
+              return nextItem;
+            }
+            if (patch.lifecycleState !== undefined) {
+              nextItem.status = patch.lifecycleState;
+            }
+            if (patch.nextRequiredAction !== undefined) {
+              nextItem.next_required_action = patch.nextRequiredAction;
+            }
+            if (patch.selectedMode !== undefined) {
+              nextItem.selected_mode = patch.selectedMode;
+            }
+            nextItem.updated_at = updatedAt;
+            return nextItem;
+          });
+          return { ...(current as Record<string, unknown>), items: nextItems };
+        },
+        { revalidate: false },
+      ),
+    ]);
+  };
+
+  const rollback = async () => {
+    if (projectId === null) {
+      return;
+    }
+    await Promise.all([
+      mutate(workspaceKeys.projectDetail(projectId)),
+      mutate(workspaceKeys.projectAllowedActions(projectId)),
+      mutate(workspaceKeys.projectWorkspaceSummary(projectId)),
+      mutate(workspaceKeys.projectControlPanelSummary),
+      mutate((key: unknown) => isProjectControlPanelListCacheKey(key)),
+    ]);
+  };
+
+  return {
+    applyPatch,
+    rollback,
+  };
+}
+
 export function useModeCatalogQuery(enabled: boolean) {
   return useSWR(enabled ? workspaceKeys.modeCatalog : null, async () => nipeApiClient.getModeCatalog());
 }
@@ -209,6 +371,59 @@ export function useCreateComparisonWorkspaceMutation() {
   );
 }
 
+export function useComparisonWorkspaceDetailQuery(workspaceId: number | null) {
+  return useSWR(
+    workspaceId !== null ? workspaceKeys.comparisonWorkspaceDetail(workspaceId) : null,
+    async ([, currentWorkspaceId]) => nipeApiClient.getComparisonWorkspace(currentWorkspaceId),
+  );
+}
+
+export function useComparisonWorkspaceAlignedCurvesQuery(
+  workspaceId: number | null,
+  payload?: { metrics?: string[]; aligned_points?: number },
+) {
+  const normalizedMetrics = (payload?.metrics ?? [])
+    .map((metric) => metric.trim())
+    .filter((metric) => metric.length > 0);
+  const metricsCsv = normalizedMetrics.join(',');
+  const alignedPoints = payload?.aligned_points;
+
+  return useSWR(
+    workspaceId !== null
+      ? workspaceKeys.comparisonWorkspaceAlignedCurves(workspaceId, metricsCsv, alignedPoints ?? null)
+      : null,
+    async ([, currentWorkspaceId, currentMetricsCsv, currentAlignedPoints]) =>
+      nipeApiClient.getComparisonWorkspaceAlignedCurves(currentWorkspaceId, {
+        metrics: currentMetricsCsv.length > 0 ? currentMetricsCsv.split(',') : undefined,
+        aligned_points: currentAlignedPoints ?? undefined,
+      }),
+  );
+}
+
+export function useComparisonWorkspaceComparativeDatasetMutation(workspaceId: number | null) {
+  return useSWRMutation(
+    workspaceId !== null ? ['comparison-workspace-comparative-dataset', workspaceId] : null,
+    async (_, { arg }: { arg?: { metrics?: string[]; aligned_points?: number } }) => {
+      if (workspaceId === null) {
+        throw new Error('Workspace ID is required before retrieving comparative dataset export.');
+      }
+      return nipeApiClient.getComparisonWorkspaceComparativeDataset(workspaceId, arg);
+    },
+  );
+}
+
+export function useAddRunToComparisonWorkspaceMutation(workspaceId: number | null) {
+  return useSWRMutation(
+    workspaceId !== null ? ['add-run-to-comparison-workspace', workspaceId] : null,
+    async (_, { arg }: { arg: { project_id: number; run_id: number } }) => {
+      if (workspaceId === null) {
+        throw new Error('Workspace ID is required before linking a run.');
+      }
+      return nipeApiClient.addRunToComparisonWorkspace(workspaceId, arg);
+    },
+  );
+}
+
 export function useTensionGraphQuery(projectId: number | null, runId: number | null) {
   return useSWR(
     projectId !== null && runId !== null ? workspaceKeys.tensionGraph(projectId, runId) : null,
@@ -303,6 +518,7 @@ export function useCreateProjectDraftMutation() {
 
 export function useUpdateProjectMetadataMutation(projectId: number | null) {
   const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  const optimisticCacheBridge = useProjectCrossRouteOptimisticCacheBridge(projectId);
   return useSWRMutation(
     projectId !== null ? ['update-project-metadata', projectId] : null,
     async (
@@ -316,7 +532,17 @@ export function useUpdateProjectMetadataMutation(projectId: number | null) {
       if (projectId === null) {
         throw new Error('Project must exist before metadata update.');
       }
-      return nipeApiClient.updateProjectMetadata(projectId, arg);
+      await optimisticCacheBridge.applyPatch({
+        title: arg.title,
+        description: arg.description,
+        tags: arg.tags,
+      });
+      try {
+        return await nipeApiClient.updateProjectMetadata(projectId, arg);
+      } catch (error) {
+        await optimisticCacheBridge.rollback();
+        throw error;
+      }
     },
     {
       onSuccess: async () => {
@@ -360,13 +586,26 @@ export function useUpdateLLMProviderStatusMutation(projectId: number | null) {
 
 export function useArchiveProjectMutation(projectId: number | null) {
   const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  const optimisticCacheBridge = useProjectCrossRouteOptimisticCacheBridge(projectId);
   return useSWRMutation(
     projectId !== null ? ['archive-project', projectId] : null,
     async () => {
       if (projectId === null) {
         throw new Error('Project must exist before archive.');
       }
-      return nipeApiClient.archiveProject(projectId);
+      await optimisticCacheBridge.applyPatch({
+        lifecycleState: 'archived',
+        nextRequiredAction: 'archived',
+        allowedActions: ['restore'],
+        blockedReason: 'Project is archived. Restore the project to continue workflow actions.',
+        requiredStep: 'restore',
+      });
+      try {
+        return await nipeApiClient.archiveProject(projectId);
+      } catch (error) {
+        await optimisticCacheBridge.rollback();
+        throw error;
+      }
     },
     {
       onSuccess: async () => {
@@ -378,13 +617,26 @@ export function useArchiveProjectMutation(projectId: number | null) {
 
 export function useRestoreProjectMutation(projectId: number | null) {
   const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  const optimisticCacheBridge = useProjectCrossRouteOptimisticCacheBridge(projectId);
   return useSWRMutation(
     projectId !== null ? ['restore-project', projectId] : null,
     async () => {
       if (projectId === null) {
         throw new Error('Project must exist before restore.');
       }
-      return nipeApiClient.restoreProject(projectId);
+      await optimisticCacheBridge.applyPatch({
+        lifecycleState: 'configured',
+        nextRequiredAction: 'configure',
+        allowedActions: ['ingest', 'select_mode', 'configure', 'archive'],
+        blockedReason: null,
+        requiredStep: null,
+      });
+      try {
+        return await nipeApiClient.restoreProject(projectId);
+      } catch (error) {
+        await optimisticCacheBridge.rollback();
+        throw error;
+      }
     },
     {
       onSuccess: async () => {
@@ -396,13 +648,29 @@ export function useRestoreProjectMutation(projectId: number | null) {
 
 export function useSwitchModeMutation(projectId: number | null) {
   const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  const optimisticCacheBridge = useProjectCrossRouteOptimisticCacheBridge(projectId);
   return useSWRMutation(
     projectId !== null ? ['switch-mode', projectId] : null,
     async (_, { arg }: { arg: { mode: string } }) => {
       if (projectId === null) {
         throw new Error('Project must exist before mode switching.');
       }
-      return nipeApiClient.switchProjectMode(projectId, arg.mode);
+      await optimisticCacheBridge.applyPatch({
+        selectedMode: arg.mode,
+        selectedModes: [arg.mode],
+      });
+      try {
+        const response = await nipeApiClient.switchProjectMode(projectId, arg.mode);
+        await optimisticCacheBridge.applyPatch({
+          selectedMode: response.selected_mode,
+          selectedModes: response.selected_modes,
+          nextRequiredAction: 'configure',
+        });
+        return response;
+      } catch (error) {
+        await optimisticCacheBridge.rollback();
+        throw error;
+      }
     },
     {
       onSuccess: async () => {

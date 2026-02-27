@@ -1966,6 +1966,378 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     );
   });
 
+  test('comparison-workspaces/:workspace_id route loads workspace detail through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-comparison-workspace-detail-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const workspaceCreateResponse = await request.post(`${backendBaseUrl}/api/comparison-workspaces`, {
+      data: { name: uniqueTitle('comparison-workspace-detail-route') },
+    });
+    expect(workspaceCreateResponse.status()).toBe(201);
+    const workspacePayload = (await workspaceCreateResponse.json()) as { workspace_id: number };
+
+    const addRunToWorkspaceResponse = await request.post(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/runs`,
+      {
+        data: {
+          project_id: projectId,
+          run_id: runPayload.run_id,
+        },
+      },
+    );
+    expect(addRunToWorkspaceResponse.status()).toBe(201);
+
+    const workspaceDetailGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().endsWith(`/api/comparison-workspaces/${workspacePayload.workspace_id}`),
+    );
+
+    await page.goto(`/comparison-workspaces/${workspacePayload.workspace_id}`);
+    await expect(page.getByRole('heading', { name: 'Comparison Workspace' })).toBeVisible();
+
+    const workspaceDetailGetResponse = await workspaceDetailGetResponsePromise;
+    expect(workspaceDetailGetResponse.status()).toBe(200);
+    const workspaceDetailPayload = (await workspaceDetailGetResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+    };
+    expect(workspaceDetailPayload.workspace_id).toBe(workspacePayload.workspace_id);
+    expect(workspaceDetailPayload.run_count).toBe(1);
+    await expect(page.getByRole('cell', { name: `Run #${runPayload.run_id}` })).toBeVisible();
+  });
+
+  test('comparison-workspaces/:workspace_id route links a run through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-comparison-workspace-link-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const workspaceCreateResponse = await request.post(`${backendBaseUrl}/api/comparison-workspaces`, {
+      data: { name: uniqueTitle('comparison-workspace-link-route') },
+    });
+    expect(workspaceCreateResponse.status()).toBe(201);
+    const workspacePayload = (await workspaceCreateResponse.json()) as { workspace_id: number };
+
+    const workspaceDetailGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().endsWith(`/api/comparison-workspaces/${workspacePayload.workspace_id}`),
+    );
+    await page.goto(`/comparison-workspaces/${workspacePayload.workspace_id}`);
+    await workspaceDetailGetResponsePromise;
+
+    await page.getByTestId('comparison-workspace-link-project-id-input').fill(String(projectId));
+    await page.getByTestId('comparison-workspace-link-run-id-input').fill(String(runPayload.run_id));
+
+    const addRunPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith(`/api/comparison-workspaces/${workspacePayload.workspace_id}/runs`),
+    );
+    await page.getByTestId('comparison-workspace-link-run-button').click();
+
+    const addRunPostResponse = await addRunPostResponsePromise;
+    expect(addRunPostResponse.status()).toBe(201);
+    const addRunPayload = (await addRunPostResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+    };
+    expect(addRunPayload.workspace_id).toBe(workspacePayload.workspace_id);
+    expect(addRunPayload.run_count).toBe(1);
+    await expect(page.getByTestId('comparison-workspace-link-success')).toContainText(
+      `Run #${runPayload.run_id} linked to workspace #${workspacePayload.workspace_id}.`,
+    );
+    await expect(page.getByRole('cell', { name: `Run #${runPayload.run_id}` })).toBeVisible();
+  });
+
+  test('comparison-workspaces/:workspace_id route loads aligned curves through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-comparison-workspace-curves-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const workspaceCreateResponse = await request.post(`${backendBaseUrl}/api/comparison-workspaces`, {
+      data: { name: uniqueTitle('comparison-workspace-curves-route') },
+    });
+    expect(workspaceCreateResponse.status()).toBe(201);
+    const workspacePayload = (await workspaceCreateResponse.json()) as { workspace_id: number };
+
+    const addRunToWorkspaceResponse = await request.post(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/runs`,
+      {
+        data: {
+          project_id: projectId,
+          run_id: runPayload.run_id,
+        },
+      },
+    );
+    expect(addRunToWorkspaceResponse.status()).toBe(201);
+
+    const alignedCurvesGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().includes(`/api/comparison-workspaces/${workspacePayload.workspace_id}/aligned-curves`),
+    );
+    await page.goto(`/comparison-workspaces/${workspacePayload.workspace_id}`);
+    await expect(page.getByText('Aligned Curves Analysis')).toBeVisible();
+
+    const alignedCurvesGetResponse = await alignedCurvesGetResponsePromise;
+    expect(alignedCurvesGetResponse.status()).toBe(200);
+    const alignedCurvesPayload = (await alignedCurvesGetResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+      aligned_points: number;
+      metrics: Array<{ metric_id: string }>;
+    };
+    expect(alignedCurvesPayload.workspace_id).toBe(workspacePayload.workspace_id);
+    expect(alignedCurvesPayload.run_count).toBe(1);
+    expect(alignedCurvesPayload.aligned_points).toBeGreaterThan(0);
+    expect(alignedCurvesPayload.metrics.length).toBeGreaterThan(0);
+    await expect(page.getByText(alignedCurvesPayload.metrics[0].metric_id)).toBeVisible();
+  });
+
+  test('comparison-workspaces/:workspace_id route retrieves comparative dataset export through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-comparison-workspace-export-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    const workspaceCreateResponse = await request.post(`${backendBaseUrl}/api/comparison-workspaces`, {
+      data: { name: uniqueTitle('comparison-workspace-export-route') },
+    });
+    expect(workspaceCreateResponse.status()).toBe(201);
+    const workspacePayload = (await workspaceCreateResponse.json()) as { workspace_id: number };
+
+    const addRunToWorkspaceResponse = await request.post(
+      `${backendBaseUrl}/api/comparison-workspaces/${workspacePayload.workspace_id}/runs`,
+      {
+        data: {
+          project_id: projectId,
+          run_id: runPayload.run_id,
+        },
+      },
+    );
+    expect(addRunToWorkspaceResponse.status()).toBe(201);
+
+    await page.goto(`/comparison-workspaces/${workspacePayload.workspace_id}`);
+    await expect(page.getByText('Comparative Dataset Export')).toBeVisible();
+
+    const comparativeDatasetGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().includes(
+          `/api/comparison-workspaces/${workspacePayload.workspace_id}/exports/comparative-dataset.json`,
+        ),
+    );
+
+    await page.getByTestId('comparison-workspace-export-fetch-button').click();
+
+    const comparativeDatasetGetResponse = await comparativeDatasetGetResponsePromise;
+    expect(comparativeDatasetGetResponse.status()).toBe(200);
+    const comparativeDatasetPayload = (await comparativeDatasetGetResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+      aligned_points: number;
+      metrics: Array<{ metric_id: string }>;
+      runs: Array<{ run_id: number }>;
+    };
+    expect(comparativeDatasetPayload.workspace_id).toBe(workspacePayload.workspace_id);
+    expect(comparativeDatasetPayload.run_count).toBe(1);
+    expect(comparativeDatasetPayload.aligned_points).toBeGreaterThan(0);
+    expect(comparativeDatasetPayload.metrics.length).toBeGreaterThan(0);
+    expect(comparativeDatasetPayload.runs.some((run) => run.run_id === runPayload.run_id)).toBe(true);
+    await expect(page.getByTestId('comparison-workspace-export-summary')).toBeVisible();
+  });
+
+  test('projects/:project_id/run-monitor route restores in-flight mutation recovery state', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-run-monitor-mutation-recovery-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: 'Run monitor mutation recovery project',
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+        window.sessionStorage.setItem(
+          'nipe-run-monitor-pending-mutation',
+          JSON.stringify({
+            projectId: seededProjectId,
+            sourceRunId: seededRunId,
+            trackedRunId: seededRunId + 1000,
+            mutation: 'rerun',
+            startedAt: new Date().toISOString(),
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: runPayload.run_id },
+    );
+
+    const runDetailGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/runs/${runPayload.run_id}`),
+    );
+
+    await page.goto(`/projects/${projectId}/run-monitor`);
+    await runDetailGetResponsePromise;
+
+    await expect(page.getByTestId('run-monitor-mutation-recovery-banner')).toBeVisible();
+    await expect(page.getByTestId('run-monitor-refresh-state')).toContainText('active');
+    await expect(page.getByRole('button', { name: 'Rerun run' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Recover run' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Cancel run' })).toBeDisabled();
+  });
+
   test('projects/:project_id/run-monitor route reruns an existing run through backend endpoint', async ({
     page,
     request,

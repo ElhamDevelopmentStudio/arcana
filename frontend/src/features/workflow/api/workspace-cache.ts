@@ -38,6 +38,9 @@ export const workspaceKeys = {
     ['pipeline-stage-durations-dashboard', projectId, runId] as const,
   characterMap: (projectId: number) => ['character-map', projectId] as const,
   characterGenderComparison: (projectId: number) => ['character-gender-comparison', projectId] as const,
+  comparisonWorkspaceDetail: (workspaceId: number) => ['comparison-workspace-detail', workspaceId] as const,
+  comparisonWorkspaceAlignedCurves: (workspaceId: number, metricsCsv: string, alignedPoints: number | null) =>
+    ['comparison-workspace-aligned-curves', workspaceId, metricsCsv, alignedPoints] as const,
 };
 
 const runScopedKeyPrefixes = new Set<string>([
@@ -95,6 +98,22 @@ export type WorkspaceMutationName =
 type WorkspaceMutationInvalidationResolver = (
   context: WorkspaceMutationContext,
 ) => readonly WorkspaceMutationTarget[];
+
+function resolveRunLifecycleInvalidationTargets(projectId: number | null | undefined): readonly WorkspaceMutationTarget[] {
+  if (projectId === null || projectId === undefined) {
+    return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
+  }
+  return [
+    workspaceKeys.projectControlPanelSummary,
+    workspaceKeyMatchers.projectControlPanelProjectList,
+    workspaceKeys.projectDetail(projectId),
+    workspaceKeys.projectAllowedActions(projectId),
+    workspaceKeys.projectWorkspaceSummary(projectId),
+    workspaceKeys.projectSetupStatus(projectId),
+    workspaceKeyMatchers.projectActivityTimeline(projectId),
+    workspaceKeyMatchers.projectScopedRunData(projectId),
+  ];
+}
 
 export const workspaceMutationInvalidationMap: Record<
   WorkspaceMutationName,
@@ -194,46 +213,10 @@ export const workspaceMutationInvalidationMap: Record<
       workspaceKeyMatchers.projectScopedRunData(projectId),
     ];
   },
-  run_pipeline: ({ projectId }) => {
-    if (projectId === null || projectId === undefined) {
-      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
-    }
-    return [
-      workspaceKeys.projectControlPanelSummary,
-      workspaceKeyMatchers.projectControlPanelProjectList,
-      workspaceKeyMatchers.projectScopedRunData(projectId),
-    ];
-  },
-  cancel_run: ({ projectId }) => {
-    if (projectId === null || projectId === undefined) {
-      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
-    }
-    return [
-      workspaceKeys.projectControlPanelSummary,
-      workspaceKeyMatchers.projectControlPanelProjectList,
-      workspaceKeyMatchers.projectScopedRunData(projectId),
-    ];
-  },
-  rerun_run: ({ projectId }) => {
-    if (projectId === null || projectId === undefined) {
-      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
-    }
-    return [
-      workspaceKeys.projectControlPanelSummary,
-      workspaceKeyMatchers.projectControlPanelProjectList,
-      workspaceKeyMatchers.projectScopedRunData(projectId),
-    ];
-  },
-  recover_run: ({ projectId }) => {
-    if (projectId === null || projectId === undefined) {
-      return [workspaceKeys.projectControlPanelSummary, workspaceKeyMatchers.projectControlPanelProjectList];
-    }
-    return [
-      workspaceKeys.projectControlPanelSummary,
-      workspaceKeyMatchers.projectControlPanelProjectList,
-      workspaceKeyMatchers.projectScopedRunData(projectId),
-    ];
-  },
+  run_pipeline: ({ projectId }) => resolveRunLifecycleInvalidationTargets(projectId),
+  cancel_run: ({ projectId }) => resolveRunLifecycleInvalidationTargets(projectId),
+  rerun_run: ({ projectId }) => resolveRunLifecycleInvalidationTargets(projectId),
+  recover_run: ({ projectId }) => resolveRunLifecycleInvalidationTargets(projectId),
 };
 
 export function resolveWorkspaceMutationInvalidationTargets(

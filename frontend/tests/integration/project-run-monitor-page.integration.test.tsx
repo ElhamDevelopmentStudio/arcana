@@ -80,6 +80,7 @@ function createRunDetail(overrides: Record<string, unknown> = {}) {
 describe('project run monitor page', () => {
   beforeEach(() => {
     resetWorkspaceStore();
+    window.sessionStorage.removeItem('nipe-run-monitor-pending-mutation');
     useWorkspaceStore.setState({
       projectId: 303,
       projectTitle: 'Arcane Tension Project',

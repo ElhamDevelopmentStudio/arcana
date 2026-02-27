@@ -20,6 +20,7 @@ const loadProjectEmotionReviewPage = () => import('@/pages/projects/project-emot
 const loadProjectLowConfidenceReviewPage = () => import('@/pages/projects/project-low-confidence-review-page');
 const loadProjectLowConfidenceReviewGuidePage = () => import('@/pages/projects/project-low-confidence-review-guide-page');
 const loadProjectWorkspaceHomePage = () => import('@/pages/projects/project-workspace-home-page');
+const loadComparisonWorkspaceDetailPage = () => import('@/pages/comparison/comparison-workspace-detail-page');
 
 const DashboardPage = lazy(() => loadDashboardPage().then((module) => ({ default: module.DashboardPage })));
 const ProjectCharactersPage = lazy(() =>
@@ -65,6 +66,11 @@ const ProjectWorkspaceHomePage = lazy(() =>
     default: module.ProjectWorkspaceHomePage,
   })),
 );
+const ComparisonWorkspaceDetailPage = lazy(() =>
+  loadComparisonWorkspaceDetailPage().then((module) => ({
+    default: module.ComparisonWorkspaceDetailPage,
+  })),
+);
 
 const ROUTE_MODULE_PREFETCHERS: Array<{ pattern: RegExp; load: () => Promise<unknown> }> = [
   { pattern: /^\/dashboard$/, load: loadDashboardPage },
@@ -86,6 +92,7 @@ const ROUTE_MODULE_PREFETCHERS: Array<{ pattern: RegExp; load: () => Promise<unk
   { pattern: /^\/projects\/[^/]+\/guide\/low-confidence-review$/, load: loadProjectLowConfidenceReviewGuidePage },
   { pattern: /^\/projects\/[^/]+\/export$/, load: loadProjectExportPage },
   { pattern: /^\/projects\/[^/]+\/dashboards$/, load: loadProjectDashboardsPage },
+  { pattern: /^\/comparison-workspaces\/[^/]+$/, load: loadComparisonWorkspaceDetailPage },
 ];
 
 export function prefetchRouteModule(pathname: string) {
@@ -115,6 +122,10 @@ export const mainRouter: RouteObject[] = [
       {
         path: 'projects/new',
         element: <SuspendedRoute><ProjectNewPage /></SuspendedRoute>,
+      },
+      {
+        path: 'comparison-workspaces/:workspace_id',
+        element: <SuspendedRoute><ComparisonWorkspaceDetailPage /></SuspendedRoute>,
       },
       {
         path: 'projects/:project_id',

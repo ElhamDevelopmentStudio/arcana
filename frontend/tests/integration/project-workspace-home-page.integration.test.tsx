@@ -52,6 +52,22 @@ function renderProjectWorkspaceHomePage() {
         path: '/projects/:project_id/runs',
         element: <div data-testid="project-runs-route">Runs route</div>,
       },
+      {
+        path: '/projects/:project_id/mode',
+        element: <div data-testid="project-mode-route">Mode route</div>,
+      },
+      {
+        path: '/projects/:project_id/pipeline-setup',
+        element: <div data-testid="project-pipeline-setup-route">Pipeline setup route</div>,
+      },
+      {
+        path: '/projects/:project_id/exports',
+        element: <div data-testid="project-exports-route">Exports route</div>,
+      },
+      {
+        path: '/projects/:project_id/settings',
+        element: <div data-testid="project-settings-route">Settings route</div>,
+      },
     ],
     { initialEntries: ['/projects/77'] },
   );
@@ -216,6 +232,10 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-workspace-home-id')).toHaveTextContent('Project ID: 77');
     expect(screen.getByTestId('project-workspace-home-lifecycle')).toHaveTextContent('Lifecycle: configured');
     expect(screen.getByTestId('project-workspace-home-next-action')).toHaveTextContent('Next action: run');
+    expect(screen.getByTestId('project-workspace-home-next-action-link')).toHaveAttribute(
+      'href',
+      '/projects/77/pipeline-setup',
+    );
     expect(screen.getByTestId('project-workspace-home-mode')).toHaveTextContent('Mode: author');
     expect(screen.getByTestId('project-workspace-home-open-overview')).toHaveAttribute('href', '/projects/77/overview');
     expect(screen.getByTestId('project-workspace-home-open-setup')).toHaveAttribute('href', '/projects/77/setup');
@@ -290,6 +310,7 @@ describe('project workspace home page', () => {
     renderProjectWorkspaceHomePage();
 
     expect(screen.getByTestId('project-command-panel-required-step')).toHaveTextContent('Required step: restore');
+    expect(screen.getByTestId('project-workspace-home-next-action-link')).toHaveAttribute('href', '/projects/77/settings');
     expect(screen.getByTestId('project-command-panel-blocked-reason')).toHaveTextContent(
       'Project is archived. Restore the project to continue workflow actions.',
     );
@@ -297,6 +318,39 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-command-panel-open-exports-disabled')).toBeInTheDocument();
     expect(screen.getByTestId('project-command-panel-archive-button-disabled')).toBeInTheDocument();
     expect(screen.getByTestId('project-command-panel-restore-button')).toBeInTheDocument();
+  });
+
+  it('maps select_mode next action to the mode workflow route', () => {
+    useProjectDetailQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectDetailMutateMock,
+      data: {
+        project_id: 77,
+        title: 'Shadow Slave Workspace',
+        description: 'workspace-home detail',
+        tags: ['poc'],
+        lifecycle_state: 'ingested',
+        last_run_status: null,
+        next_required_action: 'select_mode',
+        allowed_actions: ['select_mode'],
+        selected_mode: 'author',
+        selected_modes: ['author'],
+        llm_enabled: true,
+        do_not_store_source_text: false,
+        character_map_finalized: false,
+        configuration_snapshot_id: null,
+        ingestion_timestamp: null,
+        last_export_at: null,
+        created_at: '2026-02-27T00:00:00Z',
+        updated_at: '2026-02-27T00:10:00Z',
+      },
+    });
+
+    renderProjectWorkspaceHomePage();
+
+    expect(screen.getByTestId('project-workspace-home-next-action')).toHaveTextContent('Next action: select_mode');
+    expect(screen.getByTestId('project-workspace-home-next-action-link')).toHaveAttribute('href', '/projects/77/mode');
   });
 
   it('submits metadata edits through patch mutation', async () => {
@@ -343,7 +397,7 @@ describe('project workspace home page', () => {
       description: 'Updated detail',
       tags: ['arc', 'research'],
     });
-    expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
+    expect(projectDetailMutateMock).toHaveBeenCalledTimes(2);
   });
 
   it('submits archive command when archive action is allowed', async () => {
@@ -389,8 +443,8 @@ describe('project workspace home page', () => {
     await user.click(screen.getByTestId('project-archive-confirm-submit'));
 
     expect(archiveProjectTriggerMock).toHaveBeenCalledTimes(1);
-    expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(1);
-    expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
+    expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(2);
+    expect(projectDetailMutateMock).toHaveBeenCalledTimes(2);
     expect(projectActivityTimelineMutateMock).toHaveBeenCalledTimes(1);
   });
 
@@ -458,8 +512,8 @@ describe('project workspace home page', () => {
     await user.click(screen.getByTestId('project-restore-confirm-submit'));
 
     expect(restoreProjectTriggerMock).toHaveBeenCalledTimes(1);
-    expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(1);
-    expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
+    expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(2);
+    expect(projectDetailMutateMock).toHaveBeenCalledTimes(2);
     expect(projectActivityTimelineMutateMock).toHaveBeenCalledTimes(1);
   });
 
@@ -500,6 +554,9 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-command-panel-lifecycle-conflict')).toHaveTextContent(
       '409 Conflict: project already archived.',
     );
+    expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(2);
+    expect(projectDetailMutateMock).toHaveBeenCalledTimes(2);
+    expect(projectActivityTimelineMutateMock).not.toHaveBeenCalled();
   });
 
   it('renders lifecycle conflict message when restore transition returns conflict', async () => {
@@ -560,6 +617,9 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-command-panel-lifecycle-conflict')).toHaveTextContent(
       '409 Conflict: project is not archived.',
     );
+    expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(2);
+    expect(projectDetailMutateMock).toHaveBeenCalledTimes(2);
+    expect(projectActivityTimelineMutateMock).not.toHaveBeenCalled();
   });
 
   it('requests next timeline page when next pagination action is available', async () => {

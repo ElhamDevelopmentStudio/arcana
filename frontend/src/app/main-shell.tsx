@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Profiler, useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { DashboardSquare02Icon, PanelLeftCloseIcon, PanelLeftOpenIcon, Search01Icon } from 'hugeicons-react';
 
@@ -8,6 +8,11 @@ import { cn } from '@/lib/utils';
 import { ProjectStepNav } from '@/app/project-step-nav';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 import { useCriticalRoutePrefetch } from '@/features/workflow/prefetch/critical-route-prefetch';
+import {
+  completeRouteNavigationMeasurement,
+  reportRenderCostMetric,
+  startRouteNavigationMeasurement,
+} from '@/features/workflow/performance/performance-instrumentation';
 import { useUiRouteStateStore } from '@/app/state/ui-route-state-store';
 
 function getProjectIdFromPath(pathname: string, fallback: string | undefined): string | null {
@@ -123,16 +128,81 @@ function resolveRouteMeta(pathname: string) {
 export function MainShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const location = useLocation();
+  const routePathWithSearch = `${location.pathname}${location.search}`;
   const params = useParams<{ project_id?: string }>();
   const projectId = getProjectIdFromPath(location.pathname, params.project_id);
   const currentProjectId = parseProjectIdParam(projectId ?? undefined);
   const setProjectLastRoute = useUiRouteStateStore((state) => state.setProjectLastRoute);
   const routeMeta = resolveRouteMeta(location.pathname);
+  const pendingNavigationPathRef = useRef<string | null>(null);
 
   useCriticalRoutePrefetch({
     pathname: location.pathname,
     projectId: currentProjectId,
   });
+
+  useEffect(() => {
+    const handleLinkNavigationStart = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+      const anchor = event.target.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+      if (anchor.target && anchor.target !== '_self') {
+        return;
+      }
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#')) {
+        return;
+      }
+      let nextUrl: URL;
+      try {
+        nextUrl = new URL(anchor.href, window.location.origin);
+      } catch {
+        return;
+      }
+      if (nextUrl.origin !== window.location.origin) {
+        return;
+      }
+      const nextPathWithSearch = `${nextUrl.pathname}${nextUrl.search}`;
+      const currentPathWithSearch = `${window.location.pathname}${window.location.search}`;
+      if (nextPathWithSearch === currentPathWithSearch) {
+        return;
+      }
+      pendingNavigationPathRef.current = nextPathWithSearch;
+      startRouteNavigationMeasurement(nextPathWithSearch);
+    };
+
+    document.addEventListener('click', handleLinkNavigationStart, true);
+    return () => {
+      document.removeEventListener('click', handleLinkNavigationStart, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (pendingNavigationPathRef.current !== routePathWithSearch) {
+      return;
+    }
+    completeRouteNavigationMeasurement(routePathWithSearch);
+    pendingNavigationPathRef.current = null;
+  }, [routePathWithSearch]);
+
+  const handleRouteRender = useCallback(
+    (_id: string, phase: 'mount' | 'update' | 'nested-update', actualDuration: number) => {
+      reportRenderCostMetric({
+        component: 'main-shell-route-content',
+        phase,
+        actualDurationMs: actualDuration,
+        routePath: routePathWithSearch,
+      });
+    },
+    [routePathWithSearch],
+  );
 
   useEffect(() => {
     if (currentProjectId === null) {
@@ -147,6 +217,13 @@ export function MainShell() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <a
+        className="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm font-medium text-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        data-testid="skip-to-main-link"
+        href="#app-main-content"
+      >
+        Skip to main content
+      </a>
       <div className="h-screen w-full">
         <div
           className="nipe-shell-frame grid h-full min-h-0 overflow-hidden rounded-none border-0 shadow-none"
@@ -199,7 +276,7 @@ export function MainShell() {
             <div className="min-w-0 text-sm">
               <span className="text-muted-foreground">Projects</span>
               <span className="px-2 text-muted-foreground/70">/</span>
-              <span className="font-semibold text-foreground">{routeMeta.title}</span>
+              <span className="font-semibold text-foreground" id="app-route-title">{routeMeta.title}</span>
             </div>
 
             <div className="nipe-search-shell">
@@ -215,7 +292,10 @@ export function MainShell() {
             </div>
           </header>
 
-          <aside className={cn('nipe-sidebar flex min-h-0 flex-col border-r border-panel-border/70', isSidebarCollapsed ? 'w-[112px]' : 'w-[296px]')}>
+          <aside
+            aria-label="Primary workflow navigation"
+            className={cn('nipe-sidebar flex min-h-0 flex-col border-r border-panel-border/70', isSidebarCollapsed ? 'w-[112px]' : 'w-[296px]')}
+          >
             <div className="flex-1 overflow-auto p-3">
               <ProjectStepNav collapsed={isSidebarCollapsed} projectId={projectId} />
             </div>
@@ -228,8 +308,15 @@ export function MainShell() {
             ) : null}
           </aside>
 
-          <main className="min-h-0 overflow-auto p-5 lg:p-7">
-            <Outlet />
+          <main
+            aria-labelledby="app-route-title"
+            className="min-h-0 overflow-auto p-5 lg:p-7"
+            id="app-main-content"
+            tabIndex={-1}
+          >
+            <Profiler id="main-shell-route-content" onRender={handleRouteRender}>
+              <Outlet />
+            </Profiler>
           </main>
         </div>
       </div>

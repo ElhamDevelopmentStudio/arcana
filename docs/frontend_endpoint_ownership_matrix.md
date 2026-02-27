@@ -18,9 +18,9 @@ Scope rules:
 | `POST /api/projects` | `/projects/new` | `useCreateProjectMutation` | `ProjectNewPage` | `frontend/tests/integration/project-new-directory-ingestion.integration.test.tsx` | assigned |
 | `POST /api/projects/drafts` | `/` | `useCreateProjectDraftMutation` | `CreateProjectDialog` | `frontend/tests/integration/landing-page.integration.test.tsx` | assigned |
 | `GET /api/dashboard/project-control-panel/summary` | `/`, `/dashboard` | `useProjectControlPanelSummaryQuery` | `LandingPage`, `DashboardPage` | `frontend/tests/integration/landing-page.integration.test.tsx` | assigned |
-| `GET /api/dashboard/project-control-panel/projects` | `/dashboard` | `useProjectControlPanelProjectListQuery` | `DashboardPage` | `missing dedicated dashboard list test` | partial |
-| `GET /api/projects/{project_id}/llm` | `unassigned` | `direct api-client only` | `unassigned` | `unassigned` | unassigned |
-| `PUT /api/projects/{project_id}/llm` | `unassigned` | `direct api-client only` | `unassigned` | `unassigned` | unassigned |
+| `GET /api/dashboard/project-control-panel/projects` | `/dashboard` | `useProjectControlPanelProjectListQuery` | `DashboardPage` | `frontend/tests/integration/dashboard-api-panel-states.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `GET /api/projects/{project_id}/llm` | `/projects/:project_id/settings` | `useProjectLLMSettingsQuery` | `ProjectSettingsPage` | `frontend/tests/integration/project-settings-page.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
+| `PUT /api/projects/{project_id}/llm` | `/projects/:project_id/settings` | `useUpdateProjectLLMSettingsMutation` | `ProjectSettingsPage` | `frontend/tests/integration/project-settings-page.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
 | `PUT /api/projects/{project_id}/mode` | `/projects/:project_id/mode` | `useSwitchModeMutation` | `ProjectModePage` | `frontend/tests/integration/mode-selection-gating.integration.test.tsx`, `frontend/tests/regression/mode-profile-summary.regression.test.tsx` | assigned |
 | `POST /api/projects/{project_id}/ingest/txt` | `/projects/new` | `useIngestTxtMutation` | `ProjectNewPage` | `frontend/tests/integration/project-new-directory-ingestion.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
 | `POST /api/projects/{project_id}/ingest/chapters-dir` | `/projects/new` | `useIngestChapterDirectoryMutation` | `ProjectNewPage` | `frontend/tests/integration/project-new-directory-ingestion.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
@@ -39,7 +39,7 @@ Scope rules:
 | `PUT /api/projects/{project_id}/voices` | `/projects/:project_id/pipeline-setup` | `useSaveVoicesMutation` | `ProjectPipelineSetupPage` | `frontend/tests/regression/pipeline-mode-lock.regression.test.tsx` | assigned |
 | `POST /api/projects/{project_id}/runs` | `/projects/:project_id/pipeline-setup` | `useRunPipelineMutation` | `ProjectPipelineSetupPage` | `frontend/tests/unit/run-request-schema.unit.test.ts`, `frontend/tests/regression/pipeline-mode-lock.regression.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
 | `GET /api/projects/{project_id}/runs/{run_id}` | `/projects/:project_id/mode`, `/projects/:project_id/run-monitor` | `useRunDetailQuery` | `ProjectModePage`, `ProjectRunMonitorPage` | `frontend/tests/integration/mode-selection-gating.integration.test.tsx`, `frontend/tests/integration/project-run-monitor-page.integration.test.tsx` | assigned |
-| `POST /api/projects/{project_id}/runs/{run_id}/cancel` | `unassigned` | `useCancelRunMutation` | `unassigned` | `unassigned` | partial |
+| `POST /api/projects/{project_id}/runs/{run_id}/cancel` | `/projects/:project_id/run-monitor` | `useCancelRunMutation` | `ProjectRunMonitorPage` | `frontend/tests/integration/project-run-monitor-page.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
 | `GET /api/projects/{project_id}/runs/config-diff` | `/projects/:project_id/run-monitor` | `useRunConfigDiffQuery` | `ProjectRunMonitorPage` | `frontend/tests/integration/project-run-monitor-page.integration.test.tsx` | assigned |
 | `GET /api/projects/{project_id}/runs/{run_id}/config-preset` | `/projects/:project_id/run-monitor` | `useRunConfigPresetMutation` | `ProjectRunMonitorPage` | `frontend/tests/integration/project-run-monitor-page.integration.test.tsx` | assigned |
 | `GET /api/projects/{project_id}/exports/{run_id}.json` | `/projects/:project_id/export`, `/projects/:project_id/review/speakers`, `/projects/:project_id/review/emotions`, `/projects/:project_id/review/low-confidence`, `/projects/:project_id/dashboards` | `useExportPayloadQuery` | `ProjectExportPage`, `ProjectSpeakerReviewPage`, `ProjectEmotionReviewPage`, `ProjectLowConfidenceReviewPage`, `ProjectDashboardsPage` | `frontend/tests/integration/project-export-page.integration.test.tsx`, `frontend/tests/integration/project-speaker-review-page.integration.test.tsx`, `frontend/tests/integration/project-emotion-review-page.integration.test.tsx`, `frontend/tests/integration/project-low-confidence-review-page.integration.test.tsx`, `frontend/tests/e2e/backend-endpoint-contract.e2e.spec.ts` | assigned |
@@ -51,6 +51,4 @@ Scope rules:
 
 ## Gaps detected by this matrix
 
-- Dashboard project list endpoint has route/hook/component ownership but no dedicated dashboard-page integration test yet.
-- Run cancel endpoint has a hook (`useCancelRunMutation`) but no route/component wiring yet.
-- Project LLM settings endpoints are present in `api-client` but are not wired to hooks/routes/components/tests yet.
+- No unassigned frontend-consumed backend endpoints remain in the current matrix snapshot.
