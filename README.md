@@ -46,6 +46,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Project overview route now uses `GET /api/projects/{project_id}` + `GET /api/projects/{project_id}/workspace-summary` contracts
 - Project workspace sidebar now uses grouped navigation with stable mappings for overview/setup/characters/voice/runs/exports/settings
 - Project workspace sidebar now applies setup/action-gated lock states with per-item lock reasons for blocked navigation
+- Project workspace now shows a deep-link guard panel for locked routes with a “Go to required step” recovery action
 - Reusable API panel state primitives now standardize loading, empty, and error/retry UX for dashboard-backed panels
 - Global mutation event bus now dispatches centralized success/error notifications with recovery actions for shared mutations
 - Global Tailwind-based design system in `frontend/src/styles/globals.css`

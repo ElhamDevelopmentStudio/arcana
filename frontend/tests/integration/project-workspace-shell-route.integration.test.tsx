@@ -189,4 +189,40 @@ describe('project workspace shell route', () => {
     await user.click(screen.getByTestId('project-workspace-nav-exports'));
     expect(router.state.location.pathname).toBe('/projects/321/setup');
   });
+
+  it('shows deep-link guard panel on locked route with go-to-required-step action', async () => {
+    const user = userEvent.setup();
+    useProjectSetupStatusQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: vi.fn(),
+      data: {
+        is_complete: true,
+        steps: [
+          { step_id: 'ingestion', ready: true },
+          { step_id: 'mode_selection', ready: true },
+          { step_id: 'initial_run', ready: true },
+          { step_id: 'character_mapping', ready: true },
+          { step_id: 'voice_mapping', ready: true },
+        ],
+      },
+    });
+    useProjectAllowedActionsQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      data: {
+        required_step: 'restore',
+        blocked_reason: 'Project is archived. Restore the project to continue workflow actions.',
+      },
+    });
+
+    const router = renderProjectWorkspace('/projects/321/exports');
+
+    expect(await screen.findByTestId('project-workspace-deep-link-guard')).toBeInTheDocument();
+    expect(screen.queryByTestId('project-exports-route')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('project-workspace-deep-link-guard-action'));
+    expect(await screen.findByTestId('project-overview-route')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/projects/321/overview');
+  });
 });
