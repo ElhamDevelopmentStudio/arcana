@@ -684,7 +684,7 @@ Definition of done for each task:
 - [x] [FE-179] Add endpoint-consumption regression tests proving each backend endpoint has frontend coverage.
 - [x] [FE-180] Add route-level integration/regression suite for workflow continuity and persisted state.
 - [x] [PW-021] Add Playwright real-backend E2E: landing -> dashboard -> create draft -> project detail.
-- [ ] [PW-022] Add Playwright real-backend E2E: create draft -> ingest -> mode -> characters -> pipeline setup -> run -> export.
+- [x] [PW-022] Add Playwright real-backend E2E: create draft -> ingest -> mode -> characters -> pipeline setup -> run -> export.
 - [ ] [PW-023] Add Playwright real-backend E2E: archive and restore lifecycle roundtrip.
 - [ ] [PW-024] Add Playwright real-backend E2E: rerun/recover/cancel lifecycle flows.
 - [ ] [PW-025] Add Playwright real-backend E2E: pronunciation + voice configuration flow.
