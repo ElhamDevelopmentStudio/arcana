@@ -32,6 +32,10 @@ function renderDashboard() {
         path: '/projects/new',
         element: <div data-testid="project-new-page">Project new</div>,
       },
+      {
+        path: '/projects/:projectId/run-monitor',
+        element: <div data-testid="run-monitor-page">Run monitor</div>,
+      },
     ],
     { initialEntries: ['/dashboard'] },
   );
@@ -173,5 +177,45 @@ describe('dashboard api panel state primitives', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('renders recent-failure triage rows from summary payload and routes triage action', async () => {
+    const user = userEvent.setup();
+    useProjectControlPanelSummaryQueryMock.mockReturnValue({
+      isLoading: false,
+      data: {
+        total_projects: 2,
+        active_run_count: 0,
+        recent_failure_count: 1,
+        recent_failures: [
+          {
+            project_id: 42,
+            project_title: 'Project Atlas',
+            run_id: 99,
+            failed_at: '2026-02-27T00:00:00Z',
+            error_code: 'run_failed',
+            error_message: 'speaker attribution unresolved',
+          },
+        ],
+      },
+      error: undefined,
+      mutate: summaryMutateMock,
+    });
+    useProjectControlPanelProjectListQueryMock.mockReturnValue({
+      isLoading: false,
+      data: { items: [] },
+      error: undefined,
+      mutate: listMutateMock,
+    });
+
+    renderDashboard();
+
+    expect(screen.getByTestId('dashboard-recent-failures-panel')).toBeInTheDocument();
+    expect(screen.getByText('Project Atlas (42)')).toBeInTheDocument();
+    expect(screen.getByText('error: run_failed')).toBeInTheDocument();
+    expect(screen.getByText('speaker attribution unresolved')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('dashboard-triage-failure-42'));
+    expect(screen.getByTestId('run-monitor-page')).toBeInTheDocument();
   });
 });
