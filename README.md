@@ -44,6 +44,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Setup route now includes mode-selection completion using `/api/modes` + `PUT /api/projects/{project_id}/mode` with setup-status refresh
 - Setup route now includes character/voice readiness checks with explicit CTAs into characters and pipeline setup flows
 - Project overview route now uses `GET /api/projects/{project_id}` + `GET /api/projects/{project_id}/workspace-summary` contracts
+- Project workspace sidebar now uses grouped navigation with stable mappings for overview/setup/characters/voice/runs/exports/settings
 - Reusable API panel state primitives now standardize loading, empty, and error/retry UX for dashboard-backed panels
 - Global mutation event bus now dispatches centralized success/error notifications with recovery actions for shared mutations
 - Global Tailwind-based design system in `frontend/src/styles/globals.css`

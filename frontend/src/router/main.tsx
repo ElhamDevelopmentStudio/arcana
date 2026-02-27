@@ -13,6 +13,7 @@ const loadProjectNewPage = () => import('@/pages/projects/project-new-page');
 const loadProjectOverviewPage = () => import('@/pages/projects/project-overview-page');
 const loadProjectPipelineSetupPage = () => import('@/pages/projects/project-pipeline-setup-page');
 const loadProjectSetupPage = () => import('@/pages/projects/project-setup-page');
+const loadProjectSettingsPage = () => import('@/pages/projects/project-settings-page');
 const loadProjectRunMonitorPage = () => import('@/pages/projects/project-run-monitor-page');
 const loadProjectSpeakerReviewPage = () => import('@/pages/projects/project-speaker-review-page');
 const loadProjectEmotionReviewPage = () => import('@/pages/projects/project-emotion-review-page');
@@ -37,6 +38,9 @@ const ProjectPipelineSetupPage = lazy(() =>
   loadProjectPipelineSetupPage().then((module) => ({ default: module.ProjectPipelineSetupPage })),
 );
 const ProjectSetupPage = lazy(() => loadProjectSetupPage().then((module) => ({ default: module.ProjectSetupPage })));
+const ProjectSettingsPage = lazy(() =>
+  loadProjectSettingsPage().then((module) => ({ default: module.ProjectSettingsPage })),
+);
 const ProjectRunMonitorPage = lazy(() =>
   loadProjectRunMonitorPage().then((module) => ({ default: module.ProjectRunMonitorPage })),
 );
@@ -70,6 +74,10 @@ const ROUTE_MODULE_PREFETCHERS: Array<{ pattern: RegExp; load: () => Promise<unk
   { pattern: /^\/projects\/[^/]+\/setup$/, load: loadProjectSetupPage },
   { pattern: /^\/projects\/[^/]+\/mode$/, load: loadProjectModePage },
   { pattern: /^\/projects\/[^/]+\/characters$/, load: loadProjectCharactersPage },
+  { pattern: /^\/projects\/[^/]+\/voice$/, load: loadProjectPipelineSetupPage },
+  { pattern: /^\/projects\/[^/]+\/runs$/, load: loadProjectRunMonitorPage },
+  { pattern: /^\/projects\/[^/]+\/exports$/, load: loadProjectExportPage },
+  { pattern: /^\/projects\/[^/]+\/settings$/, load: loadProjectSettingsPage },
   { pattern: /^\/projects\/[^/]+\/pipeline-setup$/, load: loadProjectPipelineSetupPage },
   { pattern: /^\/projects\/[^/]+\/run-monitor$/, load: loadProjectRunMonitorPage },
   { pattern: /^\/projects\/[^/]+\/review\/speakers$/, load: loadProjectSpeakerReviewPage },
@@ -131,6 +139,22 @@ export const mainRouter: RouteObject[] = [
           {
             path: 'characters',
             element: <SuspendedRoute><ProjectCharactersPage /></SuspendedRoute>,
+          },
+          {
+            path: 'voice',
+            element: <SuspendedRoute><ProjectPipelineSetupPage /></SuspendedRoute>,
+          },
+          {
+            path: 'runs',
+            element: <SuspendedRoute><ProjectRunMonitorPage /></SuspendedRoute>,
+          },
+          {
+            path: 'exports',
+            element: <SuspendedRoute><ProjectExportPage /></SuspendedRoute>,
+          },
+          {
+            path: 'settings',
+            element: <SuspendedRoute><ProjectSettingsPage /></SuspendedRoute>,
           },
           {
             path: 'pipeline-setup',

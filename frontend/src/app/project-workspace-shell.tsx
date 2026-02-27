@@ -5,20 +5,44 @@ import { useProjectSetupStatusQuery } from '@/features/workflow/api/workflow-hoo
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
 type WorkspaceNavItem = {
+  id: 'overview' | 'setup' | 'characters' | 'voice' | 'runs' | 'exports' | 'settings';
   to: string;
   label: string;
   end?: boolean;
 };
 
-const PROJECT_WORKSPACE_NAV_ITEMS: WorkspaceNavItem[] = [
-  { to: 'overview', label: 'Overview', end: true },
-  { to: 'setup', label: 'Setup' },
-  { to: 'mode', label: 'Mode' },
-  { to: 'characters', label: 'Characters' },
-  { to: 'pipeline-setup', label: 'Pipeline Setup' },
-  { to: 'run-monitor', label: 'Run Monitor' },
-  { to: 'export', label: 'Exports' },
-  { to: 'dashboards', label: 'Dashboards' },
+type WorkspaceNavGroup = {
+  id: 'foundation' | 'content' | 'operations';
+  label: string;
+  items: WorkspaceNavItem[];
+};
+
+const PROJECT_WORKSPACE_NAV_GROUPS: WorkspaceNavGroup[] = [
+  {
+    id: 'foundation',
+    label: 'Foundation',
+    items: [
+      { id: 'overview', to: 'overview', label: 'Overview', end: true },
+      { id: 'setup', to: 'setup', label: 'Setup' },
+    ],
+  },
+  {
+    id: 'content',
+    label: 'Content',
+    items: [
+      { id: 'characters', to: 'characters', label: 'Characters' },
+      { id: 'voice', to: 'voice', label: 'Voice' },
+    ],
+  },
+  {
+    id: 'operations',
+    label: 'Operations',
+    items: [
+      { id: 'runs', to: 'runs', label: 'Runs' },
+      { id: 'exports', to: 'exports', label: 'Exports' },
+      { id: 'settings', to: 'settings', label: 'Settings' },
+    ],
+  },
 ];
 
 function toProjectSetupPath(projectId: number) {
@@ -62,25 +86,33 @@ export function ProjectWorkspaceShell() {
           Project #{projectId ?? 'n/a'}
         </p>
 
-        <nav aria-label="Project Workspace Navigation" className="mt-3">
-          <ul className="space-y-1.5">
-            {PROJECT_WORKSPACE_NAV_ITEMS.map((item) => (
-              <li key={item.label}>
-                <NavLink
-                  className={({ isActive }) =>
-                    [
-                      'flex rounded-lg px-2.5 py-2 text-sm transition',
-                      isActive ? 'bg-sidebar-active/12 text-sidebar-active' : 'text-sidebar-foreground hover:bg-background/75',
-                    ].join(' ')
-                  }
-                  end={item.end}
-                  to={item.to}
-                >
-                  {item.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
+        <nav aria-label="Project Workspace Navigation" className="mt-3 space-y-4">
+          {PROJECT_WORKSPACE_NAV_GROUPS.map((group) => (
+            <div data-testid={`project-workspace-nav-group-${group.id}`} key={group.id}>
+              <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.13em] text-muted-foreground uppercase">
+                {group.label}
+              </p>
+              <ul className="space-y-1.5">
+                {group.items.map((item) => (
+                  <li key={item.id}>
+                    <NavLink
+                      className={({ isActive }) =>
+                        [
+                          'flex rounded-lg px-2.5 py-2 text-sm transition',
+                          isActive ? 'bg-sidebar-active/12 text-sidebar-active' : 'text-sidebar-foreground hover:bg-background/75',
+                        ].join(' ')
+                      }
+                      data-testid={`project-workspace-nav-${item.id}`}
+                      end={item.end}
+                      to={item.to}
+                    >
+                      {item.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </nav>
       </aside>
 
