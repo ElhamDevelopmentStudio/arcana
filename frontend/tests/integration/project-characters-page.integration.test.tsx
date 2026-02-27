@@ -51,6 +51,15 @@ const characterGenderComparisonQueryData = {
     },
   ],
 };
+const characterAliasCollisionsQueryData = {
+  project_id: 101,
+  collisions: [
+    {
+      alias: 'K',
+      canonical_names: ['Kai', 'Kade'],
+    },
+  ],
+};
 
 vi.mock('@/app/config/env', () => ({
   appEnv: {
@@ -72,6 +81,12 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   }),
   useCharacterGenderComparisonQuery: () => ({
     data: characterGenderComparisonQueryData,
+    isLoading: false,
+    error: null,
+    mutate: vi.fn(),
+  }),
+  useCharacterAliasCollisionsQuery: () => ({
+    data: characterAliasCollisionsQueryData,
     isLoading: false,
     error: null,
     mutate: vi.fn(),
@@ -270,6 +285,15 @@ describe('project characters page manual editor', () => {
 
     expect(lookupCharacterAliasMutationTrigger).toHaveBeenCalledWith({ alias: 'K' });
     expect(screen.getByTestId('character-alias-lookup-state')).toHaveTextContent('K → Kai (manual_alias)');
+  });
+
+  it('renders alias collision inspector rows from endpoint data', () => {
+    renderCharacterPage();
+
+    expect(screen.getByTestId('character-alias-collision-inspector')).toBeInTheDocument();
+    expect(screen.getByTestId('character-alias-collision-inspector-count')).toHaveTextContent('1 collision group(s)');
+    expect(screen.getByTestId('character-alias-collision-inspector-row-0')).toHaveTextContent('K');
+    expect(screen.getByTestId('character-alias-collision-inspector-row-0')).toHaveTextContent('Kai, Kade');
   });
 
   it('validates manual editor rows inline before save', async () => {

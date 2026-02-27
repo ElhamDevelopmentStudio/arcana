@@ -2333,6 +2333,82 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('character-alias-lookup-state')).toContainText('K → Kai');
   });
 
+  test('projects/:project_id/characters route renders alias collision inspector from backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-characters-alias-collision-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+          {
+            name: 'Kade',
+            verbalized_form: 'Kade',
+            gender: 'male',
+            aliases: ['K'],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
+    const aliasCollisionsRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/characters/alias-collisions`),
+    );
+    const aliasCollisionsResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters/alias-collisions`),
+    );
+
+    await page.goto(`/projects/${projectId}/characters`);
+    await aliasCollisionsRequestPromise;
+    const aliasCollisionsResponse = await aliasCollisionsResponsePromise;
+    expect(aliasCollisionsResponse.status()).toBe(200);
+    await expect(page.getByTestId('character-alias-collision-inspector')).toBeVisible();
+    await expect(page.getByTestId('character-alias-collision-inspector-count')).toContainText('collision group(s)');
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,

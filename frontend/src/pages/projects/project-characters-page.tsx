@@ -25,6 +25,7 @@ import {
   useAutoExtractCharactersMutation,
   useCharacterMapQuery,
   useCharacterGenderComparisonQuery,
+  useCharacterAliasCollisionsQuery,
   useScrapeCharactersMutation,
   useMergeCharactersMutation,
   useInferCharacterGendersMutation,
@@ -189,6 +190,7 @@ export function ProjectCharactersPage() {
 
   const characterMapQuery = useCharacterMapQuery(projectId);
   const characterGenderComparisonQuery = useCharacterGenderComparisonQuery(projectId);
+  const characterAliasCollisionsQuery = useCharacterAliasCollisionsQuery(projectId);
   const [manualRows, setManualRows] = useState<ManualCharacterRow[]>([createRow()]);
   const genderComparisonRows = useMemo(() => {
     const mapped: Record<string, string> = {};
@@ -1035,6 +1037,31 @@ export function ProjectCharactersPage() {
                     : `${aliasLookupResult.alias} not found (${aliasLookupResult.match_source})`}
               </p>
             </form>
+            <div
+              className="space-y-2 rounded-md border border-panel-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+              data-testid="character-alias-collision-inspector"
+            >
+              <p className="font-medium text-foreground">Alias collision inspector</p>
+              <p data-testid="character-alias-collision-inspector-count">
+                {characterAliasCollisionsQuery.data?.collisions.length ?? 0} collision group(s)
+              </p>
+              {(characterAliasCollisionsQuery.data?.collisions ?? []).length === 0 ? (
+                <p data-testid="character-alias-collision-inspector-empty">No alias collisions detected.</p>
+              ) : (
+                <ul className="space-y-1" data-testid="character-alias-collision-inspector-list">
+                  {(characterAliasCollisionsQuery.data?.collisions ?? []).map((collision, index) => (
+                    <li
+                      className="rounded border border-panel-border/60 bg-background px-2 py-1"
+                      data-testid={`character-alias-collision-inspector-row-${index}`}
+                      key={`${collision.alias}-${index}`}
+                    >
+                      <span className="font-medium text-foreground">{collision.alias}</span> →{' '}
+                      {collision.canonical_names.join(', ')}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </CardContent>
         </Card>
 
