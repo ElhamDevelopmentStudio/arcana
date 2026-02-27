@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useExportCsvMutation, useExportPayloadQuery } from '@/features/workflow/api/workflow-hooks';
+import { useExportCsvMutation, useExportPayloadQuery, useRunDetailQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Download } from 'lucide-react';
@@ -70,6 +70,18 @@ function toMajorTagConfidenceRow(segment: Record<string, unknown>): MajorTagConf
   };
 }
 
+function toAllowedExportFormats(config: Record<string, unknown> | undefined): Set<string> | null {
+  const rawFormats = config?.export_formats;
+  if (!Array.isArray(rawFormats)) {
+    return null;
+  }
+  const normalized = rawFormats
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length > 0);
+  return new Set(normalized);
+}
+
 export function ProjectExportPage() {
   const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
@@ -80,8 +92,20 @@ export function ProjectExportPage() {
   const projectId = routeProjectId ?? storeProjectId;
   const exportPayloadQuery = useExportPayloadQuery(projectId, runId);
   const exportCsvMutation = useExportCsvMutation(projectId, runId);
+  const runDetailQuery = useRunDetailQuery(projectId, runId);
   const [minimumConfidence, setMinimumConfidence] = useState(0.8);
   const [showBelowThreshold, setShowBelowThreshold] = useState(true);
+
+  const allowedExportFormats = useMemo(
+    () => toAllowedExportFormats(runDetailQuery.data?.config as Record<string, unknown> | undefined),
+    [runDetailQuery.data?.config],
+  );
+  const runStatus = runDetailQuery.data?.status ?? null;
+  const isRunCompleted = runStatus === 'completed';
+  const isJsonAllowedByFormat = allowedExportFormats === null || allowedExportFormats.has('json');
+  const isCsvAllowedByFormat = allowedExportFormats === null || allowedExportFormats.has('csv');
+  const isJsonExportEnabled = Boolean(exportPayloadQuery.data) && isRunCompleted && isJsonAllowedByFormat;
+  const isCsvExportEnabled = Boolean(exportPayloadQuery.data) && isRunCompleted && isCsvAllowedByFormat;
 
   const majorTagConfidenceRows = exportPayloadQuery.data?.segments
     ?.map((segment) => {
@@ -179,14 +203,24 @@ export function ProjectExportPage() {
           <p>Project: {projectId ?? 'n/a'}</p>
           <p>Run: {runId ?? 'n/a'}</p>
           <p>{exportPayloadQuery.data ? 'Export payload is ready for download.' : 'Awaiting run/export data.'}</p>
+          {runDetailQuery.isLoading ? <p>Loading export availability...</p> : null}
+          {runStatus !== null && runStatus !== 'completed' ? (
+            <p className="text-muted-foreground">Exports are unavailable while run status is {runStatus}.</p>
+          ) : null}
+          {isRunCompleted && !isJsonAllowedByFormat ? (
+            <p className="text-muted-foreground">JSON export is disabled for this run configuration.</p>
+          ) : null}
+          {isRunCompleted && !isCsvAllowedByFormat ? (
+            <p className="text-muted-foreground">CSV export is disabled for this run configuration.</p>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
-            <Button disabled={!exportPayloadQuery.data} onClick={downloadExportJson}>
+            <Button disabled={!isJsonExportEnabled} onClick={downloadExportJson}>
               <Download className="size-4" />
               Download JSON
             </Button>
             <Button
-              disabled={!exportPayloadQuery.data || exportCsvMutation.isMutating}
+              disabled={!isCsvExportEnabled || exportCsvMutation.isMutating}
               onClick={downloadExportCsv}
               variant="outline"
             >
@@ -197,6 +231,7 @@ export function ProjectExportPage() {
 
           {exportPayloadQuery.isLoading ? <p>Loading export payload...</p> : null}
           {exportPayloadQuery.error ? <p className="text-destructive">{exportPayloadQuery.error.message}</p> : null}
+          {runDetailQuery.error ? <p className="text-destructive">{runDetailQuery.error.message}</p> : null}
           {exportCsvMutation.error ? <p className="text-destructive">{exportCsvMutation.error.message}</p> : null}
           {exportPayloadQuery.data ? (
             <>
