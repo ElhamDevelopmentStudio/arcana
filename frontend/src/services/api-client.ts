@@ -672,6 +672,39 @@ export class NipeApiClient {
     }
   }
 
+  async getCharacterPronunciationDictionary(
+    projectId: number,
+    characterName: string,
+  ): Promise<PronunciationDictionaryResponseDto> {
+    try {
+      const encodedCharacterName = encodeURIComponent(characterName);
+      const response = await this.client.get(
+        `/api/projects/${projectId}/pronunciation-dictionary/character/${encodedCharacterName}`,
+      );
+      return pronunciationDictionaryResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async updateCharacterPronunciationDictionary(
+    projectId: number,
+    characterName: string,
+    payload: PronunciationDictionaryUpdateRequestDto,
+  ): Promise<PronunciationDictionaryResponseDto> {
+    try {
+      const encodedCharacterName = encodeURIComponent(characterName);
+      const parsedPayload = pronunciationDictionaryUpdateRequestSchema.parse(payload);
+      const response = await this.client.put(
+        `/api/projects/${projectId}/pronunciation-dictionary/character/${encodedCharacterName}`,
+        parsedPayload,
+      );
+      return pronunciationDictionaryResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async inferCharacterGenders(projectId: number): Promise<CharacterMapDto> {
     try {
       const response = await this.client.post(`/api/projects/${projectId}/characters/infer`);

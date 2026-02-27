@@ -519,6 +519,19 @@ export function usePlacePronunciationDictionaryQuery(projectId: number | null) {
   );
 }
 
+export function useCharacterPronunciationDictionaryQuery(
+  projectId: number | null,
+  characterName: string | null,
+) {
+  return useSWR(
+    projectId !== null && characterName !== null
+      ? ['pronunciation-dictionary-character', projectId, characterName]
+      : null,
+    async ([, currentProjectId, currentCharacterName]) =>
+      nipeApiClient.getCharacterPronunciationDictionary(currentProjectId, currentCharacterName),
+  );
+}
+
 export function useSaveCharacterMapMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['save-characters', projectId] : null,
@@ -675,6 +688,33 @@ export function useSavePlacePronunciationDictionaryMutation(projectId: number | 
         throw new Error('Project must exist before saving place pronunciation dictionary.');
       }
       return nipeApiClient.updatePlacePronunciationDictionary(projectId, arg);
+    },
+  );
+}
+
+export function useSaveCharacterPronunciationDictionaryMutation(
+  projectId: number | null,
+  characterName: string | null,
+) {
+  return useSWRMutation(
+    projectId !== null && characterName !== null
+      ? ['save-pronunciation-dictionary-character', projectId, characterName]
+      : null,
+    async (
+      _,
+      {
+        arg,
+      }: {
+        arg: { entries: Array<{ term: string; verbalized_form: string; source: string; confidence: number }> };
+      },
+    ) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before saving character pronunciation dictionary.');
+      }
+      if (characterName === null) {
+        throw new Error('Character name is required before saving character pronunciation dictionary.');
+      }
+      return nipeApiClient.updateCharacterPronunciationDictionary(projectId, characterName, arg);
     },
   );
 }

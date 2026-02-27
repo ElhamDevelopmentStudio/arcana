@@ -2813,6 +2813,104 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('pronunciation-places-state')).toContainText('Saved entries: 1');
   });
 
+  test('projects/:project_id/characters route reads and updates character pronunciation scope through backend endpoints', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-pronunciation-character-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const seedCharacterMapResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/characters`, {
+      data: {
+        characters: [
+          {
+            name: 'Kai',
+            verbalized_form: 'Kai',
+            gender: 'male',
+            aliases: [],
+            source: 'manual',
+            confidence: 1.0,
+          },
+        ],
+      },
+    });
+    expect(seedCharacterMapResponse.status()).toBe(200);
+
+    const characterGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET'
+        && networkRequest.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/character/Kai`),
+    );
+    const characterGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/character/Kai`),
+    );
+
+    await page.goto(`/projects/${projectId}/characters`);
+    await characterGetRequestPromise;
+    const characterGetResponse = await characterGetResponsePromise;
+    expect(characterGetResponse.status()).toBe(200);
+    await expect(page.getByTestId('pronunciation-character-panel')).toBeVisible();
+
+    const characterPutRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT'
+        && networkRequest.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/character/Kai`),
+    );
+    const characterPutResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/character/Kai`),
+    );
+
+    await page.getByTestId('pronunciation-character-textarea').fill('Kai|KAI');
+    await page.getByTestId('pronunciation-character-save-button').click();
+
+    const characterPutRequest = await characterPutRequestPromise;
+    const characterPutPayload = characterPutRequest.postDataJSON() as {
+      entries: Array<{ term: string; verbalized_form: string; source: string; confidence: number }>;
+    };
+    expect(characterPutPayload.entries).toEqual([
+      {
+        term: 'Kai',
+        verbalized_form: 'KAI',
+        source: 'user',
+        confidence: 1,
+      },
+    ]);
+
+    const characterPutResponse = await characterPutResponsePromise;
+    expect(characterPutResponse.status()).toBe(200);
+    await expect(page.getByTestId('pronunciation-character-state')).toContainText('Saved entries: 1');
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,
