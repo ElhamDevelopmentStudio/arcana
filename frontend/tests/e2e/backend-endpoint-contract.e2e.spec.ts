@@ -5014,6 +5014,102 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(workspaceState?.projectId).toBeGreaterThan(0);
   });
 
+  test('landing -> dashboard -> create draft -> project detail completes against live backend', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-landing-dashboard-draft-detail');
+
+    await page.goto('/');
+    await expect(page.getByTestId('landing-enter-dashboard')).toBeVisible();
+    await page.getByTestId('landing-enter-dashboard').click();
+    await expect(page).toHaveURL('/dashboard');
+    await expect(page.getByTestId('dashboard-create-project')).toBeVisible();
+
+    await page.getByTestId('dashboard-create-project').click();
+    await expect(page).toHaveURL('/projects/new');
+
+    const draftCreateRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' && networkRequest.url().endsWith('/api/projects/drafts'),
+    );
+    const draftCreateResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' && networkResponse.url().endsWith('/api/projects/drafts'),
+    );
+
+    await page.getByTestId('project-creation-mode-select').selectOption('draft');
+    await page.getByTestId('project-title-input').fill(title);
+    await page.getByTestId('create-project-button').click();
+
+    const draftCreateRequest = await draftCreateRequestPromise;
+    const draftCreateRequestBody = draftCreateRequest.postDataJSON() as {
+      title: string;
+      do_not_store_source_text: boolean;
+    };
+    expect(draftCreateRequestBody.title).toBe(title);
+    expect(draftCreateRequestBody.do_not_store_source_text).toBe(false);
+
+    const draftCreateResponse = await draftCreateResponsePromise;
+    expect(draftCreateResponse.status()).toBe(201);
+    const draftPayload = (await draftCreateResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    await expect(page.getByTestId('project-created-state')).toContainText(`Current project ID: ${projectId}`);
+    const workspaceState = await readWorkspaceState(page);
+    expect(workspaceState?.projectId).toBe(projectId);
+
+    const attachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+      data: {
+        source: 'txt',
+        source_filename: 'minimal-novel.txt',
+      },
+    });
+    expect(attachSourceResponse.status()).toBe(200);
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+
+    await waitForSetupCompletion(request, projectId);
+
+    const projectDetailResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}`),
+    );
+
+    await page.goto(`/projects/${projectId}`);
+    await expect(page).toHaveURL(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-workspace-home-ready')).toBeVisible();
+    await expect(page.getByTestId('project-workspace-home-title')).toContainText(title);
+    await expect(page.getByTestId('project-workspace-home-id')).toContainText(`Project ID: ${projectId}`);
+
+    const projectDetailResponse = await projectDetailResponsePromise;
+    expect(projectDetailResponse.status()).toBe(200);
+  });
+
   test('projects/:project_id workspace home renders project detail contract data', async ({ page, request }) => {
     const title = uniqueTitle('e2e-workspace-home-detail');
     const project = await createProject(request, title);
