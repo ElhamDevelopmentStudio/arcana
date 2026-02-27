@@ -2649,6 +2649,88 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByTestId('pronunciation-invented-state')).toContainText('Saved entries: 1');
   });
 
+  test('projects/:project_id/characters route reads and updates global pronunciation scope through backend endpoints', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-pronunciation-global-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const globalGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/global`),
+    );
+    const globalGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/global`),
+    );
+
+    await page.goto(`/projects/${projectId}/characters`);
+    await globalGetRequestPromise;
+    const globalGetResponse = await globalGetResponsePromise;
+    expect(globalGetResponse.status()).toBe(200);
+    await expect(page.getByTestId('pronunciation-global-panel')).toBeVisible();
+
+    const globalPutRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/global`),
+    );
+    const globalPutResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/pronunciation-dictionary/global`),
+    );
+
+    await page.getByTestId('pronunciation-global-textarea').fill('Aegis|EE-jis');
+    await page.getByTestId('pronunciation-global-save-button').click();
+
+    const globalPutRequest = await globalPutRequestPromise;
+    const globalPutPayload = globalPutRequest.postDataJSON() as {
+      entries: Array<{ term: string; verbalized_form: string; source: string; confidence: number }>;
+    };
+    expect(globalPutPayload.entries).toEqual([
+      {
+        term: 'Aegis',
+        verbalized_form: 'EE-jis',
+        source: 'user',
+        confidence: 1,
+      },
+    ]);
+
+    const globalPutResponse = await globalPutResponsePromise;
+    expect(globalPutResponse.status()).toBe(200);
+    await expect(page.getByTestId('pronunciation-global-state')).toContainText('Saved entries: 1');
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,

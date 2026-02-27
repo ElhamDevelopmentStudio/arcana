@@ -645,7 +645,7 @@ Definition of done for each task:
 - [x] [FE-144] Build finalize character map action using `POST /api/projects/{project_id}/characters/finalize`.
 - [x] [FE-145] Build pronunciation dictionary artifacts scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/artifacts`.
 - [x] [FE-146] Build pronunciation dictionary invented scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/invented`.
-- [ ] [FE-147] Build pronunciation dictionary global scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/global`.
+- [x] [FE-147] Build pronunciation dictionary global scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/global`.
 - [ ] [FE-148] Build pronunciation dictionary places scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/places`.
 - [ ] [FE-149] Build pronunciation dictionary character scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/character/{character_name}`.
 - [ ] [FE-150] Build pronunciation preview tool using `POST /api/projects/{project_id}/pronunciation-dictionary/preview`.
