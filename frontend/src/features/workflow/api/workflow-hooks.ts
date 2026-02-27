@@ -10,7 +10,17 @@ import type { CharacterCandidatesMergeRequestDto } from '@/app/schemas/api';
 import type { PronunciationDictionaryPreviewRequestDto } from '@/app/schemas/api';
 
 export const workspaceKeys = {
+  health: ['health'] as const,
   modeCatalog: ['mode-catalog'] as const,
+  projectControlPanelSummary: ['project-control-panel-summary'] as const,
+  projectControlPanelProjectList: (params: {
+    page: number;
+    page_size: number;
+    status?: string;
+    selected_mode?: string;
+    last_run_status?: string;
+    next_required_action?: string;
+  }) => ['project-control-panel-project-list', params] as const,
   runDetail: (projectId: number, runId: number) => ['run-detail', projectId, runId] as const,
   runConfigPreset: (projectId: number, runId: number) => ['run-config-preset', projectId, runId] as const,
   runConfigDiff: (projectId: number, baseRunId: number, targetRunId: number) =>
@@ -32,6 +42,34 @@ export const workspaceKeys = {
 
 export function useModeCatalogQuery(enabled: boolean) {
   return useSWR(enabled ? workspaceKeys.modeCatalog : null, async () => nipeApiClient.getModeCatalog());
+}
+
+export function useHealthQuery(enabled: boolean) {
+  return useSWR(enabled ? workspaceKeys.health : null, async () => nipeApiClient.getHealth());
+}
+
+export function useProjectControlPanelSummaryQuery(enabled: boolean) {
+  return useSWR(
+    enabled ? workspaceKeys.projectControlPanelSummary : null,
+    async () => nipeApiClient.getProjectControlPanelSummary(),
+  );
+}
+
+export function useProjectControlPanelProjectListQuery(
+  enabled: boolean,
+  params: {
+    page: number;
+    page_size: number;
+    status?: string;
+    selected_mode?: string;
+    last_run_status?: string;
+    next_required_action?: string;
+  },
+) {
+  return useSWR(
+    enabled ? workspaceKeys.projectControlPanelProjectList(params) : null,
+    async ([, currentParams]) => nipeApiClient.getProjectControlPanelProjectList(currentParams),
+  );
 }
 
 export function useRunDetailQuery(projectId: number | null, runId: number | null) {
@@ -116,6 +154,14 @@ export function useCreateProjectMutation() {
     ['create-project'],
     async (_, { arg }: { arg: { title: string; do_not_store_source_text: boolean } }) =>
       nipeApiClient.createProject(arg.title, arg.do_not_store_source_text),
+  );
+}
+
+export function useCreateProjectDraftMutation() {
+  return useSWRMutation(
+    ['create-project-draft'],
+    async (_, { arg }: { arg: { title: string; do_not_store_source_text: boolean } }) =>
+      nipeApiClient.createProjectDraft(arg.title, arg.do_not_store_source_text),
   );
 }
 

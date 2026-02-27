@@ -552,130 +552,124 @@ Definition of done for each task:
 
 ## 13. Frontend Parallel Delivery Track (Ref: SRS.md §§2–11)
 
-### 13.1 Parallel Delivery Contract
-- [x] [FE-001] Add “paired frontend impact” note to PR template for all backend/API changes.
-- [x] [FE-002] Add checklist policy that every feature slice must include backend + frontend acceptance notes.
-- [x] [FE-003] Add API contract changelog section consumed by frontend maintainers.
-- [x] [FE-004] Add UI impact matrix mapping SRS sections to frontend pages/components.
-- [x] [FE-005] Add “deferred FE task ID required” policy when backend ships without UI.
+### 13.1 Foundation and Contract Governance
+- [ ] [FE-090] Build frontend endpoint ownership matrix mapping each backend endpoint to route, hook, component, and test.
+- [ ] [FE-091] Define no-auth shared-workspace frontend contract (single workspace flow, no user session branching).
+- [ ] [FE-092] Implement unified API error normalization layer (validation/conflict/not-found/network/rate-limit).
+- [ ] [FE-093] Add Zod request/response guards for every frontend-consumed backend endpoint.
+- [ ] [FE-094] Implement SWR key factory and mutation invalidation map for project/run/dashboard data.
+- [ ] [FE-095] Add global health dependency handling based on `GET /health`.
+- [ ] [FE-096] Implement route-level prefetch strategy for critical workflow transitions.
+- [ ] [FE-097] Persist route/query/filter/UI state across reloads for dashboard and project-detail flows.
+- [ ] [FE-098] Standardize reusable loading/empty/error/retry primitives for API panels.
+- [ ] [FE-099] Add global mutation event bus for success/error notifications and recovery actions.
 
-### 13.2 App Shell, Routing, and State
-- [x] [FE-010] Define route map for project setup, mode selection, run monitor, export viewer, dashboards.
-- [x] [FE-011] Implement centralized API client layer with typed request/response helpers.
-- [x] [FE-012] Implement shared query/mutation state strategy for project/run lifecycles.
-- [x] [FE-013] Implement global loading/error toaster with consistent formatting.
-- [x] [FE-014] Add client-side schema guards for critical API payloads.
-- [x] [FE-015] Add frontend environment config loader for API base URL and feature flags.
-- [ ] [FE-016] Add frontend telemetry hooks for key UX actions (create/ingest/run/export).
-- [ ] [FE-017] Add resilient refresh behavior for page reload during active run.
-- [ ] [FE-018] Add stale-state invalidation after run completion.
-- [ ] [FE-019] Add frontend regression tests for route transitions and persisted UI state.
+### 13.2 Entry, Navigation, and Control Panel
+- [x] [FE-100] Build landing route `/` integrating `GET /health`, `GET /api/modes`, and `GET /api/dashboard/project-control-panel/summary`.
+- [x] [FE-101] Wire landing primary CTA to `/dashboard`.
+- [x] [FE-102] Wire landing secondary CTA to `POST /api/projects/drafts` then route to project workflow.
+- [x] [FE-103] Build `/dashboard` summary layer from `GET /api/dashboard/project-control-panel/summary`.
+- [x] [FE-104] Build dashboard project table from `GET /api/dashboard/project-control-panel/projects`.
+- [ ] [FE-105] Add dashboard filter controls for status/mode/last_run_status/next_required_action with URL state sync.
+- [ ] [FE-106] Add dashboard pagination controls mapped to `page` and `page_size`.
+- [ ] [FE-107] Add row-level quick actions driven by `GET /api/projects/{project_id}/actions`.
+- [ ] [FE-108] Add dashboard refresh strategy for active runs and stale row states.
+- [ ] [FE-109] Add recent-failures triage panel from control-panel summary payload.
 
-### 13.3 Mode and Ingestion UX (SRS §3, §4.1, §4.2)
-- [x] [FE-020] Build mode-selection panel that loads mode catalog from API and displays default.
-- [x] [FE-021] Lock mode-selection controls until ingestion completes successfully.
-- [x] [FE-022] Display project-level selected mode and current run-mode snapshot together.
-- [ ] [FE-023] Add mode-switch confirmation modal explaining downstream stale artifacts.
-- [x] [FE-024] Build ingestion source selector UI for TXT/directory/Markdown/EPUB toggle.
-- [ ] [FE-025] Build upload progress and parse summary card with chapter counts.
-- [ ] [FE-026] Display normalization report summary (dedupe/quote-repair/warnings).
-- [ ] [FE-027] Add “append chapters” UI path with overlap warning display.
-- [ ] [FE-028] Add “affected range” UI display after incremental append.
-- [ ] [FE-029] Add ingestion warning drawer with remediation tips.
+### 13.3 Project Management and Lifecycle
+- [ ] [FE-110] Build `/projects/new` draft creation flow using `POST /api/projects` and `POST /api/projects/drafts`.
+- [ ] [FE-111] Build `/projects/{project_id}` detail page using `GET /api/projects/{project_id}`.
+- [ ] [FE-112] Build metadata editing flow using `PATCH /api/projects/{project_id}/metadata`.
+- [ ] [FE-113] Build action-gated command panel using `GET /api/projects/{project_id}/actions`.
+- [ ] [FE-114] Build activity timeline module using `GET /api/projects/{project_id}/timeline` with pagination.
+- [ ] [FE-115] Build archive flow using `POST /api/projects/{project_id}/archive`.
+- [ ] [FE-116] Build restore flow using `POST /api/projects/{project_id}/restore`.
+- [ ] [FE-117] Add lifecycle transition confirmations/conflict handling for archive and restore.
+- [ ] [FE-118] Add post-mutation project detail refresh and optimistic rollback behavior.
+- [ ] [FE-119] Add next-required-action navigation from project detail to workflow routes.
 
-### 13.4 Character, Pronunciation, Gender, and Voice UX (SRS §4.3–§4.8)
-- [x] [FE-030] Build editable character map grid with add/edit/delete actions.
-- [ ] [FE-031] Build character candidate review queue with approve/reject controls.
-- [ ] [FE-032] Build alias conflict resolution modal with canonical selection.
-- [ ] [FE-033] Build finalize-character-map gate UI and status indicator.
-- [ ] [FE-034] Build pronunciation preview panel showing before/after text substitution.
-- [ ] [FE-035] Build pronunciation dictionary management UI (global + per-character scope).
-- [ ] [FE-036] Build gender override controls with manual/inferred side-by-side comparison.
-- [ ] [FE-037] Build contradiction severity badge and filter controls.
-- [ ] [FE-038] Build voice mapping panel for narrator/defaults/character overrides.
-- [ ] [FE-039] Build thought-policy selector UI and preview of effective voice resolution.
+### 13.4 Ingestion and Mode Setup
+- [ ] [FE-120] Build first-source attach flow with `POST /api/projects/{project_id}/ingest/source`.
+- [ ] [FE-121] Build TXT ingestion flow with `POST /api/projects/{project_id}/ingest/txt`.
+- [ ] [FE-122] Build Markdown ingestion flow with `POST /api/projects/{project_id}/ingest/markdown`.
+- [ ] [FE-123] Build EPUB ingestion flow with `POST /api/projects/{project_id}/ingest/epub`.
+- [ ] [FE-124] Build chapter-directory ingestion flow with `POST /api/projects/{project_id}/ingest/chapters-dir`.
+- [ ] [FE-125] Build append-chapter flow with `POST /api/projects/{project_id}/ingest/append-chapter`.
+- [ ] [FE-126] Add ingestion failure/retry UX for unsupported files, overlap conflicts, and validation errors.
+- [ ] [FE-127] Render ingestion warnings and normalization summaries from ingestion responses.
+- [ ] [FE-128] Build mode selection route `/projects/{project_id}/mode` using `GET /api/modes` and `PUT /api/projects/{project_id}/mode`.
+- [ ] [FE-129] Add explicit downstream stale-artifact confirmation UX on mode switch.
 
-### 13.5 Segmentation and Tagging Review UX (SRS §4.6–§4.7)
-- [ ] [FE-040] Build segment inspector with chapter/segment navigation.
-- [ ] [FE-041] Show original text, normalized text, and phonetic text side-by-side per segment.
-- [ ] [FE-042] Show sub-segment boundaries with shift-type markers.
-- [ ] [FE-043] Show structural tags (`dialogue/narration/internal/etc.`) with confidence chips.
-- [ ] [FE-044] Build speaker attribution review UI for low-confidence items.
-- [ ] [FE-045] Build emotion trend preview pane with per-segment valence/intensity bars.
-- [ ] [FE-046] Build tension/dominance per-segment badges and filter controls.
-- [ ] [FE-047] Add evidence-trace popover for each tag with source span pointers.
-- [ ] [FE-048] Add unknown/uncertain tag filter with bulk review shortcuts.
-- [ ] [FE-049] Add round-trip reconstruction preview from segment list to chapter text.
+### 13.5 LLM, Providers, and Access Controls
+- [ ] [FE-130] Build project LLM settings panel using `GET/PUT /api/projects/{project_id}/llm`.
+- [ ] [FE-131] Build provider status management panel using `GET /api/llm/providers` and `PUT /api/llm/providers/{provider_name}`.
+- [ ] [FE-132] Build project access listing using `GET /api/projects/{project_id}/access`.
+- [ ] [FE-133] Build project access grant flow using `POST /api/projects/{project_id}/access`.
+- [ ] [FE-134] Add no-auth workspace messaging for access model behavior and scope.
 
-### 13.6 Audiobook, Academic, and Author Output UX (SRS §4.9–§4.11)
-- [ ] [FE-050] Build audiobook export readiness panel with blocking reasons.
-- [ ] [FE-051] Build audiobook export manifest viewer with stable ordering indicators.
-- [ ] [FE-052] Build JSON/CSV export download center with chunked export status.
-- [ ] [FE-053] Build academic metrics dashboard (emotion/tension/volatility summaries).
-- [ ] [FE-054] Build character co-occurrence graph explorer (nodes/edges, focus filters).
-- [ ] [FE-055] Build comparative analysis workspace view for multi-novel overlays.
-- [ ] [FE-056] Build author narrative-health report screen with grouped warning categories.
-- [ ] [FE-057] Build actionable-flag list with chapter-range links and evidence expansion.
-- [ ] [FE-058] Build chapter-type classification panel with confidence + feature reasons.
-- [ ] [FE-059] Build export provenance/manifest card for all three modes.
+### 13.6 Character, Pronunciation, Gender, and Voice Workflows
+- [ ] [FE-135] Build character map editor route `/projects/{project_id}/characters` using `GET/PUT /api/projects/{project_id}/characters`.
+- [ ] [FE-136] Build character import flow using `POST /api/projects/{project_id}/characters/import`.
+- [ ] [FE-137] Build character extraction flow using `POST /api/projects/{project_id}/characters/extract`.
+- [ ] [FE-138] Build scrape-assisted candidate flow using `POST /api/projects/{project_id}/characters/scrape`.
+- [ ] [FE-139] Build merge-candidates flow using `POST /api/projects/{project_id}/characters/merged-candidates`.
+- [ ] [FE-140] Build gender inference action using `POST /api/projects/{project_id}/characters/infer`.
+- [ ] [FE-141] Build gender comparison review panel using `GET /api/projects/{project_id}/characters/gender-comparison`.
+- [ ] [FE-142] Build alias lookup utility using `POST /api/projects/{project_id}/characters/lookup-alias`.
+- [ ] [FE-143] Build alias-collision inspector using `GET /api/projects/{project_id}/characters/alias-collisions`.
+- [ ] [FE-144] Build finalize character map action using `POST /api/projects/{project_id}/characters/finalize`.
+- [ ] [FE-145] Build pronunciation dictionary artifacts scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/artifacts`.
+- [ ] [FE-146] Build pronunciation dictionary invented scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/invented`.
+- [ ] [FE-147] Build pronunciation dictionary global scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/global`.
+- [ ] [FE-148] Build pronunciation dictionary places scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/places`.
+- [ ] [FE-149] Build pronunciation dictionary character scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/character/{character_name}`.
+- [ ] [FE-150] Build pronunciation preview tool using `POST /api/projects/{project_id}/pronunciation-dictionary/preview`.
+- [ ] [FE-151] Build voice configuration editor using `PUT /api/projects/{project_id}/voices`.
 
-### 13.7 LLM, Determinism, and Provider Controls UX (SRS §4.12–§4.13)
-- [ ] [FE-060] Build provider status panel showing quota/rate-limit/availability.
-- [ ] [FE-061] Build LLM feature-flag controls with per-task escalation toggles.
-- [ ] [FE-062] Build provider priority ordering UI with drag-and-drop ranking.
-- [ ] [FE-063] Build deterministic-mode toggle with explicit replay constraints.
-- [ ] [FE-064] Show run-level deterministic metadata (`model`, `seed`, `snapshot_id`).
-- [ ] [FE-065] Show cache hit/miss counters for LLM-assisted tasks.
-- [ ] [FE-066] Show degraded-mode banner when running rule-only fallback.
-- [ ] [FE-067] Build API key status UI (never exposing raw keys).
-- [ ] [FE-068] Build provider failover event timeline in run logs.
-- [ ] [FE-069] Add frontend tests for deterministic replay UX messaging.
+### 13.7 Runs, Analytics, Exports, and Comparison Workspace
+- [ ] [FE-152] Build `/projects/{project_id}/pipeline-setup` run config flow using `POST /api/projects/{project_id}/runs`.
+- [ ] [FE-153] Build run monitor/detail route using `GET /api/projects/{project_id}/runs/{run_id}`.
+- [ ] [FE-154] Build rerun flow using `POST /api/projects/{project_id}/runs/{run_id}/rerun`.
+- [ ] [FE-155] Build recover flow using `POST /api/projects/{project_id}/runs/{run_id}/recover`.
+- [ ] [FE-156] Build cancel flow using `POST /api/projects/{project_id}/runs/{run_id}/cancel`.
+- [ ] [FE-157] Build run config preset panel using `GET /api/projects/{project_id}/runs/{run_id}/config-preset`.
+- [ ] [FE-158] Build run config diff panel using `GET /api/projects/{project_id}/runs/config-diff`.
+- [ ] [FE-159] Build stage durations dashboard from `GET /api/projects/{project_id}/runs/{run_id}/pipeline-stage-durations-dashboard`.
+- [ ] [FE-160] Build audiobook prep dashboard from `GET /api/projects/{project_id}/runs/{run_id}/audiobook-prep-dashboard`.
+- [ ] [FE-161] Build character analytics dashboard from `GET /api/projects/{project_id}/runs/{run_id}/character-analytics`.
+- [ ] [FE-162] Build co-occurrence graph view from `GET /api/projects/{project_id}/runs/{run_id}/character-cooccurrence-graph`.
+- [ ] [FE-163] Build tension graph view from `GET /api/projects/{project_id}/runs/{run_id}/tension-graph`.
+- [ ] [FE-164] Build polarity graph view from `GET /api/projects/{project_id}/runs/{run_id}/polarity-graph`.
+- [ ] [FE-165] Build JSON export center path using `GET /api/projects/{project_id}/exports/{run_id}.json`.
+- [ ] [FE-166] Build CSV export center path using `GET /api/projects/{project_id}/exports/{run_id}.csv`.
+- [ ] [FE-167] Add export availability gating UX from project/run state and backend format restrictions.
+- [ ] [FE-168] Build comparison workspace creation flow using `POST /api/comparison-workspaces`.
+- [ ] [FE-169] Build comparison workspace detail route using `GET /api/comparison-workspaces/{workspace_id}`.
+- [ ] [FE-170] Build workspace run-link flow using `POST /api/comparison-workspaces/{workspace_id}/runs`.
+- [ ] [FE-171] Build aligned-curves analysis view using `GET /api/comparison-workspaces/{workspace_id}/aligned-curves`.
+- [ ] [FE-172] Build comparative dataset export retrieval using `GET /api/comparison-workspaces/{workspace_id}/exports/comparative-dataset.json`.
 
-### 13.8 Visualization and Dashboard UX (SRS §5)
-- [ ] [FE-070] Build tension graph component with smoothing toggle and peak overlays.
-- [ ] [FE-071] Build emotional polarity graph with rolling-window control.
-- [ ] [FE-072] Build character prominence trend chart with chapter filters.
-- [ ] [FE-073] Build audiobook prep dashboard cards for unresolved mappings.
-- [ ] [FE-074] Build confidence heatmap across chapter timeline.
-- [ ] [FE-075] Build dashboard snapshot export action.
-- [ ] [FE-076] Build linked-hover interactions between charts and segment inspector.
-- [ ] [FE-077] Build chart legend configuration panel per dashboard.
-- [x] [FE-078] Build empty-state UI for projects lacking required run artifacts.
-- [ ] [FE-079] Add frontend regression tests for chart payload contract handling.
-
-### 13.9 Error Handling, Accessibility, and Performance UX (SRS §7–§9)
-- [ ] [FE-080] Build standardized warning/error banner component with severity levels.
-- [ ] [FE-081] Build remediation panel linking each warning code to “what to do next”.
-- [ ] [FE-082] Add keyboard navigation and focus management for core workflows.
-- [ ] [FE-083] Add WCAG contrast checks and semantic labels for charts/forms.
-- [x] [FE-084] Add responsive layouts for desktop/tablet/mobile breakpoints.
-- [ ] [FE-085] Add skeleton loading states for all major API-driven panels.
-- [ ] [FE-086] Add client-side performance instrumentation (TTI, route latency, render cost).
-- [ ] [FE-087] Add config editor UX for segmentation/emotion/confidence thresholds.
-- [ ] [FE-088] Add config diff viewer between runs in frontend.
-- [ ] [FE-089] Add frontend regression tests for error-state and warning-state rendering.
-
-### 13.10 Playwright Visual and E2E Suite (Frontend + API Integration)
-- [x] [PW-001] Set up Playwright test runner and browser project matrix.
-- [ ] [PW-002] Add baseline visual snapshots for project creation and ingestion screens.
-- [x] [PW-003] Add baseline visual snapshots for post-ingestion mode selection screen.
-- [ ] [PW-004] Add baseline visual snapshots for character map and voice mapping screens.
-- [ ] [PW-005] Add baseline visual snapshots for run monitor and export panels.
-- [ ] [PW-006] Add baseline visual snapshots for tension/polarity/character dashboards.
-- [ ] [PW-007] Add responsive visual snapshots (desktop/tablet/mobile) for core pages.
-- [ ] [PW-008] Add end-to-end Playwright flow: create project -> ingest -> select mode -> run -> export.
-- [ ] [PW-009] Add end-to-end Playwright flow for academic dashboard and export retrieval.
-- [ ] [PW-010] Add end-to-end Playwright flow for author diagnostics review and flag inspection.
-- [ ] [PW-011] Add visual diff thresholds and explicit allowlist for intentional UI changes.
-- [x] [PW-012] Add deterministic test-data fixtures for Playwright runs.
-- [ ] [PW-013] Add Playwright API mocking strategy for isolated frontend contract tests.
-- [ ] [PW-014] Add Playwright “real backend” profile for integrated local E2E checks.
-- [ ] [PW-015] Add flaky-test retry policy and trace/video artifact retention.
-- [ ] [PW-016] Add CI job split: unit/integration vs Playwright visual/e2e.
-- [ ] [PW-017] Add accessibility scan step (axe) inside Playwright critical flows.
-- [ ] [PW-018] Add screenshot assertions for warning/error banners and degraded-mode states.
-- [ ] [PW-019] Add visual regression coverage for theme/fonts/layout token changes.
-- [ ] [PW-020] Add release gate requiring Playwright visual suite pass for UI-affecting PRs.
+### 13.8 SaaS Reliability, Quality, and Release Gates
+- [ ] [FE-173] Add cross-route optimistic update and rollback strategy for high-value mutations.
+- [ ] [FE-174] Add resilient refresh behavior for active-run pages and in-flight mutation recovery.
+- [ ] [FE-175] Add stale-state invalidation after run completion/recovery/cancel/rerun transitions.
+- [ ] [FE-176] Add accessibility hardening across all primary flows (keyboard, focus, labels, contrast).
+- [ ] [FE-177] Add frontend performance instrumentation with budgets (route latency, API latency, render cost).
+- [ ] [FE-178] Add frontend telemetry hooks for all critical workflow actions and failures.
+- [ ] [FE-179] Add endpoint-consumption regression tests proving each backend endpoint has frontend coverage.
+- [ ] [FE-180] Add route-level integration/regression suite for workflow continuity and persisted state.
+- [ ] [PW-021] Add Playwright real-backend E2E: landing -> dashboard -> create draft -> project detail.
+- [ ] [PW-022] Add Playwright real-backend E2E: create draft -> ingest -> mode -> characters -> pipeline setup -> run -> export.
+- [ ] [PW-023] Add Playwright real-backend E2E: archive and restore lifecycle roundtrip.
+- [ ] [PW-024] Add Playwright real-backend E2E: rerun/recover/cancel lifecycle flows.
+- [ ] [PW-025] Add Playwright real-backend E2E: pronunciation + voice configuration flow.
+- [ ] [PW-026] Add Playwright real-backend E2E: comparison workspace create/link/aligned-curves/export flow.
+- [ ] [PW-027] Add frontend-integrated endpoint contract audit covering every backend route consumed by UI.
+- [ ] [PW-028] Add visual baselines for landing, dashboard, project detail, ingestion, character map, run monitor, and export screens.
+- [ ] [PW-029] Add responsive visual baselines (desktop/tablet/mobile) for all core routes.
+- [ ] [PW-030] Add Playwright accessibility scan gate (axe) for critical workflow pages.
+- [ ] [PW-031] Add CI split and cache strategy for unit/integration vs real-backend Playwright suites.
+- [ ] [PW-032] Add release gate requiring all frontend endpoint-integration suites to pass.
 
 ---
 

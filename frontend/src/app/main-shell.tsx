@@ -20,6 +20,11 @@ function getProjectIdFromPath(pathname: string, fallback: string | undefined): s
 
 const ROUTE_META: Array<{ pattern: RegExp; title: string; description: string }> = [
   {
+    pattern: /\/dashboard$/,
+    title: 'Control Panel Dashboard',
+    description: 'Review project lifecycle state, run activity, and next required actions.',
+  },
+  {
     pattern: /\/projects\/new$/,
     title: 'Project Onboarding',
     description: 'Start by creating a project and ingesting source text.',

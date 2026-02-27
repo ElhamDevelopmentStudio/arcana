@@ -4,6 +4,7 @@ import {
   BookOpen01Icon,
   CheckListIcon,
   CpuIcon,
+  DashboardSquare02Icon,
   Download02Icon,
   PlayCircleIcon,
   UserSearch01Icon,
@@ -22,6 +23,11 @@ type StepConfig = {
 };
 
 const PROJECT_STEPS: StepConfig[] = [
+  {
+    path: '/dashboard',
+    label: 'Dashboard',
+    icon: DashboardSquare02Icon,
+  },
   {
     path: '/projects/new',
     label: 'Create Project',

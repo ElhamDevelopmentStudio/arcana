@@ -7,6 +7,26 @@ const defaultUnstableEmotionShiftDensityThreshold = 0.5;
 const defaultContradictionReviewRequired = true;
 const ALLOWED_EXPORT_FORMATS = ['json', 'csv', 'time_series_json', 'graph_json'] as const;
 const runStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']);
+const projectLifecycleStateSchema = z.enum([
+  'draft',
+  'ingested',
+  'configured',
+  'running',
+  'completed',
+  'failed',
+  'archived',
+]);
+const projectNextRequiredActionSchema = z.enum([
+  'ingest',
+  'select_mode',
+  'configure',
+  'run',
+  'rerun',
+  'export',
+  'review_failure',
+  'archived',
+  'none',
+]);
 
 const runExportFormatsSchema = z
   .array(z.string())
@@ -98,6 +118,10 @@ export const modeCatalogSchema = z.object({
       profile_intent: z.string().min(1),
     }),
   ),
+});
+
+export const healthSchema = z.object({
+  status: z.string().min(1),
 });
 
 export const projectSchema = z.object({
@@ -667,7 +691,63 @@ export const pipelineStageDurationsDashboardResponseSchema = z.object({
   stages: z.array(pipelineStageDurationItemSchema),
 });
 
+export const projectControlPanelStateCountSchema = z.object({
+  lifecycle_state: projectLifecycleStateSchema,
+  project_count: z.number().int().nonnegative(),
+});
+
+export const projectControlPanelRecentFailureSchema = z.object({
+  project_id: z.number().int().positive(),
+  project_title: z.string().min(1),
+  run_id: z.number().int().positive().nullable().optional().default(null),
+  failed_at: z.string().min(1),
+  error_code: z.string().nullable().optional().default(null),
+  error_message: z.string().nullable().optional().default(null),
+});
+
+export const projectControlPanelSummaryResponseSchema = z.object({
+  schema_version: z.string().min(1),
+  output_schema: z.string().min(1),
+  output_format: z.string().min(1),
+  output_id: z.string().min(1),
+  output_name: z.string().min(1),
+  generated_at: z.string().min(1),
+  generated_by: z.string().min(1),
+  total_projects: z.number().int().nonnegative(),
+  project_counts_by_state: z.array(projectControlPanelStateCountSchema),
+  active_run_count: z.number().int().nonnegative(),
+  blocked_export_project_count: z.number().int().nonnegative(),
+  blocked_export_run_count: z.number().int().nonnegative(),
+  recent_failure_count: z.number().int().nonnegative(),
+  recent_failures: z.array(projectControlPanelRecentFailureSchema),
+});
+
+export const projectControlPanelProjectListItemSchema = z.object({
+  project_id: z.number().int().positive(),
+  status: projectLifecycleStateSchema,
+  selected_mode: z.string().min(1),
+  last_run_status: runStatusSchema.nullable().optional().default(null),
+  updated_at: z.string().min(1),
+  next_required_action: projectNextRequiredActionSchema,
+});
+
+export const projectControlPanelProjectListResponseSchema = z.object({
+  schema_version: z.string().min(1),
+  output_schema: z.string().min(1),
+  output_format: z.string().min(1),
+  output_id: z.string().min(1),
+  output_name: z.string().min(1),
+  generated_at: z.string().min(1),
+  generated_by: z.string().min(1),
+  total_items: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  page_size: z.number().int().positive(),
+  has_next_page: z.boolean(),
+  items: z.array(projectControlPanelProjectListItemSchema),
+});
+
 export type ModeCatalogDto = z.infer<typeof modeCatalogSchema>;
+export type HealthDto = z.infer<typeof healthSchema>;
 export type ProjectDto = z.infer<typeof projectSchema>;
 export type ProjectLLMSettingsRequestDto = z.infer<typeof projectLLMSettingsRequestSchema>;
 export type ProjectLLMSettingsResponseDto = z.infer<typeof projectLLMSettingsResponseSchema>;
@@ -706,6 +786,11 @@ export type AudiobookPrepDashboardReadinessDto = z.infer<typeof audiobookPrepDas
 export type AudiobookPrepDashboardResponseDto = z.infer<typeof audiobookPrepDashboardResponseSchema>;
 export type PipelineStageDurationItemDto = z.infer<typeof pipelineStageDurationItemSchema>;
 export type PipelineStageDurationsDashboardResponseDto = z.infer<typeof pipelineStageDurationsDashboardResponseSchema>;
+export type ProjectControlPanelStateCountDto = z.infer<typeof projectControlPanelStateCountSchema>;
+export type ProjectControlPanelRecentFailureDto = z.infer<typeof projectControlPanelRecentFailureSchema>;
+export type ProjectControlPanelSummaryResponseDto = z.infer<typeof projectControlPanelSummaryResponseSchema>;
+export type ProjectControlPanelProjectListItemDto = z.infer<typeof projectControlPanelProjectListItemSchema>;
+export type ProjectControlPanelProjectListResponseDto = z.infer<typeof projectControlPanelProjectListResponseSchema>;
 export type CharacterMentionsByChapterItemDto = z.infer<typeof characterMentionsByChapterItemSchema>;
 export type CharacterAnalyticsResponseDto = z.infer<typeof characterAnalyticsResponseSchema>;
 export type CharacterCooccurrenceGraphNodeDto = z.infer<typeof characterCooccurrenceGraphNodeSchema>;
