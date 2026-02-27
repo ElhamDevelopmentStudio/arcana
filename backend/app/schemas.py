@@ -1242,6 +1242,28 @@ class ProjectSetupStatusResponse(BaseModel):
     steps: list[ProjectSetupStepStatus] = Field(default_factory=list)
 
 
+class ProjectWorkspaceSummaryResponse(BaseModel):
+    schema_version: str = Field(default="1.0.0")
+    output_schema: str = Field(default="project_workspace_summary_json")
+    output_format: str = Field(default="json")
+    output_id: str = Field(default="CP-008")
+    output_name: str = Field(default="project_workspace_summary")
+    generated_at: str = Field(min_length=1)
+    generated_by: str = Field(default="build_project_workspace_summary", min_length=1)
+    project_id: int = Field(ge=1)
+    lifecycle_state: ProjectLifecycleState
+    last_run_status: ProjectActionRunStatus | None = None
+    next_required_action: ProjectControlPanelNextRequiredAction
+    is_setup_complete: bool
+    chapters_count: int = Field(ge=0)
+    characters_count: int = Field(ge=0)
+    voice_mappings_count: int = Field(ge=0)
+    runs_total_count: int = Field(ge=0)
+    runs_completed_count: int = Field(ge=0)
+    runs_failed_count: int = Field(ge=0)
+    last_export_at: str | None = None
+
+
 class ProjectActivityTimelineItem(BaseModel):
     event_id: int = Field(ge=1)
     event_type: ProjectActivityTimelineEventType
