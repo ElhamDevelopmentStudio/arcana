@@ -152,6 +152,48 @@ describe('project workspace shell route', () => {
     expect(router.state.location.pathname).toBe('/projects/321/setup');
   });
 
+  it('unlocks previously gated routes after setup completion transition', async () => {
+    let isSetupComplete = false;
+    useProjectSetupStatusQueryMock.mockImplementation(() => ({
+      isLoading: false,
+      error: undefined,
+      mutate: vi.fn(),
+      data: isSetupComplete
+        ? {
+            is_complete: true,
+            steps: [
+              { step_id: 'ingestion', ready: true },
+              { step_id: 'mode_selection', ready: true },
+              { step_id: 'initial_run', ready: true },
+              { step_id: 'character_mapping', ready: true },
+              { step_id: 'voice_mapping', ready: true },
+            ],
+          }
+        : {
+            is_complete: false,
+            steps: [
+              { step_id: 'ingestion', ready: true },
+              { step_id: 'mode_selection', ready: true },
+              { step_id: 'initial_run', ready: false },
+              { step_id: 'character_mapping', ready: false },
+              { step_id: 'voice_mapping', ready: false },
+            ],
+          },
+    }));
+
+    const router = renderProjectWorkspace('/projects/321/voice');
+
+    expect(await screen.findByTestId('project-setup-route')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/projects/321/setup');
+
+    isSetupComplete = true;
+    await router.navigate('/projects/321/voice');
+
+    expect(await screen.findByTestId('project-voice-route')).toBeInTheDocument();
+    expect(screen.getByTestId('project-workspace-nav-voice')).not.toHaveAttribute('aria-disabled', 'true');
+    expect(router.state.location.pathname).toBe('/projects/321/voice');
+  });
+
   it('shows lock reason and blocks locked exports navigation using action gating metadata', async () => {
     const user = userEvent.setup();
     useProjectSetupStatusQueryMock.mockReturnValue({
