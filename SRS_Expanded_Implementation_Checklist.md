@@ -635,7 +635,7 @@ Definition of done for each task:
 ### 13.6 Character, Pronunciation, Gender, and Voice Workflows
 - [x] [FE-135] Build character map editor route `/projects/{project_id}/characters` using `GET/PUT /api/projects/{project_id}/characters`.
 - [x] [FE-136] Build character import flow using `POST /api/projects/{project_id}/characters/import`.
-- [ ] [FE-137] Build character extraction flow using `POST /api/projects/{project_id}/characters/extract`.
+- [x] [FE-137] Build character extraction flow using `POST /api/projects/{project_id}/characters/extract`.
 - [ ] [FE-138] Build scrape-assisted candidate flow using `POST /api/projects/{project_id}/characters/scrape`.
 - [ ] [FE-139] Build merge-candidates flow using `POST /api/projects/{project_id}/characters/merged-candidates`.
 - [ ] [FE-140] Build gender inference action using `POST /api/projects/{project_id}/characters/infer`.
