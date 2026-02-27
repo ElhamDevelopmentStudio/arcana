@@ -60,6 +60,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - `docs/api_contract_changelog.md`: API contract changelog for frontend maintainers
 - `docs/frontend_ui_impact_matrix.md`: UI impact matrix mapping SRS sections to frontend pages/components
 - `docs/frontend_endpoint_ownership_matrix.md`: backend endpoint ownership matrix mapping route/hook/component/test accountability
+- `docs/frontend_no_auth_shared_workspace_contract.md`: frontend no-auth shared-workspace runtime contract and guardrails
 - `docs/release_migration_backward_compatibility_checklist.md`: release checklist for migrations and backward compatibility
 - `docs/release_rollback_plan_template.md`: rollback plan template for failed release response
 - `docs/release_security_review_checklist.md`: release security review checklist template

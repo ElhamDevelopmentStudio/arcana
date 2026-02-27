@@ -554,7 +554,7 @@ Definition of done for each task:
 
 ### 13.1 Foundation and Contract Governance
 - [x] [FE-090] Build frontend endpoint ownership matrix mapping each backend endpoint to route, hook, component, and test.
-- [ ] [FE-091] Define no-auth shared-workspace frontend contract (single workspace flow, no user session branching).
+- [x] [FE-091] Define no-auth shared-workspace frontend contract (single workspace flow, no user session branching).
 - [ ] [FE-092] Implement unified API error normalization layer (validation/conflict/not-found/network/rate-limit).
 - [ ] [FE-093] Add Zod request/response guards for every frontend-consumed backend endpoint.
 - [ ] [FE-094] Implement SWR key factory and mutation invalidation map for project/run/dashboard data.
