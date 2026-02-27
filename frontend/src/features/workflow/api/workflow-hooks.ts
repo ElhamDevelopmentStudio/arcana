@@ -81,7 +81,7 @@ export function useProjectActivityTimelineQuery(
 
 export function useProjectAllowedActionsQuery(projectId: number | null) {
   return useSWR(
-    projectId !== null ? ['project-allowed-actions', projectId] : null,
+    projectId !== null ? workspaceKeys.projectAllowedActions(projectId) : null,
     async ([, currentProjectId]) => nipeApiClient.getProjectAllowedActions(currentProjectId),
   );
 }
@@ -252,6 +252,24 @@ export function useUpdateProjectMetadataMutation(projectId: number | null) {
     {
       onSuccess: async () => {
         await invalidateWorkspaceMutation('update_project_metadata', { projectId });
+      },
+    },
+  );
+}
+
+export function useArchiveProjectMutation(projectId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  return useSWRMutation(
+    projectId !== null ? ['archive-project', projectId] : null,
+    async () => {
+      if (projectId === null) {
+        throw new Error('Project must exist before archive.');
+      }
+      return nipeApiClient.archiveProject(projectId);
+    },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('archive_project', { projectId });
       },
     },
   );

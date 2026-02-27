@@ -27,6 +27,7 @@ import {
   projectActivityTimelineRequestSchema,
   projectActivityTimelineResponseSchema,
   projectAllowedActionsResponseSchema,
+  projectLifecycleStateChangeResponseSchema,
   projectDetailResponseSchema,
   projectSetupStatusResponseSchema,
   projectWorkspaceSummaryResponseSchema,
@@ -63,6 +64,7 @@ import {
   type ProjectActivityTimelineRequestDto,
   type ProjectActivityTimelineResponseDto,
   type ProjectAllowedActionsResponseDto,
+  type ProjectLifecycleStateChangeResponseDto,
   type ProjectDetailResponseDto,
   type ProjectSetupStatusResponseDto,
   type ProjectWorkspaceSummaryResponseDto,
@@ -203,6 +205,15 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/actions`);
       return projectAllowedActionsResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async archiveProject(projectId: number): Promise<ProjectLifecycleStateChangeResponseDto> {
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/archive`);
+      return projectLifecycleStateChangeResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }

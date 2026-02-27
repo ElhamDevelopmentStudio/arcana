@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  useArchiveProjectMutation,
   useProjectActivityTimelineQuery,
   useProjectAllowedActionsQuery,
   useProjectDetailQuery,
@@ -31,6 +32,7 @@ export function ProjectWorkspaceHomePage() {
     page: timelinePage,
     page_size: timelinePageSize,
   });
+  const archiveProjectMutation = useArchiveProjectMutation(projectId);
   const updateProjectMetadataMutation = useUpdateProjectMetadataMutation(projectId);
   const [metadataTitle, setMetadataTitle] = useState('');
   const [metadataDescription, setMetadataDescription] = useState('');
@@ -115,6 +117,24 @@ export function ProjectWorkspaceHomePage() {
       await projectDetailQuery.mutate();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to update metadata.');
+    }
+  }
+
+  async function handleArchiveProject() {
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    try {
+      await archiveProjectMutation.trigger();
+      toast.success('Project archived.');
+      await Promise.all([
+        projectAllowedActionsQuery.mutate(),
+        projectDetailQuery.mutate(),
+        projectTimelineQuery.mutate(),
+      ]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to archive project.');
     }
   }
 
@@ -285,6 +305,28 @@ export function ProjectWorkspaceHomePage() {
                     data-testid="project-command-panel-open-settings-disabled"
                   >
                     Open Settings
+                  </span>
+                )}
+                {isCommandAllowed('archive') ? (
+                  <Button
+                    data-testid="project-command-panel-archive-button"
+                    disabled={archiveProjectMutation.isMutating}
+                    onClick={() => {
+                      void handleArchiveProject();
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="destructive"
+                  >
+                    {archiveProjectMutation.isMutating ? 'Archiving...' : 'Archive Project'}
+                  </Button>
+                ) : (
+                  <span
+                    aria-disabled="true"
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-muted-foreground opacity-60"
+                    data-testid="project-command-panel-archive-button-disabled"
+                  >
+                    Archive Project
                   </span>
                 )}
               </div>
