@@ -9,6 +9,7 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 const useProjectDetailQueryMock = vi.fn();
 const useUpdateProjectMetadataMutationMock = vi.fn();
 const useArchiveProjectMutationMock = vi.fn();
+const useRestoreProjectMutationMock = vi.fn();
 const useProjectAllowedActionsQueryMock = vi.fn();
 const useProjectActivityTimelineQueryMock = vi.fn();
 const projectDetailMutateMock = vi.fn();
@@ -16,6 +17,7 @@ const projectAllowedActionsMutateMock = vi.fn();
 const projectActivityTimelineMutateMock = vi.fn();
 const updateProjectMetadataTriggerMock = vi.fn();
 const archiveProjectTriggerMock = vi.fn();
+const restoreProjectTriggerMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useProjectDetailQuery: (...args: Parameters<typeof useProjectDetailQueryMock>) => useProjectDetailQueryMock(...args),
@@ -23,6 +25,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useUpdateProjectMetadataMutationMock(...args),
   useArchiveProjectMutation: (...args: Parameters<typeof useArchiveProjectMutationMock>) =>
     useArchiveProjectMutationMock(...args),
+  useRestoreProjectMutation: (...args: Parameters<typeof useRestoreProjectMutationMock>) =>
+    useRestoreProjectMutationMock(...args),
   useProjectAllowedActionsQuery: (...args: Parameters<typeof useProjectAllowedActionsQueryMock>) =>
     useProjectAllowedActionsQueryMock(...args),
   useProjectActivityTimelineQuery: (...args: Parameters<typeof useProjectActivityTimelineQueryMock>) =>
@@ -61,6 +65,7 @@ describe('project workspace home page', () => {
     useProjectDetailQueryMock.mockReset();
     useUpdateProjectMetadataMutationMock.mockReset();
     useArchiveProjectMutationMock.mockReset();
+    useRestoreProjectMutationMock.mockReset();
     useProjectAllowedActionsQueryMock.mockReset();
     useProjectActivityTimelineQueryMock.mockReset();
     projectDetailMutateMock.mockReset();
@@ -68,6 +73,7 @@ describe('project workspace home page', () => {
     projectActivityTimelineMutateMock.mockReset();
     updateProjectMetadataTriggerMock.mockReset();
     archiveProjectTriggerMock.mockReset();
+    restoreProjectTriggerMock.mockReset();
     useUpdateProjectMetadataMutationMock.mockReturnValue({
       isMutating: false,
       trigger: updateProjectMetadataTriggerMock,
@@ -75,6 +81,10 @@ describe('project workspace home page', () => {
     useArchiveProjectMutationMock.mockReturnValue({
       isMutating: false,
       trigger: archiveProjectTriggerMock,
+    });
+    useRestoreProjectMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: restoreProjectTriggerMock,
     });
     updateProjectMetadataTriggerMock.mockResolvedValue({
       project_id: 77,
@@ -220,6 +230,7 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-command-panel-open-exports')).toHaveAttribute('href', '/projects/77/exports');
     expect(screen.getByTestId('project-command-panel-open-settings')).toHaveAttribute('href', '/projects/77/settings');
     expect(screen.getByTestId('project-command-panel-archive-button')).toBeInTheDocument();
+    expect(screen.getByTestId('project-command-panel-restore-button-disabled')).toBeInTheDocument();
     expect(screen.getByTestId('project-timeline-panel')).toBeInTheDocument();
     expect(screen.getByTestId('project-timeline-pagination-state')).toHaveTextContent('Page 1 / size 5 / total 2');
     expect(screen.getByTestId('project-timeline-item-2')).toHaveTextContent('manual_edit');
@@ -285,6 +296,7 @@ describe('project workspace home page', () => {
     expect(screen.getByTestId('project-command-panel-open-runs-disabled')).toBeInTheDocument();
     expect(screen.getByTestId('project-command-panel-open-exports-disabled')).toBeInTheDocument();
     expect(screen.getByTestId('project-command-panel-archive-button-disabled')).toBeInTheDocument();
+    expect(screen.getByTestId('project-command-panel-restore-button')).toBeInTheDocument();
   });
 
   it('submits metadata edits through patch mutation', async () => {
@@ -375,6 +387,73 @@ describe('project workspace home page', () => {
     await user.click(screen.getByTestId('project-command-panel-archive-button'));
 
     expect(archiveProjectTriggerMock).toHaveBeenCalledTimes(1);
+    expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(1);
+    expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
+    expect(projectActivityTimelineMutateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('submits restore command when restore action is allowed', async () => {
+    const user = userEvent.setup();
+    useProjectAllowedActionsQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectAllowedActionsMutateMock,
+      data: {
+        schema_version: '1.0',
+        output_schema: 'project_actions',
+        output_format: 'json',
+        output_id: 'project-actions-77',
+        output_name: 'Project Allowed Actions',
+        generated_at: '2026-02-27T00:15:00Z',
+        generated_by: 'project_actions_endpoint',
+        project_id: 77,
+        lifecycle_state: 'archived',
+        last_run_status: null,
+        next_required_action: 'archived',
+        allowed_actions: ['restore'],
+        blocked_reason: 'Project is archived. Restore the project to continue workflow actions.',
+        required_step: 'restore',
+      },
+    });
+    useProjectDetailQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectDetailMutateMock,
+      data: {
+        project_id: 77,
+        title: 'Shadow Slave Workspace',
+        description: 'workspace-home detail',
+        tags: ['poc'],
+        lifecycle_state: 'archived',
+        last_run_status: null,
+        next_required_action: 'archived',
+        allowed_actions: ['restore'],
+        selected_mode: 'author',
+        selected_modes: ['author'],
+        llm_enabled: true,
+        do_not_store_source_text: false,
+        character_map_finalized: false,
+        configuration_snapshot_id: null,
+        ingestion_timestamp: null,
+        last_export_at: null,
+        created_at: '2026-02-27T00:00:00Z',
+        updated_at: '2026-02-27T00:10:00Z',
+      },
+    });
+    restoreProjectTriggerMock.mockResolvedValue({
+      project_id: 77,
+      action: 'restore',
+      previous_lifecycle_state: 'archived',
+      lifecycle_state: 'draft',
+      next_required_action: 'ingest',
+      allowed_actions: ['ingest', 'select_mode', 'configure', 'archive'],
+    });
+
+    renderProjectWorkspaceHomePage();
+
+    await user.click(screen.getByTestId('project-command-panel-restore-button'));
+
+    expect(restoreProjectTriggerMock).toHaveBeenCalledTimes(1);
     expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(1);
     expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
     expect(projectActivityTimelineMutateMock).toHaveBeenCalledTimes(1);

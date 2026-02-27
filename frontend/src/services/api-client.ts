@@ -219,6 +219,15 @@ export class NipeApiClient {
     }
   }
 
+  async restoreProject(projectId: number): Promise<ProjectLifecycleStateChangeResponseDto> {
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/restore`);
+      return projectLifecycleStateChangeResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async getProjectDetail(projectId: number): Promise<ProjectDetailResponseDto> {
     try {
       const response = await this.client.get(`/api/projects/${projectId}`);

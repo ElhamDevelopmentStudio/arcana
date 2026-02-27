@@ -275,6 +275,24 @@ export function useArchiveProjectMutation(projectId: number | null) {
   );
 }
 
+export function useRestoreProjectMutation(projectId: number | null) {
+  const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
+  return useSWRMutation(
+    projectId !== null ? ['restore-project', projectId] : null,
+    async () => {
+      if (projectId === null) {
+        throw new Error('Project must exist before restore.');
+      }
+      return nipeApiClient.restoreProject(projectId);
+    },
+    {
+      onSuccess: async () => {
+        await invalidateWorkspaceMutation('restore_project', { projectId });
+      },
+    },
+  );
+}
+
 export function useSwitchModeMutation(projectId: number | null) {
   const invalidateWorkspaceMutation = useWorkspaceMutationInvalidator();
   return useSWRMutation(

@@ -15,6 +15,7 @@ import {
   useProjectActivityTimelineQuery,
   useProjectAllowedActionsQuery,
   useProjectDetailQuery,
+  useRestoreProjectMutation,
   useUpdateProjectMetadataMutation,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
@@ -33,6 +34,7 @@ export function ProjectWorkspaceHomePage() {
     page_size: timelinePageSize,
   });
   const archiveProjectMutation = useArchiveProjectMutation(projectId);
+  const restoreProjectMutation = useRestoreProjectMutation(projectId);
   const updateProjectMetadataMutation = useUpdateProjectMetadataMutation(projectId);
   const [metadataTitle, setMetadataTitle] = useState('');
   const [metadataDescription, setMetadataDescription] = useState('');
@@ -135,6 +137,24 @@ export function ProjectWorkspaceHomePage() {
       ]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to archive project.');
+    }
+  }
+
+  async function handleRestoreProject() {
+    if (projectId === null) {
+      toast.error('Project is missing.');
+      return;
+    }
+    try {
+      await restoreProjectMutation.trigger();
+      toast.success('Project restored.');
+      await Promise.all([
+        projectAllowedActionsQuery.mutate(),
+        projectDetailQuery.mutate(),
+        projectTimelineQuery.mutate(),
+      ]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to restore project.');
     }
   }
 
@@ -327,6 +347,28 @@ export function ProjectWorkspaceHomePage() {
                     data-testid="project-command-panel-archive-button-disabled"
                   >
                     Archive Project
+                  </span>
+                )}
+                {isCommandAllowed('restore') ? (
+                  <Button
+                    data-testid="project-command-panel-restore-button"
+                    disabled={restoreProjectMutation.isMutating}
+                    onClick={() => {
+                      void handleRestoreProject();
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {restoreProjectMutation.isMutating ? 'Restoring...' : 'Restore Project'}
+                  </Button>
+                ) : (
+                  <span
+                    aria-disabled="true"
+                    className="rounded-md border border-panel-border/70 px-3 py-1.5 text-sm text-muted-foreground opacity-60"
+                    data-testid="project-command-panel-restore-button-disabled"
+                  >
+                    Restore Project
                   </span>
                 )}
               </div>
