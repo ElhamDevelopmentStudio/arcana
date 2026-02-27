@@ -235,6 +235,18 @@ export function useIngestTxtMutation(projectId: number | null) {
   );
 }
 
+export function useAttachInitialIngestionSourceMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['attach-initial-ingestion-source', projectId] : null,
+    async (_, { arg }: { arg: { source: 'txt' | 'markdown' | 'epub' | 'chapters-dir'; source_filename?: string } }) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before attaching ingestion source.');
+      }
+      return nipeApiClient.attachInitialIngestionSource(projectId, arg);
+    },
+  );
+}
+
 export function useIngestChapterDirectoryMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['ingest-chapters-dir', projectId] : null,

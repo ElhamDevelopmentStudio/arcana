@@ -40,6 +40,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Project setup route `/projects/{project_id}/setup` now renders backend-driven readiness checklist from `GET /api/projects/{project_id}/setup-status`
 - Project workspace routes now enforce setup gating and redirect incomplete projects to `/projects/{project_id}/setup`
 - Setup route now auto-redirects completed projects to `/projects/{project_id}/overview`
+- Setup route now supports initial source attach + TXT ingestion initiation and polls setup-status until completion
 - Reusable API panel state primitives now standardize loading, empty, and error/retry UX for dashboard-backed panels
 - Global mutation event bus now dispatches centralized success/error notifications with recovery actions for shared mutations
 - Global Tailwind-based design system in `frontend/src/styles/globals.css`

@@ -26,6 +26,8 @@ import {
   projectControlPanelProjectListResponseSchema,
   projectAllowedActionsResponseSchema,
   projectSetupStatusResponseSchema,
+  projectIngestionSourceAttachRequestSchema,
+  projectIngestionSourceAttachResponseSchema,
   projectCreateRequestSchema,
   projectSchema,
   projectLLMSettingsRequestSchema,
@@ -54,6 +56,8 @@ import {
   type ProjectControlPanelProjectListResponseDto,
   type ProjectAllowedActionsResponseDto,
   type ProjectSetupStatusResponseDto,
+  type ProjectIngestionSourceAttachRequestDto,
+  type ProjectIngestionSourceAttachResponseDto,
   type VoiceConfigDto,
   type CharacterMapDto,
   type CharacterMapUpdateDto,
@@ -167,6 +171,19 @@ export class NipeApiClient {
     try {
       const response = await this.client.get(`/api/projects/${projectId}/setup-status`);
       return projectSetupStatusResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async attachInitialIngestionSource(
+    projectId: number,
+    payload: ProjectIngestionSourceAttachRequestDto,
+  ): Promise<ProjectIngestionSourceAttachResponseDto> {
+    const parsedPayload = projectIngestionSourceAttachRequestSchema.parse(payload);
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/ingest/source`, parsedPayload);
+      return projectIngestionSourceAttachResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
