@@ -1608,6 +1608,86 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByRole('button', { name: /Download JSON/i })).toBeEnabled();
   });
 
+  test('projects/:project_id/pipeline-setup route updates voice configuration through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-voice-config-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}/pipeline-setup`);
+    await expect(page.getByRole('button', { name: 'Save Voice Config' })).toBeVisible();
+
+    const voicesPutRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/voices`),
+    );
+    const voicesPutResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/voices`),
+    );
+
+    await page.getByLabel('Narrator voice').fill('narrator_custom');
+    await page.getByLabel('Default male voice').fill('male_custom');
+    await page.getByLabel('Default female voice').fill('female_custom');
+    await page.getByLabel('Default neutral voice').fill('neutral_custom');
+    await page.getByLabel('Default unknown voice').fill('unknown_custom');
+    await page.getByLabel('Internal thought voice policy').selectOption('thought_voice');
+    await page.getByLabel('Thought voice', { exact: true }).fill('thought_custom');
+    await page.getByRole('button', { name: 'Save Voice Config' }).click();
+
+    const voicesPutRequest = await voicesPutRequestPromise;
+    const voicesPutPayload = voicesPutRequest.postDataJSON() as {
+      narrator_voice: string;
+      male_default_voice: string;
+      female_default_voice: string;
+      neutral_default_voice: string;
+      unknown_default_voice: string;
+      internal_thought_voice_policy: string;
+      internal_thought_voice?: string;
+    };
+    expect(voicesPutPayload).toEqual({
+      narrator_voice: 'narrator_custom',
+      male_default_voice: 'male_custom',
+      female_default_voice: 'female_custom',
+      neutral_default_voice: 'neutral_custom',
+      unknown_default_voice: 'unknown_custom',
+      internal_thought_voice_policy: 'thought_voice',
+      internal_thought_voice: 'thought_custom',
+    });
+
+    const voicesPutResponse = await voicesPutResponsePromise;
+    expect(voicesPutResponse.status()).toBe(200);
+  });
+
   test('projects/:project_id/mode route requests mode catalog and updates mode through switch endpoint', async ({
     page,
     request,

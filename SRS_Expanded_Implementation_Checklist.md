@@ -649,7 +649,7 @@ Definition of done for each task:
 - [x] [FE-148] Build pronunciation dictionary places scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/places`.
 - [x] [FE-149] Build pronunciation dictionary character scope panel using `GET/PUT /api/projects/{project_id}/pronunciation-dictionary/character/{character_name}`.
 - [x] [FE-150] Build pronunciation preview tool using `POST /api/projects/{project_id}/pronunciation-dictionary/preview`.
-- [ ] [FE-151] Build voice configuration editor using `PUT /api/projects/{project_id}/voices`.
+- [x] [FE-151] Build voice configuration editor using `PUT /api/projects/{project_id}/voices`.
 
 ### 13.7 Runs, Analytics, Exports, and Comparison Workspace
 - [ ] [FE-152] Build `/projects/{project_id}/pipeline-setup` run config flow using `POST /api/projects/{project_id}/runs`.
