@@ -1966,6 +1966,76 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(fallbackScrapePayload.candidate_count).toBeGreaterThanOrEqual(0);
   });
 
+  test('projects/:project_id/characters route runs merged-candidates flow through backend endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-characters-merge-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    const charactersGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters`),
+    );
+    await page.goto(`/projects/${projectId}/characters`);
+    await charactersGetResponsePromise;
+
+    const mergedRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/characters/merged-candidates`),
+    );
+    const mergedResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/characters/merged-candidates`),
+    );
+    await page.getByRole('button', { name: 'Merge user + auto + scraped candidates' }).click();
+
+    const mergedRequest = await mergedRequestPromise;
+    const mergedPayload = mergedRequest.postDataJSON() as {
+      include_auto: boolean;
+      source_url?: string;
+      acknowledge_source_risk?: boolean;
+    };
+    expect(mergedPayload.include_auto).toBe(true);
+    expect(mergedPayload.source_url === undefined || mergedPayload.source_url === null || mergedPayload.source_url === '').toBe(true);
+
+    const mergedResponse = await mergedResponsePromise;
+    expect(mergedResponse.status()).toBe(200);
+    const mergedResponsePayload = (await mergedResponse.json()) as { status: string; candidate_count: number };
+    expect(mergedResponsePayload.status).toBe('complete');
+    expect(mergedResponsePayload.candidate_count).toBeGreaterThanOrEqual(0);
+    await expect(page.getByTestId('character-merged-state')).toBeVisible();
+  });
+
   test('projects/:project_id/settings route reads and updates project llm settings through backend endpoints', async ({
     page,
     request,
