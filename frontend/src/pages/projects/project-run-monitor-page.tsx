@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
   useCancelRunMutation,
+  usePipelineStageDurationsDashboardQuery,
   useRecoverRunMutation,
   useRerunRunMutation,
   useRunConfigDiffQuery,
@@ -33,6 +34,7 @@ export function ProjectRunMonitorPage() {
   const rerunRunMutation = useRerunRunMutation(projectId, runId);
   const recoverRunMutation = useRecoverRunMutation(projectId, runId);
   const cancelRunMutation = useCancelRunMutation(projectId, runId);
+  const pipelineStageDurationsDashboardQuery = usePipelineStageDurationsDashboardQuery(projectId, runId);
   const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
   const comparisonRunId = useMemo(() => {
     const trimmed = comparisonRunIdInput.trim();
@@ -303,6 +305,25 @@ export function ProjectRunMonitorPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pipeline Stage Durations Dashboard</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          {pipelineStageDurationsDashboardQuery.isLoading ? <p>Loading stage duration metrics...</p> : null}
+          {pipelineStageDurationsDashboardQuery.error ? (
+            <p className="text-destructive">{pipelineStageDurationsDashboardQuery.error.message}</p>
+          ) : null}
+          {pipelineStageDurationsDashboardQuery.data ? (
+            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
+              {JSON.stringify(pipelineStageDurationsDashboardQuery.data, null, 2)}
+            </pre>
+          ) : (
+            <p>No stage duration metrics yet.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
