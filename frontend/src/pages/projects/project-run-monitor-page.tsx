@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
@@ -24,6 +24,49 @@ import {
 import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, LineChart, ShieldAlert, TriangleAlert, Waves } from 'lucide-react';
+
+const runMonitorRefreshIntervalMs = 4000;
+const runMutationRecoveryStorageKey = 'nipe-run-monitor-pending-mutation';
+const runMutationRecoveryMaxAgeMs = 10 * 60_000;
+
+type PendingRunMutationRecoveryRecord = {
+  projectId: number;
+  sourceRunId: number;
+  trackedRunId: number;
+  mutation: 'rerun' | 'recover' | 'cancel';
+  startedAt: string;
+};
+
+function isRunStatusActive(status: string | null | undefined) {
+  return status === 'queued' || status === 'running';
+}
+
+function isRunStatusTerminal(status: string | null | undefined) {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
+function parsePendingRunMutationRecovery(rawValue: string | null): PendingRunMutationRecoveryRecord | null {
+  if (!rawValue) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<PendingRunMutationRecoveryRecord>;
+    if (
+      !parsed
+      || typeof parsed !== 'object'
+      || !Number.isInteger(parsed.projectId)
+      || !Number.isInteger(parsed.sourceRunId)
+      || !Number.isInteger(parsed.trackedRunId)
+      || !['rerun', 'recover', 'cancel'].includes(parsed.mutation ?? '')
+      || typeof parsed.startedAt !== 'string'
+    ) {
+      return null;
+    }
+    return parsed as PendingRunMutationRecoveryRecord;
+  } catch {
+    return null;
+  }
+}
 
 export function ProjectRunMonitorPage() {
   const navigate = useNavigate();
@@ -58,6 +101,7 @@ export function ProjectRunMonitorPage() {
     return parsed;
   }, [comparisonRunIdInput]);
   const runConfigDiffQuery = useRunConfigDiffQuery(projectId, runId, comparisonRunId);
+  const [pendingMutationRecovery, setPendingMutationRecovery] = useState<PendingRunMutationRecoveryRecord | null>(null);
   const llmExecutionMode = runDetailQuery.data?.config?.llm_execution_mode;
   const isRuleOnlyMode =
     typeof llmExecutionMode === 'object' &&
@@ -81,6 +125,97 @@ export function ProjectRunMonitorPage() {
 
   const runStatus = runDetailQuery.data?.status ?? 'not-started';
   const segmentCount = runDetailQuery.data?.segment_count ?? 0;
+  const runIsActive = isRunStatusActive(runStatus);
+  const isMutationRecoveryLocked = pendingMutationRecovery !== null;
+
+  function persistPendingMutationRecovery(record: PendingRunMutationRecoveryRecord) {
+    setPendingMutationRecovery(record);
+    window.sessionStorage.setItem(runMutationRecoveryStorageKey, JSON.stringify(record));
+  }
+
+  function clearPendingMutationRecovery() {
+    setPendingMutationRecovery(null);
+    window.sessionStorage.removeItem(runMutationRecoveryStorageKey);
+  }
+
+  useEffect(() => {
+    if (projectId === null) {
+      clearPendingMutationRecovery();
+      return;
+    }
+    const parsedRecord = parsePendingRunMutationRecovery(window.sessionStorage.getItem(runMutationRecoveryStorageKey));
+    if (!parsedRecord) {
+      clearPendingMutationRecovery();
+      return;
+    }
+    if (parsedRecord.projectId !== projectId) {
+      clearPendingMutationRecovery();
+      return;
+    }
+    const startedAtMs = Date.parse(parsedRecord.startedAt);
+    if (Number.isNaN(startedAtMs) || Date.now() - startedAtMs > runMutationRecoveryMaxAgeMs) {
+      clearPendingMutationRecovery();
+      return;
+    }
+    setPendingMutationRecovery(parsedRecord);
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!pendingMutationRecovery || !runDetailQuery.data) {
+      return;
+    }
+    if (runDetailQuery.data.run_id !== pendingMutationRecovery.trackedRunId) {
+      return;
+    }
+    if (isRunStatusTerminal(runDetailQuery.data.status)) {
+      clearPendingMutationRecovery();
+    }
+  }, [pendingMutationRecovery, runDetailQuery.data]);
+
+  useEffect(() => {
+    if (!runIsActive && !pendingMutationRecovery) {
+      return;
+    }
+
+    const refreshAllRunMonitorQueries = () => {
+      void runDetailQuery.mutate();
+      void audiobookPrepDashboardQuery.mutate();
+      void characterAnalyticsQuery.mutate();
+      void characterCooccurrenceGraphQuery.mutate();
+      void tensionGraphQuery.mutate();
+      void polarityGraphQuery.mutate();
+      void pipelineStageDurationsDashboardQuery.mutate();
+    };
+
+    const intervalId = window.setInterval(refreshAllRunMonitorQueries, runMonitorRefreshIntervalMs);
+    const handleWindowFocus = () => {
+      refreshAllRunMonitorQueries();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshAllRunMonitorQueries();
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [
+    runIsActive,
+    pendingMutationRecovery,
+    runDetailQuery,
+    audiobookPrepDashboardQuery,
+    characterAnalyticsQuery,
+    characterCooccurrenceGraphQuery,
+    tensionGraphQuery,
+    polarityGraphQuery,
+    pipelineStageDurationsDashboardQuery,
+  ]);
 
   async function handleLoadRunConfigPreset() {
     if (projectId === null || runId === null) {
@@ -115,10 +250,25 @@ export function ProjectRunMonitorPage() {
     if (projectId === null || runId === null) {
       return;
     }
+    persistPendingMutationRecovery({
+      projectId,
+      sourceRunId: runId,
+      trackedRunId: runId,
+      mutation: 'rerun',
+      startedAt: new Date().toISOString(),
+    });
     try {
       const rerun = await rerunRunMutation.trigger();
       setRunId(rerun.run_id);
+      persistPendingMutationRecovery({
+        projectId,
+        sourceRunId: runId,
+        trackedRunId: rerun.run_id,
+        mutation: 'rerun',
+        startedAt: new Date().toISOString(),
+      });
     } catch {
+      clearPendingMutationRecovery();
       // surfaced via mutation event bus
     }
   }
@@ -127,10 +277,25 @@ export function ProjectRunMonitorPage() {
     if (projectId === null || runId === null) {
       return;
     }
+    persistPendingMutationRecovery({
+      projectId,
+      sourceRunId: runId,
+      trackedRunId: runId,
+      mutation: 'recover',
+      startedAt: new Date().toISOString(),
+    });
     try {
       const recoveredRun = await recoverRunMutation.trigger();
       setRunId(recoveredRun.run_id);
+      persistPendingMutationRecovery({
+        projectId,
+        sourceRunId: runId,
+        trackedRunId: recoveredRun.run_id,
+        mutation: 'recover',
+        startedAt: new Date().toISOString(),
+      });
     } catch {
+      clearPendingMutationRecovery();
       // surfaced via mutation event bus
     }
   }
@@ -139,10 +304,25 @@ export function ProjectRunMonitorPage() {
     if (projectId === null || runId === null) {
       return;
     }
+    persistPendingMutationRecovery({
+      projectId,
+      sourceRunId: runId,
+      trackedRunId: runId,
+      mutation: 'cancel',
+      startedAt: new Date().toISOString(),
+    });
     try {
       const cancelledRun = await cancelRunMutation.trigger();
       setRunId(cancelledRun.run_id);
+      persistPendingMutationRecovery({
+        projectId,
+        sourceRunId: runId,
+        trackedRunId: cancelledRun.run_id,
+        mutation: 'cancel',
+        startedAt: new Date().toISOString(),
+      });
     } catch {
+      clearPendingMutationRecovery();
       // surfaced via mutation event bus
     }
   }
@@ -157,21 +337,21 @@ export function ProjectRunMonitorPage() {
         projectId !== null ? (
           <div className="flex flex-wrap gap-2">
             <Button
-              disabled={runId === null || rerunRunMutation.isMutating}
+              disabled={runId === null || rerunRunMutation.isMutating || isMutationRecoveryLocked}
               onClick={handleRerunRun}
               variant="outline"
             >
               {rerunRunMutation.isMutating ? 'Rerunning...' : 'Rerun run'}
             </Button>
             <Button
-              disabled={runId === null || recoverRunMutation.isMutating}
+              disabled={runId === null || recoverRunMutation.isMutating || isMutationRecoveryLocked}
               onClick={handleRecoverRun}
               variant="outline"
             >
               {recoverRunMutation.isMutating ? 'Recovering...' : 'Recover run'}
             </Button>
             <Button
-              disabled={runId === null || cancelRunMutation.isMutating}
+              disabled={runId === null || cancelRunMutation.isMutating || isMutationRecoveryLocked}
               onClick={handleCancelRun}
               variant="outline"
             >
@@ -247,7 +427,21 @@ export function ProjectRunMonitorPage() {
               <p>
                 Segments: <strong className="text-foreground">{segmentCount}</strong>
               </p>
+              <p data-testid="run-monitor-refresh-state">
+                Refresh loop: <strong className="text-foreground">{runIsActive || pendingMutationRecovery ? 'active' : 'idle'}</strong>
+              </p>
             </div>
+
+            {pendingMutationRecovery ? (
+              <Alert data-testid="run-monitor-mutation-recovery-banner" className="border-primary/40">
+                <AlertTitle>Recovering in-flight run action</AlertTitle>
+                <AlertDescription>
+                  Restored pending <strong className="text-foreground">{pendingMutationRecovery.mutation}</strong> action.
+                  Monitoring run <strong className="text-foreground">#{pendingMutationRecovery.trackedRunId}</strong> until
+                  terminal state.
+                </AlertDescription>
+              </Alert>
+            ) : null}
 
             {runDetailQuery.isLoading ? <p>Loading run detail...</p> : null}
             {runDetailQuery.error ? <p className="text-destructive">{runDetailQuery.error.message}</p> : null}

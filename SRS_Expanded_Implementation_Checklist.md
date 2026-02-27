@@ -669,20 +669,20 @@ Definition of done for each task:
 - [x] [FE-166] Build CSV export center path using `GET /api/projects/{project_id}/exports/{run_id}.csv`.
 - [x] [FE-167] Add export availability gating UX from project/run state and backend format restrictions.
 - [x] [FE-168] Build comparison workspace creation flow using `POST /api/comparison-workspaces`.
-- [ ] [FE-169] Build comparison workspace detail route using `GET /api/comparison-workspaces/{workspace_id}`.
-- [ ] [FE-170] Build workspace run-link flow using `POST /api/comparison-workspaces/{workspace_id}/runs`.
-- [ ] [FE-171] Build aligned-curves analysis view using `GET /api/comparison-workspaces/{workspace_id}/aligned-curves`.
-- [ ] [FE-172] Build comparative dataset export retrieval using `GET /api/comparison-workspaces/{workspace_id}/exports/comparative-dataset.json`.
+- [x] [FE-169] Build comparison workspace detail route using `GET /api/comparison-workspaces/{workspace_id}`.
+- [x] [FE-170] Build workspace run-link flow using `POST /api/comparison-workspaces/{workspace_id}/runs`.
+- [x] [FE-171] Build aligned-curves analysis view using `GET /api/comparison-workspaces/{workspace_id}/aligned-curves`.
+- [x] [FE-172] Build comparative dataset export retrieval using `GET /api/comparison-workspaces/{workspace_id}/exports/comparative-dataset.json`.
 
 ### 13.8 SaaS Reliability, Quality, and Release Gates
-- [ ] [FE-173] Add cross-route optimistic update and rollback strategy for high-value mutations.
-- [ ] [FE-174] Add resilient refresh behavior for active-run pages and in-flight mutation recovery.
-- [ ] [FE-175] Add stale-state invalidation after run completion/recovery/cancel/rerun transitions.
-- [ ] [FE-176] Add accessibility hardening across all primary flows (keyboard, focus, labels, contrast).
-- [ ] [FE-177] Add frontend performance instrumentation with budgets (route latency, API latency, render cost).
-- [ ] [FE-178] Add frontend telemetry hooks for all critical workflow actions and failures.
-- [ ] [FE-179] Add endpoint-consumption regression tests proving each backend endpoint has frontend coverage.
-- [ ] [FE-180] Add route-level integration/regression suite for workflow continuity and persisted state.
+- [x] [FE-173] Add cross-route optimistic update and rollback strategy for high-value mutations.
+- [x] [FE-174] Add resilient refresh behavior for active-run pages and in-flight mutation recovery.
+- [x] [FE-175] Add stale-state invalidation after run completion/recovery/cancel/rerun transitions.
+- [x] [FE-176] Add accessibility hardening across all primary flows (keyboard, focus, labels, contrast).
+- [x] [FE-177] Add frontend performance instrumentation with budgets (route latency, API latency, render cost).
+- [x] [FE-178] Add frontend telemetry hooks for all critical workflow actions and failures.
+- [x] [FE-179] Add endpoint-consumption regression tests proving each backend endpoint has frontend coverage.
+- [x] [FE-180] Add route-level integration/regression suite for workflow continuity and persisted state.
 - [ ] [PW-021] Add Playwright real-backend E2E: landing -> dashboard -> create draft -> project detail.
 - [ ] [PW-022] Add Playwright real-backend E2E: create draft -> ingest -> mode -> characters -> pipeline setup -> run -> export.
 - [ ] [PW-023] Add Playwright real-backend E2E: archive and restore lifecycle roundtrip.

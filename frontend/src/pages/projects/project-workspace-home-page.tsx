@@ -30,6 +30,33 @@ import {
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
+type NextRequiredActionNavigation = {
+  label: string;
+  route: string;
+};
+
+function resolveNextRequiredActionNavigation(nextRequiredAction: string | null | undefined): NextRequiredActionNavigation {
+  if (nextRequiredAction === 'select_mode') {
+    return { label: 'Continue to Mode Selection', route: 'mode' };
+  }
+  if (nextRequiredAction === 'configure' || nextRequiredAction === 'run') {
+    return { label: 'Continue to Pipeline Setup', route: 'pipeline-setup' };
+  }
+  if (nextRequiredAction === 'export') {
+    return { label: 'Continue to Exports', route: 'exports' };
+  }
+  if (nextRequiredAction === 'rerun' || nextRequiredAction === 'review_failure') {
+    return { label: 'Open Runs', route: 'runs' };
+  }
+  if (nextRequiredAction === 'archived') {
+    return { label: 'Open Project Settings', route: 'settings' };
+  }
+  if (nextRequiredAction === 'none') {
+    return { label: 'Open Project Overview', route: 'overview' };
+  }
+  return { label: 'Continue to Setup', route: 'setup' };
+}
+
 export function ProjectWorkspaceHomePage() {
   const params = useParams<{ project_id: string }>();
   const routeProjectId = parseProjectIdParam(params.project_id);
@@ -112,6 +139,7 @@ export function ProjectWorkspaceHomePage() {
 
     const normalizedTitle = metadataTitle.trim();
     const normalizedDescription = metadataDescription.trim();
+    const normalizedDescriptionOrNull = normalizedDescription.length > 0 ? normalizedDescription : null;
     const normalizedTags = metadataTagsInput
       .split(',')
       .map((tag) => tag.trim())
@@ -122,15 +150,33 @@ export function ProjectWorkspaceHomePage() {
       return;
     }
 
+    const previousProjectDetail = projectDetailQuery.data;
+    const optimisticProjectDetail = previousProjectDetail
+      ? {
+          ...previousProjectDetail,
+          title: normalizedTitle,
+          description: normalizedDescriptionOrNull,
+          tags: normalizedTags,
+          updated_at: new Date().toISOString(),
+        }
+      : null;
+
+    if (optimisticProjectDetail) {
+      await projectDetailQuery.mutate(optimisticProjectDetail, { revalidate: false });
+    }
+
     try {
       await updateProjectMetadataMutation.trigger({
         title: normalizedTitle,
-        description: normalizedDescription.length > 0 ? normalizedDescription : null,
+        description: normalizedDescriptionOrNull,
         tags: normalizedTags,
       });
       toast.success('Project metadata updated.');
       await projectDetailQuery.mutate();
     } catch (error) {
+      if (previousProjectDetail) {
+        await projectDetailQuery.mutate(previousProjectDetail, { revalidate: false });
+      }
       toast.error(error instanceof Error ? error.message : 'Failed to update metadata.');
     }
   }
@@ -141,6 +187,36 @@ export function ProjectWorkspaceHomePage() {
       return;
     }
     setLifecycleTransitionConflict(null);
+
+    const previousProjectDetail = projectDetailQuery.data;
+    const previousAllowedActions = projectAllowedActionsQuery.data;
+    const optimisticProjectDetail = previousProjectDetail
+      ? {
+          ...previousProjectDetail,
+          lifecycle_state: 'archived',
+          next_required_action: 'archived',
+          allowed_actions: ['restore'],
+          updated_at: new Date().toISOString(),
+        }
+      : null;
+    const optimisticAllowedActions = previousAllowedActions
+      ? {
+          ...previousAllowedActions,
+          lifecycle_state: 'archived',
+          next_required_action: 'archived',
+          allowed_actions: ['restore'],
+          blocked_reason: 'Project is archived. Restore the project to continue workflow actions.',
+          required_step: 'restore',
+        }
+      : null;
+
+    await Promise.all([
+      optimisticAllowedActions
+        ? projectAllowedActionsQuery.mutate(optimisticAllowedActions, { revalidate: false })
+        : Promise.resolve(),
+      optimisticProjectDetail ? projectDetailQuery.mutate(optimisticProjectDetail, { revalidate: false }) : Promise.resolve(),
+    ]);
+
     try {
       await archiveProjectMutation.trigger();
       setIsArchiveConfirmOpen(false);
@@ -151,6 +227,12 @@ export function ProjectWorkspaceHomePage() {
         projectTimelineQuery.mutate(),
       ]);
     } catch (error) {
+      await Promise.all([
+        previousAllowedActions
+          ? projectAllowedActionsQuery.mutate(previousAllowedActions, { revalidate: false })
+          : Promise.resolve(),
+        previousProjectDetail ? projectDetailQuery.mutate(previousProjectDetail, { revalidate: false }) : Promise.resolve(),
+      ]);
       const message = error instanceof Error ? error.message : 'Failed to archive project.';
       setLifecycleTransitionConflict(message);
       toast.error(message);
@@ -163,6 +245,39 @@ export function ProjectWorkspaceHomePage() {
       return;
     }
     setLifecycleTransitionConflict(null);
+
+    const previousProjectDetail = projectDetailQuery.data;
+    const previousAllowedActions = projectAllowedActionsQuery.data;
+    const optimisticProjectDetail = previousProjectDetail
+      ? {
+          ...previousProjectDetail,
+          lifecycle_state: 'configured',
+          next_required_action: previousProjectDetail.next_required_action === 'archived' ? 'configure' : previousProjectDetail.next_required_action,
+          allowed_actions: Array.from(new Set([...(previousProjectDetail.allowed_actions ?? []).filter((action) => action !== 'restore'), 'archive'])),
+          updated_at: new Date().toISOString(),
+        }
+      : null;
+    const optimisticAllowedActions = previousAllowedActions
+      ? {
+          ...previousAllowedActions,
+          lifecycle_state: 'configured',
+          next_required_action:
+            previousAllowedActions.next_required_action === 'archived' ? 'configure' : previousAllowedActions.next_required_action,
+          allowed_actions: Array.from(
+            new Set([...(previousAllowedActions.allowed_actions ?? []).filter((action) => action !== 'restore'), 'archive']),
+          ),
+          blocked_reason: null,
+          required_step: null,
+        }
+      : null;
+
+    await Promise.all([
+      optimisticAllowedActions
+        ? projectAllowedActionsQuery.mutate(optimisticAllowedActions, { revalidate: false })
+        : Promise.resolve(),
+      optimisticProjectDetail ? projectDetailQuery.mutate(optimisticProjectDetail, { revalidate: false }) : Promise.resolve(),
+    ]);
+
     try {
       await restoreProjectMutation.trigger();
       setIsRestoreConfirmOpen(false);
@@ -173,6 +288,12 @@ export function ProjectWorkspaceHomePage() {
         projectTimelineQuery.mutate(),
       ]);
     } catch (error) {
+      await Promise.all([
+        previousAllowedActions
+          ? projectAllowedActionsQuery.mutate(previousAllowedActions, { revalidate: false })
+          : Promise.resolve(),
+        previousProjectDetail ? projectDetailQuery.mutate(previousProjectDetail, { revalidate: false }) : Promise.resolve(),
+      ]);
       const message = error instanceof Error ? error.message : 'Failed to restore project.';
       setLifecycleTransitionConflict(message);
       toast.error(message);
@@ -181,6 +302,8 @@ export function ProjectWorkspaceHomePage() {
 
   const allowedActions = projectAllowedActionsQuery.data?.allowed_actions ?? [];
   const isCommandAllowed = (action: string) => allowedActions.includes(action);
+  const projectNextRequiredAction = projectDetailQuery.data?.next_required_action ?? 'none';
+  const nextRequiredActionNavigation = resolveNextRequiredActionNavigation(projectNextRequiredAction);
 
   return (
     <Card data-testid="project-workspace-home-ready">
@@ -194,8 +317,17 @@ export function ProjectWorkspaceHomePage() {
         <p data-testid="project-workspace-home-id">Project ID: {projectDetailQuery.data?.project_id ?? projectId}</p>
         <p data-testid="project-workspace-home-lifecycle">Lifecycle: {projectDetailQuery.data?.lifecycle_state ?? 'draft'}</p>
         <p data-testid="project-workspace-home-next-action">
-          Next action: {projectDetailQuery.data?.next_required_action ?? 'none'}
+          Next action: {projectNextRequiredAction}
         </p>
+        <div className="flex items-center gap-2" data-testid="project-workspace-home-next-action-navigation">
+          <Link
+            className="rounded-md border border-panel-border/70 px-3 py-1.5 text-xs text-foreground hover:bg-background/75"
+            data-testid="project-workspace-home-next-action-link"
+            to={nextRequiredActionNavigation.route}
+          >
+            {nextRequiredActionNavigation.label}
+          </Link>
+        </div>
         <p data-testid="project-workspace-home-mode">Mode: {projectDetailQuery.data?.selected_mode ?? 'n/a'}</p>
         <form className="mt-4 space-y-3 rounded-lg border border-panel-border/70 p-3" data-testid="project-metadata-form" onSubmit={handleMetadataSubmit}>
           <p className="text-xs font-semibold tracking-wide text-foreground">Project metadata</p>

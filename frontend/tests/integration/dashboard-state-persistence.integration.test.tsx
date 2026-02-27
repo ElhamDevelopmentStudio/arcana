@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MainShell } from '@/app/main-shell';
 import { useUiRouteStateStore } from '@/app/state/ui-route-state-store';
 import { DashboardPage } from '@/pages/dashboard/dashboard-page';
 import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
@@ -24,6 +25,14 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     useProjectAllowedActionsQueryMock(...args),
 }));
 
+vi.mock('@/app/project-step-nav', () => ({
+  ProjectStepNav: () => <nav data-testid="project-step-nav">Project nav</nav>,
+}));
+
+vi.mock('@/features/workflow/prefetch/critical-route-prefetch', () => ({
+  useCriticalRoutePrefetch: () => undefined,
+}));
+
 function renderDashboard(initialEntry: string = '/dashboard') {
   const router = createMemoryRouter(
     [
@@ -42,6 +51,40 @@ function renderDashboard(initialEntry: string = '/dashboard') {
       {
         path: '/projects/:project_id/pipeline-setup',
         element: <div data-testid="project-pipeline-setup-route">Pipeline setup route</div>,
+      },
+    ],
+    {
+      initialEntries: [initialEntry],
+    },
+  );
+
+  render(<RouterProvider router={router} />);
+  return router;
+}
+
+function renderDashboardWithinMainShell(initialEntry: string = '/dashboard') {
+  const router = createMemoryRouter(
+    [
+      {
+        element: <MainShell />,
+        children: [
+          {
+            path: '/dashboard',
+            element: <DashboardPage />,
+          },
+          {
+            path: '/projects/:project_id/mode',
+            element: <div data-testid="project-mode-route">Mode route</div>,
+          },
+          {
+            path: '/projects/:project_id/run-monitor',
+            element: <div data-testid="project-run-monitor-route">Run monitor route</div>,
+          },
+          {
+            path: '/projects/:project_id/pipeline-setup',
+            element: <div data-testid="project-pipeline-setup-route">Pipeline setup route</div>,
+          },
+        ],
       },
     ],
     {
@@ -146,6 +189,31 @@ describe('dashboard route/query state persistence', () => {
     await waitFor(() => {
       expect(screen.getByTestId('project-run-monitor-route')).toBeInTheDocument();
     });
+  });
+
+  it('captures project route continuity in shell state and reopens the same route from dashboard', async () => {
+    const user = userEvent.setup();
+    const router = renderDashboardWithinMainShell('/projects/101/run-monitor?compare=true');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('project-run-monitor-route')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      await router.navigate('/dashboard');
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('project-run-monitor-route')).toBeInTheDocument();
+    });
+    expect(router.state.location.pathname).toBe('/projects/101/run-monitor');
+    expect(router.state.location.search).toBe('?compare=true');
   });
 
   it('renders row-level quick actions from project actions endpoint', async () => {

@@ -323,6 +323,8 @@ class ModeCatalogResponse(BaseModel):
 class IngestResponse(BaseModel):
     project_id: int
     chapter_count: int
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+    normalization_report: dict[str, Any] = Field(default_factory=dict)
 
 
 class CharacterImportResponse(BaseModel):

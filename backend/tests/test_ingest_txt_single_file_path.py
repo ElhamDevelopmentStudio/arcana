@@ -56,7 +56,11 @@ def test_integration_ingest_txt_endpoint_accepts_single_file_input() -> None:
             files={"file": ("sample.txt", io.BytesIO(_single_file_text().encode("utf-8")), "text/plain")},
         )
         assert ingest_resp.status_code == 200
-        assert ingest_resp.json() == {"project_id": project_id, "chapter_count": 2}
+        payload = ingest_resp.json()
+        assert payload["project_id"] == project_id
+        assert payload["chapter_count"] == 2
+        assert isinstance(payload["warnings"], list)
+        assert isinstance(payload["normalization_report"], dict)
 
 
 def test_e2e_ingest_txt_single_file_persists_chapter_rows() -> None:

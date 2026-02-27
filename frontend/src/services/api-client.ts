@@ -2,6 +2,8 @@ import axios, { type AxiosInstance } from 'axios';
 
 import { appEnv } from '@/app/config/env';
 import { normalizeHttpError } from '@/services/api-error';
+import { reportApiLatencyMetric } from '@/features/workflow/performance/performance-instrumentation';
+import { reportWorkflowTelemetry } from '@/features/workflow/telemetry/workflow-telemetry';
 import {
   characterImportSchema,
   characterAnalyticsResponseSchema,
@@ -114,6 +116,65 @@ import {
   characterExtractionSchema,
 } from '@/app/schemas/api';
 
+const REQUEST_START_TIME_KEY = '__nipeRequestStartedAtMs';
+
+type ApiRequestConfigWithMetadata = {
+  method?: string;
+  url?: string;
+  metadata?: Record<string, unknown>;
+};
+
+function getHighResolutionNowMs() {
+  if (typeof globalThis.performance?.now === 'function') {
+    return globalThis.performance.now();
+  }
+  return Date.now();
+}
+
+function markApiRequestStart(config: ApiRequestConfigWithMetadata) {
+  const nextMetadata = { ...(config.metadata ?? {}) };
+  nextMetadata[REQUEST_START_TIME_KEY] = getHighResolutionNowMs();
+  config.metadata = nextMetadata;
+}
+
+function reportApiRequestLatency(
+  config: ApiRequestConfigWithMetadata,
+  statusCode: number | undefined,
+  success: boolean,
+) {
+  const startedAt = config.metadata?.[REQUEST_START_TIME_KEY];
+  if (typeof startedAt !== 'number' || Number.isNaN(startedAt)) {
+    return;
+  }
+  const durationMs = Math.max(0, getHighResolutionNowMs() - startedAt);
+  const method = typeof config.method === 'string' ? config.method.toUpperCase() : 'GET';
+  const path = typeof config.url === 'string' && config.url.trim().length > 0 ? config.url : 'unknown';
+  reportApiLatencyMetric({
+    method,
+    path,
+    durationMs,
+    statusCode,
+    success,
+  });
+}
+
+function reportWorkflowMutationTelemetry(
+  config: ApiRequestConfigWithMetadata,
+  statusCode: number | undefined,
+  success: boolean,
+  errorMessage?: string,
+) {
+  const method = typeof config.method === 'string' ? config.method.toUpperCase() : 'GET';
+  const path = typeof config.url === 'string' && config.url.trim().length > 0 ? config.url : 'unknown';
+  reportWorkflowTelemetry({
+    method,
+    path,
+    success,
+    statusCode,
+    errorMessage,
+  });
+}
+
 export class NipeApiClient {
   private readonly client: AxiosInstance;
   private static readonly ingestRequestTimeoutMs = 5 * 60_000;
@@ -123,6 +184,35 @@ export class NipeApiClient {
       baseURL: baseUrl,
       timeout: 30_000,
     });
+
+    this.client.interceptors.request.use((config) => {
+      markApiRequestStart(config as ApiRequestConfigWithMetadata);
+      return config;
+    });
+
+    this.client.interceptors.response.use(
+      (response) => {
+        reportApiRequestLatency(response.config as ApiRequestConfigWithMetadata, response.status, true);
+        reportWorkflowMutationTelemetry(response.config as ApiRequestConfigWithMetadata, response.status, true);
+        return response;
+      },
+      (error) => {
+        if (axios.isAxiosError(error) && error.config) {
+          reportApiRequestLatency(
+            error.config as ApiRequestConfigWithMetadata,
+            error.response?.status,
+            false,
+          );
+          reportWorkflowMutationTelemetry(
+            error.config as ApiRequestConfigWithMetadata,
+            error.response?.status,
+            false,
+            error.message,
+          );
+        }
+        return Promise.reject(error);
+      },
+    );
   }
 
   get baseUrl() {
@@ -331,6 +421,265 @@ export class NipeApiClient {
         run_count: number;
         name?: string;
         created_at?: string;
+      };
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getComparisonWorkspace(workspaceId: number): Promise<{
+    workspace_id: number;
+    run_count: number;
+    name?: string;
+    runs: Array<{
+      project_id: number;
+      run_id: number;
+      status: string;
+      project_title?: string;
+    }>;
+  }> {
+    try {
+      const response = await this.client.get(`/api/comparison-workspaces/${workspaceId}`);
+      const payload = response.data;
+      if (
+        !payload
+        || typeof payload !== 'object'
+        || typeof (payload as { workspace_id?: unknown }).workspace_id !== 'number'
+        || typeof (payload as { run_count?: unknown }).run_count !== 'number'
+        || !Array.isArray((payload as { runs?: unknown }).runs)
+      ) {
+        throw new Error('Invalid comparison workspace detail response payload.');
+      }
+      return payload as {
+        workspace_id: number;
+        run_count: number;
+        name?: string;
+        runs: Array<{
+          project_id: number;
+          run_id: number;
+          status: string;
+          project_title?: string;
+        }>;
+      };
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async addRunToComparisonWorkspace(
+    workspaceId: number,
+    payload: { project_id: number; run_id: number },
+  ): Promise<{
+    workspace_id: number;
+    run_count: number;
+    name?: string;
+    runs: Array<{
+      project_id: number;
+      run_id: number;
+      status: string;
+      project_title?: string;
+    }>;
+  }> {
+    if (!Number.isInteger(workspaceId) || workspaceId <= 0) {
+      throw new Error('A valid comparison workspace ID is required.');
+    }
+    if (!Number.isInteger(payload.project_id) || payload.project_id <= 0) {
+      throw new Error('A valid project ID is required before linking a run.');
+    }
+    if (!Number.isInteger(payload.run_id) || payload.run_id <= 0) {
+      throw new Error('A valid run ID is required before linking a run.');
+    }
+
+    try {
+      const response = await this.client.post(`/api/comparison-workspaces/${workspaceId}/runs`, payload);
+      const responsePayload = response.data;
+      if (
+        !responsePayload
+        || typeof responsePayload !== 'object'
+        || typeof (responsePayload as { workspace_id?: unknown }).workspace_id !== 'number'
+        || typeof (responsePayload as { run_count?: unknown }).run_count !== 'number'
+        || !Array.isArray((responsePayload as { runs?: unknown }).runs)
+      ) {
+        throw new Error('Invalid comparison workspace run-link response payload.');
+      }
+      return responsePayload as {
+        workspace_id: number;
+        run_count: number;
+        name?: string;
+        runs: Array<{
+          project_id: number;
+          run_id: number;
+          status: string;
+          project_title?: string;
+        }>;
+      };
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getComparisonWorkspaceAlignedCurves(
+    workspaceId: number,
+    payload?: { metrics?: string[]; aligned_points?: number },
+  ): Promise<{
+    workspace_id: number;
+    run_count: number;
+    aligned_points: number;
+    metrics: Array<{
+      metric_id: string;
+      points_per_run: Array<{
+        run_id: number;
+        project_id: number;
+        status: string;
+        points: unknown[];
+      }>;
+    }>;
+  }> {
+    if (!Number.isInteger(workspaceId) || workspaceId <= 0) {
+      throw new Error('A valid comparison workspace ID is required.');
+    }
+
+    const normalizedMetrics = (payload?.metrics ?? [])
+      .map((metric) => metric.trim())
+      .filter((metric) => metric.length > 0);
+    const normalizedAlignedPoints = payload?.aligned_points;
+    if (
+      normalizedAlignedPoints !== undefined
+      && (!Number.isInteger(normalizedAlignedPoints) || normalizedAlignedPoints <= 0)
+    ) {
+      throw new Error('Aligned points must be a positive integer when provided.');
+    }
+
+    try {
+      const response = await this.client.get(`/api/comparison-workspaces/${workspaceId}/aligned-curves`, {
+        params: {
+          metrics: normalizedMetrics.length > 0 ? normalizedMetrics.join(',') : undefined,
+          aligned_points: normalizedAlignedPoints,
+        },
+      });
+      const responsePayload = response.data;
+      if (
+        !responsePayload
+        || typeof responsePayload !== 'object'
+        || typeof (responsePayload as { workspace_id?: unknown }).workspace_id !== 'number'
+        || typeof (responsePayload as { run_count?: unknown }).run_count !== 'number'
+        || typeof (responsePayload as { aligned_points?: unknown }).aligned_points !== 'number'
+        || !Array.isArray((responsePayload as { metrics?: unknown }).metrics)
+      ) {
+        throw new Error('Invalid comparison workspace aligned curves response payload.');
+      }
+      return responsePayload as {
+        workspace_id: number;
+        run_count: number;
+        aligned_points: number;
+        metrics: Array<{
+          metric_id: string;
+          points_per_run: Array<{
+            run_id: number;
+            project_id: number;
+            status: string;
+            points: unknown[];
+          }>;
+        }>;
+      };
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getComparisonWorkspaceComparativeDataset(
+    workspaceId: number,
+    payload?: { metrics?: string[]; aligned_points?: number },
+  ): Promise<{
+    workspace_id: number;
+    workspace_name: string;
+    generated_at: string;
+    run_count: number;
+    aligned_points: number;
+    metrics: Array<{
+      metric_id: string;
+      points_per_run: Array<{
+        run_id: number;
+        project_id: number;
+        status: string;
+        points: unknown[];
+      }>;
+    }>;
+    runs: Array<{
+      run_id: number;
+      project_id: number;
+      project_title: string;
+      status: string;
+      segment_count: number;
+      run_config_mode: string;
+      academic_reports: Record<string, unknown>;
+      comparative_run_metrics_snapshot: Record<string, unknown>;
+      academic_export_manifest: Record<string, unknown>;
+    }>;
+  }> {
+    if (!Number.isInteger(workspaceId) || workspaceId <= 0) {
+      throw new Error('A valid comparison workspace ID is required.');
+    }
+
+    const normalizedMetrics = (payload?.metrics ?? [])
+      .map((metric) => metric.trim())
+      .filter((metric) => metric.length > 0);
+    const normalizedAlignedPoints = payload?.aligned_points;
+    if (
+      normalizedAlignedPoints !== undefined
+      && (!Number.isInteger(normalizedAlignedPoints) || normalizedAlignedPoints <= 0)
+    ) {
+      throw new Error('Aligned points must be a positive integer when provided.');
+    }
+
+    try {
+      const response = await this.client.get(
+        `/api/comparison-workspaces/${workspaceId}/exports/comparative-dataset.json`,
+        {
+          params: {
+            metrics: normalizedMetrics.length > 0 ? normalizedMetrics.join(',') : undefined,
+            aligned_points: normalizedAlignedPoints,
+          },
+        },
+      );
+      const responsePayload = response.data;
+      if (
+        !responsePayload
+        || typeof responsePayload !== 'object'
+        || typeof (responsePayload as { workspace_id?: unknown }).workspace_id !== 'number'
+        || typeof (responsePayload as { run_count?: unknown }).run_count !== 'number'
+        || typeof (responsePayload as { aligned_points?: unknown }).aligned_points !== 'number'
+        || !Array.isArray((responsePayload as { metrics?: unknown }).metrics)
+        || !Array.isArray((responsePayload as { runs?: unknown }).runs)
+      ) {
+        throw new Error('Invalid comparative dataset export payload.');
+      }
+      return responsePayload as {
+        workspace_id: number;
+        workspace_name: string;
+        generated_at: string;
+        run_count: number;
+        aligned_points: number;
+        metrics: Array<{
+          metric_id: string;
+          points_per_run: Array<{
+            run_id: number;
+            project_id: number;
+            status: string;
+            points: unknown[];
+          }>;
+        }>;
+        runs: Array<{
+          run_id: number;
+          project_id: number;
+          project_title: string;
+          status: string;
+          segment_count: number;
+          run_config_mode: string;
+          academic_reports: Record<string, unknown>;
+          comparative_run_metrics_snapshot: Record<string, unknown>;
+          academic_export_manifest: Record<string, unknown>;
+        }>;
       };
     } catch (error) {
       throw normalizeHttpError(error);

@@ -1,7 +1,7 @@
 import { Info } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import type { PropsWithChildren, ReactNode } from 'react';
+import { useId, type PropsWithChildren, type ReactNode } from 'react';
 
 type WorkflowPageShellProps = PropsWithChildren<{
   title: string;
@@ -24,12 +24,15 @@ function OutputDisclaimer() {
 }
 
 export function WorkflowPageShell({ title, description, step, action, showOutputDisclaimer, children }: WorkflowPageShellProps) {
+  const headingId = useId();
   return (
-    <section className="space-y-5">
+    <section aria-labelledby={headingId} className="space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">{step}</p>
-          <h2 className="text-2xl font-semibold tracking-tight text-panel-foreground lg:text-[1.9rem]">{title}</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-panel-foreground lg:text-[1.9rem]" id={headingId}>
+            {title}
+          </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">{description}</p>
           {showOutputDisclaimer ? <OutputDisclaimer /> : null}
         </div>
