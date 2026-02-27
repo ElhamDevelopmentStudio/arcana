@@ -62,6 +62,7 @@ const ROUTE_MODULE_PREFETCHERS: Array<{ pattern: RegExp; load: () => Promise<unk
   { pattern: /^\/dashboard$/, load: loadDashboardPage },
   { pattern: /^\/projects\/new$/, load: loadProjectNewPage },
   { pattern: /^\/projects\/[^/]+$/, load: loadProjectWorkspaceHomePage },
+  { pattern: /^\/projects\/[^/]+\/overview$/, load: loadProjectWorkspaceHomePage },
   { pattern: /^\/projects\/[^/]+\/setup$/, load: loadProjectSetupPage },
   { pattern: /^\/projects\/[^/]+\/mode$/, load: loadProjectModePage },
   { pattern: /^\/projects\/[^/]+\/characters$/, load: loadProjectCharactersPage },
@@ -109,6 +110,10 @@ export const mainRouter: RouteObject[] = [
         children: [
           {
             index: true,
+            element: <SuspendedRoute><ProjectWorkspaceHomePage /></SuspendedRoute>,
+          },
+          {
+            path: 'overview',
             element: <SuspendedRoute><ProjectWorkspaceHomePage /></SuspendedRoute>,
           },
           {

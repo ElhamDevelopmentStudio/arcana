@@ -588,7 +588,7 @@ Definition of done for each task:
 - [x] [FE-181] Build project workspace shell route `/projects/{project_id}` with project-scoped sidebar and nested outlet.
 - [x] [FE-182] Build setup route `/projects/{project_id}/setup` with backend-driven checklist from `GET /api/projects/{project_id}/setup-status`.
 - [x] [FE-183] Add setup gate guard: redirect locked project sub-routes to `/projects/{project_id}/setup` when setup is incomplete.
-- [ ] [FE-184] Add post-setup routing rule: redirect from setup to `/projects/{project_id}/overview` when setup becomes complete.
+- [x] [FE-184] Add post-setup routing rule: redirect from setup to `/projects/{project_id}/overview` when setup becomes complete.
 - [ ] [FE-185] Add setup-step UI for source attach + ingestion initiation, including completion polling from setup-status.
 - [ ] [FE-186] Add setup-step UI for mode selection completion using current project mode endpoints and setup-status refresh.
 - [ ] [FE-187] Add setup-step UI for baseline character/voice readiness checks with explicit next-action CTAs.
