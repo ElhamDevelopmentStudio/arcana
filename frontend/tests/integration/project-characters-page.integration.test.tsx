@@ -16,6 +16,7 @@ const lookupCharacterAliasMutationTrigger = vi.fn();
 const saveArtifactPronunciationDictionaryMutationTrigger = vi.fn();
 const saveInventedPronunciationDictionaryMutationTrigger = vi.fn();
 const saveGlobalPronunciationDictionaryMutationTrigger = vi.fn();
+const savePlacePronunciationDictionaryMutationTrigger = vi.fn();
 const pronunciationPreviewMutationTrigger = vi.fn();
 const finalizeCharactersMutationTrigger = vi.fn();
 const defaultCharacterMapQueryData = {
@@ -145,6 +146,23 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     error: null,
     mutate: vi.fn(),
   }),
+  usePlacePronunciationDictionaryQuery: () => ({
+    data: {
+      project_id: 101,
+      scope: 'places',
+      entries: [
+        {
+          term: 'Niflheim',
+          verbalized_form: 'NIFL-hime',
+          source: 'user',
+          confidence: 1.0,
+        },
+      ],
+    },
+    isLoading: false,
+    error: null,
+    mutate: vi.fn(),
+  }),
   useSaveCharacterMapMutation: () => ({
     isMutating: false,
     trigger: saveCharactersMutationTrigger,
@@ -180,6 +198,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useSaveGlobalPronunciationDictionaryMutation: () => ({
     isMutating: false,
     trigger: saveGlobalPronunciationDictionaryMutationTrigger,
+  }),
+  useSavePlacePronunciationDictionaryMutation: () => ({
+    isMutating: false,
+    trigger: savePlacePronunciationDictionaryMutationTrigger,
   }),
   useFinalizeCharacterMapMutation: () => ({
     isMutating: false,
@@ -222,6 +244,7 @@ describe('project characters page manual editor', () => {
     saveArtifactPronunciationDictionaryMutationTrigger.mockReset();
     saveInventedPronunciationDictionaryMutationTrigger.mockReset();
     saveGlobalPronunciationDictionaryMutationTrigger.mockReset();
+    savePlacePronunciationDictionaryMutationTrigger.mockReset();
     pronunciationPreviewMutationTrigger.mockReset();
     finalizeCharactersMutationTrigger.mockReset();
     saveCharactersMutationTrigger.mockResolvedValue({
@@ -312,6 +335,18 @@ describe('project characters page manual editor', () => {
         {
           term: 'Aegis',
           verbalized_form: 'EE-jis',
+          source: 'user',
+          confidence: 1.0,
+        },
+      ],
+    });
+    savePlacePronunciationDictionaryMutationTrigger.mockResolvedValue({
+      project_id: 101,
+      scope: 'places',
+      entries: [
+        {
+          term: 'Niflheim',
+          verbalized_form: 'NIFL-hime',
           source: 'user',
           confidence: 1.0,
         },
@@ -454,6 +489,26 @@ describe('project characters page manual editor', () => {
         {
           term: 'Aegis',
           verbalized_form: 'EE-jis',
+          source: 'user',
+          confidence: 1,
+        },
+      ],
+    });
+  });
+
+  it('saves place pronunciation dictionary scope through utility panel', async () => {
+    const user = userEvent.setup();
+    renderCharacterPage();
+
+    await user.clear(screen.getByTestId('pronunciation-places-textarea'));
+    await user.type(screen.getByTestId('pronunciation-places-textarea'), 'Niflheim|NIFL-hime');
+    await user.click(screen.getByTestId('pronunciation-places-save-button'));
+
+    expect(savePlacePronunciationDictionaryMutationTrigger).toHaveBeenCalledWith({
+      entries: [
+        {
+          term: 'Niflheim',
+          verbalized_form: 'NIFL-hime',
           source: 'user',
           confidence: 1,
         },

@@ -512,6 +512,13 @@ export function useGlobalPronunciationDictionaryQuery(projectId: number | null) 
   );
 }
 
+export function usePlacePronunciationDictionaryQuery(projectId: number | null) {
+  return useSWR(
+    projectId !== null ? ['pronunciation-dictionary-places', projectId] : null,
+    async ([, currentProjectId]) => nipeApiClient.getPlacePronunciationDictionary(currentProjectId),
+  );
+}
+
 export function useSaveCharacterMapMutation(projectId: number | null) {
   return useSWRMutation(
     projectId !== null ? ['save-characters', projectId] : null,
@@ -649,6 +656,25 @@ export function useSaveGlobalPronunciationDictionaryMutation(projectId: number |
         throw new Error('Project must exist before saving global pronunciation dictionary.');
       }
       return nipeApiClient.updateGlobalPronunciationDictionary(projectId, arg);
+    },
+  );
+}
+
+export function useSavePlacePronunciationDictionaryMutation(projectId: number | null) {
+  return useSWRMutation(
+    projectId !== null ? ['save-pronunciation-dictionary-places', projectId] : null,
+    async (
+      _,
+      {
+        arg,
+      }: {
+        arg: { entries: Array<{ term: string; verbalized_form: string; source: string; confidence: number }> };
+      },
+    ) => {
+      if (projectId === null) {
+        throw new Error('Project must exist before saving place pronunciation dictionary.');
+      }
+      return nipeApiClient.updatePlacePronunciationDictionary(projectId, arg);
     },
   );
 }
