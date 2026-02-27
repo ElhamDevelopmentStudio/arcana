@@ -660,7 +660,7 @@ Definition of done for each task:
 - [x] [FE-157] Build run config preset panel using `GET /api/projects/{project_id}/runs/{run_id}/config-preset`.
 - [x] [FE-158] Build run config diff panel using `GET /api/projects/{project_id}/runs/config-diff`.
 - [x] [FE-159] Build stage durations dashboard from `GET /api/projects/{project_id}/runs/{run_id}/pipeline-stage-durations-dashboard`.
-- [ ] [FE-160] Build audiobook prep dashboard from `GET /api/projects/{project_id}/runs/{run_id}/audiobook-prep-dashboard`.
+- [x] [FE-160] Build audiobook prep dashboard from `GET /api/projects/{project_id}/runs/{run_id}/audiobook-prep-dashboard`.
 - [ ] [FE-161] Build character analytics dashboard from `GET /api/projects/{project_id}/runs/{run_id}/character-analytics`.
 - [ ] [FE-162] Build co-occurrence graph view from `GET /api/projects/{project_id}/runs/{run_id}/character-cooccurrence-graph`.
 - [ ] [FE-163] Build tension graph view from `GET /api/projects/{project_id}/runs/{run_id}/tension-graph`.
