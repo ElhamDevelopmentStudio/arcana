@@ -128,7 +128,7 @@ describe('project workspace shell route', () => {
     expect(router.state.location.pathname).toBe('/projects/321/settings');
   });
 
-  it('redirects locked project sub-routes to setup when setup is incomplete', async () => {
+  it('keeps mode route accessible when setup is incomplete', async () => {
     useProjectSetupStatusQueryMock.mockReturnValue({
       isLoading: false,
       error: undefined,
@@ -147,9 +147,9 @@ describe('project workspace shell route', () => {
 
     const router = renderProjectWorkspace('/projects/321/mode');
 
-    expect(await screen.findByTestId('project-setup-route')).toBeInTheDocument();
-    expect(screen.queryByTestId('project-mode-route')).not.toBeInTheDocument();
-    expect(router.state.location.pathname).toBe('/projects/321/setup');
+    expect(await screen.findByTestId('project-mode-route')).toBeInTheDocument();
+    expect(screen.queryByTestId('project-setup-route')).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/projects/321/mode');
   });
 
   it('unlocks previously gated routes after setup completion transition', async () => {

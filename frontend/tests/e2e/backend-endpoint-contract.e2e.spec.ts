@@ -1607,6 +1607,57 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await expect(page.getByRole('button', { name: /Download JSON/i })).toBeEnabled();
   });
 
+  test('projects/:project_id/mode route requests mode catalog and updates mode through switch endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-project-mode-route-contract');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeCatalogRequestPromise = page.waitForRequest(
+      (networkRequest) => networkRequest.method() === 'GET' && networkRequest.url().endsWith('/api/modes'),
+    );
+    const modeCatalogResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET' && networkResponse.url().endsWith('/api/modes'),
+    );
+
+    await page.goto(`/projects/${projectId}/mode`);
+    await expect(page.getByTestId('mode-select')).toBeVisible();
+
+    await modeCatalogRequestPromise;
+    const modeCatalogResponse = await modeCatalogResponsePromise;
+    expect(modeCatalogResponse.status()).toBe(200);
+
+    const modeSwitchRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/mode`),
+    );
+    const modeSwitchResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/mode`),
+    );
+
+    await page.getByTestId('mode-select').selectOption('author');
+    const modeSwitchRequest = await modeSwitchRequestPromise;
+    const modeSwitchPayload = modeSwitchRequest.postDataJSON() as { mode: string };
+    expect(modeSwitchPayload.mode).toBe('author');
+
+    const modeSwitchResponse = await modeSwitchResponsePromise;
+    expect(modeSwitchResponse.status()).toBe(200);
+    await expect(page.getByTestId('mode-continue-button')).toBeEnabled();
+  });
+
   test('projects/new draft creation mode calls draft endpoint and persists workspace project id', async ({ page }) => {
     await page.goto('/projects/new');
     const title = uniqueTitle('e2e-ui-draft-mode');
@@ -1679,6 +1730,58 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     );
     await expect(page.getByTestId('project-workspace-home-title')).toContainText(title);
     await expect(page.getByTestId('project-workspace-home-id')).toContainText(`Project ID: ${projectId}`);
+  });
+
+  test('projects/:project_id next-required-action link resolves to the mapped workflow route', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-workspace-home-next-action');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-workspace-home-ready')).toBeVisible();
+
+    const nextActionText = (await page.getByTestId('project-workspace-home-next-action').textContent()) ?? '';
+    const nextAction = nextActionText.replace('Next action:', '').trim();
+    const expectedRouteByAction: Record<string, string> = {
+      ingest: `/projects/${projectId}/setup`,
+      select_mode: `/projects/${projectId}/mode`,
+      configure: `/projects/${projectId}/pipeline-setup`,
+      run: `/projects/${projectId}/pipeline-setup`,
+      rerun: `/projects/${projectId}/runs`,
+      review_failure: `/projects/${projectId}/runs`,
+      export: `/projects/${projectId}/exports`,
+      archived: `/projects/${projectId}/settings`,
+      none: `/projects/${projectId}/overview`,
+    };
+    const expectedRoute = expectedRouteByAction[nextAction] ?? `/projects/${projectId}/setup`;
+
+    await expect(page.getByTestId('project-workspace-home-next-action-link')).toHaveAttribute('href', expectedRoute);
   });
 
   test('projects/:project_id metadata form updates project metadata through patch endpoint', async ({ page, request }) => {
@@ -2058,6 +2161,378 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     await page.goto(`/projects/${projectId}/setup`);
     await expect(page).toHaveURL(`/projects/${projectId}/overview`);
     await expect(page.getByTestId('project-overview-ready')).toBeVisible();
+  });
+
+  test('projects/:project_id setup source form calls ingest/source endpoint with entered metadata', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-setup-source-attach-form');
+    const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
+      data: {
+        title,
+        do_not_store_source_text: false,
+      },
+    });
+    expect(createDraftResponse.status()).toBe(201);
+    const draftPayload = (await createDraftResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    await page.goto(`/projects/${projectId}/setup`);
+    await expect(page.getByTestId('project-setup-ready')).toBeVisible();
+
+    const sourceAttachRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/ingest/source`),
+    );
+    const sourceAttachResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/ingest/source`),
+    );
+
+    await page.getByTestId('project-setup-source-type-select').selectOption('markdown');
+    await page.getByTestId('project-setup-source-filename-input').fill('minimal-novel.md');
+    await page.getByTestId('project-setup-source-attach-submit').click();
+
+    const sourceAttachRequest = await sourceAttachRequestPromise;
+    const sourceAttachPayload = sourceAttachRequest.postDataJSON() as {
+      source: string;
+      source_filename: string;
+    };
+    expect(sourceAttachPayload.source).toBe('markdown');
+    expect(sourceAttachPayload.source_filename).toBe('minimal-novel.md');
+
+    const sourceAttachResponse = await sourceAttachResponsePromise;
+    expect(sourceAttachResponse.status()).toBe(200);
+  });
+
+  test('projects/:project_id setup txt ingestion form calls ingest/txt endpoint', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-setup-txt-ingestion-form');
+    const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
+      data: {
+        title,
+        do_not_store_source_text: false,
+      },
+    });
+    expect(createDraftResponse.status()).toBe(201);
+    const draftPayload = (await createDraftResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    const attachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+      data: {
+        source: 'txt',
+        source_filename: 'minimal-novel.txt',
+      },
+    });
+    expect(attachSourceResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}/setup`);
+    await expect(page.getByTestId('project-setup-ready')).toBeVisible();
+
+    const txtIngestRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/ingest/txt`),
+    );
+    const txtIngestResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/ingest/txt`),
+    );
+
+    await page.getByTestId('project-setup-ingestion-file-input').setInputFiles(fixtureNovelPath);
+    await page.getByTestId('project-setup-ingestion-submit').click();
+
+    await txtIngestRequestPromise;
+    const txtIngestResponse = await txtIngestResponsePromise;
+    expect(txtIngestResponse.status()).toBe(200);
+    await expect(page.getByTestId('project-setup-ingestion-output-summary')).toBeVisible();
+    await expect(page.getByTestId('project-setup-ingestion-output-source')).toContainText('TXT');
+    await expect(page.getByTestId('project-setup-normalization-summary')).toBeVisible();
+    await expect(page.getByTestId('project-setup-ingestion-output-chapter-count')).toContainText('Chapters detected:');
+    await expect(page.getByTestId('project-setup-ingestion-output-warning-count')).toContainText('Warnings:');
+  });
+
+  test('projects/:project_id setup markdown ingestion form calls ingest/markdown endpoint', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-setup-markdown-ingestion-form');
+    const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
+      data: {
+        title,
+        do_not_store_source_text: false,
+      },
+    });
+    expect(createDraftResponse.status()).toBe(201);
+    const draftPayload = (await createDraftResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    const attachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+      data: {
+        source: 'markdown',
+        source_filename: 'minimal-novel.md',
+      },
+    });
+    expect(attachSourceResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}/setup`);
+    await expect(page.getByTestId('project-setup-ready')).toBeVisible();
+
+    const markdownIngestRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/ingest/markdown`),
+    );
+    const markdownIngestResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/ingest/markdown`),
+    );
+
+    await page.getByTestId('project-setup-markdown-ingestion-file-input').setInputFiles({
+      name: 'minimal-novel.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# Chapter 1\n\nMarkdown ingestion body.'),
+    });
+    await page.getByTestId('project-setup-markdown-ingestion-submit').click();
+
+    await markdownIngestRequestPromise;
+    const markdownIngestResponse = await markdownIngestResponsePromise;
+    expect(markdownIngestResponse.status()).toBe(200);
+  });
+
+  test('projects/:project_id setup shows unsupported-file error and retry for markdown ingestion failures', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-setup-markdown-retry-error');
+    const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
+      data: {
+        title,
+        do_not_store_source_text: false,
+      },
+    });
+    expect(createDraftResponse.status()).toBe(201);
+    const draftPayload = (await createDraftResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    const attachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+      data: {
+        source: 'markdown',
+        source_filename: 'minimal-novel.md',
+      },
+    });
+    expect(attachSourceResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}/setup`);
+    await expect(page.getByTestId('project-setup-ready')).toBeVisible();
+
+    const firstMarkdownFailureRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/ingest/markdown`),
+    );
+    const firstMarkdownFailureResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/ingest/markdown`),
+    );
+
+    await page.getByTestId('project-setup-markdown-ingestion-file-input').setInputFiles({
+      name: 'bad.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('wrong extension payload'),
+    });
+    await page.getByTestId('project-setup-markdown-ingestion-submit').click();
+
+    await firstMarkdownFailureRequestPromise;
+    const firstMarkdownFailureResponse = await firstMarkdownFailureResponsePromise;
+    expect(firstMarkdownFailureResponse.status()).toBe(400);
+
+    await expect(page.getByTestId('project-setup-ingestion-error-panel')).toBeVisible();
+    await expect(page.getByTestId('project-setup-ingestion-error-kind')).toContainText('unsupported_file');
+    await expect(page.getByTestId('project-setup-ingestion-retry-button')).toContainText('Retry markdown ingestion');
+
+    const retryMarkdownFailureRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/ingest/markdown`),
+    );
+    const retryMarkdownFailureResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/ingest/markdown`),
+    );
+
+    await page.getByTestId('project-setup-ingestion-retry-button').click();
+    await retryMarkdownFailureRequestPromise;
+    const retryMarkdownFailureResponse = await retryMarkdownFailureResponsePromise;
+    expect(retryMarkdownFailureResponse.status()).toBe(400);
+  });
+
+  test('projects/:project_id setup epub ingestion form calls ingest/epub endpoint', async ({ page, request }) => {
+    const title = uniqueTitle('e2e-setup-epub-ingestion-form');
+    const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
+      data: {
+        title,
+        do_not_store_source_text: false,
+      },
+    });
+    expect(createDraftResponse.status()).toBe(201);
+    const draftPayload = (await createDraftResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    const attachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+      data: {
+        source: 'epub',
+        source_filename: 'minimal-novel.epub',
+      },
+    });
+    expect(attachSourceResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}/setup`);
+    await expect(page.getByTestId('project-setup-ready')).toBeVisible();
+
+    const epubIngestRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/ingest/epub`),
+    );
+    const epubIngestResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/ingest/epub`),
+    );
+
+    await page.getByTestId('project-setup-epub-ingestion-file-input').setInputFiles({
+      name: 'minimal-novel.epub',
+      mimeType: 'application/epub+zip',
+      buffer: Buffer.from('not-a-real-epub'),
+    });
+    await page.getByTestId('project-setup-epub-ingestion-submit').click();
+
+    await epubIngestRequestPromise;
+    const epubIngestResponse = await epubIngestResponsePromise;
+    expect([400, 501]).toContain(epubIngestResponse.status());
+  });
+
+  test('projects/:project_id setup chapter-directory form calls ingest/chapters-dir endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-setup-chapters-dir-ingestion-form');
+    const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
+      data: {
+        title,
+        do_not_store_source_text: false,
+      },
+    });
+    expect(createDraftResponse.status()).toBe(201);
+    const draftPayload = (await createDraftResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    const attachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+      data: {
+        source: 'chapters-dir',
+        source_filename: 'chapters/',
+      },
+    });
+    expect(attachSourceResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}/setup`);
+    await expect(page.getByTestId('project-setup-ready')).toBeVisible();
+
+    const chapterDirectoryIngestRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/ingest/chapters-dir`),
+    );
+    const chapterDirectoryIngestResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/ingest/chapters-dir`),
+    );
+
+    await page.getByTestId('project-setup-chapters-dir-ingestion-files-input').setInputFiles([
+      {
+        name: '01.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('Chapter 1'),
+      },
+      {
+        name: '02.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('Chapter 2'),
+      },
+    ]);
+    await page.getByTestId('project-setup-chapters-dir-ingestion-submit').click();
+
+    await chapterDirectoryIngestRequestPromise;
+    const chapterDirectoryIngestResponse = await chapterDirectoryIngestResponsePromise;
+    expect(chapterDirectoryIngestResponse.status()).toBe(200);
+  });
+
+  test('projects/:project_id setup append-chapter form calls ingest/append-chapter endpoint', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-setup-append-chapter-form');
+    const createDraftResponse = await request.post(`${backendBaseUrl}/api/projects/drafts`, {
+      data: {
+        title,
+        do_not_store_source_text: false,
+      },
+    });
+    expect(createDraftResponse.status()).toBe(201);
+    const draftPayload = (await createDraftResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+
+    const attachSourceResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/source`, {
+      data: {
+        source: 'txt',
+        source_filename: 'minimal-novel.txt',
+      },
+    });
+    expect(attachSourceResponse.status()).toBe(200);
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    await page.goto(`/projects/${projectId}/setup`);
+    await expect(page.getByTestId('project-setup-ready')).toBeVisible();
+
+    const appendChapterRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/ingest/append-chapter`),
+    );
+    const appendChapterResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/ingest/append-chapter`),
+    );
+
+    await page.getByTestId('project-setup-append-chapter-file-input').setInputFiles({
+      name: 'bonus-chapter.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Bonus chapter content'),
+    });
+    await page.getByTestId('project-setup-append-chapter-submit').click();
+
+    await appendChapterRequestPromise;
+    const appendChapterResponse = await appendChapterResponsePromise;
+    expect(appendChapterResponse.status()).toBe(200);
   });
 
   test('locked domain route shows guard before setup and unlocks after completion', async ({ page, request }) => {
