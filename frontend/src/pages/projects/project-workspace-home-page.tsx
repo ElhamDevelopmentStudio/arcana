@@ -4,6 +4,16 @@ import { toast } from 'sonner';
 
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { ApiPanelError, ApiPanelLoading } from '@/components/ui/api-panel-state';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,6 +43,9 @@ export function ProjectWorkspaceHomePage() {
     page: timelinePage,
     page_size: timelinePageSize,
   });
+  const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
+  const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false);
+  const [lifecycleTransitionConflict, setLifecycleTransitionConflict] = useState<string | null>(null);
   const archiveProjectMutation = useArchiveProjectMutation(projectId);
   const restoreProjectMutation = useRestoreProjectMutation(projectId);
   const updateProjectMetadataMutation = useUpdateProjectMetadataMutation(projectId);
@@ -127,8 +140,10 @@ export function ProjectWorkspaceHomePage() {
       toast.error('Project is missing.');
       return;
     }
+    setLifecycleTransitionConflict(null);
     try {
       await archiveProjectMutation.trigger();
+      setIsArchiveConfirmOpen(false);
       toast.success('Project archived.');
       await Promise.all([
         projectAllowedActionsQuery.mutate(),
@@ -136,7 +151,9 @@ export function ProjectWorkspaceHomePage() {
         projectTimelineQuery.mutate(),
       ]);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to archive project.');
+      const message = error instanceof Error ? error.message : 'Failed to archive project.';
+      setLifecycleTransitionConflict(message);
+      toast.error(message);
     }
   }
 
@@ -145,8 +162,10 @@ export function ProjectWorkspaceHomePage() {
       toast.error('Project is missing.');
       return;
     }
+    setLifecycleTransitionConflict(null);
     try {
       await restoreProjectMutation.trigger();
+      setIsRestoreConfirmOpen(false);
       toast.success('Project restored.');
       await Promise.all([
         projectAllowedActionsQuery.mutate(),
@@ -154,7 +173,9 @@ export function ProjectWorkspaceHomePage() {
         projectTimelineQuery.mutate(),
       ]);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to restore project.');
+      const message = error instanceof Error ? error.message : 'Failed to restore project.';
+      setLifecycleTransitionConflict(message);
+      toast.error(message);
     }
   }
 
@@ -247,6 +268,11 @@ export function ProjectWorkspaceHomePage() {
                   {projectAllowedActionsQuery.data.blocked_reason}
                 </p>
               ) : null}
+              {lifecycleTransitionConflict ? (
+                <p className="text-xs text-destructive" data-testid="project-command-panel-lifecycle-conflict">
+                  {lifecycleTransitionConflict}
+                </p>
+              ) : null}
               <div className="flex flex-wrap gap-2" data-testid="project-command-panel-allowed-actions">
                 {allowedActions.length === 0 ? (
                   <span className="text-xs text-muted-foreground">No commands currently allowed.</span>
@@ -332,13 +358,13 @@ export function ProjectWorkspaceHomePage() {
                     data-testid="project-command-panel-archive-button"
                     disabled={archiveProjectMutation.isMutating}
                     onClick={() => {
-                      void handleArchiveProject();
+                      setIsArchiveConfirmOpen(true);
                     }}
                     size="sm"
                     type="button"
                     variant="destructive"
                   >
-                    {archiveProjectMutation.isMutating ? 'Archiving...' : 'Archive Project'}
+                    Archive Project
                   </Button>
                 ) : (
                   <span
@@ -354,13 +380,13 @@ export function ProjectWorkspaceHomePage() {
                     data-testid="project-command-panel-restore-button"
                     disabled={restoreProjectMutation.isMutating}
                     onClick={() => {
-                      void handleRestoreProject();
+                      setIsRestoreConfirmOpen(true);
                     }}
                     size="sm"
                     type="button"
                     variant="outline"
                   >
-                    {restoreProjectMutation.isMutating ? 'Restoring...' : 'Restore Project'}
+                    Restore Project
                   </Button>
                 ) : (
                   <span
@@ -372,6 +398,49 @@ export function ProjectWorkspaceHomePage() {
                   </span>
                 )}
               </div>
+              <AlertDialog open={isArchiveConfirmOpen} onOpenChange={setIsArchiveConfirmOpen}>
+                <AlertDialogContent data-testid="project-archive-confirm-dialog">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Archive project?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Archiving locks workflow actions until restore. Continue?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel data-testid="project-archive-confirm-cancel">Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      data-testid="project-archive-confirm-submit"
+                      onClick={() => {
+                        void handleArchiveProject();
+                      }}
+                      variant="destructive"
+                    >
+                      {archiveProjectMutation.isMutating ? 'Archiving...' : 'Confirm archive'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <AlertDialog open={isRestoreConfirmOpen} onOpenChange={setIsRestoreConfirmOpen}>
+                <AlertDialogContent data-testid="project-restore-confirm-dialog">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Restore project?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Restore re-enables lifecycle actions based on current project state. Continue?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel data-testid="project-restore-confirm-cancel">Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      data-testid="project-restore-confirm-submit"
+                      onClick={() => {
+                        void handleRestoreProject();
+                      }}
+                    >
+                      {restoreProjectMutation.isMutating ? 'Restoring...' : 'Confirm restore'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </>
           )}
         </div>

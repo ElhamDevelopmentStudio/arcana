@@ -385,6 +385,8 @@ describe('project workspace home page', () => {
     renderProjectWorkspaceHomePage();
 
     await user.click(screen.getByTestId('project-command-panel-archive-button'));
+    expect(screen.getByTestId('project-archive-confirm-dialog')).toBeInTheDocument();
+    await user.click(screen.getByTestId('project-archive-confirm-submit'));
 
     expect(archiveProjectTriggerMock).toHaveBeenCalledTimes(1);
     expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(1);
@@ -452,11 +454,112 @@ describe('project workspace home page', () => {
     renderProjectWorkspaceHomePage();
 
     await user.click(screen.getByTestId('project-command-panel-restore-button'));
+    expect(screen.getByTestId('project-restore-confirm-dialog')).toBeInTheDocument();
+    await user.click(screen.getByTestId('project-restore-confirm-submit'));
 
     expect(restoreProjectTriggerMock).toHaveBeenCalledTimes(1);
     expect(projectAllowedActionsMutateMock).toHaveBeenCalledTimes(1);
     expect(projectDetailMutateMock).toHaveBeenCalledTimes(1);
     expect(projectActivityTimelineMutateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders lifecycle conflict message when archive transition returns conflict', async () => {
+    const user = userEvent.setup();
+    useProjectDetailQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectDetailMutateMock,
+      data: {
+        project_id: 77,
+        title: 'Shadow Slave Workspace',
+        description: 'workspace-home detail',
+        tags: ['poc'],
+        lifecycle_state: 'configured',
+        last_run_status: 'completed',
+        next_required_action: 'export',
+        allowed_actions: ['run', 'export', 'archive'],
+        selected_mode: 'author',
+        selected_modes: ['author'],
+        llm_enabled: true,
+        do_not_store_source_text: false,
+        character_map_finalized: false,
+        configuration_snapshot_id: null,
+        ingestion_timestamp: null,
+        last_export_at: null,
+        created_at: '2026-02-27T00:00:00Z',
+        updated_at: '2026-02-27T00:10:00Z',
+      },
+    });
+    archiveProjectTriggerMock.mockRejectedValue(new Error('409 Conflict: project already archived.'));
+
+    renderProjectWorkspaceHomePage();
+
+    await user.click(screen.getByTestId('project-command-panel-archive-button'));
+    await user.click(screen.getByTestId('project-archive-confirm-submit'));
+
+    expect(screen.getByTestId('project-command-panel-lifecycle-conflict')).toHaveTextContent(
+      '409 Conflict: project already archived.',
+    );
+  });
+
+  it('renders lifecycle conflict message when restore transition returns conflict', async () => {
+    const user = userEvent.setup();
+    useProjectAllowedActionsQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectAllowedActionsMutateMock,
+      data: {
+        schema_version: '1.0',
+        output_schema: 'project_actions',
+        output_format: 'json',
+        output_id: 'project-actions-77',
+        output_name: 'Project Allowed Actions',
+        generated_at: '2026-02-27T00:15:00Z',
+        generated_by: 'project_actions_endpoint',
+        project_id: 77,
+        lifecycle_state: 'archived',
+        last_run_status: null,
+        next_required_action: 'archived',
+        allowed_actions: ['restore'],
+        blocked_reason: 'Project is archived. Restore the project to continue workflow actions.',
+        required_step: 'restore',
+      },
+    });
+    useProjectDetailQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: projectDetailMutateMock,
+      data: {
+        project_id: 77,
+        title: 'Shadow Slave Workspace',
+        description: 'workspace-home detail',
+        tags: ['poc'],
+        lifecycle_state: 'archived',
+        last_run_status: null,
+        next_required_action: 'archived',
+        allowed_actions: ['restore'],
+        selected_mode: 'author',
+        selected_modes: ['author'],
+        llm_enabled: true,
+        do_not_store_source_text: false,
+        character_map_finalized: false,
+        configuration_snapshot_id: null,
+        ingestion_timestamp: null,
+        last_export_at: null,
+        created_at: '2026-02-27T00:00:00Z',
+        updated_at: '2026-02-27T00:10:00Z',
+      },
+    });
+    restoreProjectTriggerMock.mockRejectedValue(new Error('409 Conflict: project is not archived.'));
+
+    renderProjectWorkspaceHomePage();
+
+    await user.click(screen.getByTestId('project-command-panel-restore-button'));
+    await user.click(screen.getByTestId('project-restore-confirm-submit'));
+
+    expect(screen.getByTestId('project-command-panel-lifecycle-conflict')).toHaveTextContent(
+      '409 Conflict: project is not archived.',
+    );
   });
 
   it('requests next timeline page when next pagination action is available', async () => {
