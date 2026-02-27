@@ -25,6 +25,18 @@ Keep implementation accurate, incremental, testable, and easy to resume from a n
 15. Frontend interfaces must avoid unnecessary visual clutter: use the minimum number of cards, borders, and decorative blocks needed for clarity.
 16. Every page should contain only information and actions that directly improve the current step UX; remove vanity/status content that does not help completion.
 
+## Frontend Design Authority — CODEX_REDESIGN_PROMPT.md (Mandatory)
+
+`CODEX_REDESIGN_PROMPT.md` is the **sole authority** for all frontend visual design, layout, and UX decisions in this project.
+
+1. Any task that touches frontend UI — including colors, typography, spacing, layout, components, pages, navigation, animations, icons, copy, or design tokens — **must** be implemented in full compliance with `CODEX_REDESIGN_PROMPT.md`.
+2. Read `CODEX_REDESIGN_PROMPT.md` in full before starting any frontend design work, even if you believe you already know the design.
+3. If the current codebase contradicts `CODEX_REDESIGN_PROMPT.md`, the prompt wins — update the code, not the prompt.
+4. Do not treat `CODEX_REDESIGN_PROMPT.md` as a style guide or suggestion. It is a binding design specification. Deviations are defects.
+5. Do not carry forward any pattern, color, class name, font, or layout structure from the pre-redesign codebase unless it is explicitly approved or described in `CODEX_REDESIGN_PROMPT.md`.
+6. When generating images for the frontend (landing page, feature sections, etc.), use the `imagegen` skill at `/Users/elhamdev/.cursor/skills/imagegen/SKILL.md` and the prompts defined in `CODEX_REDESIGN_PROMPT.md` Section 2.3.
+7. The redesign checklist tasks (`RD-*`) in `SRS_Expanded_Implementation_Checklist.md` Section 14 are the granular delivery units for the full redesign. Follow them in order.
+
 ## Frontend Architecture Rules (Mandatory)
 
 1. The frontend must be multi-page and route-driven. Do not collapse core workflows into a single control page.

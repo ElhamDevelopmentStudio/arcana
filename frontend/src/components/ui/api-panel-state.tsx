@@ -34,7 +34,7 @@ export function ApiPanelLoading({
   description = 'Fetching panel data from backend.',
 }: ApiPanelLoadingProps) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-panel-border/70 bg-background/35 px-4 py-4">
+    <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-card px-4 py-4">
       <Spinner className="size-4 text-muted-foreground" />
       <div className="space-y-0.5">
         <p className="text-sm font-medium text-foreground">{title}</p>
@@ -46,7 +46,7 @@ export function ApiPanelLoading({
 
 export function ApiPanelEmpty({ title, description }: ApiPanelEmptyProps) {
   return (
-    <Empty className="border border-panel-border/70 p-6">
+    <Empty className="border border-white/10 p-6">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <InboxIcon className="size-4" />

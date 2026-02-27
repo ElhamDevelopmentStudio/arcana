@@ -1,46 +1,73 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { CreateProjectDialog } from '@/components/landing/create-project-dialog';
-
-type HeroSectionProps = {
-  healthStatus: string | null;
-};
-
-export function HeroSection({ healthStatus }: HeroSectionProps) {
-  const navigate = useNavigate();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-
+export function HeroSection() {
   return (
-    <section className="relative overflow-hidden px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 rounded-3xl border border-panel-border/80 bg-card/85 p-8 shadow-sm lg:p-12">
-        <div className="inline-flex w-fit items-center rounded-full border border-panel-border/80 bg-background/75 px-3 py-1 text-xs font-medium text-muted-foreground">
-          Service status: <span className="ml-2 font-semibold text-foreground">{healthStatus ?? 'unavailable'}</span>
+    <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 pt-14 text-center">
+      {/* Ambient blobs */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-0 left-0 h-[600px] w-[600px] -translate-x-1/3 translate-y-1/4 rounded-full opacity-70"
+        style={{
+          background: 'radial-gradient(circle, oklch(0.488 0.243 264.376 / 0.07) 0%, transparent 70%)',
+          filter: 'blur(80px)',
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute right-0 top-0 h-[500px] w-[500px] translate-x-1/3 -translate-y-1/4 rounded-full opacity-70"
+        style={{
+          background: 'radial-gradient(circle, oklch(0.75 0.18 65 / 0.06) 0%, transparent 70%)',
+          filter: 'blur(100px)',
+        }}
+      />
+
+      <div className="relative z-10 mx-auto max-w-4xl animate-fade-in-up">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-muted-foreground">
+          <span className="inline-block size-1.5 rounded-full bg-green-400/80" />
+          Audiobook pipeline · Character extraction · Voice mapping
         </div>
-        <div className="space-y-4">
-          <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Narrative Intelligence and Performance Engine
-          </h1>
-          <p className="max-w-3xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            Create draft projects, ingest corpus files, choose processing modes, run pipelines, and export narrative
-            analysis outputs from one shared workspace.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Authentication is not enabled yet. This deployment runs as a no-auth shared workspace.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Button data-testid="landing-enter-dashboard" onClick={() => navigate('/dashboard')}>
-            Enter Dashboard
-          </Button>
-          <Button data-testid="landing-create-draft" onClick={() => setIsDialogOpen(true)} variant="outline">
-            Create Draft Project
-          </Button>
+
+        <h1 className="text-5xl font-bold tracking-tight text-foreground md:text-6xl lg:text-7xl">
+          Bring Any Story
+          <br />
+          <span className="text-muted-foreground">to Life</span>
+        </h1>
+
+        <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+          Upload a novel, academic paper, or manuscript. Nipe extracts characters, maps voices,
+          and produces a fully-tagged audiobook-ready export in minutes.
+        </p>
+
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+            to="/projects/new"
+          >
+            Start a Project
+            <ArrowRight size={15} />
+          </Link>
+          <a
+            className="inline-flex items-center gap-2 rounded-full border border-white/15 px-6 py-2.5 text-sm text-muted-foreground transition-colors hover:border-white/30 hover:text-foreground"
+            href="#how-it-works"
+          >
+            See how it works
+          </a>
         </div>
       </div>
-      <CreateProjectDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} />
+
+      {/* Hero image */}
+      <div className="relative z-10 mx-auto mt-16 w-full max-w-5xl animate-fade-in px-4">
+        <div className="overflow-hidden rounded-xl border border-white/10">
+          <img
+            alt="Nipe dashboard preview"
+            className="w-full object-cover"
+            loading="eager"
+            src="https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1200&q=80&auto=format&fit=crop"
+            style={{ aspectRatio: '16/9' }}
+          />
+        </div>
+      </div>
     </section>
   );
 }
-

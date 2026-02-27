@@ -1,686 +1,310 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
+import { CheckCircle2, XCircle, Loader2, Circle, RotateCcw, StopCircle, RefreshCw, Download } from 'lucide-react';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
-  useAudiobookPrepDashboardQuery,
   useCancelRunMutation,
-  useCharacterAnalyticsQuery,
-  useCharacterCooccurrenceGraphQuery,
-  usePipelineStageDurationsDashboardQuery,
-  usePolarityGraphQuery,
   useRecoverRunMutation,
   useRerunRunMutation,
-  useRunConfigDiffQuery,
-  useRunConfigPresetMutation,
   useRunDetailQuery,
-  useTensionGraphQuery,
+  useRunConfigPresetMutation,
 } from '@/features/workflow/api/workflow-hooks';
-import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronRight, LineChart, ShieldAlert, TriangleAlert, Waves } from 'lucide-react';
+import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
+import { cn } from '@/lib/utils';
 
-const runMonitorRefreshIntervalMs = 4000;
-const runMutationRecoveryStorageKey = 'nipe-run-monitor-pending-mutation';
-const runMutationRecoveryMaxAgeMs = 10 * 60_000;
+const REFRESH_INTERVAL_MS = 4000;
 
-type PendingRunMutationRecoveryRecord = {
-  projectId: number;
-  sourceRunId: number;
-  trackedRunId: number;
-  mutation: 'rerun' | 'recover' | 'cancel';
-  startedAt: string;
+function llmCallIcon(success: boolean) {
+  if (success) return <CheckCircle2 className="text-green-400" size={14} />;
+  return <XCircle className="text-red-400" size={14} />;
+}
+
+function isActiveStatus(status: string | null | undefined) {
+  return status === 'running' || status === 'queued';
+}
+
+const STATUS_BADGE: Record<string, string> = {
+  running: 'bg-amber-400/10 text-amber-400',
+  queued: 'bg-amber-400/10 text-amber-400',
+  completed: 'bg-green-400/10 text-green-400',
+  failed: 'bg-red-400/10 text-red-400',
+  cancelled: 'bg-white/10 text-muted-foreground',
 };
-
-function isRunStatusActive(status: string | null | undefined) {
-  return status === 'queued' || status === 'running';
-}
-
-function isRunStatusTerminal(status: string | null | undefined) {
-  return status === 'completed' || status === 'failed' || status === 'cancelled';
-}
-
-function parsePendingRunMutationRecovery(rawValue: string | null): PendingRunMutationRecoveryRecord | null {
-  if (!rawValue) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(rawValue) as Partial<PendingRunMutationRecoveryRecord>;
-    if (
-      !parsed
-      || typeof parsed !== 'object'
-      || !Number.isInteger(parsed.projectId)
-      || !Number.isInteger(parsed.sourceRunId)
-      || !Number.isInteger(parsed.trackedRunId)
-      || !['rerun', 'recover', 'cancel'].includes(parsed.mutation ?? '')
-      || typeof parsed.startedAt !== 'string'
-    ) {
-      return null;
-    }
-    return parsed as PendingRunMutationRecoveryRecord;
-  } catch {
-    return null;
-  }
-}
 
 export function ProjectRunMonitorPage() {
   const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
+  const [searchParams] = useSearchParams();
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
-  const runId = useWorkspaceStore((state) => state.runId);
+  const storeRunId = useWorkspaceStore((state) => state.runId);
   const setRunId = useWorkspaceStore((state) => state.setRunId);
 
   const projectId = routeProjectId ?? storeProjectId;
-  const runDetailQuery = useRunDetailQuery(projectId, runId);
-  const runConfigPresetMutation = useRunConfigPresetMutation(projectId, runId);
-  const rerunRunMutation = useRerunRunMutation(projectId, runId);
-  const recoverRunMutation = useRecoverRunMutation(projectId, runId);
-  const cancelRunMutation = useCancelRunMutation(projectId, runId);
-  const audiobookPrepDashboardQuery = useAudiobookPrepDashboardQuery(projectId, runId);
-  const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
-  const characterCooccurrenceGraphQuery = useCharacterCooccurrenceGraphQuery(projectId, runId);
-  const tensionGraphQuery = useTensionGraphQuery(projectId, runId);
-  const polarityGraphQuery = usePolarityGraphQuery(projectId, runId);
-  const pipelineStageDurationsDashboardQuery = usePipelineStageDurationsDashboardQuery(projectId, runId);
-  const [comparisonRunIdInput, setComparisonRunIdInput] = useState('');
-  const comparisonRunId = useMemo(() => {
-    const trimmed = comparisonRunIdInput.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const parsed = Number.parseInt(trimmed, 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return null;
-    }
-    return parsed;
-  }, [comparisonRunIdInput]);
-  const runConfigDiffQuery = useRunConfigDiffQuery(projectId, runId, comparisonRunId);
-  const [pendingMutationRecovery, setPendingMutationRecovery] = useState<PendingRunMutationRecoveryRecord | null>(null);
-  const llmExecutionMode = runDetailQuery.data?.config?.llm_execution_mode;
-  const isRuleOnlyMode =
-    typeof llmExecutionMode === 'object' &&
-    llmExecutionMode !== null &&
-    'mode' in llmExecutionMode &&
-    (llmExecutionMode as Record<string, unknown>).mode === 'rule_only';
-  const llmExecutionModeReason =
-    typeof llmExecutionMode === 'object' &&
-    llmExecutionMode !== null &&
-    'reason' in llmExecutionMode &&
-    typeof (llmExecutionMode as Record<string, unknown>).reason === 'string'
-      ? (llmExecutionMode as Record<string, unknown>).reason
-      : null;
-  const llmExecutionModeProvider =
-    typeof llmExecutionMode === 'object' &&
-    llmExecutionMode !== null &&
-    'provider' in llmExecutionMode &&
-    typeof (llmExecutionMode as Record<string, unknown>).provider === 'string'
-      ? (llmExecutionMode as Record<string, unknown>).provider
-      : null;
+  const urlRunId = searchParams.get('run_id') ? Number(searchParams.get('run_id')) : null;
+  const [activeRunId, setActiveRunId] = useState<number | null>(urlRunId ?? storeRunId);
+  const [manualRunId, setManualRunId] = useState('');
 
-  const runStatus = runDetailQuery.data?.status ?? 'not-started';
-  const segmentCount = runDetailQuery.data?.segment_count ?? 0;
-  const runIsActive = isRunStatusActive(runStatus);
-  const isMutationRecoveryLocked = pendingMutationRecovery !== null;
+  const runDetailQuery = useRunDetailQuery(projectId, activeRunId);
+  const cancelMutation = useCancelRunMutation(projectId, activeRunId);
+  const rerunMutation = useRerunRunMutation(projectId, activeRunId);
+  const recoverMutation = useRecoverRunMutation(projectId, activeRunId);
+  const configPresetMutation = useRunConfigPresetMutation(projectId, activeRunId);
 
-  function persistPendingMutationRecovery(record: PendingRunMutationRecoveryRecord) {
-    setPendingMutationRecovery(record);
-    window.sessionStorage.setItem(runMutationRecoveryStorageKey, JSON.stringify(record));
-  }
+  const runDetail = runDetailQuery.data;
+  const runStatus = runDetail?.status ?? null;
+  const isActive = isActiveStatus(runStatus);
+  const isBusy = cancelMutation.isMutating || rerunMutation.isMutating || recoverMutation.isMutating;
 
-  function clearPendingMutationRecovery() {
-    setPendingMutationRecovery(null);
-    window.sessionStorage.removeItem(runMutationRecoveryStorageKey);
-  }
-
-  useEffect(() => {
-    if (projectId === null) {
-      clearPendingMutationRecovery();
-      return;
-    }
-    const parsedRecord = parsePendingRunMutationRecovery(window.sessionStorage.getItem(runMutationRecoveryStorageKey));
-    if (!parsedRecord) {
-      clearPendingMutationRecovery();
-      return;
-    }
-    if (parsedRecord.projectId !== projectId) {
-      clearPendingMutationRecovery();
-      return;
-    }
-    const startedAtMs = Date.parse(parsedRecord.startedAt);
-    if (Number.isNaN(startedAtMs) || Date.now() - startedAtMs > runMutationRecoveryMaxAgeMs) {
-      clearPendingMutationRecovery();
-      return;
-    }
-    setPendingMutationRecovery(parsedRecord);
-  }, [projectId]);
-
-  useEffect(() => {
-    if (!pendingMutationRecovery || !runDetailQuery.data) {
-      return;
-    }
-    if (runDetailQuery.data.run_id !== pendingMutationRecovery.trackedRunId) {
-      return;
-    }
-    if (isRunStatusTerminal(runDetailQuery.data.status)) {
-      clearPendingMutationRecovery();
-    }
-  }, [pendingMutationRecovery, runDetailQuery.data]);
-
-  useEffect(() => {
-    if (!runIsActive && !pendingMutationRecovery) {
-      return;
-    }
-
-    const refreshAllRunMonitorQueries = () => {
-      void runDetailQuery.mutate();
-      void audiobookPrepDashboardQuery.mutate();
-      void characterAnalyticsQuery.mutate();
-      void characterCooccurrenceGraphQuery.mutate();
-      void tensionGraphQuery.mutate();
-      void polarityGraphQuery.mutate();
-      void pipelineStageDurationsDashboardQuery.mutate();
-    };
-
-    const intervalId = window.setInterval(refreshAllRunMonitorQueries, runMonitorRefreshIntervalMs);
-    const handleWindowFocus = () => {
-      refreshAllRunMonitorQueries();
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        refreshAllRunMonitorQueries();
-      }
-    };
-
-    window.addEventListener('focus', handleWindowFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', handleWindowFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [
-    runIsActive,
-    pendingMutationRecovery,
-    runDetailQuery,
-    audiobookPrepDashboardQuery,
-    characterAnalyticsQuery,
-    characterCooccurrenceGraphQuery,
-    tensionGraphQuery,
-    polarityGraphQuery,
-    pipelineStageDurationsDashboardQuery,
-  ]);
-
-  async function handleLoadRunConfigPreset() {
-    if (projectId === null || runId === null) {
-      return;
-    }
+  async function handleDownloadPreset() {
     try {
-      await runConfigPresetMutation.trigger();
-    } catch {
-      // errors are surfaced from runConfigPresetMutation.error in the page body
-    }
-  }
-
-  async function handleExportRunConfigPreset() {
-    if (projectId === null || runId === null) {
-      return;
-    }
-    try {
-      const preset = await runConfigPresetMutation.trigger();
+      const preset = await configPresetMutation.trigger();
       const blob = new Blob([JSON.stringify(preset, null, 2)], { type: 'application/json' });
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = `run-config-preset-project-${projectId}-run-${runId}.json`;
-      link.click();
-      URL.revokeObjectURL(objectUrl);
-    } catch {
-      // errors are surfaced from runConfigPresetMutation.error in the page body
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `run-${activeRunId ?? 'unknown'}-config-preset.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to download config preset');
     }
   }
 
-  async function handleRerunRun() {
-    if (projectId === null || runId === null) {
-      return;
-    }
-    persistPendingMutationRecovery({
-      projectId,
-      sourceRunId: runId,
-      trackedRunId: runId,
-      mutation: 'rerun',
-      startedAt: new Date().toISOString(),
-    });
+  useEffect(() => {
+    if (!isActive) return;
+    const id = window.setInterval(() => void runDetailQuery.mutate(), REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [isActive, runDetailQuery]);
+
+  const llmCalls = runDetail?.llm_calls ?? [];
+  const successfulCalls = llmCalls.filter((c) => c.success).length;
+  const changelogEntries = runDetail?.changelog_entries ?? [];
+
+  async function handleCancel() {
     try {
-      const rerun = await rerunRunMutation.trigger();
-      setRunId(rerun.run_id);
-      persistPendingMutationRecovery({
-        projectId,
-        sourceRunId: runId,
-        trackedRunId: rerun.run_id,
-        mutation: 'rerun',
-        startedAt: new Date().toISOString(),
-      });
-    } catch {
-      clearPendingMutationRecovery();
-      // surfaced via mutation event bus
+      await cancelMutation.trigger();
+      toast.success('Run cancelled.');
+      await runDetailQuery.mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Cancel failed');
     }
   }
 
-  async function handleRecoverRun() {
-    if (projectId === null || runId === null) {
-      return;
-    }
-    persistPendingMutationRecovery({
-      projectId,
-      sourceRunId: runId,
-      trackedRunId: runId,
-      mutation: 'recover',
-      startedAt: new Date().toISOString(),
-    });
+  async function handleRerun() {
     try {
-      const recoveredRun = await recoverRunMutation.trigger();
-      setRunId(recoveredRun.run_id);
-      persistPendingMutationRecovery({
-        projectId,
-        sourceRunId: runId,
-        trackedRunId: recoveredRun.run_id,
-        mutation: 'recover',
-        startedAt: new Date().toISOString(),
-      });
-    } catch {
-      clearPendingMutationRecovery();
-      // surfaced via mutation event bus
+      const res = await rerunMutation.trigger();
+      setRunId(res.run_id);
+      setActiveRunId(res.run_id);
+      toast.success(`Rerun #${res.run_id} started.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Rerun failed');
     }
   }
 
-  async function handleCancelRun() {
-    if (projectId === null || runId === null) {
-      return;
-    }
-    persistPendingMutationRecovery({
-      projectId,
-      sourceRunId: runId,
-      trackedRunId: runId,
-      mutation: 'cancel',
-      startedAt: new Date().toISOString(),
-    });
+  async function handleRecover() {
     try {
-      const cancelledRun = await cancelRunMutation.trigger();
-      setRunId(cancelledRun.run_id);
-      persistPendingMutationRecovery({
-        projectId,
-        sourceRunId: runId,
-        trackedRunId: cancelledRun.run_id,
-        mutation: 'cancel',
-        startedAt: new Date().toISOString(),
-      });
-    } catch {
-      clearPendingMutationRecovery();
-      // surfaced via mutation event bus
+      const res = await recoverMutation.trigger();
+      setRunId(res.run_id);
+      setActiveRunId(res.run_id);
+      toast.success(`Recovery run #${res.run_id} started.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Recovery failed');
     }
   }
 
   return (
     <WorkflowPageShell
-      step="Step 05"
+      breadcrumb={`All Projects › Project #${projectId ?? '—'} › Runs`}
       title="Run Monitor"
-      description="Observe run execution state, logs, and progress events for a single project run."
-      showOutputDisclaimer
-      action={
-        projectId !== null ? (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              disabled={runId === null || rerunRunMutation.isMutating || isMutationRecoveryLocked}
-              onClick={handleRerunRun}
-              variant="outline"
-            >
-              {rerunRunMutation.isMutating ? 'Rerunning...' : 'Rerun run'}
-            </Button>
-            <Button
-              disabled={runId === null || recoverRunMutation.isMutating || isMutationRecoveryLocked}
-              onClick={handleRecoverRun}
-              variant="outline"
-            >
-              {recoverRunMutation.isMutating ? 'Recovering...' : 'Recover run'}
-            </Button>
-            <Button
-              disabled={runId === null || cancelRunMutation.isMutating || isMutationRecoveryLocked}
-              onClick={handleCancelRun}
-              variant="outline"
-            >
-              {cancelRunMutation.isMutating ? 'Cancelling...' : 'Cancel run'}
-            </Button>
-            <Button
-              disabled={runId === null}
-              onClick={() => navigate(projectRoute(projectId, 'review/speakers'))}
-              variant="outline"
-            >
-              Review speaker tags
-            </Button>
-            <Button
-              disabled={runId === null}
-              onClick={() => navigate(projectRoute(projectId, 'review/emotions'))}
-              variant="outline"
-            >
-              <LineChart className="size-4" />
-              Review emotional peaks
-            </Button>
-            <Button
-              disabled={runId === null}
-              onClick={() => navigate(projectRoute(projectId, 'review/low-confidence'))}
-              variant="outline"
-            >
-              <ShieldAlert className="size-4" />
-              Review low-confidence regions
-            </Button>
-            <Button
-              disabled={runId === null}
-              onClick={() => navigate(projectRoute(projectId, 'guide/low-confidence-review'))}
-              variant="outline"
-            >
-              How to review low-confidence outputs
-            </Button>
-            <Button disabled={runId === null} onClick={() => navigate(projectRoute(projectId, 'export'))}>
-              Continue to Export <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        ) : (
-          <Badge variant="outline">Project required</Badge>
-        )
-      }
+      description="Track run progress, LLM call metrics, and pipeline changelog."
     >
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Run Lifecycle</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            {isRuleOnlyMode ? (
-              <Alert data-testid="llm-degraded-banner" className="border-amber-400/50 bg-amber-50">
-                <TriangleAlert className="text-amber-600" />
-                <AlertTitle>LLM availability is degraded</AlertTitle>
-                <AlertDescription>
-                  The pipeline is running in rule-only mode because one or more LLM providers were unavailable.
-                  {llmExecutionModeReason ? <p>Reason: {llmExecutionModeReason}</p> : null}
-                  {llmExecutionModeProvider ? <p>Last attempted provider: {llmExecutionModeProvider}</p> : null}
-                </AlertDescription>
-              </Alert>
-            ) : null}
-
-            <div className="grid gap-1">
-              <p>
-                Status: <strong className="text-foreground">{runStatus}</strong>
-              </p>
-              <p>
-                Project: <strong className="text-foreground">{projectId ?? 'n/a'}</strong>
-              </p>
-              <p>
-                Run: <strong className="text-foreground">{runId ?? 'n/a'}</strong>
-              </p>
-              <p>
-                Segments: <strong className="text-foreground">{segmentCount}</strong>
-              </p>
-              <p data-testid="run-monitor-refresh-state">
-                Refresh loop: <strong className="text-foreground">{runIsActive || pendingMutationRecovery ? 'active' : 'idle'}</strong>
-              </p>
-            </div>
-
-            {pendingMutationRecovery ? (
-              <Alert data-testid="run-monitor-mutation-recovery-banner" className="border-primary/40">
-                <AlertTitle>Recovering in-flight run action</AlertTitle>
-                <AlertDescription>
-                  Restored pending <strong className="text-foreground">{pendingMutationRecovery.mutation}</strong> action.
-                  Monitoring run <strong className="text-foreground">#{pendingMutationRecovery.trackedRunId}</strong> until
-                  terminal state.
-                </AlertDescription>
-              </Alert>
-            ) : null}
-
-            {runDetailQuery.isLoading ? <p>Loading run detail...</p> : null}
-            {runDetailQuery.error ? <p className="text-destructive">{runDetailQuery.error.message}</p> : null}
-            {runConfigPresetMutation.error ? <p className="text-destructive">{runConfigPresetMutation.error.message}</p> : null}
-            {rerunRunMutation.error ? <p className="text-destructive">{rerunRunMutation.error.message}</p> : null}
-            {recoverRunMutation.error ? <p className="text-destructive">{recoverRunMutation.error.message}</p> : null}
-            {cancelRunMutation.error ? <p className="text-destructive">{cancelRunMutation.error.message}</p> : null}
-
-            <div className="space-y-2 rounded-xl border border-border/60 bg-background/60 p-3">
-              <p className="font-medium text-foreground">Run Config Preset Panel</p>
-              <p className="text-xs text-muted-foreground">
-                Load and review the backend run config preset for this run before exporting it.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  disabled={runId === null || runConfigPresetMutation.isMutating}
-                  onClick={handleLoadRunConfigPreset}
-                  size="sm"
-                  variant="outline"
-                >
-                  {runConfigPresetMutation.isMutating ? 'Loading preset...' : 'Load run config preset'}
-                </Button>
-                <Button
-                  disabled={runId === null || runConfigPresetMutation.isMutating}
-                  onClick={handleExportRunConfigPreset}
-                  size="sm"
-                  variant="outline"
-                >
-                  Export preset JSON
-                </Button>
-              </div>
-              {runConfigPresetMutation.data ? (
-                <pre className="max-h-56 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
-                  {JSON.stringify(runConfigPresetMutation.data, null, 2)}
-                </pre>
-              ) : (
-                <p className="text-xs text-muted-foreground">No preset loaded yet.</p>
-              )}
-            </div>
-
-            {runDetailQuery.data ? (
-              <pre className="max-h-72 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
-                {JSON.stringify(runDetailQuery.data, null, 2)}
-              </pre>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Waves className="size-4 text-primary" />
-              Event Stream
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            {(runDetailQuery.data?.llm_calls ?? []).slice(0, 6).map((call) => (
-              <div key={call.id} className="rounded-xl bg-background/70 px-3 py-2">
-                <p className="font-medium text-foreground">{call.provider}</p>
-                <p className="text-xs">task: {call.task_type}</p>
-                <p className="text-xs">requests: {call.request_count}</p>
-              </div>
-            ))}
-            {!runDetailQuery.data?.llm_calls?.length ? <p>No call-level events yet.</p> : null}
-          </CardContent>
-        </Card>
+      {/* Run ID picker */}
+      <div className="flex items-center gap-3">
+        <Input
+          className="w-36 font-mono"
+          data-testid="run-id-input"
+          onChange={(e) => setManualRunId(e.target.value)}
+          placeholder="Run ID"
+          type="number"
+          value={manualRunId}
+        />
+        <Button
+          onClick={() => {
+            const n = Number(manualRunId);
+            if (!Number.isInteger(n) || n <= 0) { toast.error('Enter a valid run ID'); return; }
+            setActiveRunId(n);
+            setRunId(n);
+            setManualRunId('');
+          }}
+          size="sm"
+          variant="outline"
+        >
+          Load run
+        </Button>
+        {activeRunId && (
+          <span className="font-mono text-sm text-muted-foreground">Run #{activeRunId}</span>
+        )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Pipeline Stage Durations Dashboard</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          {pipelineStageDurationsDashboardQuery.isLoading ? <p>Loading stage duration metrics...</p> : null}
-          {pipelineStageDurationsDashboardQuery.error ? (
-            <p className="text-destructive">{pipelineStageDurationsDashboardQuery.error.message}</p>
-          ) : null}
-          {pipelineStageDurationsDashboardQuery.data ? (
-            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
-              {JSON.stringify(pipelineStageDurationsDashboardQuery.data, null, 2)}
-            </pre>
-          ) : (
-            <p>No stage duration metrics yet.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Audiobook Prep Dashboard</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          {audiobookPrepDashboardQuery.isLoading ? <p>Loading audiobook prep metrics...</p> : null}
-          {audiobookPrepDashboardQuery.error ? <p className="text-destructive">{audiobookPrepDashboardQuery.error.message}</p> : null}
-          {audiobookPrepDashboardQuery.data ? (
-            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
-              {JSON.stringify(audiobookPrepDashboardQuery.data, null, 2)}
-            </pre>
-          ) : (
-            <p>No audiobook prep metrics yet.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Character Analytics Dashboard</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          {characterAnalyticsQuery.isLoading ? <p>Loading character analytics...</p> : null}
-          {characterAnalyticsQuery.error ? <p className="text-destructive">{characterAnalyticsQuery.error.message}</p> : null}
-          {characterAnalyticsQuery.data ? (
-            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
-              {JSON.stringify(characterAnalyticsQuery.data, null, 2)}
-            </pre>
-          ) : (
-            <p>No character analytics yet.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Character Co-occurrence Graph</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          {characterCooccurrenceGraphQuery.isLoading ? <p>Loading co-occurrence graph...</p> : null}
-          {characterCooccurrenceGraphQuery.error ? (
-            <p className="text-destructive">{characterCooccurrenceGraphQuery.error.message}</p>
-          ) : null}
-          {characterCooccurrenceGraphQuery.data ? (
-            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
-              {JSON.stringify(characterCooccurrenceGraphQuery.data, null, 2)}
-            </pre>
-          ) : (
-            <p>No co-occurrence graph yet.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Tension Graph</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          {tensionGraphQuery.isLoading ? <p>Loading tension graph...</p> : null}
-          {tensionGraphQuery.error ? <p className="text-destructive">{tensionGraphQuery.error.message}</p> : null}
-          {tensionGraphQuery.data ? (
-            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
-              {JSON.stringify(tensionGraphQuery.data, null, 2)}
-            </pre>
-          ) : (
-            <p>No tension graph yet.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Polarity Graph</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          {polarityGraphQuery.isLoading ? <p>Loading polarity graph...</p> : null}
-          {polarityGraphQuery.error ? <p className="text-destructive">{polarityGraphQuery.error.message}</p> : null}
-          {polarityGraphQuery.data ? (
-            <pre className="max-h-64 overflow-auto rounded-xl bg-muted/35 p-3 text-xs">
-              {JSON.stringify(polarityGraphQuery.data, null, 2)}
-            </pre>
-          ) : (
-            <p>No polarity graph yet.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Run Config Diff Viewer</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm text-muted-foreground">
-          <p>Compare this run configuration against another run ID from the same project.</p>
-          <div className="max-w-sm">
-            <Input
-              value={comparisonRunIdInput}
-              onChange={(event) => setComparisonRunIdInput(event.target.value)}
-              placeholder="Enter comparison run ID"
-              inputMode="numeric"
-            />
-          </div>
-          {comparisonRunIdInput.trim() && comparisonRunId === null ? (
-            <p className="text-destructive">Enter a valid positive run ID to load a config diff.</p>
-          ) : null}
-          {runConfigDiffQuery.isLoading ? <p>Loading config diff...</p> : null}
-          {runConfigDiffQuery.error ? <p className="text-destructive">{runConfigDiffQuery.error.message}</p> : null}
-          {runConfigDiffQuery.data ? (
-            <div className="space-y-3">
-              <p>
-                Compared run <strong className="text-foreground">{runConfigDiffQuery.data.base_run_id}</strong> to run{' '}
-                <strong className="text-foreground">{runConfigDiffQuery.data.target_run_id}</strong>.
-              </p>
-              <p>
-                Schema versions: base{' '}
-                <strong className="text-foreground">{runConfigDiffQuery.data.base_config_schema_version}</strong>, target{' '}
-                <strong className="text-foreground">{runConfigDiffQuery.data.target_config_schema_version}</strong>.
-              </p>
-              {runConfigDiffQuery.data.is_identical ? (
-                <p>No configuration differences detected.</p>
-              ) : (
-                <p>
-                  Changed fields: <strong className="text-foreground">{runConfigDiffQuery.data.changed_fields.length}</strong>
+      {activeRunId === null ? (
+        <div className="rounded-xl border border-white/10 bg-card p-8 text-center" data-testid="run-monitor-no-run">
+          <p className="text-sm text-muted-foreground">No run selected. Enter a run ID above or start a run from Pipeline Setup.</p>
+          <Button
+            className="mt-4"
+            onClick={() => projectId !== null && navigate(`/projects/${projectId}/pipeline-setup`)}
+            size="sm"
+            variant="outline"
+          >
+            Go to Pipeline Setup
+          </Button>
+        </div>
+      ) : runDetailQuery.isLoading && !runDetail ? (
+        <div className="h-10 w-full animate-pulse rounded-lg bg-card" data-testid="run-monitor-loading" />
+      ) : runDetailQuery.error ? (
+        <div className="rounded-xl border border-white/10 bg-card p-6 text-center" data-testid="run-monitor-error">
+          <p className="text-sm text-muted-foreground">Unable to load run details.</p>
+          <Button className="mt-3" onClick={() => void runDetailQuery.mutate()} size="sm" variant="outline">Retry</Button>
+        </div>
+      ) : (
+        <div className="space-y-4" data-testid="run-monitor-detail">
+          {/* Header */}
+          <div className="flex flex-wrap items-center gap-4 rounded-xl border border-white/10 bg-card p-4">
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-2">
+                {runStatus === 'running' && <Loader2 className="animate-spin text-amber-400" size={14} />}
+                <span className="font-mono text-sm font-semibold text-foreground">Run #{runDetail?.run_id}</span>
+                {runStatus && (
+                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', STATUS_BADGE[runStatus] ?? 'bg-white/10 text-muted-foreground')}>
+                    {runStatus}
+                  </span>
+                )}
+                {isActive && (
+                  <button
+                    className="ml-1 text-muted-foreground hover:text-foreground"
+                    onClick={() => void runDetailQuery.mutate()}
+                    type="button"
+                  >
+                    <RefreshCw size={13} />
+                  </button>
+                )}
+              </div>
+              {runDetail?.started_at && (
+                <p className="text-xs text-muted-foreground">
+                  Started {new Date(runDetail.started_at).toLocaleString()}
+                  {runDetail.finished_at ? ` · Finished ${new Date(runDetail.finished_at).toLocaleString()}` : ''}
                 </p>
               )}
-
-              {runConfigDiffQuery.data.changed_fields.length > 0 ? (
-                <div className="space-y-2">
-                  {runConfigDiffQuery.data.changed_fields.map((entry) => (
-                    <div key={entry.field} className="rounded-xl bg-background/70 px-3 py-2">
-                      <p className="font-medium text-foreground">{entry.field}</p>
-                      <p className="text-xs">
-                        {JSON.stringify(entry.base_value)} → {JSON.stringify(entry.target_value)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {runConfigDiffQuery.data.base_only_fields.length > 0 ? (
-                <p>
-                  Base-only fields: <strong className="text-foreground">{runConfigDiffQuery.data.base_only_fields.join(', ')}</strong>
-                </p>
-              ) : null}
-              {runConfigDiffQuery.data.target_only_fields.length > 0 ? (
-                <p>
-                  Target-only fields: <strong className="text-foreground">{runConfigDiffQuery.data.target_only_fields.join(', ')}</strong>
-                </p>
-              ) : null}
+              <p className="text-xs text-muted-foreground">
+                {runDetail?.segment_count ?? 0} segments · {llmCalls.length} LLM calls ({successfulCalls} ok)
+              </p>
             </div>
-          ) : null}
-        </CardContent>
-      </Card>
+
+            {/* Actions */}
+            <div className="flex gap-2">
+              {isActive && (
+                <Button
+                  data-testid="cancel-run-button"
+                  disabled={isBusy}
+                  onClick={() => void handleCancel()}
+                  size="sm"
+                  variant="destructive"
+                >
+                  <StopCircle size={13} />
+                  {cancelMutation.isMutating ? 'Cancelling…' : 'Cancel'}
+                </Button>
+              )}
+              {(runStatus === 'failed' || runStatus === 'completed') && (
+                <>
+                  {runStatus === 'failed' && (
+                    <Button
+                      data-testid="recover-run-button"
+                      disabled={isBusy}
+                      onClick={() => void handleRecover()}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <RefreshCw size={13} />
+                      {recoverMutation.isMutating ? 'Recovering…' : 'Recover'}
+                    </Button>
+                  )}
+                  <Button
+                    data-testid="rerun-button"
+                    disabled={isBusy}
+                    onClick={() => void handleRerun()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <RotateCcw size={13} />
+                    {rerunMutation.isMutating ? 'Rerunning…' : 'Rerun'}
+                  </Button>
+                </>
+              )}
+              <Button
+                data-testid="download-config-preset-button"
+                disabled={configPresetMutation.isMutating || !activeRunId}
+                onClick={() => void handleDownloadPreset()}
+                size="sm"
+                variant="outline"
+                title="Download run config preset as JSON"
+              >
+                <Download size={13} />
+                {configPresetMutation.isMutating ? 'Exporting…' : 'Config'}
+              </Button>
+            </div>
+          </div>
+
+          {/* LLM Calls */}
+          {llmCalls.length > 0 && (
+            <div className="rounded-xl border border-white/10 bg-card overflow-hidden" data-testid="run-llm-calls">
+              <div className="border-b border-white/10 px-4 py-2.5">
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">LLM Calls</p>
+              </div>
+              <div className="divide-y divide-white/5 max-h-48 overflow-y-auto">
+                {llmCalls.map((call) => (
+                  <div className="flex items-center gap-3 px-4 py-2.5 text-xs" key={call.id}>
+                    {llmCallIcon(call.success)}
+                    <span className="text-foreground">{call.task_type}</span>
+                    <span className="text-muted-foreground">{call.provider}</span>
+                    {call.is_cache_hit && (
+                      <span className="rounded-full bg-blue-400/10 px-1.5 py-0.5 text-xs text-blue-400">cache hit</span>
+                    )}
+                    <span className="ml-auto text-muted-foreground">×{call.request_count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Changelog */}
+          {changelogEntries.length > 0 && (
+            <div className="rounded-xl border border-white/10 bg-card overflow-hidden" data-testid="run-changelog">
+              <div className="border-b border-white/10 px-4 py-2.5">
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">Changelog</p>
+              </div>
+              <div className="divide-y divide-white/5 max-h-60 overflow-y-auto">
+                {changelogEntries.map((entry) => (
+                  <div className="flex items-start gap-3 px-4 py-2.5 text-xs" key={entry.id}>
+                    <Circle className="mt-0.5 shrink-0 text-muted-foreground/40" size={6} />
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium text-foreground">{entry.event_type}</span>
+                      {entry.event_message && (
+                        <p className="mt-0.5 text-muted-foreground">{entry.event_message}</p>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-muted-foreground">{new Date(entry.created_at).toLocaleTimeString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </WorkflowPageShell>
   );
 }

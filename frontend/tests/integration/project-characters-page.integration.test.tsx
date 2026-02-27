@@ -70,6 +70,7 @@ vi.mock('@/app/config/env', () => ({
   appEnv: {
     apiBaseUrl: 'http://localhost:8000',
     featureScrapeEnabled: true,
+    ingestRequestTimeoutMs: 0,
   },
 }));
 

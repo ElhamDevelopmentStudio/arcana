@@ -1,343 +1,299 @@
-import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { AlertTriangle, RotateCcw, Clock, ToggleLeft, ToggleRight } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 
-import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
-import { Badge } from '@/components/ui/badge';
+import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import {
-  useLLMProvidersQuery,
-  useGrantProjectAccessMutation,
-  useProjectAccessListQuery,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  useProjectDetailQuery,
+  useUpdateProjectMetadataMutation,
+  useArchiveProjectMutation,
+  useRestoreProjectMutation,
   useProjectLLMSettingsQuery,
+  useLLMProvidersQuery,
   useUpdateLLMProviderStatusMutation,
-  useUpdateProjectLLMSettingsMutation,
+  useProjectActivityTimelineQuery,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
+import { cn } from '@/lib/utils';
+
+function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-6 border-b border-white/5 py-4 last:border-0">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
 
 export function ProjectSettingsPage() {
+  const navigate = useNavigate();
   const params = useParams<{ project_id: string }>();
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const projectId = routeProjectId ?? storeProjectId;
-  const projectAccessListQuery = useProjectAccessListQuery(projectId);
-  const projectLLMSettingsQuery = useProjectLLMSettingsQuery(projectId);
-  const llmProvidersQuery = useLLMProvidersQuery(projectId !== null);
-  const grantProjectAccessMutation = useGrantProjectAccessMutation(projectId);
-  const updateProjectLLMSettingsMutation = useUpdateProjectLLMSettingsMutation(projectId);
-  const updateLLMProviderStatusMutation = useUpdateLLMProviderStatusMutation(projectId);
-  const [llmEnabledDraft, setLlmEnabledDraft] = useState(false);
-  const [providerEnabledDraftByName, setProviderEnabledDraftByName] = useState<Record<string, boolean>>({});
-  const [accessPrincipalIdDraft, setAccessPrincipalIdDraft] = useState('');
-  const [accessPrincipalTypeDraft, setAccessPrincipalTypeDraft] = useState<'user' | 'service' | 'system'>('user');
-  const [accessRoleDraft, setAccessRoleDraft] = useState<'owner' | 'editor' | 'viewer'>('viewer');
 
-  useEffect(() => {
-    if (projectLLMSettingsQuery.data === undefined) {
-      return;
-    }
-    setLlmEnabledDraft(projectLLMSettingsQuery.data.llm_enabled);
-  }, [projectLLMSettingsQuery.data]);
+  const detailQuery = useProjectDetailQuery(projectId);
+  const llmSettingsQuery = useProjectLLMSettingsQuery(projectId);
+  const providersQuery = useLLMProvidersQuery(projectId !== null);
+  const timelineQuery = useProjectActivityTimelineQuery(projectId, { page: 1, page_size: 10 });
+  const updateMetaMutation = useUpdateProjectMetadataMutation(projectId);
+  const archiveMutation = useArchiveProjectMutation(projectId);
+  const restoreMutation = useRestoreProjectMutation(projectId);
+  const updateProviderMutation = useUpdateLLMProviderStatusMutation(projectId);
 
-  useEffect(() => {
-    if (!llmProvidersQuery.data?.providers) {
-      return;
-    }
-    setProviderEnabledDraftByName(
-      Object.fromEntries(llmProvidersQuery.data.providers.map((provider) => [provider.provider, provider.enabled])),
-    );
-  }, [llmProvidersQuery.data]);
+  const [title, setTitle] = useState('');
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
 
-  const hasUnsavedChanges =
-    projectLLMSettingsQuery.data !== undefined &&
-    llmEnabledDraft !== projectLLMSettingsQuery.data.llm_enabled;
+  const currentTitle = detailQuery.data?.title ?? '';
+  const llmEnabled = llmSettingsQuery.data?.llm_enabled ?? false;
+  const providers = providersQuery.data?.providers ?? [];
+  const lifecycleState = detailQuery.data?.lifecycle_state ?? 'draft';
+  const isArchived = lifecycleState === 'archived';
+  const isBusy = updateMetaMutation.isMutating || archiveMutation.isMutating || restoreMutation.isMutating;
+  const timelineItems = timelineQuery.data?.items ?? [];
 
-  async function handleSaveProjectLLMSettings() {
-    if (projectId === null) {
-      toast.error('Project is missing.');
-      return;
-    }
-
+  async function handleSaveTitle() {
+    if (!title.trim()) { toast.error('Title cannot be empty.'); return; }
     try {
-      const response = await updateProjectLLMSettingsMutation.trigger({
-        llm_enabled: llmEnabledDraft,
-      });
-      setLlmEnabledDraft(response.llm_enabled);
-      toast.success(`Project LLM is now ${response.llm_enabled ? 'enabled' : 'disabled'}.`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to update project LLM settings.');
+      await updateMetaMutation.trigger({ title: title.trim() });
+      toast.success('Project name updated.');
+      setTitle('');
+      await detailQuery.mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update failed');
     }
   }
 
-  async function handleSaveProviderStatus(providerName: string) {
-    if (projectId === null) {
-      toast.error('Project is missing.');
-      return;
-    }
-    const draftEnabled = providerEnabledDraftByName[providerName];
-    if (draftEnabled === undefined) {
-      toast.error('Provider draft state is missing.');
-      return;
-    }
-
+  async function handleArchive() {
     try {
-      const response = await updateLLMProviderStatusMutation.trigger({
-        provider_name: providerName,
-        enabled: draftEnabled,
-      });
-      setProviderEnabledDraftByName((previous) => ({
-        ...previous,
-        [response.provider]: response.enabled,
-      }));
-      toast.success(`Provider ${response.provider} is now ${response.enabled ? 'enabled' : 'disabled'}.`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to update provider status.');
+      await archiveMutation.trigger();
+      toast.success('Project archived.');
+      navigate('/dashboard');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Archive failed');
     }
   }
 
-  async function handleGrantProjectAccess() {
-    if (projectId === null) {
-      toast.error('Project is missing.');
-      return;
-    }
-    if (accessPrincipalIdDraft.trim().length === 0) {
-      toast.error('Principal ID is required.');
-      return;
-    }
+  async function handleRestore() {
     try {
-      const response = await grantProjectAccessMutation.trigger({
-        principal_id: accessPrincipalIdDraft.trim(),
-        principal_type: accessPrincipalTypeDraft,
-        role: accessRoleDraft,
-      });
-      setAccessPrincipalIdDraft('');
-      setAccessPrincipalTypeDraft('user');
-      setAccessRoleDraft('viewer');
-      toast.success(`Granted ${response.role} access to ${response.principal_id}.`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to grant project access.');
+      await restoreMutation.trigger();
+      toast.success('Project restored.');
+      await detailQuery.mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Restore failed');
+    }
+  }
+
+  async function toggleProvider(providerName: string, currentEnabled: boolean) {
+    try {
+      await updateProviderMutation.trigger({ provider_name: providerName, enabled: !currentEnabled });
+      await providersQuery.mutate();
+      toast.success(`${providerName} ${!currentEnabled ? 'enabled' : 'disabled'}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update provider');
     }
   }
 
   return (
     <WorkflowPageShell
-      description="Project-scoped settings and policy controls."
-      step="Settings"
-      title="Project Settings"
+      breadcrumb={`All Projects › Project #${projectId ?? '—'} › Settings`}
+      title="Settings"
+      description="Manage project configuration and lifecycle."
     >
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card data-testid="project-settings-access-panel">
-          <CardHeader>
-            <CardTitle>Project Access</CardTitle>
-            <CardDescription>
-              Read current access grants via `GET /api/projects/:project_id/access`.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p
-              className="rounded-md border border-dashed border-panel-border/70 bg-muted/30 px-3 py-2"
-              data-testid="project-settings-access-no-auth-notice"
-            >
-              Authentication is not enabled in this environment. Access grants are configuration metadata only and do
-              not enforce runtime authorization yet.
-            </p>
-            {projectAccessListQuery.isLoading ? (
-              <p data-testid="project-settings-access-loading">Loading access grants...</p>
-            ) : null}
-            {projectAccessListQuery.error ? (
-              <p className="text-destructive" data-testid="project-settings-access-error">
-                {projectAccessListQuery.error.message}
-              </p>
-            ) : null}
-            {projectAccessListQuery.data && projectAccessListQuery.data.grants.length === 0 ? (
-              <p data-testid="project-settings-access-empty">No access grants configured.</p>
-            ) : null}
-            {(projectAccessListQuery.data?.grants ?? []).map((grant) => (
-              <div
-                key={grant.id}
-                className="rounded-xl border border-panel-border/70 bg-muted/35 p-3"
-                data-testid={`project-settings-access-grant-${grant.id}`}
-              >
-                <p className="font-medium text-foreground">{grant.principal_id}</p>
-                <p className="text-xs text-muted-foreground">
-                  {grant.principal_type} · role: {grant.role}
-                </p>
-              </div>
-            ))}
-            <div className="space-y-2 rounded-xl border border-panel-border/70 bg-muted/35 p-3">
-              <Label htmlFor="project-settings-access-principal-id">Principal ID</Label>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                data-testid="project-settings-access-principal-id"
-                id="project-settings-access-principal-id"
-                onChange={(event) => setAccessPrincipalIdDraft(event.target.value)}
-                placeholder="user@example.com"
-                type="text"
-                value={accessPrincipalIdDraft}
+      <div className="max-w-2xl space-y-2">
+        {/* General */}
+        <div className="rounded-xl border border-white/10 bg-card px-5">
+          <p className="pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">General</p>
+          <SettingRow label="Project name" description={`Current: ${currentTitle}`}>
+            <div className="flex gap-2">
+              <Input
+                className="w-48"
+                data-testid="settings-title-input"
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={currentTitle}
+                value={title}
               />
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="space-y-1 text-xs">
-                  <span>Principal type</span>
-                  <select
-                    className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                    data-testid="project-settings-access-principal-type"
-                    onChange={(event) =>
-                      setAccessPrincipalTypeDraft(event.target.value as 'user' | 'service' | 'system')
-                    }
-                    value={accessPrincipalTypeDraft}
-                  >
-                    <option value="user">user</option>
-                    <option value="service">service</option>
-                    <option value="system">system</option>
-                  </select>
-                </label>
-                <label className="space-y-1 text-xs">
-                  <span>Role</span>
-                  <select
-                    className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                    data-testid="project-settings-access-role"
-                    onChange={(event) => setAccessRoleDraft(event.target.value as 'owner' | 'editor' | 'viewer')}
-                    value={accessRoleDraft}
-                  >
-                    <option value="owner">owner</option>
-                    <option value="editor">editor</option>
-                    <option value="viewer">viewer</option>
-                  </select>
-                </label>
-              </div>
               <Button
-                data-testid="project-settings-access-grant-submit"
-                disabled={grantProjectAccessMutation.isMutating || accessPrincipalIdDraft.trim().length === 0}
-                onClick={() => void handleGrantProjectAccess()}
+                data-testid="settings-save-title-button"
+                disabled={isBusy || !title.trim()}
+                onClick={() => void handleSaveTitle()}
                 size="sm"
-                type="button"
                 variant="outline"
               >
-                {grantProjectAccessMutation.isMutating ? 'Granting...' : 'Grant access'}
+                Save
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </SettingRow>
+          <SettingRow label="Project ID" description="Immutable identifier">
+            <span className="font-mono text-sm text-muted-foreground">#{projectId}</span>
+          </SettingRow>
+          <SettingRow label="Lifecycle state">
+            <span className={cn('text-sm font-medium capitalize', isArchived ? 'text-muted-foreground' : 'text-foreground')}>
+              {lifecycleState}
+            </span>
+          </SettingRow>
+        </div>
 
-        <Card data-testid="project-settings-llm-panel">
-          <CardHeader>
-            <CardTitle>LLM Settings</CardTitle>
-            <CardDescription>
-              Toggle project-level LLM execution policy using `GET/PUT /api/projects/:project_id/llm`.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>Project: {projectId ?? 'n/a'}</p>
-            {projectId === null ? <Badge variant="outline">Project required</Badge> : null}
-            {projectLLMSettingsQuery.isLoading ? (
-              <p data-testid="project-settings-llm-loading">Loading LLM settings...</p>
-            ) : null}
-            {projectLLMSettingsQuery.error ? (
-              <p className="text-destructive" data-testid="project-settings-llm-error">
-                {projectLLMSettingsQuery.error.message}
-              </p>
-            ) : null}
-
-            {projectLLMSettingsQuery.data ? (
-              <div className="space-y-3 rounded-xl border border-panel-border/70 bg-muted/35 p-3">
-                <p data-testid="project-settings-llm-current">
-                  Current backend value:{' '}
-                  <strong className="text-foreground">{projectLLMSettingsQuery.data.llm_enabled ? 'enabled' : 'disabled'}</strong>
-                </p>
-
-                <div className="flex items-center justify-between gap-3">
-                  <Label htmlFor="project-settings-llm-toggle">LLM enabled</Label>
-                  <Switch
-                    id="project-settings-llm-toggle"
-                    data-testid="project-settings-llm-toggle"
-                    checked={llmEnabledDraft}
-                    disabled={updateProjectLLMSettingsMutation.isMutating}
-                    onCheckedChange={setLlmEnabledDraft}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between gap-3">
-                  <p data-testid="project-settings-llm-draft">
-                    Draft value: <strong className="text-foreground">{llmEnabledDraft ? 'enabled' : 'disabled'}</strong>
-                  </p>
-                  <Button
-                    data-testid="project-settings-llm-save"
-                    disabled={!hasUnsavedChanges || updateProjectLLMSettingsMutation.isMutating}
-                    onClick={() => void handleSaveProjectLLMSettings()}
-                    type="button"
-                  >
-                    {updateProjectLLMSettingsMutation.isMutating ? 'Saving...' : 'Save LLM setting'}
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card data-testid="project-settings-providers-panel">
-          <CardHeader>
-            <CardTitle>Provider Status Management</CardTitle>
-            <CardDescription>
-              Manage global provider availability with `GET /api/llm/providers` and `PUT /api/llm/providers/:provider_name`.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            {llmProvidersQuery.isLoading ? (
-              <p data-testid="project-settings-providers-loading">Loading provider statuses...</p>
-            ) : null}
-            {llmProvidersQuery.error ? (
-              <p className="text-destructive" data-testid="project-settings-providers-error">
-                {llmProvidersQuery.error.message}
-              </p>
-            ) : null}
-
-            {(llmProvidersQuery.data?.providers ?? []).map((provider) => {
-              const draftEnabled = providerEnabledDraftByName[provider.provider] ?? provider.enabled;
-              const hasProviderUnsavedChange = draftEnabled !== provider.enabled;
-              return (
-                <div
-                  key={provider.provider}
-                  className="space-y-2 rounded-xl border border-panel-border/70 bg-muted/35 p-3"
-                  data-testid={`project-settings-provider-row-${provider.provider}`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-medium text-foreground">{provider.provider}</p>
-                    <Switch
-                      checked={draftEnabled}
-                      data-testid={`project-settings-provider-toggle-${provider.provider}`}
-                      disabled={updateLLMProviderStatusMutation.isMutating}
-                      onCheckedChange={(nextEnabled) =>
-                        setProviderEnabledDraftByName((previous) => ({
-                          ...previous,
-                          [provider.provider]: nextEnabled,
-                        }))
-                      }
-                    />
+        {/* LLM */}
+        <div className="rounded-xl border border-white/10 bg-card px-5">
+          <p className="pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">LLM</p>
+          <SettingRow label="LLM processing" description="Whether LLM analysis is enabled for this project">
+            <span className={`text-sm font-medium ${llmEnabled ? 'text-green-400' : 'text-muted-foreground'}`}>
+              {llmEnabled ? 'Enabled' : 'Disabled'}
+            </span>
+          </SettingRow>
+          {providers.length > 0 && (
+            <SettingRow label="Providers" description="Toggle individual LLM providers on or off">
+              <div className="flex flex-col gap-2">
+                {providers.map((p) => (
+                  <div className="flex items-center gap-3" key={p.provider}>
+                    <span className="text-sm text-foreground w-28">{p.provider}</span>
+                    <button
+                      aria-label={p.enabled ? `Disable ${p.provider}` : `Enable ${p.provider}`}
+                      className={cn(
+                        'flex items-center gap-1.5 text-xs font-medium transition-colors',
+                        p.enabled ? 'text-green-400' : 'text-muted-foreground',
+                      )}
+                      data-testid={`toggle-provider-${p.provider}`}
+                      disabled={updateProviderMutation.isMutating}
+                      onClick={() => void toggleProvider(p.provider, p.enabled)}
+                      type="button"
+                    >
+                      {p.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                      {p.enabled ? 'On' : 'Off'}
+                    </button>
                   </div>
-                  <p data-testid={`project-settings-provider-current-${provider.provider}`}>
-                    Current: <strong className="text-foreground">{provider.enabled ? 'enabled' : 'disabled'}</strong>{' '}
-                    | Draft: <strong className="text-foreground">{draftEnabled ? 'enabled' : 'disabled'}</strong>
-                  </p>
-                  <Button
-                    data-testid={`project-settings-provider-save-${provider.provider}`}
-                    disabled={!hasProviderUnsavedChange || updateLLMProviderStatusMutation.isMutating}
-                    onClick={() => void handleSaveProviderStatus(provider.provider)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    {updateLLMProviderStatusMutation.isMutating ? 'Saving...' : 'Save provider status'}
-                  </Button>
+                ))}
+              </div>
+            </SettingRow>
+          )}
+        </div>
+
+        {/* Activity timeline */}
+        {timelineItems.length > 0 && (
+          <div className="rounded-xl border border-white/10 bg-card px-5" data-testid="activity-timeline">
+            <p className="pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Activity Timeline</p>
+            <div className="py-3 space-y-0">
+              {timelineItems.map((item) => (
+                <div className="flex items-start gap-3 border-b border-white/5 py-3 last:border-0" key={item.event_id}>
+                  <Clock className="mt-0.5 shrink-0 text-muted-foreground/40" size={13} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-foreground">{item.event_type.replace(/_/g, ' ')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.actor}
+                      {item.run_id ? ` · run #${item.run_id}` : ''}
+                      {' · '}
+                      {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
+                    </p>
+                  </div>
                 </div>
-              );
-            })}
-          </CardContent>
-        </Card>
+              ))}
+              {(timelineQuery.data?.has_next_page) && (
+                <p className="py-2 text-center text-xs text-muted-foreground">Showing last 10 events</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Danger zone */}
+        <div className="rounded-xl border border-destructive/30 bg-card px-5" data-testid="settings-danger-zone">
+          <p className="pt-2 text-[10px] font-semibold uppercase tracking-widest text-destructive/60">Danger Zone</p>
+          {isArchived ? (
+            <SettingRow
+              label="Restore project"
+              description="Restore this project from archived state back to active."
+            >
+              <Button
+                data-testid="restore-project-button"
+                disabled={isBusy}
+                onClick={() => setRestoreDialogOpen(true)}
+                size="sm"
+                variant="outline"
+              >
+                <RotateCcw size={13} />
+                Restore
+              </Button>
+            </SettingRow>
+          ) : (
+            <SettingRow
+              label="Archive project"
+              description="Hides this project from the dashboard. Reversible."
+            >
+              <Button
+                data-testid="archive-project-button"
+                disabled={isBusy}
+                onClick={() => setArchiveDialogOpen(true)}
+                size="sm"
+                variant="destructive"
+              >
+                <AlertTriangle size={13} />
+                Archive
+              </Button>
+            </SettingRow>
+          )}
+        </div>
       </div>
+
+      <AlertDialog onOpenChange={setArchiveDialogOpen} open={archiveDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive this project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The project will be hidden from the dashboard. You can restore it later from Settings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="archive-confirm-button"
+              disabled={isBusy}
+              onClick={() => void handleArchive()}
+            >
+              {archiveMutation.isMutating ? 'Archiving…' : 'Archive project'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog onOpenChange={setRestoreDialogOpen} open={restoreDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore this project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The project will be moved back to active state and become visible on the dashboard.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="restore-confirm-button"
+              disabled={isBusy}
+              onClick={() => void handleRestore()}
+            >
+              {restoreMutation.isMutating ? 'Restoring…' : 'Restore project'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </WorkflowPageShell>
   );
 }

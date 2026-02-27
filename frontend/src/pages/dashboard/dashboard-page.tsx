@@ -1,694 +1,200 @@
-import { useEffect, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useMemo, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, BookOpen } from 'lucide-react';
 
-import {
-  projectControlPanelProjectListRequestSchema,
-  type ProjectAllowedActionDto,
-  type ProjectControlPanelProjectListItemDto,
-  type ProjectControlPanelProjectListRequestDto,
-} from '@/app/schemas/api';
-import { useUiRouteStateStore, type DashboardListQueryState } from '@/app/state/ui-route-state-store';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
-import { WorkflowPageShell } from '@/app/workflow-page-shell';
-import { ApiPanelEmpty, ApiPanelError, ApiPanelLoading } from '@/components/ui/api-panel-state';
-import { Badge } from '@/components/ui/badge';
+import { useUiRouteStateStore } from '@/app/state/ui-route-state-store';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { ProjectCard } from '@/components/projects/project-card';
 import {
-  useProjectAllowedActionsQuery,
   useProjectControlPanelProjectListQuery,
   useProjectControlPanelSummaryQuery,
 } from '@/features/workflow/api/workflow-hooks';
+import { cn } from '@/lib/utils';
+import type { ProjectControlPanelProjectListItemDto } from '@/app/schemas/api';
 
-const projectStatusFilterOptions: NonNullable<ProjectControlPanelProjectListRequestDto['status']>[] = [
-  'draft',
-  'ingested',
-  'configured',
-  'running',
-  'completed',
-  'failed',
-  'archived',
-];
+const FILTER_TABS = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'archived', label: 'Archived' },
+] as const;
 
-const runStatusFilterOptions: NonNullable<ProjectControlPanelProjectListRequestDto['last_run_status']>[] = [
-  'queued',
-  'running',
-  'completed',
-  'failed',
-  'cancelled',
-];
-
-const nextRequiredActionFilterOptions: NonNullable<ProjectControlPanelProjectListRequestDto['next_required_action']>[] =
-  [
-    'ingest',
-    'select_mode',
-    'configure',
-    'run',
-    'rerun',
-    'export',
-    'review_failure',
-    'archived',
-    'none',
-  ];
-
-const dashboardPageSizeOptions = [10, 20, 50, 100] as const;
-const dashboardActiveRefreshIntervalMs = 5000;
-const dashboardStaleActiveRowAgeMs = 60_000;
-const dashboardRecentFailureMaxVisible = 5;
-
-type DashboardQuickAction = {
-  action: ProjectAllowedActionDto;
-  label: string;
-  route: string;
-};
+type FilterTab = (typeof FILTER_TABS)[number]['id'];
 
 function toWorkflowRoute(projectId: number, nextRequiredAction: string) {
-  if (nextRequiredAction === 'select_mode') {
-    return `/projects/${projectId}/mode`;
-  }
-  if (nextRequiredAction === 'run' || nextRequiredAction === 'configure') {
-    return `/projects/${projectId}/pipeline-setup`;
-  }
-  if (nextRequiredAction === 'export') {
-    return `/projects/${projectId}/export`;
-  }
-  if (nextRequiredAction === 'rerun') {
-    return `/projects/${projectId}/run-monitor`;
-  }
-  return '/projects/new';
+  if (nextRequiredAction === 'select_mode') return `/projects/${projectId}/mode`;
+  if (nextRequiredAction === 'run' || nextRequiredAction === 'configure') return `/projects/${projectId}/pipeline-setup`;
+  if (nextRequiredAction === 'export') return `/projects/${projectId}/export`;
+  if (nextRequiredAction === 'rerun') return `/projects/${projectId}/run-monitor`;
+  return `/projects/${projectId}/overview`;
 }
 
-function resolveDashboardQuickAction(projectId: number, action: ProjectAllowedActionDto): DashboardQuickAction | null {
-  if (action === 'ingest') {
-    return { action, label: 'Ingest', route: `/projects/${projectId}/pipeline-setup` };
-  }
-  if (action === 'select_mode') {
-    return { action, label: 'Select mode', route: `/projects/${projectId}/mode` };
-  }
-  if (action === 'configure') {
-    return { action, label: 'Configure', route: `/projects/${projectId}/pipeline-setup` };
-  }
-  if (action === 'run') {
-    return { action, label: 'Run', route: `/projects/${projectId}/pipeline-setup` };
-  }
-  if (action === 'rerun') {
-    return { action, label: 'Rerun', route: `/projects/${projectId}/run-monitor` };
-  }
-  if (action === 'export') {
-    return { action, label: 'Export', route: `/projects/${projectId}/export` };
-  }
-  return null;
-}
-
-function toFailureTriageRoute(projectId: number, runId: number | null | undefined): string {
-  if (typeof runId === 'number') {
-    return `/projects/${projectId}/run-monitor?run_id=${runId}`;
-  }
-  return `/projects/${projectId}/run-monitor`;
-}
-
-function readDashboardQueryFromSearchParams(
-  searchParams: URLSearchParams,
-): ProjectControlPanelProjectListRequestDto {
-  const raw = {
-    page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,
-    page_size: searchParams.get('page_size') ? Number(searchParams.get('page_size')) : undefined,
-    status: searchParams.get('status') ?? undefined,
-    selected_mode: searchParams.get('selected_mode') ?? undefined,
-    last_run_status: searchParams.get('last_run_status') ?? undefined,
-    next_required_action: searchParams.get('next_required_action') ?? undefined,
-  };
-  const parsed = projectControlPanelProjectListRequestSchema.safeParse(raw);
-  if (!parsed.success) {
-    return {};
-  }
-  return parsed.data;
-}
-
-function normalizeDashboardListQuery(
-  fromUrl: ProjectControlPanelProjectListRequestDto,
-  fallback: DashboardListQueryState,
-  hasDashboardQueryParams: boolean,
-): DashboardListQueryState {
-  if (!hasDashboardQueryParams) {
-    return fallback;
-  }
-
-  return {
-    page: fromUrl.page ?? fallback.page,
-    page_size: fromUrl.page_size ?? fallback.page_size,
-    status: fromUrl.status,
-    selected_mode: fromUrl.selected_mode,
-    last_run_status: fromUrl.last_run_status,
-    next_required_action: fromUrl.next_required_action,
-  };
-}
-
-function buildDashboardSearchParams(query: DashboardListQueryState): URLSearchParams {
-  const params = new URLSearchParams();
-  params.set('page', String(query.page));
-  params.set('page_size', String(query.page_size));
-  if (query.status) {
-    params.set('status', query.status);
-  }
-  if (query.selected_mode) {
-    params.set('selected_mode', query.selected_mode);
-  }
-  if (query.last_run_status) {
-    params.set('last_run_status', query.last_run_status);
-  }
-  if (query.next_required_action) {
-    params.set('next_required_action', query.next_required_action);
-  }
-  return params;
-}
-
-function hasAnyDashboardQueryParams(searchParams: URLSearchParams): boolean {
+function DashboardEmpty() {
+  const navigate = useNavigate();
   return (
-    searchParams.has('page') ||
-    searchParams.has('page_size') ||
-    searchParams.has('status') ||
-    searchParams.has('selected_mode') ||
-    searchParams.has('last_run_status') ||
-    searchParams.has('next_required_action')
-  );
-}
-
-function toOptionalQueryText(value: string): string | undefined {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function DashboardProjectListRow({
-  item,
-  onNavigateProjectRoute,
-  onOpenProject,
-}: {
-  item: ProjectControlPanelProjectListItemDto;
-  onNavigateProjectRoute: (route: string) => void;
-  onOpenProject: () => void;
-}) {
-  const projectActionsQuery = useProjectAllowedActionsQuery(item.project_id);
-  const quickActions = useMemo(() => {
-    const allowedActions = projectActionsQuery.data?.allowed_actions ?? [];
-    return allowedActions
-      .map((action) => resolveDashboardQuickAction(item.project_id, action))
-      .filter((action): action is DashboardQuickAction => action !== null)
-      .slice(0, 2);
-  }, [item.project_id, projectActionsQuery.data?.allowed_actions]);
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-panel-border/70 px-4 py-3">
-      <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">
-          Project #{item.project_id}
-        </p>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="secondary">{item.status}</Badge>
-          <span>mode: {item.selected_mode}</span>
-          <span>next: {item.next_required_action}</span>
-          <span>updated: {new Date(item.updated_at).toLocaleString()}</span>
-        </div>
+    <div className="flex flex-col items-center justify-center py-24 text-center">
+      <div className="mb-4 grid size-12 place-items-center rounded-xl border border-white/10 bg-card text-muted-foreground">
+        <BookOpen size={22} />
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {projectActionsQuery.isLoading ? (
-          <span className="text-xs text-muted-foreground" data-testid={`dashboard-row-actions-loading-${item.project_id}`}>
-            Loading actions...
-          </span>
-        ) : null}
-        {quickActions.map((quickAction) => (
-          <Button
-            data-testid={`dashboard-row-quick-action-${item.project_id}-${quickAction.action}`}
-            key={`${item.project_id}-${quickAction.action}`}
-            onClick={() => {
-              onNavigateProjectRoute(quickAction.route);
-            }}
-            size="sm"
-            type="button"
-            variant="secondary"
-          >
-            {quickAction.label}
-          </Button>
-        ))}
-        <Button onClick={onOpenProject} size="sm" variant="outline">
-          Open
-        </Button>
-      </div>
+      <h3 className="text-base font-semibold text-foreground">No projects yet</h3>
+      <p className="mt-1 text-sm text-muted-foreground">Create your first project to get started.</p>
+      <Button
+        className="mt-6"
+        onClick={() => navigate('/projects/new')}
+        type="button"
+      >
+        <Plus size={14} />
+        Create a project
+      </Button>
     </div>
   );
 }
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const setProject = useWorkspaceStore((state) => state.setProject);
-  const dashboardListQueryState = useUiRouteStateStore((state) => state.dashboardListQuery);
-  const setDashboardListQuery = useUiRouteStateStore((state) => state.setDashboardListQuery);
   const getProjectLastRoute = useUiRouteStateStore((state) => state.getProjectLastRoute);
+  const [activeTab, setActiveTab] = useState<FilterTab>('all');
+  const [search, setSearch] = useState('');
 
-  const dashboardListQueryFromUrl = useMemo(
-    () => readDashboardQueryFromSearchParams(searchParams),
-    [searchParams],
-  );
-  const hasDashboardQueryParams = useMemo(() => hasAnyDashboardQueryParams(searchParams), [searchParams]);
-  const effectiveListQuery = useMemo(
-    () => normalizeDashboardListQuery(dashboardListQueryFromUrl, dashboardListQueryState, hasDashboardQueryParams),
-    [dashboardListQueryFromUrl, dashboardListQueryState, hasDashboardQueryParams],
-  );
-
-  useEffect(() => {
-    setDashboardListQuery(effectiveListQuery);
-  }, [effectiveListQuery, setDashboardListQuery]);
-
-  useEffect(() => {
-    const current = searchParams.toString();
-    const nextParams = buildDashboardSearchParams(effectiveListQuery);
-    const next = nextParams.toString();
-    if (current !== next) {
-      setSearchParams(nextParams, { replace: true });
-    }
-  }, [effectiveListQuery, searchParams, setSearchParams]);
-
+  const listQuery = useProjectControlPanelProjectListQuery(true, { page: 1, page_size: 100 });
   const summaryQuery = useProjectControlPanelSummaryQuery(true);
-  const listQuery = useProjectControlPanelProjectListQuery(true, effectiveListQuery);
-
-  const summaryErrorMessage =
-    summaryQuery.error instanceof Error ? summaryQuery.error.message : 'Unable to load control-panel summary.';
-  const listErrorMessage =
-    listQuery.error instanceof Error ? listQuery.error.message : 'Unable to load control-panel project list.';
-  const listItems = listQuery.data?.items ?? [];
-  const recentFailures = summaryQuery.data?.recent_failures ?? [];
-  const hasNextPage = listQuery.data?.has_next_page ?? false;
-  const totalItems = listQuery.data?.total_items ?? 0;
-  const totalPages =
-    totalItems > 0 ? Math.max(1, Math.ceil(totalItems / Math.max(1, effectiveListQuery.page_size))) : null;
   const activeRunCount = summaryQuery.data?.active_run_count ?? 0;
-  const hasActiveRunRows = listItems.some(
+  const items: ProjectControlPanelProjectListItemDto[] = listQuery.data?.items ?? [];
+
+  const hasActiveRows = items.some(
     (item) => item.status === 'running' || item.last_run_status === 'running' || item.last_run_status === 'queued',
   );
-  const staleActiveRowsCount = listItems.filter((item) => {
-    if (item.status !== 'running' && item.last_run_status !== 'running' && item.last_run_status !== 'queued') {
-      return false;
-    }
-    const updatedAtTs = Date.parse(item.updated_at);
-    if (Number.isNaN(updatedAtTs)) {
-      return false;
-    }
-    return Date.now() - updatedAtTs > dashboardStaleActiveRowAgeMs;
-  }).length;
-  const shouldAutoRefreshDashboard = activeRunCount > 0 || hasActiveRunRows || staleActiveRowsCount > 0;
-
-  const applyDashboardListQuery = (nextQuery: DashboardListQueryState) => {
-    setSearchParams(buildDashboardSearchParams(nextQuery), { replace: true });
-  };
-
-  const updateDashboardFilters = (
-    patch: Partial<
-      Pick<DashboardListQueryState, 'status' | 'selected_mode' | 'last_run_status' | 'next_required_action'>
-    >,
-  ) => {
-    applyDashboardListQuery({
-      ...effectiveListQuery,
-      ...patch,
-      page: 1,
-    });
-  };
+  const shouldAutoRefresh = activeRunCount > 0 || hasActiveRows;
 
   useEffect(() => {
-    const refreshSummary = summaryQuery.mutate;
-    const refreshList = listQuery.mutate;
-    if (
-      !shouldAutoRefreshDashboard ||
-      typeof refreshSummary !== 'function' ||
-      typeof refreshList !== 'function'
-    ) {
-      return undefined;
+    if (!shouldAutoRefresh) return;
+    const id = window.setInterval(() => {
+      void listQuery.mutate();
+      void summaryQuery.mutate();
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [shouldAutoRefresh, listQuery, summaryQuery]);
+
+  const filteredItems = useMemo(() => {
+    let result = items;
+    if (activeTab === 'active') {
+      result = result.filter((i) => i.status !== 'archived');
+    } else if (activeTab === 'archived') {
+      result = result.filter((i) => i.status === 'archived');
     }
-    const intervalId = window.setInterval(() => {
-      void refreshSummary();
-      void refreshList();
-    }, dashboardActiveRefreshIntervalMs);
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [listQuery.mutate, shouldAutoRefreshDashboard, summaryQuery.mutate]);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      result = result.filter(
+        (i) =>
+          String(i.project_id).includes(q) ||
+          (i.selected_mode && i.selected_mode.toLowerCase().includes(q)),
+      );
+    }
+    return result;
+  }, [items, activeTab, search]);
+
+  const isLoading = listQuery.isLoading && listQuery.data === undefined;
+
+  function handleOpenProject(item: ProjectControlPanelProjectListItemDto) {
+    setProject({
+      projectId: item.project_id,
+      projectTitle: `Project ${item.project_id}`,
+      selectedMode: item.selected_mode,
+    });
+    const remembered = getProjectLastRoute(item.project_id);
+    navigate(remembered ?? toWorkflowRoute(item.project_id, item.next_required_action));
+  }
 
   return (
-    <WorkflowPageShell
-      action={
-        <Button data-testid="dashboard-create-project" onClick={() => navigate('/projects/new')}>
-          Create Project
-        </Button>
-      }
-      description="Control panel for project lifecycle, run readiness, and next required actions."
-      step="Dashboard"
-      title="Project Control Panel"
-    >
-      <div className="grid gap-4 md:grid-cols-3">
-        {summaryQuery.isLoading && summaryQuery.data === undefined ? (
-          <div className="md:col-span-3" data-testid="dashboard-summary-loading">
-            <ApiPanelLoading
-              description="Fetching control-panel summary metrics."
-              title="Loading control panel summary"
-            />
-          </div>
-        ) : summaryQuery.error ? (
-          <div className="md:col-span-3" data-testid="dashboard-summary-error">
-            <ApiPanelError
-              description={summaryErrorMessage}
-              onRetry={() => {
-                void summaryQuery.mutate();
-              }}
-              retryLabel="Retry summary"
-              title="Summary unavailable"
-            />
-          </div>
-        ) : (
-          <>
-            <Card>
-              <CardHeader>
-                <CardDescription>Total projects</CardDescription>
-                <CardTitle>{summaryQuery.data?.total_projects ?? 0}</CardTitle>
-              </CardHeader>
-              <CardContent />
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardDescription>Active runs</CardDescription>
-                <CardTitle>{summaryQuery.data?.active_run_count ?? 0}</CardTitle>
-              </CardHeader>
-              <CardContent />
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardDescription>Recent failures</CardDescription>
-                <CardTitle>{summaryQuery.data?.recent_failure_count ?? 0}</CardTitle>
-              </CardHeader>
-              <CardContent />
-            </Card>
-          </>
-        )}
-      </div>
+    <div className="flex h-full flex-col overflow-auto">
+      <div className="flex-1 px-6 py-8 lg:px-10">
+        {/* Page header */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground" id="app-route-title">
+            My Projects
+          </h1>
+          <Button
+            data-testid="dashboard-create-project"
+            onClick={() => navigate('/projects/new')}
+            type="button"
+          >
+            <Plus size={14} />
+            New Project
+          </Button>
+        </div>
 
-      {!summaryQuery.isLoading && !summaryQuery.error ? (
-        <Card data-testid="dashboard-recent-failures-panel">
-          <CardHeader>
-            <CardTitle>Recent failures triage</CardTitle>
-            <CardDescription>Latest failed runs and direct links to run-monitor triage.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recentFailures.length === 0 ? (
-              <ApiPanelEmpty
-                description="No recent run failures were reported."
-                title="No failures to triage"
-              />
-            ) : (
-              <div className="space-y-3">
-                {recentFailures.slice(0, dashboardRecentFailureMaxVisible).map((failure) => (
-                  <div
-                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-panel-border/70 px-4 py-3"
-                    data-testid={`dashboard-recent-failure-${failure.project_id}`}
-                    key={`${failure.project_id}-${failure.run_id ?? 'none'}-${failure.failed_at}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-foreground">
-                        {failure.project_title} ({failure.project_id})
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        failed at {new Date(failure.failed_at).toLocaleString()}
-                      </p>
-                      {failure.error_code ? (
-                        <p className="text-xs text-muted-foreground">error: {failure.error_code}</p>
-                      ) : null}
-                      {failure.error_message ? (
-                        <p className="text-xs text-muted-foreground">{failure.error_message}</p>
-                      ) : null}
-                    </div>
-                    <Button
-                      data-testid={`dashboard-triage-failure-${failure.project_id}`}
-                      onClick={() => {
-                        navigate(toFailureTriageRoute(failure.project_id, failure.run_id));
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="secondary"
-                    >
-                      Triage
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Projects</CardTitle>
-          <CardDescription>Live control-panel project list from backend contract.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-6 grid gap-3 md:grid-cols-5" data-testid="dashboard-filter-controls">
-            <div className="space-y-1.5">
-              <Label htmlFor="dashboard-filter-status">Status</Label>
-              <select
-                className="border-input bg-background/85 h-10 w-full rounded-xl border px-3 text-sm"
-                data-testid="dashboard-filter-status"
-                id="dashboard-filter-status"
-                onChange={(event) => {
-                  updateDashboardFilters({
-                    status:
-                      event.target.value === ''
-                        ? undefined
-                        : (event.target.value as NonNullable<ProjectControlPanelProjectListRequestDto['status']>),
-                  });
-                }}
-                value={effectiveListQuery.status ?? ''}
-              >
-                <option value="">All statuses</option>
-                {projectStatusFilterOptions.map((statusOption) => (
-                  <option key={statusOption} value={statusOption}>
-                    {statusOption}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="dashboard-filter-selected-mode">Mode</Label>
-              <Input
-                data-testid="dashboard-filter-selected-mode"
-                id="dashboard-filter-selected-mode"
-                onChange={(event) => {
-                  updateDashboardFilters({
-                    selected_mode: toOptionalQueryText(event.target.value),
-                  });
-                }}
-                placeholder="e.g. author"
-                value={effectiveListQuery.selected_mode ?? ''}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="dashboard-filter-last-run-status">Last run</Label>
-              <select
-                className="border-input bg-background/85 h-10 w-full rounded-xl border px-3 text-sm"
-                data-testid="dashboard-filter-last-run-status"
-                id="dashboard-filter-last-run-status"
-                onChange={(event) => {
-                  updateDashboardFilters({
-                    last_run_status:
-                      event.target.value === ''
-                        ? undefined
-                        : (event.target.value as NonNullable<ProjectControlPanelProjectListRequestDto['last_run_status']>),
-                  });
-                }}
-                value={effectiveListQuery.last_run_status ?? ''}
-              >
-                <option value="">Any run status</option>
-                {runStatusFilterOptions.map((runStatusOption) => (
-                  <option key={runStatusOption} value={runStatusOption}>
-                    {runStatusOption}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="dashboard-filter-next-required-action">Next action</Label>
-              <select
-                className="border-input bg-background/85 h-10 w-full rounded-xl border px-3 text-sm"
-                data-testid="dashboard-filter-next-required-action"
-                id="dashboard-filter-next-required-action"
-                onChange={(event) => {
-                  updateDashboardFilters({
-                    next_required_action:
-                      event.target.value === ''
-                        ? undefined
-                        : (event.target.value as NonNullable<
-                            ProjectControlPanelProjectListRequestDto['next_required_action']
-                          >),
-                  });
-                }}
-                value={effectiveListQuery.next_required_action ?? ''}
-              >
-                <option value="">Any next action</option>
-                {nextRequiredActionFilterOptions.map((nextActionOption) => (
-                  <option key={nextActionOption} value={nextActionOption}>
-                    {nextActionOption}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-end">
-              <Button
-                className="w-full"
-                data-testid="dashboard-filter-clear"
-                onClick={() => {
-                  applyDashboardListQuery({
-                    ...effectiveListQuery,
-                    page: 1,
-                    status: undefined,
-                    selected_mode: undefined,
-                    last_run_status: undefined,
-                    next_required_action: undefined,
-                  });
-                }}
+        {/* Filter bar */}
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 rounded-lg border border-white/10 bg-card p-1">
+            {FILTER_TABS.map((tab) => (
+              <button
+                className={cn(
+                  'rounded-md px-3 py-1 text-sm transition-colors',
+                  activeTab === tab.id
+                    ? 'bg-white/10 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
                 type="button"
-                variant="outline"
               >
-                Clear filters
-              </Button>
-            </div>
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3" data-testid="dashboard-pagination-controls">
-            <div className="flex items-end gap-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="dashboard-pagination-page-size">Rows per page</Label>
-                <select
-                  className="border-input bg-background/85 h-10 min-w-24 rounded-xl border px-3 text-sm"
-                  data-testid="dashboard-pagination-page-size"
-                  id="dashboard-pagination-page-size"
-                  onChange={(event) => {
-                    const nextPageSize = Number(event.target.value);
-                    if (!Number.isInteger(nextPageSize) || nextPageSize <= 0) {
-                      return;
-                    }
-                    applyDashboardListQuery({
-                      ...effectiveListQuery,
-                      page: 1,
-                      page_size: nextPageSize,
-                    });
-                  }}
-                  value={String(effectiveListQuery.page_size)}
-                >
-                  {dashboardPageSizeOptions.map((pageSizeOption) => (
-                    <option key={pageSizeOption} value={pageSizeOption}>
-                      {pageSizeOption}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <p className="text-xs text-muted-foreground" data-testid="dashboard-pagination-page-label">
-                Page {effectiveListQuery.page}
-                {totalPages !== null ? ` of ${totalPages}` : ''}
-              </p>
-              <Button
-                data-testid="dashboard-pagination-prev"
-                disabled={effectiveListQuery.page <= 1}
-                onClick={() => {
-                  if (effectiveListQuery.page <= 1) {
-                    return;
-                  }
-                  applyDashboardListQuery({
-                    ...effectiveListQuery,
-                    page: effectiveListQuery.page - 1,
-                  });
-                }}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Previous
-              </Button>
-              <Button
-                data-testid="dashboard-pagination-next"
-                disabled={!hasNextPage}
-                onClick={() => {
-                  if (!hasNextPage) {
-                    return;
-                  }
-                  applyDashboardListQuery({
-                    ...effectiveListQuery,
-                    page: effectiveListQuery.page + 1,
-                  });
-                }}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-          {shouldAutoRefreshDashboard ? (
-            <p className="mb-3 text-xs text-muted-foreground" data-testid="dashboard-auto-refresh-indicator">
-              Auto-refresh active every 5s while runs are active or stale.
-              {staleActiveRowsCount > 0 ? ` Stale active rows: ${staleActiveRowsCount}.` : ''}
-            </p>
-          ) : null}
+          <Input
+            className="ml-auto w-full max-w-xs"
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search projects…"
+            type="search"
+            value={search}
+          />
+        </div>
 
-          {listQuery.isLoading && listQuery.data === undefined ? (
-            <div data-testid="dashboard-list-loading">
-              <ApiPanelLoading description="Fetching project rows and workflow state." title="Loading projects list" />
+        {/* Project grid */}
+        <div className="mt-8">
+          {isLoading ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="dashboard-list-loading">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  className="h-36 animate-pulse rounded-xl border border-white/10 bg-card"
+                  key={i}
+                />
+              ))}
             </div>
           ) : listQuery.error ? (
-            <div data-testid="dashboard-list-error">
-              <ApiPanelError
-                description={listErrorMessage}
-                onRetry={() => {
-                  void listQuery.mutate();
-                }}
-                retryLabel="Retry projects list"
-                title="Project list unavailable"
-              />
+            <div className="rounded-xl border border-white/10 bg-card p-6 text-center" data-testid="dashboard-list-error">
+              <p className="text-sm text-muted-foreground">Unable to load projects.</p>
+              <Button
+                className="mt-3"
+                onClick={() => void listQuery.mutate()}
+                size="sm"
+                variant="outline"
+              >
+                Retry
+              </Button>
             </div>
-          ) : listItems.length === 0 ? (
-            <div data-testid="dashboard-list-empty">
-              <ApiPanelEmpty description="No projects found." title="No projects available" />
-            </div>
+          ) : filteredItems.length === 0 ? (
+            <DashboardEmpty />
           ) : (
-            <div className="space-y-3" data-testid="dashboard-project-list">
-              {listItems.map((item) => (
-                <DashboardProjectListRow
+            <div
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+              data-testid="dashboard-project-list"
+            >
+              {filteredItems.map((item) => (
+                <ProjectCard
                   item={item}
                   key={item.project_id}
-                  onNavigateProjectRoute={(route) => {
-                    setProject({
-                      projectId: item.project_id,
-                      projectTitle: `Project ${item.project_id}`,
-                      selectedMode: item.selected_mode,
-                    });
-                    navigate(route);
-                  }}
-                  onOpenProject={() => {
-                    setProject({
-                      projectId: item.project_id,
-                      projectTitle: `Project ${item.project_id}`,
-                      selectedMode: item.selected_mode,
-                    });
-                    const rememberedRoute = getProjectLastRoute(item.project_id);
-                    navigate(rememberedRoute ?? toWorkflowRoute(item.project_id, item.next_required_action));
-                  }}
+                  onClick={() => handleOpenProject(item)}
                 />
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
-    </WorkflowPageShell>
+        </div>
+      </div>
+    </div>
   );
 }

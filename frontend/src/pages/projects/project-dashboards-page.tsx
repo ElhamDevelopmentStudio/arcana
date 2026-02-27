@@ -1,286 +1,73 @@
+import { useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
+
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Download } from 'lucide-react';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import {
-  useCharacterAnalyticsQuery,
-  useAudiobookPrepDashboardQuery,
-  useCharacterCooccurrenceGraphQuery,
-  useExportPayloadQuery,
-  usePipelineStageDurationsDashboardQuery,
   useTensionGraphQuery,
+  usePolarityGraphQuery,
+  useCharacterAnalyticsQuery,
+  useCharacterCooccurrenceGraphQuery,
+  useAudiobookPrepDashboardQuery,
+  usePipelineStageDurationsDashboardQuery,
 } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
-import type {
-  CharacterAnalyticsResponseDto,
-  CharacterCooccurrenceGraphResponseDto,
-  TensionGraphPeakMarkerDto,
-  TensionGraphPlateauRegionDto,
-} from '@/app/schemas/api';
-import { useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { CartesianGrid, Line, LineChart, Legend, ReferenceArea, Tooltip, XAxis, YAxis } from 'recharts';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
-type DashboardPoint = {
-  chapter: string;
-  tension: number;
-  position: number;
-  chapterId: number | null;
-  segmentId: string | null;
-};
-
-type PeakMarkerPoint = {
-  position: number;
-  tension: number;
-  segmentId: string | null;
-  peakType: string;
-  severity: string;
-};
-
-type PlateauOverlay = {
-  regionType: string;
-  startPosition: number;
-  endPosition: number;
-  yMin: number;
-  yMax: number;
-  average: number;
-  key: string;
-};
-
-type ExportSegment = Record<string, unknown>;
-type CharacterTrendSeriesPoint = {
-  chapterLabel: string;
-  chapterIndex: number;
-  [characterName: string]: string | number;
-};
-
-type CharacterProminenceRow = {
-  name: string;
-  mentionsPer1000Words: number;
-  totalMentions: number;
-  firstAppearanceChapter: number | null;
-  lastAppearanceChapter: number | null;
-  dialogueLineCount: number;
-};
-
-function toGraphTestId(value: string): string {
-  return value.replace(/\s+/g, '-').toLowerCase();
-}
-
-function toStringValue(value: unknown): string | null {
-  if (value == null) {
-    return null;
-  }
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  return null;
-}
-
-function toNumericValue(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-  return null;
-}
-
-function clampUnit(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function extractTensionValueFromSegment(segment: ExportSegment): number | null {
-  const tensionContribution = segment.tension_contribution;
-  if (typeof tensionContribution !== 'object' || tensionContribution === null) {
-    return null;
-  }
-
-  const parsed = toNumericValue((tensionContribution as { value?: unknown }).value);
-  return parsed === null ? null : clampUnit(parsed);
-}
-
-function buildFallbackPoints(): DashboardPoint[] {
-  return Array.from({ length: 12 }, (_, index) => ({
-    chapter: `S ${index + 1}`,
-    tension: clampUnit(((index * 7 + 13) % 100) / 100),
-    position: index + 1,
-    chapterId: null,
-    segmentId: `fallback-${index + 1}`,
-  }));
-}
-
-function formatPercent(value: number): string {
-  return `${Math.round(value * 100)}%`;
-}
-
-function buildCharacterTotalsByName(analytics: CharacterAnalyticsResponseDto | null): Map<string, number> {
-  const totals = new Map<string, number>();
-  for (const record of analytics?.character_mentions_by_chapter ?? []) {
-    for (const [name, count] of Object.entries(record.mention_counts)) {
-      const previous = totals.get(name) ?? 0;
-      totals.set(name, previous + count);
-    }
-  }
-
-  for (const name of Object.keys(analytics?.character_first_appearance_chapter_index ?? {})) {
-    totals.set(name, totals.get(name) ?? 0);
-  }
-
-  return totals;
-}
-
-function buildCharacterProminenceRows(analytics: CharacterAnalyticsResponseDto | null): CharacterProminenceRow[] {
-  const totals = buildCharacterTotalsByName(analytics);
-
-  const rows = Array.from(totals.entries()).map(([name, totalMentions]) => ({
-    name,
-    mentionsPer1000Words: analytics?.character_mentions_per_1000_words[name] ?? 0,
-    totalMentions,
-    firstAppearanceChapter: analytics?.character_first_appearance_chapter_index[name] ?? null,
-    lastAppearanceChapter: analytics?.character_last_appearance_chapter_index[name] ?? null,
-    dialogueLineCount: analytics?.character_dialogue_line_counts[name] ?? 0,
-  }));
-
-  rows.sort((left, right) => {
-    if (right.mentionsPer1000Words !== left.mentionsPer1000Words) {
-      return right.mentionsPer1000Words - left.mentionsPer1000Words;
-    }
-    return right.totalMentions - left.totalMentions;
-  });
-  return rows;
-}
-
-function buildCharacterTrendSeries(
-  analytics: CharacterAnalyticsResponseDto | null,
-  trendCharacters: string[],
-): CharacterTrendSeriesPoint[] {
-  if (!analytics) {
-    return [];
-  }
-
-  const sortedChapters = [...analytics.character_mentions_by_chapter].sort(
-    (left, right) => left.chapter_index - right.chapter_index,
-  );
-
-  return sortedChapters.map((record) => {
-    const point: CharacterTrendSeriesPoint = {
-      chapterLabel: `Ch ${record.chapter_index}`,
-      chapterIndex: record.chapter_index,
-    };
-    for (const name of trendCharacters) {
-      point[name] = record.mention_counts[name] ?? 0;
-    }
-    return point;
-  });
-}
-
-const CHARACTER_TREND_PALETTE = ['#0ea5e9', '#8b5cf6', '#f97316', '#22c55e', '#ec4899'];
-
-function computeMax(values: DashboardPoint[]) {
-  const max = Math.max(0, ...values.map((item) => item.tension));
-  return max;
-}
-
-function computeAverage(values: DashboardPoint[]) {
-  if (values.length === 0) {
-    return 0;
-  }
-  const sum = values.reduce((acc, item) => acc + item.tension, 0);
-  return sum / values.length;
-}
-
-function normalizePeakMarkers(
-  peaks: TensionGraphPeakMarkerDto[] | undefined,
-): PeakMarkerPoint[] {
-  return (peaks ?? [])
-    .map((peak) => {
-      if (peak.position === null || peak.position === undefined || Number.isNaN(peak.position)) {
-        return null;
-      }
-      return {
-        position: peak.position,
-        tension: clampUnit(peak.tension_value),
-        segmentId: peak.segment_id ?? null,
-        peakType: peak.peak_type,
-        severity: peak.severity,
-      };
-    })
-    .filter((item): item is PeakMarkerPoint => item !== null);
-}
-
-function normalizePlateauOverlays(
-  regions: TensionGraphPlateauRegionDto[] | undefined,
-): PlateauOverlay[] {
-  return (regions ?? [])
-    .map((region) => {
-      const segmentIndices = region.segment_indices ?? [];
-      const start = region.start_position ?? segmentIndices[0] ?? null;
-      const end = region.end_position ?? segmentIndices[segmentIndices.length - 1] ?? null;
-
-      if (start === null || end === null || Number.isNaN(start) || Number.isNaN(end)) {
-        return null;
-      }
-
-      return {
-        regionType: region.region_type,
-        startPosition: Math.min(start, end),
-        endPosition: Math.max(start, end),
-        yMin: clampUnit(region.tension_value_range.min),
-        yMax: clampUnit(region.tension_value_range.max),
-        average: clampUnit(region.average_tension),
-        key: `plateau-${region.region_type}-${start}-${end}`,
-      };
-    })
-    .filter((item): item is PlateauOverlay => item !== null);
-}
-
-function PeakMarkerPointShape({
-  cx,
-  cy,
-  payload,
-}: {
-  cx?: number;
-  cy?: number;
-  payload?: {
-    peakMarkerSeverity?: string;
-    peakMarkerType?: string;
-    peakMarkerSegmentId?: string | null;
-    position?: number;
-  };
-}) {
-  if (typeof cx !== 'number' || typeof cy !== 'number') {
-    return null;
-  }
-
-  const color = payload?.peakMarkerSeverity?.toLowerCase() === 'major' ? '#ef4444' : '#f59e0b';
-  const label = `${payload?.peakMarkerType ?? 'peak'}-${payload?.peakMarkerSegmentId ?? payload?.position}`;
-  const markerTestId = `tension-peak-marker-${payload?.peakMarkerSegmentId ?? payload?.position ?? 'unknown'}`;
+function ChartPanel({ title, description, children, isLoading }: { title: string; description?: string; children?: React.ReactNode; isLoading?: boolean }) {
   return (
-    <g>
-      <circle cx={cx} cy={cy} r={6} fill={color} opacity={0.15} />
-      <circle cx={cx} cy={cy} r={3} fill={color} stroke="#fff" strokeWidth={2} data-testid={markerTestId} />
-      <text
-        x={cx + 8}
-        y={cy - 8}
-        fill={color}
-        fontSize={10}
-        textAnchor="start"
-        dominantBaseline="middle"
-      >
-        {label}
-      </text>
-    </g>
+    <div className="rounded-xl border border-white/10 bg-card p-4">
+      <p className="mb-0.5 text-sm font-semibold text-foreground">{title}</p>
+      {description && <p className="mb-3 text-xs text-muted-foreground">{description}</p>}
+      {!description && <div className="mb-3" />}
+      {isLoading ? (
+        <div className="flex h-40 items-center justify-center">
+          <div className="h-32 w-full animate-pulse rounded-lg bg-white/5" />
+        </div>
+      ) : (
+        <div className="min-h-40">{children}</div>
+      )}
+    </div>
+  );
+}
+
+function SimpleLinePreview({ data, color = '#60a5fa' }: { data: number[]; color?: string }) {
+  if (!data.length) return <p className="py-8 text-center text-xs text-muted-foreground">No data</p>;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const w = 100, h = 60;
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`).join(' ');
+  return (
+    <svg className="w-full" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+      <polyline fill="none" points={pts} stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function BarChart({ data }: { data: Array<{ label: string; value: number; total: number }> }) {
+  if (!data.length) return <p className="py-8 text-center text-xs text-muted-foreground">No data</p>;
+  return (
+    <div className="space-y-2">
+      {data.map((d) => (
+        <div key={d.label}>
+          <div className="mb-0.5 flex items-center justify-between text-xs">
+            <span className="text-foreground truncate max-w-[60%]">{d.label}</span>
+            <span className="text-muted-foreground">{d.value.toLocaleString()}</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-white/5">
+            <div
+              className="h-1.5 rounded-full bg-foreground/30 transition-all"
+              style={{ width: `${Math.min(100, (d.value / (d.total || 1)) * 100)}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -288,571 +75,181 @@ export function ProjectDashboardsPage() {
   const params = useParams<{ project_id: string }>();
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
-  const runId = useWorkspaceStore((state) => state.runId);
-
+  const storeRunId = useWorkspaceStore((state) => state.runId);
   const projectId = routeProjectId ?? storeProjectId;
-  const exportPayloadQuery = useExportPayloadQuery(projectId, runId);
-  const tensionGraphQuery = useTensionGraphQuery(projectId, runId);
-  const characterAnalyticsQuery = useCharacterAnalyticsQuery(projectId, runId);
-  const cooccurrenceGraphQuery = useCharacterCooccurrenceGraphQuery(projectId, runId);
-  const audiobookPrepDashboardQuery = useAudiobookPrepDashboardQuery(projectId, runId);
-  const pipelineStageDurationsQuery = usePipelineStageDurationsDashboardQuery(projectId, runId);
-  const [showSmoothed, setShowSmoothed] = useState(true);
+  const [runIdInput, setRunIdInput] = useState(storeRunId !== null ? String(storeRunId) : '');
+  const [activeRunId, setActiveRunId] = useState<number | null>(storeRunId);
 
-  const rawSeries = useMemo(() => {
-    const segments = (exportPayloadQuery.data?.segments ?? []) as ExportSegment[];
-    const values = segments
-      .map((segment, index): DashboardPoint | null => {
-        const tensionValue = extractTensionValueFromSegment(segment);
-        if (tensionValue === null) {
-          return null;
-        }
+  const tensionQuery = useTensionGraphQuery(projectId, activeRunId);
+  const polarityQuery = usePolarityGraphQuery(projectId, activeRunId);
+  const analyticsQuery = useCharacterAnalyticsQuery(projectId, activeRunId);
+  const cooccurrenceQuery = useCharacterCooccurrenceGraphQuery(projectId, activeRunId);
+  const audiobookQuery = useAudiobookPrepDashboardQuery(projectId, activeRunId);
+  const stageDurationsQuery = usePipelineStageDurationsDashboardQuery(projectId, activeRunId);
 
-        return {
-          chapter: `S ${index + 1}`,
-          tension: tensionValue,
-          position: toNumericValue(segment.segment_index) || index + 1,
-          chapterId: toNumericValue(segment.chapter_id) ? Math.trunc(toNumericValue(segment.chapter_id)!) : null,
-          segmentId: toStringValue(segment.segment_id),
-        };
-      })
-      .filter((point): point is DashboardPoint => point !== null);
-
-    if (values.length > 0) {
-      return values;
-    }
-
-    return buildFallbackPoints();
-  }, [exportPayloadQuery.data]);
-
-  const smoothedSeries = useMemo(() => {
-    const rawPoints = tensionGraphQuery.data?.points ?? [];
-    const values = rawPoints.map((point) => ({
-      chapter: `S ${point.position}`,
-      tension: clampUnit(point.smoothed_tension),
-      position: point.position,
-      chapterId: point.chapter_id ?? null,
-      segmentId: point.segment_id,
-    }));
-
-    if (values.length > 0) {
-      return values;
-    }
-
-    return rawSeries;
-  }, [rawSeries, tensionGraphQuery.data]);
-
-  const peakMarkerSeries = useMemo(
-    () => (showSmoothed ? normalizePeakMarkers(tensionGraphQuery.data?.peak_markers) : []),
-    [showSmoothed, tensionGraphQuery.data],
-  );
-  const plateauOverlays = useMemo(
-    () => (showSmoothed ? normalizePlateauOverlays(tensionGraphQuery.data?.plateau_regions) : []),
-    [showSmoothed, tensionGraphQuery.data],
-  );
-
-  const chartData = useMemo(() => (showSmoothed ? smoothedSeries : rawSeries).slice(0, 20), [showSmoothed, rawSeries, smoothedSeries]);
-  const chartMaxPosition = chartData.length > 0 ? chartData[chartData.length - 1].position : 0;
-  const peakMarkersByPosition = useMemo(() => {
-    const markersByPosition = new Map<number, PeakMarkerPoint>();
-    for (const marker of peakMarkerSeries) {
-      markersByPosition.set(marker.position, marker);
-    }
-    return markersByPosition;
-  }, [peakMarkerSeries]);
-  const filteredPeakMarkerSeries = useMemo(
-    () =>
-      peakMarkerSeries.filter((peak) => peak.position >= 1 && (chartMaxPosition === 0 || peak.position <= chartMaxPosition + 1)),
-    [peakMarkerSeries, chartMaxPosition],
-  );
-  const filteredPlateauOverlays = useMemo(
-    () =>
-      plateauOverlays.filter(
-        (region) =>
-          region.startPosition >= 1 &&
-          (chartMaxPosition === 0 || region.startPosition <= chartMaxPosition + 1) &&
-          region.endPosition >= 1,
-      ),
-    [plateauOverlays, chartMaxPosition],
-  );
-  const chartDataWithPeakOverlays = useMemo(() => {
-    return chartData.map((point) => {
-      const marker = peakMarkersByPosition.get(point.position);
-      return {
-        ...point,
-        peakTension: marker ? marker.tension : null,
-        peakMarkerSegmentId: marker ? marker.segmentId : null,
-        peakMarkerType: marker ? marker.peakType : null,
-        peakMarkerSeverity: marker ? marker.severity : null,
-      };
-    });
-  }, [chartData, peakMarkersByPosition]);
-
-  const maxTension = computeMax(chartData);
-  const avgTension = computeAverage(chartData);
-  const characterProminenceRows = useMemo(
-    () => buildCharacterProminenceRows(characterAnalyticsQuery.data ?? null),
-    [characterAnalyticsQuery.data],
-  );
-  const trendCharacters = useMemo(() => characterProminenceRows.slice(0, 3).map((item) => item.name), [characterProminenceRows]);
-  const trendSeries = useMemo(
-    () => buildCharacterTrendSeries(characterAnalyticsQuery.data ?? null, trendCharacters),
-    [characterAnalyticsQuery.data, trendCharacters],
-  );
-  const cooccurrenceGraphPayload = useMemo<CharacterCooccurrenceGraphResponseDto | null>(() => {
-    return cooccurrenceGraphQuery.data ?? null;
-  }, [cooccurrenceGraphQuery.data]);
-
-  const topCentralityRows = useMemo(
-    () => [...(cooccurrenceGraphPayload?.character_cooccurrence_centrality.metrics_table ?? [])].slice(0, 5),
-    [cooccurrenceGraphPayload],
-  );
-  const topWeightedEdges = useMemo(() => {
-    const edges = cooccurrenceGraphPayload?.graph?.edges ?? [];
-    return [...edges].sort((left, right) => {
-      if (right.weight !== left.weight) {
-        return right.weight - left.weight;
-      }
-      return right.co_occurrence_count - left.co_occurrence_count;
-    }).slice(0, 5);
-  }, [cooccurrenceGraphPayload]);
-
-  const canExportDashboardSnapshot =
-    projectId !== null &&
-    runId !== null &&
-    !exportPayloadQuery.isLoading &&
-    !tensionGraphQuery.isLoading &&
-    !characterAnalyticsQuery.isLoading &&
-    !cooccurrenceGraphQuery.isLoading &&
-    !audiobookPrepDashboardQuery.isLoading &&
-    !pipelineStageDurationsQuery.isLoading &&
-    !exportPayloadQuery.error &&
-    !tensionGraphQuery.error &&
-    !characterAnalyticsQuery.error &&
-    !cooccurrenceGraphQuery.error &&
-    !audiobookPrepDashboardQuery.error &&
-    !pipelineStageDurationsQuery.error;
-
-  function downloadDashboardSnapshot() {
-    if (!canExportDashboardSnapshot || projectId === null || runId === null) {
-      return;
-    }
-
-    const snapshotPayload = {
-      generated_at: new Date().toISOString(),
-      project_id: projectId,
-      run_id: runId,
-      tension_graph: tensionGraphQuery.data ?? null,
-      character_analytics: characterAnalyticsQuery.data ?? null,
-      cooccurrence_graph: cooccurrenceGraphPayload,
-      audiobook_prep_dashboard: audiobookPrepDashboardQuery.data ?? null,
-      pipeline_stage_durations_dashboard: pipelineStageDurationsQuery.data ?? null,
-      show_smoothed_graph: showSmoothed,
-    };
-
-    const blob = new Blob([JSON.stringify(snapshotPayload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `project-${projectId}-run-${runId}-dashboard-snapshot.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  function loadRun() {
+    const n = Number(runIdInput);
+    if (!Number.isInteger(n) || n <= 0) { toast.error('Enter a valid run ID'); return; }
+    setActiveRunId(n);
   }
 
-  const dataSourceLabel = showSmoothed
-    ? tensionGraphQuery.data
-      ? 'Data source: run tension graph endpoint'
-      : 'Data source: fallback smoothed data'
-    : 'Data source: raw segment tension';
+  const audiobookData = audiobookQuery.data;
+  const isAudiobookReady = audiobookData?.export_readiness?.is_ready;
+  const stageData = stageDurationsQuery.data;
+  const totalMs = stageData?.total_duration_ms ?? 1;
 
   return (
     <WorkflowPageShell
-      step="Step 07"
-      title="Dashboards"
-      description="Explore visual analytics: tension, emotional polarity, dominance, and character trends."
-      action={
-        <div className="flex gap-2">
-          <Button
-            onClick={downloadDashboardSnapshot}
-            disabled={!canExportDashboardSnapshot}
-            data-testid="dashboards-snapshot-export-button"
-            variant="outline"
-            size="sm"
-          >
-            <Download className="size-4" />
-            Download snapshot
-          </Button>
-          <p className="text-sm text-muted-foreground">{dataSourceLabel}</p>
-        </div>
-      }
+      breadcrumb={`All Projects › Project #${projectId ?? '—'} › Analytics`}
+      title="Analytics"
+      description="Narrative tension, sentiment, character analysis, and pipeline performance across your manuscript."
     >
-      <Card>
-        <CardHeader>
-          <CardTitle>Audiobook Prep Readiness</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          {audiobookPrepDashboardQuery.data ? (
-            <p data-testid="dashboards-audiobook-readiness-status">
-              Export readiness:{' '}
-              <span className={audiobookPrepDashboardQuery.data.export_readiness.is_ready ? 'text-emerald-500' : 'text-amber-500'}>
-                {audiobookPrepDashboardQuery.data.export_readiness.is_ready ? 'Ready' : 'Not ready'}
-              </span>
-            </p>
-          ) : null}
-          <p data-testid="dashboards-audiobook-unresolved-speakers">
-            Unresolved speaker assignments:{' '}
-            <span className="font-medium text-foreground">
-              {audiobookPrepDashboardQuery.isLoading
-                ? 'Loading…'
-                : audiobookPrepDashboardQuery.error
-                  ? 'Unavailable'
-                  : `${audiobookPrepDashboardQuery.data?.unresolved_speaker_count ?? 0}`}
-            </span>
-          </p>
-          {audiobookPrepDashboardQuery.data ? (
-            <div className="space-y-1">
-              <p className="font-medium text-foreground">Blocking reasons</p>
-              <p data-testid="dashboards-audiobook-blocking-reasons" className="text-xs">
-                {audiobookPrepDashboardQuery.data.export_readiness.blocking_reasons.join(', ') || 'None'}
-              </p>
-              <p className="font-medium text-foreground">Warning reasons</p>
-              <p data-testid="dashboards-audiobook-warning-reasons" className="text-xs">
-                {audiobookPrepDashboardQuery.data.export_readiness.warning_reasons.join(', ') || 'None'}
-              </p>
-            </div>
-          ) : null}
-          {audiobookPrepDashboardQuery.data ? (
-            <p data-testid="dashboards-audiobook-low-confidence-regions">
-              Low-confidence region count:{' '}
-              <span className="font-medium text-foreground">
-                {audiobookPrepDashboardQuery.data.low_confidence_region_count}
-              </span>
-            </p>
-          ) : null}
-          {audiobookPrepDashboardQuery.data ? (
-            <p data-testid="dashboards-audiobook-unresolved-voice-maps">
-              Unresolved voice mappings:{' '}
-              <span className="font-medium text-foreground">
-                {audiobookPrepDashboardQuery.data.unresolved_voice_mapping_count}
-              </span>
-            </p>
-          ) : null}
-          {audiobookPrepDashboardQuery.error ? (
-            <p className="text-destructive">{audiobookPrepDashboardQuery.error.message}</p>
-          ) : null}
-        </CardContent>
-      </Card>
+      <div className="flex items-center gap-3">
+        <Input
+          className="w-36 font-mono"
+          data-testid="analytics-run-id-input"
+          onChange={(e) => setRunIdInput(e.target.value)}
+          placeholder="Run ID"
+          type="number"
+          value={runIdInput}
+        />
+        <Button onClick={loadRun} size="sm" variant="outline">Load run</Button>
+        {activeRunId && <span className="text-sm text-muted-foreground">Run #{activeRunId}</span>}
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Pipeline Stage Durations</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p data-testid="dashboards-stage-duration-total">
-            Total pipeline time:{' '}
-            <span className="font-medium text-foreground">
-              {pipelineStageDurationsQuery.isLoading
-                ? 'Loading…'
-                : pipelineStageDurationsQuery.error
-                  ? 'Unavailable'
-                  : `${pipelineStageDurationsQuery.data?.total_duration_ms ?? 0} ms`}
-            </span>
-          </p>
-          <p data-testid="dashboards-stage-duration-slowest">
-            Slowest stage:{' '}
-            <span className="font-medium text-foreground">
-              {pipelineStageDurationsQuery.data?.slowest_stage_name
-                ? `${pipelineStageDurationsQuery.data.slowest_stage_name} (${pipelineStageDurationsQuery.data.slowest_stage_duration_ms ?? 0} ms)`
-                : 'Unavailable'}
-            </span>
-          </p>
-          <p>
-            Stages:{' '}
-            <span className="font-medium text-foreground">
-              {pipelineStageDurationsQuery.data?.stage_count ?? 0}
-            </span>
-          </p>
-          {(pipelineStageDurationsQuery.data?.stages ?? []).slice(0, 10).map((stage) => (
-            <div
-              key={stage.stage_name}
-              className="grid gap-1 rounded border border-panel-border/50 bg-panel/40 px-3 py-2 sm:grid-cols-[1fr_auto_auto] sm:grid"
-              data-testid={`dashboards-stage-duration-${toGraphTestId(stage.stage_name)}`}
-            >
-              <p className="font-medium text-foreground">{stage.stage_name}</p>
-              <p>{stage.duration_ms} ms</p>
-              <p>{Math.round(stage.share_of_total * 100)}%</p>
-            </div>
-          ))}
-          {pipelineStageDurationsQuery.error ? (
-            <p className="text-destructive">{pipelineStageDurationsQuery.error.message}</p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Narrative Trend</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              Display mode: <span className="font-medium text-foreground">{showSmoothed ? 'Smoothed' : 'Raw'}</span>
-            </p>
-            <div className="flex items-center gap-2">
-              <Label className="text-sm" htmlFor="tension-smoothing-toggle">
-                Show smoothed
-              </Label>
-              <Switch
-                checked={showSmoothed}
-                onCheckedChange={setShowSmoothed}
-                id="tension-smoothing-toggle"
-                aria-label="tension smoothing toggle"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-2 text-sm text-muted-foreground lg:grid-cols-3">
-            <p>
-              Peak tension: <strong className="text-foreground">{formatPercent(maxTension)}</strong>
-            </p>
-            <p>
-              Average tension: <strong className="text-foreground">{formatPercent(avgTension)}</strong>
-            </p>
-            <p>
-              Segments: <strong className="text-foreground">{chartData.length}</strong>
-            </p>
-          </div>
-
-          <div className="h-[20rem]">
-            <LineChart width={900} height={320} data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="position" tickFormatter={(value) => `S ${value}`} />
-              <YAxis domain={[0, 1]} />
-              {filteredPlateauOverlays.map((region) => (
-                <ReferenceArea
-                  key={region.key}
-                  x1={region.startPosition}
-                  x2={region.endPosition}
-                  y1={region.yMin}
-                  y2={region.yMax}
-                  fill="rgba(21, 115, 230, 0.16)"
-                  fillOpacity={0.3}
-                  stroke="rgba(21, 115, 230, 0.35)"
-                  strokeOpacity={0.4}
-                />
-              ))}
-              <Tooltip />
-              <Line dataKey="tension" dot={false} stroke="#1473e6" strokeWidth={2.5} type="monotone" />
-              <Line
-                data={chartDataWithPeakOverlays}
-                dataKey="peakTension"
-                type="monotone"
-                stroke="transparent"
-                strokeWidth={0}
-                dot={<PeakMarkerPointShape />}
-                activeDot={false}
-                isAnimationActive={false}
-                connectNulls={false}
-              />
-            </LineChart>
-          </div>
-
-          {showSmoothed && (filteredPeakMarkerSeries.length > 0 || filteredPlateauOverlays.length > 0) ? (
-            <div className="space-y-4 border-t border-panel-border/50 pt-4 text-sm">
-              <div className="grid gap-1">
-                <p className="font-medium text-foreground">Peak markers</p>
-                {filteredPeakMarkerSeries.length > 0 ? (
-                  <ul className="space-y-1 text-muted-foreground">
-                    {filteredPeakMarkerSeries.map((marker, index) => (
-                      <li key={`${marker.segmentId ?? marker.position}-${index}`}>
-                        {marker.segmentId ?? `S ${marker.position}`}: {marker.peakType} ({marker.severity}) at{' '}
-                        {formatPercent(marker.tension)}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-muted-foreground">No peak markers available for this window.</p>
-                )}
-              </div>
-              <div className="grid gap-1">
-                <p className="font-medium text-foreground">Plateau overlays</p>
-                {filteredPlateauOverlays.length > 0 ? (
-                  <ul className="space-y-1 text-muted-foreground">
-                    {filteredPlateauOverlays.map((region, index) => (
-                      <li key={`${region.key}-${index}`}>
-                        {region.regionType}: S {region.startPosition} to S {region.endPosition} ({formatPercent(region.average)})
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-muted-foreground">No plateau overlays available for this window.</p>
-                )}
-              </div>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Character Prominence</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">Top characters by mentions per 1,000 words and key appearance stats.</p>
-          <div className="space-y-2 text-sm">
-            {characterProminenceRows.slice(0, 5).map((character) => (
-              <div
-                key={character.name}
-                className="grid gap-1 rounded border border-panel-border/50 bg-panel/40 px-3 py-2 sm:grid-cols-[1.5fr_1fr_1fr_1fr] sm:grid"
-                data-testid={`dashboards-character-prominence-${character.name.replace(/\s+/g, '-')}`}
-              >
-                <p className="font-medium text-foreground sm:col-span-1">{character.name}</p>
-                <p className="text-muted-foreground">Prominence: {character.mentionsPer1000Words.toFixed(2)}</p>
-                <p className="text-muted-foreground">
-                  Total mentions: <span className="font-medium text-foreground">{character.totalMentions}</span>
-                </p>
-                <p className="text-muted-foreground">
-                  Dialogue lines: <span className="font-medium text-foreground">{character.dialogueLineCount}</span>
-                </p>
-              </div>
-            ))}
-            {characterProminenceRows.length === 0 ? <p className="text-sm text-muted-foreground">No character analytics available.</p> : null}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Character Mention Trends</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {trendSeries.length > 0 && trendCharacters.length > 0 ? (
-            <>
-              <p className="text-sm text-muted-foreground">Per-chapter mention trajectory for top characters.</p>
-              <div className="h-[20rem]">
-                <LineChart width={900} height={280} data={trendSeries}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="chapterLabel" />
-                  <YAxis allowDecimals />
-                  <Tooltip />
-                  <Legend />
-                  {trendCharacters.map((name, index) => (
-                    <Line
-                      key={name}
-                      dataKey={name}
-                      name={name}
-                      type="monotone"
-                      stroke={CHARACTER_TREND_PALETTE[index % CHARACTER_TREND_PALETTE.length]}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  ))}
-                </LineChart>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">No character trend data available.</p>
-          )}
-          <div className="grid gap-1 text-xs text-muted-foreground">
-            {characterProminenceRows.slice(0, 3).map((character, index) => (
-              <p key={`${character.name}-trend-${index}`}>
-                {character.name}: first appears in chapter {character.firstAppearanceChapter ?? '—'}, last appears in chapter{' '}
-                {character.lastAppearanceChapter ?? '—'}.
-              </p>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Character Co-occurrence Graph</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-1 text-sm text-muted-foreground md:grid-cols-2">
-            <p data-testid="dashboards-cooccurrence-node-count">
-              Nodes: <span className="font-medium text-foreground">{cooccurrenceGraphPayload?.graph?.metadata.node_count ?? 0}</span>
-            </p>
-            <p data-testid="dashboards-cooccurrence-edge-count">
-              Edges: <span className="font-medium text-foreground">{cooccurrenceGraphPayload?.graph?.metadata.edge_count ?? 0}</span>
-            </p>
-            <p>
-              Scope: <span className="font-medium text-foreground">
-                {cooccurrenceGraphPayload?.graph?.metadata.scope ?? 'unavailable'}
-              </span>
-            </p>
-            <p>
-              Direction: <span className="font-medium text-foreground">
-                {cooccurrenceGraphPayload ? (cooccurrenceGraphPayload.graph.metadata.undirected ? 'Undirected' : 'Directed') : 'Unavailable'}
-              </span>
-            </p>
-          </div>
-          <div className="space-y-2 text-sm">
-            <p className="font-medium text-foreground">Top centrality rows</p>
-                {topCentralityRows.length > 0 ? (
-              <div className="space-y-1">
-                {topCentralityRows.map((row) => (
-                  <div
-                    key={row.character_key}
-                    className="grid gap-1 rounded border border-panel-border/50 bg-panel/40 px-3 py-2 sm:grid-cols-[1fr_auto_auto_auto] sm:grid"
-                    data-testid={`dashboards-cooccurrence-centrality-${toGraphTestId(row.character_key ?? row.character_label)}`}
-                  >
-                    <p className="font-medium text-foreground">#{row.rank} {row.character_label}</p>
-                    <p>Degree: {row.degree}</p>
-                    <p>Weighted: {row.weighted_degree.toFixed(2)}</p>
-                    <p>Centrality: {row.degree_centrality.toFixed(2)}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">No centrality values available for this run.</p>
-            )}
-          </div>
-          <div className="space-y-2 text-sm">
-            <p className="font-medium text-foreground">Strongest transitions</p>
-            {topWeightedEdges.length > 0 ? (
-              <div className="space-y-1">
-                {topWeightedEdges.map((edge) => (
-                  <div
-                    key={`${edge.source}-${edge.target}-${edge.weight}`}
-                    className="grid gap-1 rounded border border-panel-border/50 bg-panel/40 px-3 py-2 sm:grid-cols-[1fr_auto_auto] sm:grid"
-                    data-testid={`dashboards-cooccurrence-edge-${toGraphTestId(edge.source)}-${toGraphTestId(edge.target)}`}
-                  >
-                    <p className="font-medium text-foreground">
-                      {edge.source} ↔ {edge.target}
+      {activeRunId === null ? (
+        <div className="rounded-xl border border-white/10 bg-card p-10 text-center">
+          <p className="text-sm text-muted-foreground">Load a run to view analytics.</p>
+        </div>
+      ) : (
+        <div className="space-y-4" data-testid="analytics-grid">
+          {/* Audiobook prep readiness */}
+          {(audiobookQuery.isLoading || audiobookData) && (
+            <div className={cn(
+              'rounded-xl border p-4',
+              audiobookQuery.isLoading ? 'border-white/10 bg-card' :
+              isAudiobookReady ? 'border-green-400/20 bg-green-400/5' : 'border-amber-400/20 bg-amber-400/5',
+            )} data-testid="audiobook-prep-dashboard">
+              {audiobookQuery.isLoading ? (
+                <div className="h-6 w-48 animate-pulse rounded bg-white/5" />
+              ) : audiobookData && (
+                <>
+                  <div className="flex items-center gap-2 mb-2">
+                    {isAudiobookReady ? (
+                      <CheckCircle2 className="text-green-400 shrink-0" size={16} />
+                    ) : (
+                      <AlertTriangle className="text-amber-400 shrink-0" size={16} />
+                    )}
+                    <p className={cn('text-sm font-semibold', isAudiobookReady ? 'text-green-400' : 'text-amber-400')}>
+                      Audiobook Export {isAudiobookReady ? 'Ready' : 'Not Ready'}
                     </p>
-                    <p>Count: {edge.co_occurrence_count}</p>
-                    <p>Weight: {edge.weight}</p>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">No transition pairs available for this run.</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+                  <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                    <span>{audiobookData.unresolved_speaker_count} unresolved speakers</span>
+                    <span>{audiobookData.unresolved_voice_mapping_count} unresolved voice mappings</span>
+                    <span>{audiobookData.low_confidence_region_count} low confidence regions</span>
+                  </div>
+                  {audiobookData.export_readiness.blocking_reasons.length > 0 && (
+                    <ul className="mt-2 space-y-0.5">
+                      {audiobookData.export_readiness.blocking_reasons.map((r, i) => (
+                        <li className="flex items-start gap-1.5 text-xs text-amber-400/80" key={i}>
+                          <XCircle size={11} className="mt-0.5 shrink-0" />
+                          {r}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Chapter Snapshot</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-1 text-sm">
-            {chartData.slice(0, 10).map((item) => (
-              <div
-                key={item.chapter}
-                className="grid grid-cols-[1fr_auto] items-center gap-3 py-1.5 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-panel-border/50"
-              >
-                <span className="font-medium text-foreground">{item.chapter}</span>
-                <span className="text-muted-foreground" data-testid={`dashboards-tension-${item.segmentId ?? item.chapter}`}>
-                  T {formatPercent(item.tension)}
-                </span>
-              </div>
-            ))}
+          {/* Main charts 2-col grid */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ChartPanel title="Tension Graph" description="Narrative tension over segments">
+              <SimpleLinePreview
+                color="oklch(0.623 0.214 259.815)"
+                data={tensionQuery.data?.points?.map((p) => p.smoothed_tension) ?? []}
+              />
+            </ChartPanel>
+
+            <ChartPanel title="Polarity Graph" description="Sentiment valence over segments">
+              <SimpleLinePreview
+                color="oklch(0.722 0.181 65.403)"
+                data={polarityQuery.data?.points?.map((p) => p.rolling_mean_valence) ?? []}
+              />
+            </ChartPanel>
+
+            <ChartPanel title="Character Analytics" description="Dialogue line count per character">
+              {analyticsQuery.data && Object.keys(analyticsQuery.data.character_dialogue_line_counts ?? {}).length > 0 ? (
+                <BarChart
+                  data={Object.entries(analyticsQuery.data.character_dialogue_line_counts)
+                    .sort(([, a], [, b]) => Number(b) - Number(a))
+                    .slice(0, 8)
+                    .map(([name, count]) => ({
+                      label: name,
+                      value: Number(count),
+                      total: Math.max(...Object.values(analyticsQuery.data!.character_dialogue_line_counts).map(Number)),
+                    }))}
+                />
+              ) : (
+                <p className="py-8 text-center text-xs text-muted-foreground">No character data</p>
+              )}
+            </ChartPanel>
+
+            <ChartPanel title="Character Co-occurrence" description="How often characters appear together">
+              {cooccurrenceQuery.data?.graph?.edges?.length ? (
+                <BarChart
+                  data={cooccurrenceQuery.data.graph.edges.slice(0, 8).map((edge) => ({
+                    label: `${edge.source} × ${edge.target}`,
+                    value: Number(edge.weight),
+                    total: Math.max(...(cooccurrenceQuery.data?.graph?.edges?.map((e) => Number(e.weight)) ?? [1])),
+                  }))}
+                />
+              ) : (
+                <p className="py-8 text-center text-xs text-muted-foreground">No co-occurrence data</p>
+              )}
+            </ChartPanel>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Pipeline stage durations */}
+          {(stageDurationsQuery.isLoading || stageData) && (
+            <div className="rounded-xl border border-white/10 bg-card p-4" data-testid="stage-durations-panel">
+              <p className="mb-0.5 text-sm font-semibold text-foreground">Pipeline Stage Durations</p>
+              <p className="mb-3 text-xs text-muted-foreground">
+                {stageData ? `Total: ${(totalMs / 1000).toFixed(1)}s · ${stageData.stage_count} stages` : ''}
+                {stageData?.slowest_stage_name ? ` · Slowest: ${stageData.slowest_stage_name} (${((stageData.slowest_stage_duration_ms ?? 0) / 1000).toFixed(1)}s)` : ''}
+              </p>
+              {stageDurationsQuery.isLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3, 4].map((i) => <div className="h-6 animate-pulse rounded bg-white/5" key={i} />)}
+                </div>
+              ) : stageData && stageData.stages.length > 0 ? (
+                <div className="space-y-2">
+                  {stageData.stages.sort((a, b) => b.duration_ms - a.duration_ms).map((stage) => (
+                    <div key={stage.stage_name}>
+                      <div className="mb-0.5 flex items-center justify-between text-xs">
+                        <span className="text-foreground">{stage.stage_name}</span>
+                        <span className="text-muted-foreground">
+                          {(stage.duration_ms / 1000).toFixed(2)}s · {(stage.share_of_total * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-white/5">
+                        <div
+                          className="h-1.5 rounded-full bg-foreground/40 transition-all"
+                          style={{ width: `${stage.share_of_total * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="py-4 text-center text-xs text-muted-foreground">No stage data available</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </WorkflowPageShell>
   );
 }
