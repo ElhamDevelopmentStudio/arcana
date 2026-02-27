@@ -9,9 +9,12 @@ import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
 const useProjectSetupStatusQueryMock = vi.fn();
 const useAttachInitialIngestionSourceMutationMock = vi.fn();
 const useIngestTxtMutationMock = vi.fn();
+const useModeCatalogQueryMock = vi.fn();
+const useSwitchModeMutationMock = vi.fn();
 const setupStatusMutateMock = vi.fn();
 const attachInitialIngestionSourceTriggerMock = vi.fn();
 const ingestTxtTriggerMock = vi.fn();
+const switchModeTriggerMock = vi.fn();
 
 vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useProjectSetupStatusQuery: (...args: Parameters<typeof useProjectSetupStatusQueryMock>) =>
@@ -19,6 +22,8 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useAttachInitialIngestionSourceMutation: (...args: Parameters<typeof useAttachInitialIngestionSourceMutationMock>) =>
     useAttachInitialIngestionSourceMutationMock(...args),
   useIngestTxtMutation: (...args: Parameters<typeof useIngestTxtMutationMock>) => useIngestTxtMutationMock(...args),
+  useModeCatalogQuery: (...args: Parameters<typeof useModeCatalogQueryMock>) => useModeCatalogQueryMock(...args),
+  useSwitchModeMutation: (...args: Parameters<typeof useSwitchModeMutationMock>) => useSwitchModeMutationMock(...args),
 }));
 
 function renderProjectSetupPage() {
@@ -46,9 +51,12 @@ describe('project setup page', () => {
     useProjectSetupStatusQueryMock.mockReset();
     useAttachInitialIngestionSourceMutationMock.mockReset();
     useIngestTxtMutationMock.mockReset();
+    useModeCatalogQueryMock.mockReset();
+    useSwitchModeMutationMock.mockReset();
     setupStatusMutateMock.mockReset();
     attachInitialIngestionSourceTriggerMock.mockReset();
     ingestTxtTriggerMock.mockReset();
+    switchModeTriggerMock.mockReset();
 
     useAttachInitialIngestionSourceMutationMock.mockReturnValue({
       isMutating: false,
@@ -57,6 +65,18 @@ describe('project setup page', () => {
     useIngestTxtMutationMock.mockReturnValue({
       isMutating: false,
       trigger: ingestTxtTriggerMock,
+    });
+    useModeCatalogQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      data: {
+        modes: ['audiobook', 'academic', 'author', 'custom'],
+        default_mode: 'audiobook',
+      },
+    });
+    useSwitchModeMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: switchModeTriggerMock,
     });
   });
 
@@ -162,6 +182,45 @@ describe('project setup page', () => {
       source_filename: 'novel.txt',
     });
     expect(ingestTxtTriggerMock).toHaveBeenCalledWith({ file: txtFile });
+    expect(setupStatusMutateMock).toHaveBeenCalled();
+  });
+
+  it('applies mode selection from setup step and refreshes setup status', async () => {
+    const user = userEvent.setup();
+    switchModeTriggerMock.mockResolvedValue({
+      project_id: 77,
+      previous_mode: 'audiobook',
+      selected_mode: 'author',
+      selected_modes: ['author'],
+      chapter_count: 12,
+      reused_ingested_corpus: true,
+      stale_runs_marked: 0,
+    });
+    useProjectSetupStatusQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      mutate: setupStatusMutateMock,
+      data: {
+        project_id: 77,
+        lifecycle_state: 'ingested',
+        next_required_action: 'select_mode',
+        is_complete: false,
+        steps: [
+          { step_id: 'ingestion', label: 'Ingestion', ready: true, required: true },
+          { step_id: 'mode_selection', label: 'Mode Selection', ready: false, required: true },
+          { step_id: 'initial_run', label: 'Initial Run', ready: false, required: true },
+          { step_id: 'character_mapping', label: 'Character Mapping', ready: false, required: false },
+          { step_id: 'voice_mapping', label: 'Voice Mapping', ready: false, required: false },
+        ],
+      },
+    });
+
+    renderProjectSetupPage();
+
+    await user.selectOptions(screen.getByTestId('project-setup-mode-select'), 'author');
+    await user.click(screen.getByTestId('project-setup-mode-submit'));
+
+    expect(switchModeTriggerMock).toHaveBeenCalledWith({ mode: 'author' });
     expect(setupStatusMutateMock).toHaveBeenCalled();
   });
 
