@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -91,6 +91,104 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const fixtureNovelPath = path.resolve(currentDir, '../fixtures/minimal-novel.txt');
 const fixtureCharactersPath = path.resolve(currentDir, '../fixtures/characters-minimal.json');
 const backendBaseUrl = process.env.BACKEND_BASE_URL ?? 'http://127.0.0.1:8000';
+const frontendApiClientPath = path.resolve(currentDir, '../../src/services/api-client.ts');
+const endpointContractSpecPath = path.resolve(currentDir, 'backend-endpoint-contract.e2e.spec.ts');
+
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH';
+type EndpointContractRow = {
+  method: HttpMethod;
+  pathTemplate: string;
+};
+
+function readEndpointLiteral(
+  templateLiteral: string | undefined,
+  singleQuotedLiteral: string | undefined,
+  doubleQuotedLiteral: string | undefined,
+) {
+  return templateLiteral ?? singleQuotedLiteral ?? doubleQuotedLiteral ?? '';
+}
+
+function normalizeEndpointPathTemplate(pathTemplate: string) {
+  const querySeparatorIndex = pathTemplate.indexOf('?');
+  const withoutQuery = querySeparatorIndex >= 0 ? pathTemplate.slice(0, querySeparatorIndex) : pathTemplate;
+  const withoutTemplateBaseUrl = withoutQuery.replace(/\$\{backendBaseUrl\}/g, '');
+  const withoutAbsoluteOrigin = withoutTemplateBaseUrl.replace(/^https?:\/\/[^/]+/i, '');
+  return withoutAbsoluteOrigin.trim();
+}
+
+function dedupeEndpointContractRows(rows: EndpointContractRow[]) {
+  const byKey = new Map<string, EndpointContractRow>();
+  for (const row of rows) {
+    byKey.set(`${row.method} ${row.pathTemplate}`, row);
+  }
+  return Array.from(byKey.values());
+}
+
+function extractClientEndpointContractRows(source: string): EndpointContractRow[] {
+  const rows: EndpointContractRow[] = [];
+  const requestCallPattern = /this\.client\.(get|post|put|patch)\(\s*(?:`([^`]+)`|'([^']+)'|"([^"]+)")/g;
+
+  for (const match of source.matchAll(requestCallPattern)) {
+    const method = match[1]?.toUpperCase() as HttpMethod;
+    const pathTemplate = normalizeEndpointPathTemplate(
+      readEndpointLiteral(match[2], match[3], match[4]),
+    );
+    if (!pathTemplate.startsWith('/api/') && pathTemplate !== '/health') {
+      continue;
+    }
+    rows.push({ method, pathTemplate });
+  }
+
+  return dedupeEndpointContractRows(rows);
+}
+
+function extractContractEvidenceRowsFromSpec(source: string): EndpointContractRow[] {
+  const rows: EndpointContractRow[] = [];
+
+  const directRequestPattern = /\brequest\.(get|post|put|patch)\(\s*(?:`([^`]+)`|'([^']+)'|"([^"]+)")/g;
+  for (const match of source.matchAll(directRequestPattern)) {
+    rows.push({
+      method: match[1]?.toUpperCase() as HttpMethod,
+      pathTemplate: normalizeEndpointPathTemplate(readEndpointLiteral(match[2], match[3], match[4])),
+    });
+  }
+
+  const waitForMethodAndUrlPattern =
+    /(?:networkRequest\.method\(\)|networkResponse\.request\(\)\.method\(\))\s*===\s*'(GET|POST|PUT|PATCH)'[\s\S]{0,600}?(?:networkRequest\.url\(\)|networkResponse\.url\(\))\.(?:endsWith|includes)\(\s*(?:`([^`]+)`|'([^']+)'|"([^"]+)")/g;
+  for (const match of source.matchAll(waitForMethodAndUrlPattern)) {
+    rows.push({
+      method: match[1] as HttpMethod,
+      pathTemplate: normalizeEndpointPathTemplate(readEndpointLiteral(match[2], match[3], match[4])),
+    });
+  }
+
+  return dedupeEndpointContractRows(
+    rows.filter((row) => row.pathTemplate.startsWith('/api/') || row.pathTemplate === '/health'),
+  );
+}
+
+function escapeRegExpLiteral(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function toEndpointTemplateMatcher(pathTemplate: string) {
+  let regexPattern = '^';
+  for (let index = 0; index < pathTemplate.length; index += 1) {
+    if (pathTemplate[index] === '$' && pathTemplate[index + 1] === '{') {
+      const closingBracketIndex = pathTemplate.indexOf('}', index + 2);
+      if (closingBracketIndex === -1) {
+        regexPattern += '\\$\\{';
+        continue;
+      }
+      regexPattern += '[^/]+';
+      index = closingBracketIndex;
+      continue;
+    }
+    regexPattern += escapeRegExpLiteral(pathTemplate[index] ?? '');
+  }
+  regexPattern += '$';
+  return new RegExp(regexPattern);
+}
 
 function uniqueTitle(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 9_999_999_9)}`;
@@ -1545,6 +1643,28 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
       },
     });
     expect(scrapeRejectedNoScheme.status()).toBe(400);
+  });
+
+  test('frontend api-client backend routes are fully covered by this integrated contract suite', async () => {
+    const apiClientSource = readFileSync(frontendApiClientPath, 'utf8');
+    const contractSpecSource = readFileSync(endpointContractSpecPath, 'utf8');
+
+    const frontendConsumedRoutes = extractClientEndpointContractRows(apiClientSource);
+    const contractEvidenceRoutes = extractContractEvidenceRowsFromSpec(contractSpecSource);
+
+    expect(frontendConsumedRoutes.length).toBeGreaterThan(0);
+    expect(contractEvidenceRoutes.length).toBeGreaterThan(0);
+
+    const uncoveredRoutes = frontendConsumedRoutes
+      .filter((route) => {
+        const endpointMatcher = toEndpointTemplateMatcher(route.pathTemplate);
+        return !contractEvidenceRoutes.some(
+          (candidate) => candidate.method === route.method && endpointMatcher.test(candidate.pathTemplate),
+        );
+      })
+      .map((route) => `${route.method} ${route.pathTemplate}`);
+
+    expect(uncoveredRoutes).toEqual([]);
   });
 
   test('frontend route actions hit the live backend and keep state aligned end-to-end', async ({ page, request }) => {
@@ -5243,6 +5363,62 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(projectDetailResponse.status()).toBe(200);
   });
 
+  test('dashboard route requests control-panel summary and project list through backend endpoints', async ({
+    page,
+    request,
+  }) => {
+    const seededProject = await createProject(request, uniqueTitle('e2e-dashboard-endpoint-audit'));
+    expect(seededProject.id).toBeGreaterThan(0);
+
+    const summaryGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET'
+        && networkRequest.url().endsWith('/api/dashboard/project-control-panel/summary'),
+    );
+    const summaryGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().endsWith('/api/dashboard/project-control-panel/summary'),
+    );
+    const projectListGetRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'GET'
+        && networkRequest.url().includes('/api/dashboard/project-control-panel/projects'),
+    );
+    const projectListGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().includes('/api/dashboard/project-control-panel/projects'),
+    );
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    const summaryGetRequest = await summaryGetRequestPromise;
+    const summaryGetResponse = await summaryGetResponsePromise;
+    expect(summaryGetRequest.url()).toContain('/api/dashboard/project-control-panel/summary');
+    expect(summaryGetResponse.status()).toBe(200);
+    const summaryPayload = (await summaryGetResponse.json()) as {
+      total_projects: number;
+      active_run_count: number;
+      recent_failure_count: number;
+    };
+    expect(summaryPayload.total_projects).toBeGreaterThan(0);
+    expect(summaryPayload.active_run_count).toBeGreaterThanOrEqual(0);
+    expect(summaryPayload.recent_failure_count).toBeGreaterThanOrEqual(0);
+
+    const projectListGetRequest = await projectListGetRequestPromise;
+    const projectListGetResponse = await projectListGetResponsePromise;
+    expect(projectListGetResponse.status()).toBe(200);
+    const projectListRequestUrl = new URL(projectListGetRequest.url());
+    expect(projectListRequestUrl.searchParams.get('page')).toBeTruthy();
+    expect(projectListRequestUrl.searchParams.get('page_size')).toBeTruthy();
+    const projectListPayload = (await projectListGetResponse.json()) as {
+      items: Array<{ project_id: number }>;
+    };
+    expect(Array.isArray(projectListPayload.items)).toBe(true);
+  });
+
   test('create draft -> ingest -> mode -> characters -> pipeline setup -> run -> export flow completes against live backend', async ({
     page,
     request,
@@ -6402,9 +6578,26 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
 
     await waitForSetupCompletion(request, projectId);
 
+    const workspaceSummaryGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().endsWith(`/api/projects/${projectId}/workspace-summary`),
+    );
+
     await page.goto(`/projects/${projectId}/setup`);
     await expect(page).toHaveURL(`/projects/${projectId}/overview`);
     await expect(page.getByTestId('project-overview-ready')).toBeVisible();
+
+    const workspaceSummaryGetResponse = await workspaceSummaryGetResponsePromise;
+    expect(workspaceSummaryGetResponse.status()).toBe(200);
+    const workspaceSummaryPayload = (await workspaceSummaryGetResponse.json()) as {
+      project_id: number;
+      chapters_count: number;
+      runs_total_count: number;
+    };
+    expect(workspaceSummaryPayload.project_id).toBe(projectId);
+    expect(workspaceSummaryPayload.chapters_count).toBeGreaterThan(0);
+    expect(workspaceSummaryPayload.runs_total_count).toBeGreaterThanOrEqual(1);
   });
 
   test('projects/:project_id setup source form calls ingest/source endpoint with entered metadata', async ({
