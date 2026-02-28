@@ -690,7 +690,7 @@ Definition of done for each task:
 - [x] [PW-025] Add Playwright real-backend E2E: pronunciation + voice configuration flow.
 - [x] [PW-026] Add Playwright real-backend E2E: comparison workspace create/link/aligned-curves/export flow.
 - [x] [PW-027] Add frontend-integrated endpoint contract audit covering every backend route consumed by UI.
-- [ ] [PW-028] Add visual baselines for landing, dashboard, project detail, ingestion, character map, run monitor, and export screens.
+- [x] [PW-028] Add visual baselines for landing, dashboard, project detail, ingestion, character map, run monitor, and export screens.
 - [ ] [PW-029] Add responsive visual baselines (desktop/tablet/mobile) for all core routes.
 - [ ] [PW-030] Add Playwright accessibility scan gate (axe) for critical workflow pages.
 - [ ] [PW-031] Add CI split and cache strategy for unit/integration vs real-backend Playwright suites.
