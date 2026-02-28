@@ -5629,6 +5629,215 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(runDetailPayload.config.internal_thought_voice).toBe('thought_flow');
   });
 
+  test('comparison workspace create -> link run -> aligned curves -> comparative export flow completes against live backend', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-comparison-workspace-flow');
+    const project = await createProject(request, title);
+    const projectId = project.id;
+
+    const txtIngestResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/ingest/txt`, {
+      multipart: {
+        file: createReadStream(fixtureNovelPath),
+      },
+    });
+    expect(txtIngestResponse.status()).toBe(200);
+
+    const modeSwitchResponse = await request.put(`${backendBaseUrl}/api/projects/${projectId}/mode`, {
+      data: { mode: 'author' },
+    });
+    expect(modeSwitchResponse.status()).toBe(200);
+
+    const runResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+        export_formats: ['json', 'csv'],
+      },
+    });
+    expect(runResponse.status()).toBe(200);
+    const runPayload = (await runResponse.json()) as { run_id: number };
+    await waitForSetupCompletion(request, projectId);
+
+    await page.addInitScript(
+      ({ seededProjectId, seededRunId, seededTitle }) => {
+        window.localStorage.setItem(
+          'nipe-workspace',
+          JSON.stringify({
+            state: {
+              projectId: seededProjectId,
+              projectTitle: seededTitle,
+              selectedMode: 'author',
+              chapterCount: 1,
+              runId: seededRunId,
+            },
+            version: 0,
+          }),
+        );
+      },
+      { seededProjectId: projectId, seededRunId: runPayload.run_id, seededTitle: title },
+    );
+
+    await page.goto(`/projects/${projectId}/export`);
+    await expect(page.getByTestId('comparison-workspace-name-input')).toBeVisible();
+
+    const workspaceName = uniqueTitle('e2e-comparison-workspace-sequence');
+    await page.getByTestId('comparison-workspace-name-input').fill(workspaceName);
+
+    const workspaceCreatePostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' && networkRequest.url().endsWith('/api/comparison-workspaces'),
+    );
+    const workspaceCreatePostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith('/api/comparison-workspaces'),
+    );
+    await page.getByTestId('comparison-workspace-create-button').click();
+
+    const workspaceCreatePostRequest = await workspaceCreatePostRequestPromise;
+    const workspaceCreatePayload = workspaceCreatePostRequest.postDataJSON() as { name: string };
+    expect(workspaceCreatePayload.name).toBe(workspaceName);
+
+    const workspaceCreatePostResponse = await workspaceCreatePostResponsePromise;
+    expect(workspaceCreatePostResponse.status()).toBe(201);
+    const workspaceCreateResponseBody = (await workspaceCreatePostResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+    };
+    const workspaceId = workspaceCreateResponseBody.workspace_id;
+    expect(workspaceId).toBeGreaterThan(0);
+    expect(workspaceCreateResponseBody.run_count).toBe(0);
+    await expect(page.getByTestId('comparison-workspace-created-id')).toContainText(`#${workspaceId}`);
+
+    const workspaceDetailGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().endsWith(`/api/comparison-workspaces/${workspaceId}`),
+    );
+    await page.getByTestId('comparison-workspace-open-button').click();
+    await expect(page).toHaveURL(`/comparison-workspaces/${workspaceId}`);
+    await expect(page.getByRole('heading', { name: 'Comparison Workspace' })).toBeVisible();
+
+    const workspaceDetailGetResponse = await workspaceDetailGetResponsePromise;
+    expect(workspaceDetailGetResponse.status()).toBe(200);
+
+    await page.getByTestId('comparison-workspace-link-project-id-input').fill(String(projectId));
+    await page.getByTestId('comparison-workspace-link-run-id-input').fill(String(runPayload.run_id));
+
+    const linkRunPostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST'
+        && networkRequest.url().endsWith(`/api/comparison-workspaces/${workspaceId}/runs`),
+    );
+    const linkRunPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST'
+        && networkResponse.url().endsWith(`/api/comparison-workspaces/${workspaceId}/runs`),
+    );
+    await page.getByTestId('comparison-workspace-link-run-button').click();
+
+    const linkRunPostRequest = await linkRunPostRequestPromise;
+    const linkRunPayload = linkRunPostRequest.postDataJSON() as { project_id: number; run_id: number };
+    expect(linkRunPayload).toEqual({
+      project_id: projectId,
+      run_id: runPayload.run_id,
+    });
+
+    const linkRunPostResponse = await linkRunPostResponsePromise;
+    expect(linkRunPostResponse.status()).toBe(201);
+    const linkRunResponseBody = (await linkRunPostResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+    };
+    expect(linkRunResponseBody.workspace_id).toBe(workspaceId);
+    expect(linkRunResponseBody.run_count).toBe(1);
+    await expect(page.getByTestId('comparison-workspace-link-success')).toContainText(
+      `Run #${runPayload.run_id} linked to workspace #${workspaceId}.`,
+    );
+
+    await page.getByTestId('comparison-workspace-curves-metrics-input')
+      .fill('chapter_valence_mean,smoothed_tension_curve,normalized_pacing_signature');
+    await page.getByTestId('comparison-workspace-curves-aligned-points-input').fill('7');
+
+    const alignedCurvesGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().includes(`/api/comparison-workspaces/${workspaceId}/aligned-curves`)
+        && networkResponse.url().includes('aligned_points=7'),
+    );
+    await page.getByTestId('comparison-workspace-curves-apply-button').click();
+
+    const alignedCurvesGetResponse = await alignedCurvesGetResponsePromise;
+    expect(alignedCurvesGetResponse.status()).toBe(200);
+    const alignedCurvesUrl = new URL(alignedCurvesGetResponse.url());
+    expect(alignedCurvesUrl.searchParams.get('aligned_points')).toBe('7');
+    const alignedMetricsParam = alignedCurvesUrl.searchParams.get('metrics');
+    expect(alignedMetricsParam).not.toBeNull();
+    const alignedMetrics = (alignedMetricsParam ?? '').split(',').filter((value) => value.length > 0);
+    expect(alignedMetrics.sort()).toEqual(
+      ['chapter_valence_mean', 'smoothed_tension_curve', 'normalized_pacing_signature'].sort(),
+    );
+
+    const alignedCurvesResponseBody = (await alignedCurvesGetResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+      aligned_points: number;
+      metrics: Array<{ metric_id: string; points_per_run: Array<{ points: unknown[] }> }>;
+    };
+    expect(alignedCurvesResponseBody.workspace_id).toBe(workspaceId);
+    expect(alignedCurvesResponseBody.run_count).toBe(1);
+    expect(alignedCurvesResponseBody.aligned_points).toBe(7);
+    expect(alignedCurvesResponseBody.metrics).toHaveLength(3);
+    expect(alignedCurvesResponseBody.metrics.map((metric) => metric.metric_id).sort()).toEqual(
+      ['chapter_valence_mean', 'smoothed_tension_curve', 'normalized_pacing_signature'].sort(),
+    );
+    expect(
+      alignedCurvesResponseBody.metrics.every((metric) => metric.points_per_run.every((run) => run.points.length === 7)),
+    ).toBe(true);
+
+    const comparativeDatasetGetResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'GET'
+        && networkResponse.url().includes(`/api/comparison-workspaces/${workspaceId}/exports/comparative-dataset.json`)
+        && networkResponse.url().includes('aligned_points=7'),
+    );
+    await page.getByTestId('comparison-workspace-export-fetch-button').click();
+
+    const comparativeDatasetGetResponse = await comparativeDatasetGetResponsePromise;
+    expect(comparativeDatasetGetResponse.status()).toBe(200);
+    const comparativeDatasetUrl = new URL(comparativeDatasetGetResponse.url());
+    expect(comparativeDatasetUrl.searchParams.get('aligned_points')).toBe('7');
+    const comparativeMetricsParam = comparativeDatasetUrl.searchParams.get('metrics');
+    expect(comparativeMetricsParam).not.toBeNull();
+    const comparativeMetrics = (comparativeMetricsParam ?? '').split(',').filter((value) => value.length > 0);
+    expect(comparativeMetrics.sort()).toEqual(
+      ['chapter_valence_mean', 'smoothed_tension_curve', 'normalized_pacing_signature'].sort(),
+    );
+
+    const comparativeDatasetResponseBody = (await comparativeDatasetGetResponse.json()) as {
+      workspace_id: number;
+      run_count: number;
+      aligned_points: number;
+      metrics: Array<{ metric_id: string }>;
+      runs: Array<{ run_id: number }>;
+    };
+    expect(comparativeDatasetResponseBody.workspace_id).toBe(workspaceId);
+    expect(comparativeDatasetResponseBody.run_count).toBe(1);
+    expect(comparativeDatasetResponseBody.aligned_points).toBe(7);
+    expect(comparativeDatasetResponseBody.metrics.map((metric) => metric.metric_id).sort()).toEqual(
+      ['chapter_valence_mean', 'smoothed_tension_curve', 'normalized_pacing_signature'].sort(),
+    );
+    expect(comparativeDatasetResponseBody.runs.some((run) => run.run_id === runPayload.run_id)).toBe(true);
+    await expect(page.getByTestId('comparison-workspace-export-summary')).toContainText(`#${workspaceId}`);
+    await expect(page.getByRole('cell', { name: `Run #${runPayload.run_id}` })).toBeVisible();
+  });
+
   test('projects/:project_id workspace home renders project detail contract data', async ({ page, request }) => {
     const title = uniqueTitle('e2e-workspace-home-detail');
     const project = await createProject(request, title);
