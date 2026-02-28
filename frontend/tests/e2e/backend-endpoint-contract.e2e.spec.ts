@@ -5110,6 +5110,155 @@ test.describe('backend real endpoint contract (frontend-integrated)', () => {
     expect(projectDetailResponse.status()).toBe(200);
   });
 
+  test('create draft -> ingest -> mode -> characters -> pipeline setup -> run -> export flow completes against live backend', async ({
+    page,
+    request,
+  }) => {
+    const title = uniqueTitle('e2e-draft-journey-run-export');
+
+    await page.goto('/projects/new');
+
+    const draftCreateRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' && networkRequest.url().endsWith('/api/projects/drafts'),
+    );
+    const draftCreateResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' && networkResponse.url().endsWith('/api/projects/drafts'),
+    );
+
+    await page.getByTestId('project-creation-mode-select').selectOption('draft');
+    await page.getByTestId('project-title-input').fill(title);
+    await page.getByTestId('create-project-button').click();
+
+    const draftCreateRequest = await draftCreateRequestPromise;
+    const draftCreateRequestBody = draftCreateRequest.postDataJSON() as {
+      title: string;
+      do_not_store_source_text: boolean;
+    };
+    expect(draftCreateRequestBody.title).toBe(title);
+    expect(draftCreateRequestBody.do_not_store_source_text).toBe(false);
+
+    const draftCreateResponse = await draftCreateResponsePromise;
+    expect(draftCreateResponse.status()).toBe(201);
+    const draftPayload = (await draftCreateResponse.json()) as ProjectResponse;
+    const projectId = draftPayload.id;
+    expect(projectId).toBeGreaterThan(0);
+    await expect(page.getByTestId('project-created-state')).toContainText(`Current project ID: ${projectId}`);
+
+    const ingestRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/ingest/txt`),
+    );
+    const ingestResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/ingest/txt`),
+    );
+
+    await page.getByTestId('txt-upload-input').setInputFiles(fixtureNovelPath);
+    await page.getByTestId('upload-txt-button').click();
+
+    await ingestRequestPromise;
+    const ingestResponse = await ingestResponsePromise;
+    expect(ingestResponse.status()).toBe(200);
+    await expect(page.getByTestId('chapter-count-state')).toContainText('Detected chapters:');
+
+    await page.goto(`/projects/${projectId}/mode`);
+    await expect(page.getByTestId('mode-select')).toBeVisible();
+
+    const modeSwitchRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'PUT' &&
+        networkRequest.url().endsWith(`/api/projects/${projectId}/mode`),
+    );
+    const modeSwitchResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'PUT' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/mode`),
+    );
+
+    await page.getByTestId('mode-select').selectOption('author');
+    const modeSwitchConfirmButton = page.getByTestId('mode-switch-confirm-submit');
+    if (await modeSwitchConfirmButton.isVisible()) {
+      await modeSwitchConfirmButton.click();
+    }
+
+    const modeSwitchRequest = await modeSwitchRequestPromise;
+    const modeSwitchPayload = modeSwitchRequest.postDataJSON() as { mode: string };
+    expect(modeSwitchPayload.mode).toBe('author');
+    const modeSwitchResponse = await modeSwitchResponsePromise;
+    expect(modeSwitchResponse.status()).toBe(200);
+    await expect(page.getByTestId('mode-continue-button')).toBeEnabled();
+
+    // Characters/pipeline routes are setup-gated until an initial run exists.
+    const setupSeedRunResponse = await request.post(`${backendBaseUrl}/api/projects/${projectId}/runs`, {
+      data: {
+        mode: 'author',
+        max_segment_chars: 140,
+        llm_enabled: false,
+        provider_name: 'openrouter',
+        max_calls_per_day: 25,
+        allow_unfinalized_character_map: true,
+      },
+    });
+    expect(setupSeedRunResponse.status()).toBe(200);
+    await waitForSetupCompletion(request, projectId);
+
+    await page.goto(`/projects/${projectId}/characters`);
+    await expect(page).toHaveURL(`/projects/${projectId}/characters`);
+    await expect(page.getByTestId('character-map-save-button')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Continue to Pipeline Setup' }).click();
+    await expect(page).toHaveURL(`/projects/${projectId}/pipeline-setup`);
+    await expect(page.getByTestId('run-pipeline-button')).toBeEnabled();
+
+    const runPostRequestPromise = page.waitForRequest(
+      (networkRequest) =>
+        networkRequest.method() === 'POST' && networkRequest.url().endsWith(`/api/projects/${projectId}/runs`),
+    );
+    const runPostResponsePromise = page.waitForResponse(
+      (networkResponse) =>
+        networkResponse.request().method() === 'POST' &&
+        networkResponse.url().endsWith(`/api/projects/${projectId}/runs`),
+    );
+
+    await page.getByTestId('run-pipeline-button').click();
+
+    const runPostRequest = await runPostRequestPromise;
+    const runPostRequestBody = runPostRequest.postDataJSON() as {
+      mode: string;
+      max_segment_chars: number;
+      llm_enabled: boolean;
+      export_formats: string[];
+    };
+    expect(runPostRequestBody.mode).toBe('author');
+    expect(runPostRequestBody.max_segment_chars).toBeGreaterThan(0);
+    expect(runPostRequestBody.llm_enabled).toBe(false);
+    expect(runPostRequestBody.export_formats.length).toBeGreaterThan(0);
+
+    const runPostResponse = await runPostResponsePromise;
+    expect(runPostResponse.status()).toBe(200);
+    const runPostResponseBody = (await runPostResponse.json()) as { run_id: number; project_id: number; status: string };
+    expect(runPostResponseBody.project_id).toBe(projectId);
+    expect(runPostResponseBody.run_id).toBeGreaterThan(0);
+    expect(runPostResponseBody.status).toBe('completed');
+
+    await expect(page).toHaveURL(`/projects/${projectId}/run-monitor`);
+    await expect(page.getByText('Run Lifecycle')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Continue to Export' }).click();
+    await expect(page).toHaveURL(`/projects/${projectId}/export`);
+    await expect(page.getByText('Export Package')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download JSON' })).toBeEnabled();
+
+    const exportResponse = await request.get(
+      `${backendBaseUrl}/api/projects/${projectId}/exports/${runPostResponseBody.run_id}.json`,
+    );
+    expect(exportResponse.status()).toBe(200);
+  });
+
   test('projects/:project_id workspace home renders project detail contract data', async ({ page, request }) => {
     const title = uniqueTitle('e2e-workspace-home-detail');
     const project = await createProject(request, title);
