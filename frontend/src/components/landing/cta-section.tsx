@@ -1,36 +1,26 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-
-import { Button } from '@/components/ui/button';
-import { CreateProjectDialog } from '@/components/landing/create-project-dialog';
+import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 
 export function CTASection() {
-  const navigate = useNavigate();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-
   return (
-    <section className="px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-6xl rounded-3xl border border-panel-border/80 bg-card p-8 shadow-sm lg:p-10">
-        <div className="space-y-3">
-          <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Start the workspace flow
-          </h2>
-          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-            Enter dashboard for control-panel operations, or create a draft project and continue with ingestion and
-            mode setup later.
-          </p>
-        </div>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Button data-testid="landing-cta-dashboard" onClick={() => navigate('/dashboard')}>
-            Enter Dashboard
-          </Button>
-          <Button data-testid="landing-cta-create-draft" onClick={() => setIsDialogOpen(true)} variant="outline">
-            Create Draft Project
-          </Button>
+    <section className="border-y border-white/10 bg-card px-6 py-20 text-center md:px-10">
+      <div className="mx-auto max-w-2xl">
+        <h2 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+          Ready to process your first manuscript?
+        </h2>
+        <p className="mx-auto mt-4 text-muted-foreground">
+          No setup required. Create a project, upload your source text, and get a production-ready export.
+        </p>
+        <div className="mt-8">
+          <Link
+            className="inline-flex items-center gap-2 rounded-full bg-foreground px-8 py-3 text-sm font-medium text-background transition-opacity hover:opacity-90"
+            to="/projects/new"
+          >
+            Create your first project
+            <ArrowRight size={15} />
+          </Link>
         </div>
       </div>
-      <CreateProjectDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} />
     </section>
   );
 }
-

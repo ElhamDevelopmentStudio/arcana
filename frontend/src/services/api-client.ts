@@ -177,7 +177,7 @@ function reportWorkflowMutationTelemetry(
 
 export class NipeApiClient {
   private readonly client: AxiosInstance;
-  private static readonly ingestRequestTimeoutMs = 5 * 60_000;
+  private static readonly ingestRequestTimeoutMs = appEnv.ingestRequestTimeoutMs;
 
   constructor(baseUrl: string = appEnv.apiBaseUrl) {
     this.client = axios.create({
@@ -759,9 +759,6 @@ export class NipeApiClient {
     formData.append('file', parsedPayload.file);
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/txt`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
         timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
@@ -778,9 +775,6 @@ export class NipeApiClient {
     }
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/chapters-dir`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
         timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
@@ -795,9 +789,6 @@ export class NipeApiClient {
     formData.append('file', parsedPayload.file);
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/markdown`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
         timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
@@ -812,9 +803,6 @@ export class NipeApiClient {
     formData.append('file', parsedPayload.file);
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/epub`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
         timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
@@ -829,9 +817,6 @@ export class NipeApiClient {
     formData.append('file', parsedPayload.file);
     try {
       const response = await this.client.post(`/api/projects/${projectId}/ingest/append-chapter`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
         timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return ingestResponseSchema.parse(response.data);
@@ -847,9 +832,7 @@ export class NipeApiClient {
 
     try {
       const response = await this.client.post(`/api/projects/${projectId}/characters/import`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        timeout: NipeApiClient.ingestRequestTimeoutMs,
       });
       return characterImportSchema.parse(response.data);
     } catch (error) {

@@ -1,13 +1,27 @@
 import { useNavigate, useParams } from 'react-router-dom';
-
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
-import { ApiPanelError, ApiPanelLoading } from '@/components/ui/api-panel-state';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useProjectDetailQuery, useProjectWorkspaceSummaryQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
+import { cn } from '@/lib/utils';
+
+function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-card p-4">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-foreground">{value}</p>
+      {sub ? <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p> : null}
+    </div>
+  );
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  completed: 'text-green-400',
+  running: 'text-amber-400',
+  failed: 'text-red-400',
+  queued: 'text-amber-400',
+};
 
 export function ProjectOverviewPage() {
   const navigate = useNavigate();
@@ -15,112 +29,102 @@ export function ProjectOverviewPage() {
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const projectId = routeProjectId ?? storeProjectId;
-  const projectDetailQuery = useProjectDetailQuery(projectId);
-  const workspaceSummaryQuery = useProjectWorkspaceSummaryQuery(projectId);
+  const detailQuery = useProjectDetailQuery(projectId);
+  const summaryQuery = useProjectWorkspaceSummaryQuery(projectId);
 
-  const projectDetailErrorMessage =
-    projectDetailQuery.error instanceof Error ? projectDetailQuery.error.message : 'Unable to load project detail.';
-  const workspaceSummaryErrorMessage =
-    workspaceSummaryQuery.error instanceof Error
-      ? workspaceSummaryQuery.error.message
-      : 'Unable to load project workspace summary.';
+  const detail = detailQuery.data;
+  const summary = summaryQuery.data;
+  const isSetupComplete = summary?.is_setup_complete ?? false;
+  const lastRunStatus = summary?.last_run_status ?? null;
 
   return (
     <WorkflowPageShell
-      description="Project-level overview composed from detail and workspace summary contracts."
-      step="Overview"
-      title="Project Overview"
+      breadcrumb={`All Projects › Project #${projectId ?? '—'} › Overview`}
+      title={detail?.title ?? `Project #${projectId ?? '—'}`}
+      description={detail?.description ?? undefined}
       action={
-        projectId !== null ? (
-          <Button data-testid="project-overview-open-setup" onClick={() => navigate(`/projects/${projectId}/setup`)}>
-            Open Setup
+        !isSetupComplete && projectId !== null ? (
+          <Button
+            data-testid="project-overview-open-setup"
+            onClick={() => navigate(`/projects/${projectId}/setup`)}
+          >
+            Continue Setup
+          </Button>
+        ) : projectId !== null ? (
+          <Button onClick={() => navigate(`/projects/${projectId}/runs`)}>
+            View Runs
           </Button>
         ) : undefined
       }
     >
-      {projectId === null ? (
-        <Card data-testid="project-overview-project-required">
-          <CardHeader>
-            <CardTitle>Project required</CardTitle>
-            <CardDescription>Select or create a project before opening overview.</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : projectDetailQuery.isLoading && projectDetailQuery.data === undefined ? (
-        <div data-testid="project-overview-loading">
-          <ApiPanelLoading description="Fetching project detail and workspace summary contracts." title="Loading project overview" />
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="project-overview-ready">
+        <StatCard
+          label="Chapters"
+          value={summary?.chapters_count ?? 0}
+        />
+        <StatCard
+          label="Characters"
+          value={summary?.characters_count ?? 0}
+        />
+        <StatCard
+          label="Runs"
+          value={summary?.runs_total_count ?? 0}
+          sub={`${summary?.runs_completed_count ?? 0} completed · ${summary?.runs_failed_count ?? 0} failed`}
+        />
+        <div className="rounded-xl border border-white/10 bg-card p-4">
+          <p className="text-xs text-muted-foreground">Last Run</p>
+          <p className={cn('mt-1 text-2xl font-bold', lastRunStatus ? STATUS_COLOR[lastRunStatus] : 'text-muted-foreground')}>
+            {lastRunStatus ?? 'none'}
+          </p>
         </div>
-      ) : projectDetailQuery.error ? (
-        <div data-testid="project-overview-project-detail-error">
-          <ApiPanelError
-            description={projectDetailErrorMessage}
-            onRetry={() => {
-              void projectDetailQuery.mutate();
-            }}
-            retryLabel="Retry project detail"
-            title="Project detail unavailable"
-          />
-        </div>
-      ) : workspaceSummaryQuery.error ? (
-        <div data-testid="project-overview-workspace-summary-error">
-          <ApiPanelError
-            description={workspaceSummaryErrorMessage}
-            onRetry={() => {
-              void workspaceSummaryQuery.mutate();
-            }}
-            retryLabel="Retry workspace summary"
-            title="Workspace summary unavailable"
-          />
-        </div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2" data-testid="project-overview-ready">
-          <Card data-testid="project-overview-detail-card">
-            <CardHeader>
-              <CardDescription>From `GET /api/projects/{'{project_id}'}`</CardDescription>
-              <CardTitle>{projectDetailQuery.data?.title ?? `Project #${projectId}`}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>Project ID: {projectDetailQuery.data?.project_id ?? projectId}</p>
-              <p>Lifecycle: {projectDetailQuery.data?.lifecycle_state ?? 'draft'}</p>
-              <p>Next action: {projectDetailQuery.data?.next_required_action ?? 'none'}</p>
-              <p>Mode: {projectDetailQuery.data?.selected_mode ?? 'n/a'}</p>
-              <p>LLM enabled: {projectDetailQuery.data?.llm_enabled ? 'yes' : 'no'}</p>
-              <p>Character map finalized: {projectDetailQuery.data?.character_map_finalized ? 'yes' : 'no'}</p>
-              {projectDetailQuery.data?.description ? (
-                <p className="text-foreground/90">{projectDetailQuery.data.description}</p>
-              ) : (
-                <p>No description provided.</p>
-              )}
-              {projectDetailQuery.data?.tags?.length ? (
-                <div className="flex flex-wrap gap-2">
-                  {projectDetailQuery.data.tags.map((tag) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+      </div>
 
-          <Card data-testid="project-overview-workspace-summary-card">
-            <CardHeader>
-              <CardDescription>From `GET /api/projects/{'{project_id}'}/workspace-summary`</CardDescription>
-              <CardTitle>Workspace health</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>Setup complete: {workspaceSummaryQuery.data?.is_setup_complete ? 'yes' : 'no'}</p>
-              <p>Chapters: {workspaceSummaryQuery.data?.chapters_count ?? 0}</p>
-              <p>Characters: {workspaceSummaryQuery.data?.characters_count ?? 0}</p>
-              <p>Voice mappings: {workspaceSummaryQuery.data?.voice_mappings_count ?? 0}</p>
-              <p>Runs total: {workspaceSummaryQuery.data?.runs_total_count ?? 0}</p>
-              <p>Runs completed: {workspaceSummaryQuery.data?.runs_completed_count ?? 0}</p>
-              <p>Runs failed: {workspaceSummaryQuery.data?.runs_failed_count ?? 0}</p>
-              <p>Last run status: {workspaceSummaryQuery.data?.last_run_status ?? 'none'}</p>
-              <p>Last export: {workspaceSummaryQuery.data?.last_export_at ?? 'none'}</p>
-            </CardContent>
-          </Card>
+      {/* Project details */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-card p-5">
+          <p className="mb-3 text-sm font-semibold text-foreground">Project Details</p>
+          <dl className="space-y-2 text-sm">
+            {[
+              { label: 'ID', value: detail?.project_id ?? projectId },
+              { label: 'Mode', value: detail?.selected_mode ?? 'not set' },
+              { label: 'Lifecycle', value: detail?.lifecycle_state ?? 'draft' },
+              { label: 'Next action', value: detail?.next_required_action ?? 'none' },
+              { label: 'LLM', value: detail?.llm_enabled ? 'enabled' : 'disabled' },
+              { label: 'Character map', value: detail?.character_map_finalized ? 'finalized' : 'pending' },
+            ].map(({ label, value }) => (
+              <div className="flex items-baseline gap-2" key={label}>
+                <dt className="w-28 shrink-0 text-muted-foreground">{label}</dt>
+                <dd className="text-foreground">{value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
-      )}
+
+        <div className="rounded-xl border border-white/10 bg-card p-5">
+          <p className="mb-3 text-sm font-semibold text-foreground">Setup Status</p>
+          <div className="space-y-2 text-sm">
+            {[
+              { label: 'Voice mappings', value: summary?.voice_mappings_count ?? 0 },
+              { label: 'Last export', value: summary?.last_export_at ? new Date(summary.last_export_at).toLocaleDateString() : 'never' },
+            ].map(({ label, value }) => (
+              <div className="flex items-baseline gap-2" key={label}>
+                <span className="w-32 shrink-0 text-muted-foreground">{label}</span>
+                <span className="text-foreground">{value}</span>
+              </div>
+            ))}
+            <div className="mt-3">
+              <span className={cn(
+                'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
+                isSetupComplete ? 'bg-green-400/10 text-green-400' : 'bg-amber-400/10 text-amber-400',
+              )}>
+                <span className="size-1.5 rounded-full bg-current" />
+                {isSetupComplete ? 'Setup complete' : 'Setup in progress'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
     </WorkflowPageShell>
   );
 }

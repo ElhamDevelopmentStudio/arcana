@@ -20,6 +20,8 @@ const loadProjectEmotionReviewPage = () => import('@/pages/projects/project-emot
 const loadProjectLowConfidenceReviewPage = () => import('@/pages/projects/project-low-confidence-review-page');
 const loadProjectLowConfidenceReviewGuidePage = () => import('@/pages/projects/project-low-confidence-review-guide-page');
 const loadProjectWorkspaceHomePage = () => import('@/pages/projects/project-workspace-home-page');
+const loadProjectVoicePage = () => import('@/pages/projects/project-voice-page');
+const loadProjectPronunciationPage = () => import('@/pages/projects/project-pronunciation-page');
 const loadComparisonWorkspaceDetailPage = () => import('@/pages/comparison/comparison-workspace-detail-page');
 
 const DashboardPage = lazy(() => loadDashboardPage().then((module) => ({ default: module.DashboardPage })));
@@ -66,6 +68,8 @@ const ProjectWorkspaceHomePage = lazy(() =>
     default: module.ProjectWorkspaceHomePage,
   })),
 );
+const ProjectVoicePage = lazy(() => loadProjectVoicePage().then((module) => ({ default: module.ProjectVoicePage })));
+const ProjectPronunciationPage = lazy(() => loadProjectPronunciationPage().then((module) => ({ default: module.ProjectPronunciationPage })));
 const ComparisonWorkspaceDetailPage = lazy(() =>
   loadComparisonWorkspaceDetailPage().then((module) => ({
     default: module.ComparisonWorkspaceDetailPage,
@@ -80,7 +84,8 @@ const ROUTE_MODULE_PREFETCHERS: Array<{ pattern: RegExp; load: () => Promise<unk
   { pattern: /^\/projects\/[^/]+\/setup$/, load: loadProjectSetupPage },
   { pattern: /^\/projects\/[^/]+\/mode$/, load: loadProjectModePage },
   { pattern: /^\/projects\/[^/]+\/characters$/, load: loadProjectCharactersPage },
-  { pattern: /^\/projects\/[^/]+\/voice$/, load: loadProjectPipelineSetupPage },
+  { pattern: /^\/projects\/[^/]+\/voice$/, load: loadProjectVoicePage },
+  { pattern: /^\/projects\/[^/]+\/pronunciation$/, load: loadProjectPronunciationPage },
   { pattern: /^\/projects\/[^/]+\/runs$/, load: loadProjectRunMonitorPage },
   { pattern: /^\/projects\/[^/]+\/exports$/, load: loadProjectExportPage },
   { pattern: /^\/projects\/[^/]+\/settings$/, load: loadProjectSettingsPage },
@@ -113,15 +118,15 @@ function SuspendedRoute({ children }: { children: ReactNode }) {
 
 export const mainRouter: RouteObject[] = [
   {
+    path: 'projects/new',
+    element: <SuspendedRoute><ProjectNewPage /></SuspendedRoute>,
+  },
+  {
     element: <MainShell />,
     children: [
       {
         path: 'dashboard',
         element: <SuspendedRoute><DashboardPage /></SuspendedRoute>,
-      },
-      {
-        path: 'projects/new',
-        element: <SuspendedRoute><ProjectNewPage /></SuspendedRoute>,
       },
       {
         path: 'comparison-workspaces/:workspace_id',
@@ -153,7 +158,11 @@ export const mainRouter: RouteObject[] = [
           },
           {
             path: 'voice',
-            element: <SuspendedRoute><ProjectPipelineSetupPage /></SuspendedRoute>,
+            element: <SuspendedRoute><ProjectVoicePage /></SuspendedRoute>,
+          },
+          {
+            path: 'pronunciation',
+            element: <SuspendedRoute><ProjectPronunciationPage /></SuspendedRoute>,
           },
           {
             path: 'runs',

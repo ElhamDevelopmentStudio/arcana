@@ -1,130 +1,39 @@
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useState } from 'react';
-
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Mic2, Zap } from 'lucide-react';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { NativeSelect } from '@/components/ui/native-select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Switch } from '@/components/ui/switch';
 import {
-  useCharacterMapQuery,
-  useModeCatalogQuery,
+  useProjectLLMSettingsQuery,
+  useLLMProvidersQuery,
+  useUpdateProjectLLMSettingsMutation,
   useRunPipelineMutation,
-  useSaveVoicesMutation,
+  useModeCatalogQuery,
 } from '@/features/workflow/api/workflow-hooks';
-import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
-import { runRequestSchema, type RunRequestDto } from '@/app/schemas/api';
+import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
+import { runRequestSchema } from '@/app/schemas/api';
+import type { RunRequestDto } from '@/app/schemas/api';
 
-type InternalThoughtVoicePolicy = 'character' | 'narrator' | 'thought_voice';
-type EmotionTaxonomy = 'basic' | 'expanded';
-
-const DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD = 0.6;
-const DEFAULT_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD = 2;
-const DEFAULT_UNSTABLE_EMOTION_SHIFT_TRANSITION_THRESHOLD = 4;
-const DEFAULT_UNSTABLE_EMOTION_SHIFT_DENSITY_THRESHOLD = 0.5;
-const DEFAULT_EXPORT_CHUNK_SIZE = 500;
-const EXPORT_FORMAT_OPTIONS = ['json', 'csv', 'time_series_json', 'graph_json'] as const;
-
-function normalizeExportFormats(formats: readonly unknown[]): string[] {
-  const normalized = formats
-    .map((format) => (typeof format === 'string' ? format.trim().toLowerCase() : ''))
-    .filter((format) => format.length > 0);
-  const deduped = Array.from(new Set(normalized));
-  return deduped.filter((format) => EXPORT_FORMAT_OPTIONS.includes(format as (typeof EXPORT_FORMAT_OPTIONS)[number]));
+function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-6 border-b border-white/5 py-4 last:border-0">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
 }
 
-function orderExportFormats(formats: readonly string[]): string[] {
-  const deduped = new Set(formats);
-  return EXPORT_FORMAT_OPTIONS.filter((format) => deduped.has(format));
-}
-
-function toggleExportFormat(formats: string[], format: string): string[] {
-  const deduped = new Set(formats);
-  if (deduped.has(format)) {
-    if (deduped.size <= 1) {
-      return orderExportFormats(formats);
-    }
-    deduped.delete(format);
-  } else {
-    deduped.add(format);
-  }
-  return orderExportFormats(Array.from(deduped));
-}
-
-type VoicePreviewRow = {
-  speaker: string;
-  resolvedVoice: string;
-  rule: string;
-  source: string;
-};
-
-function resolveNarrationFallbackVoice(params: {
-  characterGender: string;
-  explicitVoiceId: string;
-  maleDefault: string;
-  femaleDefault: string;
-  neutralDefault: string;
-  unknownDefault: string;
-}) {
-  const trimmedExplicitVoice = params.explicitVoiceId.trim();
-  if (trimmedExplicitVoice) {
-    return {
-      voiceId: trimmedExplicitVoice,
-      rule: 'explicit character override',
-      source: 'character voice map',
-    };
-  }
-
-  const normalizedGender = params.characterGender.trim().toLowerCase();
-  if (normalizedGender === 'male') {
-    return { voiceId: params.maleDefault, rule: 'gender fallback', source: 'male_default_voice' };
-  }
-  if (normalizedGender === 'female') {
-    return { voiceId: params.femaleDefault, rule: 'gender fallback', source: 'female_default_voice' };
-  }
-  if (normalizedGender === 'neutral') {
-    return { voiceId: params.neutralDefault, rule: 'gender fallback', source: 'neutral_default_voice' };
-  }
-
-  return { voiceId: params.unknownDefault, rule: 'gender fallback', source: 'unknown_default_voice' };
-}
-
-function resolveInternalThoughtPreviewVoice(params: {
-  policy: InternalThoughtVoicePolicy;
-  thoughtVoice: string;
-  narratorVoice: string;
-}) {
-  if (params.policy === 'character') {
-    return {
-      voiceId: params.narratorVoice,
-      source: 'character policy default',
-      rule: 'uses resolved dialogue-style fallback',
-    };
-  }
-
-  if (params.policy === 'thought_voice') {
-    const normalizedThoughtVoice = params.thoughtVoice.trim();
-    return {
-      voiceId: normalizedThoughtVoice || params.narratorVoice,
-      source: normalizedThoughtVoice ? 'custom thought_voice' : 'thought policy narrator fallback',
-      rule: normalizedThoughtVoice ? 'thought_voice policy' : 'thought policy without override',
-    };
-  }
-
-  return {
-    voiceId: params.narratorVoice,
-    source: 'internal thought policy',
-    rule: 'narrator policy',
-  };
-}
+const DEFAULT_RUN_CONFIG = runRequestSchema.parse({
+  mode: 'audiobook',
+  max_segment_chars: 150,
+  llm_enabled: true,
+  provider_name: 'openai',
+  max_calls_per_day: 500,
+}) satisfies RunRequestDto;
 
 export function ProjectPipelineSetupPage() {
   const navigate = useNavigate();
@@ -132,808 +41,131 @@ export function ProjectPipelineSetupPage() {
   const routeProjectId = parseProjectIdParam(params.project_id);
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const selectedMode = useWorkspaceStore((state) => state.selectedMode);
-  const setSelectedMode = useWorkspaceStore((state) => state.setSelectedMode);
   const setRunId = useWorkspaceStore((state) => state.setRunId);
-
   const projectId = routeProjectId ?? storeProjectId;
 
-  const [narratorVoice, setNarratorVoice] = useState('narrator_default');
-  const [maleVoice, setMaleVoice] = useState('male_default');
-  const [femaleVoice, setFemaleVoice] = useState('female_default');
-  const [neutralVoice, setNeutralVoice] = useState('neutral_default');
-  const [unknownVoice, setUnknownVoice] = useState('unknown_default');
-  const [internalThoughtVoicePolicy, setInternalThoughtVoicePolicy] = useState<InternalThoughtVoicePolicy>('character');
-  const [internalThoughtVoice, setInternalThoughtVoice] = useState('');
-  const [maxSegmentChars, setMaxSegmentChars] = useState(255);
-  const [llmEnabled, setLlmEnabled] = useState(false);
-  const [deterministicMode, setDeterministicMode] = useState(false);
-  const [deterministicModelIdentifier, setDeterministicModelIdentifier] = useState('');
-  const [deterministicSeed, setDeterministicSeed] = useState(0);
-  const [deterministicRandomizationStrategy, setDeterministicRandomizationStrategy] = useState('stable');
-  const [deterministicShuffleEnabled, setDeterministicShuffleEnabled] = useState(false);
-  const [webScrapingEnabled, setWebScrapingEnabled] = useState(false);
-  const [emotionTaxonomy, setEmotionTaxonomy] = useState<EmotionTaxonomy>('basic');
-  const [providerName, setProviderName] = useState('openrouter');
-  const [maxCallsPerDay, setMaxCallsPerDay] = useState(25);
-  const [exportFormats, setExportFormats] = useState<string[]>(Array.from(EXPORT_FORMAT_OPTIONS));
-  const [exportChunkSize, setExportChunkSize] = useState(DEFAULT_EXPORT_CHUNK_SIZE);
-  const [allowUnfinalizedCharacterMap, setAllowUnfinalizedCharacterMap] = useState(false);
-  const [hasCustomMaxSegmentChars, setHasCustomMaxSegmentChars] = useState(false);
-  const [hasCustomExportChunkSize, setHasCustomExportChunkSize] = useState(false);
-  const [speakerConfidenceThreshold, setSpeakerConfidenceThreshold] = useState(DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD);
-  const [highAmbiguityDialogueFlagThreshold, setHighAmbiguityDialogueFlagThreshold] = useState(
-    DEFAULT_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
-  );
-  const [unstableEmotionShiftTransitionThreshold, setUnstableEmotionShiftTransitionThreshold] = useState(
-    DEFAULT_UNSTABLE_EMOTION_SHIFT_TRANSITION_THRESHOLD,
-  );
-  const [unstableEmotionShiftDensityThreshold, setUnstableEmotionShiftDensityThreshold] = useState(
-    DEFAULT_UNSTABLE_EMOTION_SHIFT_DENSITY_THRESHOLD,
-  );
-  const [hasCustomSpeakerConfidenceThreshold, setHasCustomSpeakerConfidenceThreshold] = useState(false);
-  const [hasCustomHighAmbiguityDialogueFlagThreshold, setHasCustomHighAmbiguityDialogueFlagThreshold] = useState(false);
-  const [hasCustomUnstableEmotionShiftTransitionThreshold, setHasCustomUnstableEmotionShiftTransitionThreshold] = useState(
-    false,
-  );
-  const [hasCustomUnstableEmotionShiftDensityThreshold, setHasCustomUnstableEmotionShiftDensityThreshold] = useState(false);
-  const [contradictionReviewRequired, setContradictionReviewRequired] = useState(true);
-  const [hasCustomContradictionReviewRequired, setHasCustomContradictionReviewRequired] = useState(false);
-
-  const saveVoicesMutation = useSaveVoicesMutation(projectId);
-  const runPipelineMutation = useRunPipelineMutation(projectId);
-  const characterMapQuery = useCharacterMapQuery(projectId);
+  const llmSettingsQuery = useProjectLLMSettingsQuery(projectId);
+  const providersQuery = useLLMProvidersQuery(projectId !== null);
   const modeCatalogQuery = useModeCatalogQuery(projectId !== null);
-  const isRunLocked = selectedMode === null;
-  const hasUnfinalizedCharacterRows =
-    characterMapQuery.data !== undefined && characterMapQuery.data.characters.length > 0 && !characterMapQuery.data.character_map_finalized;
-  const runMode = selectedMode ?? modeCatalogQuery.data?.default_mode ?? null;
-  const selectedProfile = runMode !== null ? modeCatalogQuery.data?.mode_profiles?.[runMode] : null;
-  const characterRows = characterMapQuery.data?.characters ?? [];
-  const voiceMappingPreviewRows: VoicePreviewRow[] = useMemo(() => {
-    const resolvedCharacterRows = characterRows.map((character) => {
-      const resolution = resolveNarrationFallbackVoice({
-        characterGender: character.gender,
-        explicitVoiceId: character.voice_id || '',
-        maleDefault: maleVoice,
-        femaleDefault: femaleVoice,
-        neutralDefault: neutralVoice,
-        unknownDefault: unknownVoice,
-      });
+  const updateLLMMutation = useUpdateProjectLLMSettingsMutation(projectId);
+  const runMutation = useRunPipelineMutation(projectId);
 
-      return {
-        speaker: character.name,
-        resolvedVoice: resolution.voiceId,
-        rule: resolution.rule,
-        source: resolution.source,
-      };
-    });
+  const providers = providersQuery.data?.providers ?? [];
+  const llmEnabled = llmSettingsQuery.data?.llm_enabled ?? false;
+  const effectiveMode = selectedMode ?? 'audiobook';
+  const modeProfile = modeCatalogQuery.data?.mode_profiles?.[effectiveMode];
+  const isBusy = updateLLMMutation.isMutating || runMutation.isMutating;
 
-    return [
-      {
-        speaker: 'Narrator',
-        resolvedVoice: narratorVoice,
-        rule: 'explicit narrator default',
-        source: 'narrator_voice',
-      },
-      ...resolvedCharacterRows,
-    ];
-  }, [characterRows, maleVoice, femaleVoice, neutralVoice, unknownVoice, narratorVoice]);
-  const internalThoughtPreview = useMemo(
-    () =>
-      resolveInternalThoughtPreviewVoice({
-        policy: internalThoughtVoicePolicy,
-        thoughtVoice: internalThoughtVoice,
-        narratorVoice,
-      }),
-    [internalThoughtVoicePolicy, internalThoughtVoice, narratorVoice],
-  );
-
-  useEffect(() => {
-    if (selectedProfile !== null && selectedProfile !== undefined) {
-      setWebScrapingEnabled(Boolean(selectedProfile.web_scraping_enabled));
-    }
-  }, [selectedProfile]);
-
-  useEffect(() => {
-    setHasCustomMaxSegmentChars(false);
-    setHasCustomExportChunkSize(false);
-    setHasCustomSpeakerConfidenceThreshold(false);
-    setHasCustomHighAmbiguityDialogueFlagThreshold(false);
-    setHasCustomUnstableEmotionShiftTransitionThreshold(false);
-    setHasCustomUnstableEmotionShiftDensityThreshold(false);
-    setHasCustomContradictionReviewRequired(false);
-    setExportFormats(Array.from(EXPORT_FORMAT_OPTIONS));
-  }, [runMode]);
-
-  useEffect(() => {
-    if (!hasCustomMaxSegmentChars && selectedProfile !== null && selectedProfile !== undefined) {
-      setMaxSegmentChars(selectedProfile.max_segment_chars);
-    }
-  }, [hasCustomMaxSegmentChars, selectedProfile]);
-
-  useEffect(() => {
-    if (!hasCustomExportChunkSize && selectedProfile !== null && selectedProfile !== undefined) {
-      setExportChunkSize(selectedProfile.export_chunk_size ?? DEFAULT_EXPORT_CHUNK_SIZE);
-    }
-  }, [hasCustomExportChunkSize, selectedProfile]);
-
-  useEffect(() => {
-    if (!hasCustomSpeakerConfidenceThreshold && selectedProfile !== null && selectedProfile !== undefined) {
-      setSpeakerConfidenceThreshold(selectedProfile.speaker_confidence_threshold ?? DEFAULT_SPEAKER_CONFIDENCE_THRESHOLD);
-    }
-  }, [hasCustomSpeakerConfidenceThreshold, selectedProfile]);
-
-  useEffect(() => {
-    if (
-      !hasCustomHighAmbiguityDialogueFlagThreshold &&
-      selectedProfile !== null &&
-      selectedProfile !== undefined
-    ) {
-      setHighAmbiguityDialogueFlagThreshold(
-        selectedProfile.high_ambiguity_dialogue_flag_threshold ??
-          DEFAULT_HIGH_AMBIGUITY_DIALOGUE_FLAG_THRESHOLD,
-      );
-    }
-  }, [hasCustomHighAmbiguityDialogueFlagThreshold, selectedProfile]);
-
-  useEffect(() => {
-    if (
-      !hasCustomUnstableEmotionShiftTransitionThreshold &&
-      selectedProfile !== null &&
-      selectedProfile !== undefined
-    ) {
-      setUnstableEmotionShiftTransitionThreshold(
-        selectedProfile.unstable_emotion_shift_transition_threshold ??
-          DEFAULT_UNSTABLE_EMOTION_SHIFT_TRANSITION_THRESHOLD,
-      );
-    }
-  }, [hasCustomUnstableEmotionShiftTransitionThreshold, selectedProfile]);
-
-  useEffect(() => {
-    if (
-      !hasCustomUnstableEmotionShiftDensityThreshold &&
-      selectedProfile !== null &&
-      selectedProfile !== undefined
-    ) {
-      setUnstableEmotionShiftDensityThreshold(
-        selectedProfile.unstable_emotion_shift_density_threshold ??
-          DEFAULT_UNSTABLE_EMOTION_SHIFT_DENSITY_THRESHOLD,
-      );
-    }
-  }, [hasCustomUnstableEmotionShiftDensityThreshold, selectedProfile]);
-
-  useEffect(() => {
-    if (
-      !hasCustomContradictionReviewRequired &&
-      selectedProfile !== null &&
-      selectedProfile !== undefined
-    ) {
-      setContradictionReviewRequired(
-        selectedProfile.contradiction_review_required !== undefined
-          ? selectedProfile.contradiction_review_required
-          : true,
-      );
-    }
-  }, [hasCustomContradictionReviewRequired, selectedProfile]);
-
-  useEffect(() => {
-    if (selectedProfile === null || selectedProfile === undefined) {
-      return;
-    }
-
-    const profileFormats = normalizeExportFormats(Array.isArray(selectedProfile.export_formats) ? selectedProfile.export_formats : []);
-    setExportFormats(profileFormats.length > 0 ? profileFormats : Array.from(EXPORT_FORMAT_OPTIONS));
-  }, [selectedProfile]);
-
-  async function handleSaveVoices(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (projectId === null) {
-      toast.error('Project is missing.');
-      return;
-    }
-
+  async function handleToggleLLM() {
+    if (!projectId) return;
     try {
-      const trimmedThoughtVoice =
-        internalThoughtVoicePolicy === 'thought_voice' ? internalThoughtVoice.trim() : '';
-
-      await saveVoicesMutation.trigger({
-        narrator_voice: narratorVoice,
-        male_default_voice: maleVoice,
-        female_default_voice: femaleVoice,
-        neutral_default_voice: neutralVoice,
-        unknown_default_voice: unknownVoice,
-        internal_thought_voice_policy: internalThoughtVoicePolicy,
-        internal_thought_voice: trimmedThoughtVoice || undefined,
-      });
-      toast.success('Voice configuration saved.');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to save voices');
+      await updateLLMMutation.trigger({ llm_enabled: !llmEnabled });
+      toast.success(`LLM ${!llmEnabled ? 'enabled' : 'disabled'}.`);
+      await llmSettingsQuery.mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update failed');
     }
   }
 
-  async function handleRunPipeline(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (projectId === null) {
-      toast.error('Project is missing.');
-      return;
-    }
-    if (selectedMode === null) {
-      toast.error('Select a mode before running the pipeline.');
-      return;
-    }
-
-    try {
-      const trimmedThoughtVoice =
-        internalThoughtVoicePolicy === 'thought_voice' ? internalThoughtVoice.trim() : '';
-
-      const runPayload = buildCurrentRunPayload({
-        forceMode: selectedMode,
-        trimmedThoughtVoice,
-      });
-
-      const run = await runPipelineMutation.trigger(runPayload);
-      setRunId(run.run_id);
-      toast.success(`Run #${run.run_id} completed with ${run.segment_count} segments.`);
-      navigate(projectRoute(projectId, 'run-monitor'));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Pipeline run failed.');
-    }
-  }
-
-  function buildCurrentRunPayload(params?: {
-    forceMode?: string | null;
-    trimmedThoughtVoice?: string;
-  }): RunRequestDto {
-    const resolvedMode = params?.forceMode ?? selectedMode ?? runMode ?? 'audiobook';
-    const trimmedThoughtVoice =
-      params?.trimmedThoughtVoice
-      ?? (internalThoughtVoicePolicy === 'thought_voice' ? internalThoughtVoice.trim() : '');
-    const runPayload: RunRequestDto = {
-      mode: resolvedMode,
-      max_segment_chars: maxSegmentChars,
+  async function handleRun() {
+    if (!projectId) return;
+    const firstEnabledProvider = providers.find((p) => p.enabled)?.provider ?? 'openai';
+    const runConfig: RunRequestDto = {
+      ...DEFAULT_RUN_CONFIG,
+      mode: effectiveMode,
       llm_enabled: llmEnabled,
-      export_chunk_size: exportChunkSize,
-      speaker_confidence_threshold: speakerConfidenceThreshold,
-      high_ambiguity_dialogue_flag_threshold: highAmbiguityDialogueFlagThreshold,
-      unstable_emotion_shift_transition_threshold: unstableEmotionShiftTransitionThreshold,
-      unstable_emotion_shift_density_threshold: unstableEmotionShiftDensityThreshold,
-      export_formats: exportFormats,
-      contradiction_review_required: contradictionReviewRequired,
-      deterministic_mode: deterministicMode,
-      web_scraping_enabled: webScrapingEnabled,
-      emotion_taxonomy: emotionTaxonomy,
-      provider_name: providerName,
-      max_calls_per_day: maxCallsPerDay,
-      allow_unfinalized_character_map: allowUnfinalizedCharacterMap,
-      internal_thought_voice_policy: internalThoughtVoicePolicy,
-      internal_thought_voice: trimmedThoughtVoice || undefined,
+      provider_name: modeProfile?.provider_name ?? firstEnabledProvider,
+      max_segment_chars: modeProfile?.max_segment_chars ?? DEFAULT_RUN_CONFIG.max_segment_chars,
+      max_calls_per_day: modeProfile?.max_calls_per_day ?? DEFAULT_RUN_CONFIG.max_calls_per_day,
     };
-    if (deterministicMode) {
-      runPayload.deterministic_model_identifier = deterministicModelIdentifier.trim() || undefined;
-      runPayload.deterministic_seed = deterministicSeed;
-      runPayload.randomization_config = {
-        seed: deterministicSeed,
-        strategy: deterministicRandomizationStrategy.trim() || 'stable',
-        shuffle_enabled: deterministicShuffleEnabled,
-      };
-    }
-    return runPayload;
-  }
-
-  function handleExportCurrentPreset() {
-    const presetPayload = {
-      preset_schema_version: '1.0.0',
-      exported_at: new Date().toISOString(),
-      run_config: buildCurrentRunPayload(),
-    };
-    const blob = new Blob([JSON.stringify(presetPayload, null, 2)], { type: 'application/json' });
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = `pipeline-run-config-preset-project-${projectId ?? 'unknown'}.json`;
-    link.click();
-    URL.revokeObjectURL(objectUrl);
-    toast.success('Run config preset exported.');
-  }
-
-  function applyImportedRunPreset(preset: Partial<RunRequestDto>) {
-    if (typeof preset.mode === 'string' && preset.mode.trim()) {
-      setSelectedMode(preset.mode.trim().toLowerCase());
-    }
-    if (typeof preset.max_segment_chars === 'number') {
-      setHasCustomMaxSegmentChars(true);
-      setMaxSegmentChars(preset.max_segment_chars);
-    }
-    if (typeof preset.llm_enabled === 'boolean') {
-      setLlmEnabled(preset.llm_enabled);
-    }
-    if (typeof preset.provider_name === 'string' && preset.provider_name.trim()) {
-      setProviderName(preset.provider_name.trim().toLowerCase());
-    }
-    if (typeof preset.max_calls_per_day === 'number') {
-      setMaxCallsPerDay(preset.max_calls_per_day);
-    }
-    if (Array.isArray(preset.export_formats)) {
-      const normalizedPresetFormats = normalizeExportFormats(preset.export_formats);
-      if (normalizedPresetFormats.length > 0) {
-        setExportFormats(orderExportFormats(normalizedPresetFormats));
-      }
-    }
-    if (typeof preset.export_chunk_size === 'number') {
-      setHasCustomExportChunkSize(true);
-      setExportChunkSize(preset.export_chunk_size);
-    }
-    if (typeof preset.contradiction_review_required === 'boolean') {
-      setHasCustomContradictionReviewRequired(true);
-      setContradictionReviewRequired(preset.contradiction_review_required);
-    }
-    if (typeof preset.deterministic_mode === 'boolean') {
-      setDeterministicMode(preset.deterministic_mode);
-    }
-    if (typeof preset.deterministic_model_identifier === 'string') {
-      setDeterministicModelIdentifier(preset.deterministic_model_identifier);
-    }
-    if (typeof preset.deterministic_seed === 'number') {
-      setDeterministicSeed(preset.deterministic_seed);
-    }
-    if (preset.randomization_config && typeof preset.randomization_config === 'object') {
-      const seed = (preset.randomization_config as { seed?: unknown }).seed;
-      const strategy = (preset.randomization_config as { strategy?: unknown }).strategy;
-      const shuffleEnabled = (preset.randomization_config as { shuffle_enabled?: unknown }).shuffle_enabled;
-      if (typeof seed === 'number') {
-        setDeterministicSeed(seed);
-      }
-      if (typeof strategy === 'string') {
-        setDeterministicRandomizationStrategy(strategy);
-      }
-      if (typeof shuffleEnabled === 'boolean') {
-        setDeterministicShuffleEnabled(shuffleEnabled);
-      }
-    }
-    if (typeof preset.web_scraping_enabled === 'boolean') {
-      setWebScrapingEnabled(preset.web_scraping_enabled);
-    }
-    if (preset.emotion_taxonomy === 'basic' || preset.emotion_taxonomy === 'expanded') {
-      setEmotionTaxonomy(preset.emotion_taxonomy);
-    }
-    if (typeof preset.allow_unfinalized_character_map === 'boolean') {
-      setAllowUnfinalizedCharacterMap(preset.allow_unfinalized_character_map);
-    }
-    if (
-      preset.internal_thought_voice_policy === 'character'
-      || preset.internal_thought_voice_policy === 'narrator'
-      || preset.internal_thought_voice_policy === 'thought_voice'
-    ) {
-      setInternalThoughtVoicePolicy(preset.internal_thought_voice_policy);
-    }
-    if (typeof preset.internal_thought_voice === 'string') {
-      setInternalThoughtVoice(preset.internal_thought_voice);
-    }
-    if (typeof preset.speaker_confidence_threshold === 'number') {
-      setHasCustomSpeakerConfidenceThreshold(true);
-      setSpeakerConfidenceThreshold(preset.speaker_confidence_threshold);
-    }
-    if (typeof preset.high_ambiguity_dialogue_flag_threshold === 'number') {
-      setHasCustomHighAmbiguityDialogueFlagThreshold(true);
-      setHighAmbiguityDialogueFlagThreshold(preset.high_ambiguity_dialogue_flag_threshold);
-    }
-    if (typeof preset.unstable_emotion_shift_transition_threshold === 'number') {
-      setHasCustomUnstableEmotionShiftTransitionThreshold(true);
-      setUnstableEmotionShiftTransitionThreshold(preset.unstable_emotion_shift_transition_threshold);
-    }
-    if (typeof preset.unstable_emotion_shift_density_threshold === 'number') {
-      setHasCustomUnstableEmotionShiftDensityThreshold(true);
-      setUnstableEmotionShiftDensityThreshold(preset.unstable_emotion_shift_density_threshold);
-    }
-  }
-
-  async function handleImportPresetFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
     try {
-      const rawPresetText = await file.text();
-      const rawPresetPayload = JSON.parse(rawPresetText) as unknown;
-      const candidatePreset =
-        typeof rawPresetPayload === 'object'
-        && rawPresetPayload !== null
-        && 'run_config' in rawPresetPayload
-          ? (rawPresetPayload as { run_config: unknown }).run_config
-          : rawPresetPayload;
-      const parsedPreset = runRequestSchema.partial().parse(candidatePreset);
-      applyImportedRunPreset(parsedPreset);
-      toast.success('Run config preset imported.');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to import run preset.');
-    } finally {
-      event.target.value = '';
+      const result = await runMutation.trigger(runConfig);
+      setRunId(result.run_id);
+      toast.success(`Run #${result.run_id} started.`);
+      navigate(`/projects/${projectId}/runs`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start run');
     }
   }
 
   return (
     <WorkflowPageShell
-      step="Step 04"
+      breadcrumb={`All Projects › Project #${projectId ?? '—'} › Pipeline`}
       title="Pipeline Setup"
-      description="Configure run settings and trigger execution. This page owns run configuration only."
-      action={
-        <p className="text-sm text-muted-foreground">{projectId !== null ? `Project #${projectId}` : 'Project required'}</p>
-      }
+      description="Review configuration and trigger a new pipeline run."
     >
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mic2 className="size-4 text-primary" />
-              Voice and Segmentation Config
-            </CardTitle>
-            <CardDescription>Defaults used for downstream voice mapping and segment generation.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="grid gap-3" onSubmit={handleSaveVoices}>
-              <div className="grid gap-2">
-                <Label htmlFor="narrator-voice">Narrator voice</Label>
-                <Input id="narrator-voice" value={narratorVoice} onChange={(event) => setNarratorVoice(event.target.value)} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="male-voice">Default male voice</Label>
-                <Input id="male-voice" value={maleVoice} onChange={(event) => setMaleVoice(event.target.value)} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="female-voice">Default female voice</Label>
-                <Input id="female-voice" value={femaleVoice} onChange={(event) => setFemaleVoice(event.target.value)} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="neutral-voice">Default neutral voice</Label>
-                <Input
-                  id="neutral-voice"
-                  value={neutralVoice}
-                  onChange={(event) => setNeutralVoice(event.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="unknown-voice">Default unknown voice</Label>
-                <Input
-                  id="unknown-voice"
-                  value={unknownVoice}
-                  onChange={(event) => setUnknownVoice(event.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="internal-thought-policy">Internal thought voice policy</Label>
-                <NativeSelect
-                  id="internal-thought-policy"
-                  value={internalThoughtVoicePolicy}
-                  onChange={(event) =>
-                    setInternalThoughtVoicePolicy(
-                      event.target.value as InternalThoughtVoicePolicy,
-                    )
-                  }
-                >
-                  <option value="character">Use character voice</option>
-                  <option value="narrator">Use narrator voice</option>
-                  <option value="thought_voice">Use separate thought voice</option>
-                </NativeSelect>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="internal-thought-voice">Thought voice</Label>
-                <Input
-                  id="internal-thought-voice"
-                  value={internalThoughtVoice}
-                  onChange={(event) => setInternalThoughtVoice(event.target.value)}
-                  disabled={internalThoughtVoicePolicy !== 'thought_voice'}
-                  placeholder="Only required when using thought voice policy"
-                />
-              </div>
-    <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-                <p className="text-sm font-medium">Voice fallback preview</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Check how current defaults resolve before saving voice settings.
-                </p>
-                <div className="mt-2 overflow-x-auto">
-                  <Table data-testid="voice-mapping-preview-table">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Speaker</TableHead>
-                        <TableHead>Resolved voice</TableHead>
-                        <TableHead>Rule</TableHead>
-                        <TableHead>Source</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {voiceMappingPreviewRows.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-sm text-muted-foreground">
-                            No character map entries found yet.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        voiceMappingPreviewRows.map((row, index) => (
-                          <TableRow key={`${row.speaker}-${row.source}-${index}`} data-testid="voice-mapping-preview-row">
-                            <TableCell className="font-medium">{row.speaker}</TableCell>
-                            <TableCell>{row.resolvedVoice}</TableCell>
-                            <TableCell>{row.rule}</TableCell>
-                            <TableCell>{row.source}</TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-                <p className="mt-3 text-sm" data-testid="internal-thought-preview">
-                  Internal-thought preview:{' '}
-                  <span className="font-medium">{internalThoughtPreview.voiceId}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">({internalThoughtPreview.rule})</span>
-                </p>
-              </div>
-              <Button disabled={saveVoicesMutation.isMutating || projectId === null} type="submit">
-                {saveVoicesMutation.isMutating ? 'Saving...' : 'Save Voice Config'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+      <div className="max-w-2xl space-y-2">
+        {/* Run Config Summary */}
+        <div className="rounded-xl border border-white/10 bg-card px-5">
+          <p className="pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Run Configuration</p>
+          <SettingRow label="Mode">
+            <span className="text-sm font-medium capitalize text-foreground">{effectiveMode}</span>
+          </SettingRow>
+          {modeProfile && (
+            <>
+              <SettingRow label="Max segment chars">
+                <span className="font-mono text-sm text-foreground">{modeProfile.max_segment_chars}</span>
+              </SettingRow>
+              <SettingRow label="Provider">
+                <span className="text-sm text-foreground">{modeProfile.provider_name}</span>
+              </SettingRow>
+              <SettingRow label="Daily call cap">
+                <span className="font-mono text-sm text-foreground">{modeProfile.max_calls_per_day}</span>
+              </SettingRow>
+            </>
+          )}
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="size-4 text-primary" />
-              Run Trigger
-            </CardTitle>
-            <CardDescription>Run mode snapshot and execution controls for the current project.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="grid gap-3" onSubmit={handleRunPipeline}>
-              <div className="grid gap-2">
-                <Label htmlFor="run-mode">Selected mode</Label>
-                <Input id="run-mode" disabled value={selectedMode ?? 'not selected'} />
+        {/* LLM Config */}
+        <div className="rounded-xl border border-white/10 bg-card px-5">
+          <p className="pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">LLM</p>
+          <SettingRow
+            label="LLM processing"
+            description="Enable LLM-powered speaker and emotion tagging"
+          >
+            <button
+              className="flex h-6 w-11 items-center rounded-full border border-white/20 bg-white/10 px-0.5 transition-colors data-[enabled=true]:border-green-400/40 data-[enabled=true]:bg-green-400/20"
+              data-enabled={llmEnabled}
+              disabled={isBusy}
+              onClick={() => void handleToggleLLM()}
+              type="button"
+            >
+              <span
+                className="size-5 rounded-full bg-white/40 transition-transform data-[enabled=true]:translate-x-5 data-[enabled=true]:bg-green-400"
+                data-enabled={llmEnabled}
+              />
+            </button>
+          </SettingRow>
+          {providers.length > 0 && (
+            <SettingRow label="Providers">
+              <div className="flex flex-wrap gap-1.5">
+                {providers.map((p) => (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-xs text-muted-foreground"
+                    key={p.provider}
+                  >
+                    <span className={`size-1.5 rounded-full ${p.enabled ? 'bg-green-400' : 'bg-white/20'}`} />
+                    {p.provider}
+                  </span>
+                ))}
               </div>
-              <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-                <Label htmlFor="run-preset-import">Import run preset (.json)</Label>
-                <Input
-                  id="run-preset-import"
-                  type="file"
-                  accept="application/json,.json"
-                  onChange={handleImportPresetFile}
-                />
-                <Button type="button" variant="outline" onClick={handleExportCurrentPreset}>
-                  Export current run preset
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Import accepts either a raw run payload JSON or an exported object with `run_config`.
-                </p>
-              </div>
-              <div className="grid gap-2">
-                <Label>Export formats</Label>
-                <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-                  {EXPORT_FORMAT_OPTIONS.map((format) => (
-                    <label
-                      key={format}
-                      htmlFor={`export-format-${format}`}
-                      className="inline-flex items-center gap-2 text-sm"
-                    >
-                      <Checkbox
-                        id={`export-format-${format}`}
-                        checked={exportFormats.includes(format)}
-                        disabled={exportFormats.length === 1 && exportFormats.includes(format)}
-                        onCheckedChange={() =>
-                          setExportFormats((previousFormats) => toggleExportFormat(previousFormats, format))
-                        }
-                      />
-                      <span className="font-medium uppercase">{format}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="max-segment-chars">Segmentation target length</Label>
-                <Input
-                  id="max-segment-chars"
-                  min={80}
-                  max={255}
-                  type="number"
-                  value={maxSegmentChars}
-                  onChange={(event) => {
-                    setHasCustomMaxSegmentChars(true);
-                    setMaxSegmentChars(Number(event.target.value));
-                  }}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="export-chunk-size">Export chunk size</Label>
-                <Input
-                  id="export-chunk-size"
-                  min={1}
-                  max={10000}
-                  type="number"
-                  value={exportChunkSize}
-                  onChange={(event) => {
-                    setHasCustomExportChunkSize(true);
-                    setExportChunkSize(Number(event.target.value));
-                  }}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="speaker-confidence-threshold">Speaker confidence threshold</Label>
-                <Input
-                  id="speaker-confidence-threshold"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  type="number"
-                  value={speakerConfidenceThreshold}
-                  onChange={(event) => {
-                    setHasCustomSpeakerConfidenceThreshold(true);
-                    setSpeakerConfidenceThreshold(Number(event.target.value));
-                  }}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="high-ambiguity-dialogue-flag-threshold">
-                  High-ambiguity dialogue flag threshold
-                </Label>
-                <Input
-                  id="high-ambiguity-dialogue-flag-threshold"
-                  min={1}
-                  max={20}
-                  type="number"
-                  value={highAmbiguityDialogueFlagThreshold}
-                  onChange={(event) => {
-                    setHasCustomHighAmbiguityDialogueFlagThreshold(true);
-                    setHighAmbiguityDialogueFlagThreshold(Number(event.target.value));
-                  }}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="unstable-emotion-shift-transition-threshold">
-                  Unstable emotion transition threshold
-                </Label>
-                <Input
-                  id="unstable-emotion-shift-transition-threshold"
-                  min={1}
-                  max={20}
-                  type="number"
-                  value={unstableEmotionShiftTransitionThreshold}
-                  onChange={(event) => {
-                    setHasCustomUnstableEmotionShiftTransitionThreshold(true);
-                    setUnstableEmotionShiftTransitionThreshold(Number(event.target.value));
-                  }}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="unstable-emotion-shift-density-threshold">
-                  Unstable emotion shift density threshold
-                </Label>
-                <Input
-                  id="unstable-emotion-shift-density-threshold"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  type="number"
-                  value={unstableEmotionShiftDensityThreshold}
-                  onChange={(event) => {
-                    setHasCustomUnstableEmotionShiftDensityThreshold(true);
-                    setUnstableEmotionShiftDensityThreshold(Number(event.target.value));
-                  }}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="emotion-taxonomy">Emotion taxonomy</Label>
-                <NativeSelect
-                  id="emotion-taxonomy"
-                  value={emotionTaxonomy}
-                  onChange={(event) => setEmotionTaxonomy(event.target.value as EmotionTaxonomy)}
-                >
-                  <option value="basic">Basic</option>
-                  <option value="expanded">Expanded</option>
-                </NativeSelect>
-              </div>
-              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
-                <span>Review contradictions before export</span>
-                <Switch
-                  checked={contradictionReviewRequired}
-                  onCheckedChange={(value) => {
-                    setHasCustomContradictionReviewRequired(true);
-                    setContradictionReviewRequired(value);
-                  }}
-                />
-              </label>
-              <div className="grid gap-2">
-                <Label htmlFor="provider-name">Provider</Label>
-                <NativeSelect id="provider-name" value={providerName} onChange={(event) => setProviderName(event.target.value)}>
-                  <option value="openrouter">openrouter</option>
-                  <option value="siliconflow">siliconflow (placeholder)</option>
-                  <option value="groq">groq (placeholder)</option>
-                </NativeSelect>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="max-calls">Max calls per day</Label>
-                <Input
-                  id="max-calls"
-                  min={1}
-                  type="number"
-                  value={maxCallsPerDay}
-                  onChange={(event) => setMaxCallsPerDay(Number(event.target.value))}
-                />
-              </div>
-              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
-                <span>Enable LLM-assisted refinement</span>
-                <Switch checked={llmEnabled} onCheckedChange={setLlmEnabled} />
-              </label>
-              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
-                <span>Enable deterministic mode</span>
-                <Switch checked={deterministicMode} onCheckedChange={setDeterministicMode} />
-              </label>
-              {deterministicMode ? (
-                <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="deterministic-model-identifier">Deterministic model identifier</Label>
-                    <Input
-                      id="deterministic-model-identifier"
-                      value={deterministicModelIdentifier}
-                      onChange={(event) => setDeterministicModelIdentifier(event.target.value)}
-                      placeholder="optional model pin"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="deterministic-seed">Deterministic seed</Label>
-                    <Input
-                      id="deterministic-seed"
-                      min={0}
-                      type="number"
-                      value={deterministicSeed}
-                      onChange={(event) => setDeterministicSeed(Number(event.target.value))}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="deterministic-randomization-strategy">Randomization strategy</Label>
-                    <Input
-                      id="deterministic-randomization-strategy"
-                      value={deterministicRandomizationStrategy}
-                      onChange={(event) => setDeterministicRandomizationStrategy(event.target.value)}
-                    />
-                  </div>
-                  <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
-                    <span>Deterministic shuffle enabled</span>
-                    <Switch
-                      checked={deterministicShuffleEnabled}
-                      onCheckedChange={setDeterministicShuffleEnabled}
-                    />
-                  </label>
-                </div>
-              ) : null}
-              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
-                <span>Enable web scraping</span>
-                <Switch checked={webScrapingEnabled} onCheckedChange={setWebScrapingEnabled} />
-              </label>
-              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
-                <span>Run with unfinalized character map</span>
-                <Switch
-                  checked={allowUnfinalizedCharacterMap}
-                  onCheckedChange={setAllowUnfinalizedCharacterMap}
-                  disabled={!hasUnfinalizedCharacterRows}
-                />
-              </label>
-              {hasUnfinalizedCharacterRows ? (
-                <p className="text-sm text-muted-foreground">
-                  This project has an unfinalized character map. Enable override only when you want to proceed with proposed names.
-                </p>
-              ) : null}
-              <Button
-                data-testid="run-pipeline-button"
-                disabled={runPipelineMutation.isMutating || projectId === null || isRunLocked || hasUnfinalizedCharacterRows && !allowUnfinalizedCharacterMap}
-                type="submit"
-              >
-                {runPipelineMutation.isMutating ? 'Running...' : 'Run Pipeline'}
-              </Button>
-              {isRunLocked ? (
-                <p className="text-sm text-muted-foreground" data-testid="mode-lock-hint">
-                  Return to the mode page and make an explicit mode selection before running.
-                </p>
-              ) : null}
-            </form>
-          </CardContent>
-        </Card>
+            </SettingRow>
+          )}
+        </div>
+
+        {/* Start run */}
+        <div className="flex items-center gap-3 pt-2">
+          <Button
+            data-testid="run-pipeline-button"
+            disabled={isBusy}
+            onClick={() => void handleRun()}
+          >
+            {runMutation.isMutating ? 'Starting…' : 'Start Run'}
+          </Button>
+          {!selectedMode && (
+            <p className="text-xs text-muted-foreground">Select a mode in Mode Setup before running.</p>
+          )}
+        </div>
       </div>
     </WorkflowPageShell>
   );

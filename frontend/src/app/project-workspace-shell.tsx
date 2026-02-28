@@ -1,193 +1,131 @@
 import { useEffect } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  LayoutDashboard,
+  Upload,
+  Sliders,
+  Users,
+  Mic2,
+  Volume2,
+  Settings2,
+  Play,
+  Download,
+  BarChart2,
+  Settings,
+  Lock,
+} from 'lucide-react';
+import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useProjectAllowedActionsQuery, useProjectSetupStatusQuery } from '@/features/workflow/api/workflow-hooks';
+import { cn } from '@/lib/utils';
+import { useProjectAllowedActionsQuery, useProjectSetupStatusQuery, useProjectDetailQuery } from '@/features/workflow/api/workflow-hooks';
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 
 type WorkspaceNavItem = {
-  id: 'overview' | 'setup' | 'characters' | 'voice' | 'runs' | 'exports' | 'settings';
+  id: 'overview' | 'upload' | 'mode' | 'characters' | 'voice' | 'pronunciation' | 'pipeline' | 'runs' | 'exports' | 'analytics' | 'settings';
   to: string;
   label: string;
+  icon: React.ComponentType<{ className?: string; size?: number }>;
   end?: boolean;
 };
 
 type WorkspaceNavGroup = {
-  id: 'foundation' | 'content' | 'operations';
+  id: string;
   label: string;
   items: WorkspaceNavItem[];
 };
 
-const PROJECT_WORKSPACE_NAV_GROUPS: WorkspaceNavGroup[] = [
+const buildNavGroups = (projectId: number): WorkspaceNavGroup[] => [
   {
-    id: 'foundation',
-    label: 'Foundation',
+    id: 'setup',
+    label: 'Setup',
     items: [
-      { id: 'overview', to: 'overview', label: 'Overview', end: true },
-      { id: 'setup', to: 'setup', label: 'Setup' },
+      { id: 'overview', to: `/projects/${projectId}/overview`, label: 'Overview', icon: LayoutDashboard, end: true },
+      { id: 'upload', to: `/projects/${projectId}/setup`, label: 'Upload', icon: Upload },
     ],
   },
   {
-    id: 'content',
-    label: 'Content',
+    id: 'configuration',
+    label: 'Configuration',
     items: [
-      { id: 'characters', to: 'characters', label: 'Characters' },
-      { id: 'voice', to: 'voice', label: 'Voice' },
+      { id: 'mode', to: `/projects/${projectId}/mode`, label: 'Mode', icon: Sliders },
+      { id: 'characters', to: `/projects/${projectId}/characters`, label: 'Characters', icon: Users },
+      { id: 'pronunciation', to: `/projects/${projectId}/pronunciation`, label: 'Pronunciation', icon: Volume2 },
+      { id: 'voice', to: `/projects/${projectId}/voice`, label: 'Voice', icon: Mic2 },
+      { id: 'pipeline', to: `/projects/${projectId}/pipeline-setup`, label: 'Pipeline', icon: Settings2 },
     ],
   },
   {
     id: 'operations',
     label: 'Operations',
     items: [
-      { id: 'runs', to: 'runs', label: 'Runs' },
-      { id: 'exports', to: 'exports', label: 'Exports' },
-      { id: 'settings', to: 'settings', label: 'Settings' },
+      { id: 'runs', to: `/projects/${projectId}/runs`, label: 'Runs', icon: Play },
+      { id: 'exports', to: `/projects/${projectId}/exports`, label: 'Exports', icon: Download },
+    ],
+  },
+  {
+    id: 'insights',
+    label: 'Insights',
+    items: [
+      { id: 'analytics', to: `/projects/${projectId}/dashboards`, label: 'Analytics', icon: BarChart2 },
+    ],
+  },
+  {
+    id: 'manage',
+    label: 'Manage',
+    items: [
+      { id: 'settings', to: `/projects/${projectId}/settings`, label: 'Settings', icon: Settings },
     ],
   },
 ];
 
-const ACTION_GATED_ITEM_IDS_BY_REQUIRED_STEP: Record<string, ReadonlySet<WorkspaceNavItem['id']>> = {
-  ingestion: new Set<WorkspaceNavItem['id']>(['characters', 'voice', 'runs', 'exports']),
-  mode_selection: new Set<WorkspaceNavItem['id']>(['voice', 'runs', 'exports']),
-  initial_run: new Set<WorkspaceNavItem['id']>(['exports']),
-  restore: new Set<WorkspaceNavItem['id']>(['characters', 'voice', 'runs', 'exports', 'settings']),
+const LOCK_RULES: Record<WorkspaceNavItem['id'], Array<'ingestion' | 'mode_selection' | 'initial_run'>> = {
+  overview: [],
+  upload: [],
+  mode: [],
+  characters: ['ingestion'],
+  pronunciation: ['ingestion'],
+  voice: ['ingestion', 'mode_selection'],
+  pipeline: ['ingestion', 'mode_selection'],
+  runs: ['ingestion', 'mode_selection'],
+  exports: ['ingestion', 'mode_selection', 'initial_run'],
+  analytics: ['initial_run'],
+  settings: [],
 };
 
-type RequiredStepId = 'ingestion' | 'mode_selection' | 'initial_run' | 'restore';
-type WorkspaceNavLockState = {
-  locked: boolean;
-  reason: string | null;
-  requiredStep: RequiredStepId | null;
+const LOCK_MESSAGES: Record<string, string> = {
+  ingestion: 'Complete source upload first',
+  mode_selection: 'Select a mode first',
+  initial_run: 'Complete an initial run first',
 };
 
-function toProjectSetupPath(projectId: number) {
-  return `/projects/${projectId}/setup`;
-}
-
-function isSetupPath(pathname: string, projectId: number) {
-  const setupPath = toProjectSetupPath(projectId);
-  return pathname === setupPath || pathname.startsWith(`${setupPath}/`);
-}
-
-function isModePath(pathname: string, projectId: number) {
-  const modePath = `/projects/${projectId}/mode`;
-  return pathname === modePath || pathname.startsWith(`${modePath}/`);
-}
-
-function resolveStepReady(stepId: string, steps: Array<{ step_id: string; ready: boolean }> | undefined): boolean {
-  if (!steps || steps.length === 0) {
-    return false;
-  }
-  const step = steps.find((candidate) => candidate.step_id === stepId);
-  return step?.ready === true;
-}
-
-function resolveSetupStepLockReason(
+function resolveIsLocked(
   itemId: WorkspaceNavItem['id'],
-  steps: Array<{ step_id: string; ready: boolean }> | undefined,
-): { reason: string; requiredStep: RequiredStepId } | null {
-  const ingestionReady = resolveStepReady('ingestion', steps);
-  const modeSelectionReady = resolveStepReady('mode_selection', steps);
-  const initialRunReady = resolveStepReady('initial_run', steps);
-
-  if (itemId === 'characters' && !ingestionReady) {
-    return { reason: 'Locked: complete ingestion setup first.', requiredStep: 'ingestion' };
+  setupSteps: Array<{ step_id: string; ready: boolean }> | undefined,
+  actionRequiredStep: string | null | undefined,
+  actionBlockedReason: string | null | undefined,
+): { locked: boolean; message: string | null } {
+  const rules = LOCK_RULES[itemId] ?? [];
+  for (const rule of rules) {
+    const step = setupSteps?.find((s) => s.step_id === rule);
+    if (step && !step.ready) {
+      return { locked: true, message: LOCK_MESSAGES[rule] ?? 'This step is locked' };
+    }
   }
-  if ((itemId === 'voice' || itemId === 'runs') && !modeSelectionReady) {
-    return { reason: 'Locked: complete mode selection setup first.', requiredStep: 'mode_selection' };
+  if (actionRequiredStep && actionBlockedReason) {
+    const affectedByAction = ['characters', 'voice', 'runs', 'exports'];
+    if (affectedByAction.includes(itemId)) {
+      const affectedSet = new Set(
+        actionRequiredStep === 'ingestion' ? ['characters', 'voice', 'runs', 'exports'] :
+        actionRequiredStep === 'mode_selection' ? ['voice', 'runs', 'exports'] :
+        actionRequiredStep === 'initial_run' ? ['exports'] : []
+      );
+      if (affectedSet.has(itemId)) {
+        return { locked: true, message: actionBlockedReason };
+      }
+    }
   }
-  if (itemId === 'exports' && !initialRunReady) {
-    return { reason: 'Locked: complete initial run setup first.', requiredStep: 'initial_run' };
-  }
-  return null;
-}
-
-function resolveActionGatingLockReason(
-  itemId: WorkspaceNavItem['id'],
-  requiredStep: string | null | undefined,
-  blockedReason: string | null | undefined,
-): { reason: string; requiredStep: RequiredStepId } | null {
-  if (!requiredStep || !blockedReason) {
-    return null;
-  }
-  const affectedItemIds = ACTION_GATED_ITEM_IDS_BY_REQUIRED_STEP[requiredStep];
-  if (!affectedItemIds || !affectedItemIds.has(itemId)) {
-    return null;
-  }
-  return { reason: blockedReason, requiredStep: requiredStep as RequiredStepId };
-}
-
-function resolveWorkspaceNavLockState(
-  itemId: WorkspaceNavItem['id'],
-  options: {
-    setupSteps: Array<{ step_id: string; ready: boolean }> | undefined;
-    actionRequiredStep: string | null | undefined;
-    actionBlockedReason: string | null | undefined;
-  },
-): WorkspaceNavLockState {
-  const actionGatingLock = resolveActionGatingLockReason(itemId, options.actionRequiredStep, options.actionBlockedReason);
-  if (actionGatingLock) {
-    return {
-      locked: true,
-      reason: actionGatingLock.reason,
-      requiredStep: actionGatingLock.requiredStep,
-    };
-  }
-  const setupLock = resolveSetupStepLockReason(itemId, options.setupSteps);
-  if (setupLock) {
-    return {
-      locked: true,
-      reason: setupLock.reason,
-      requiredStep: setupLock.requiredStep,
-    };
-  }
-  return {
-    locked: false,
-    reason: null,
-    requiredStep: null,
-  };
-}
-
-function resolveCurrentWorkspaceItemId(pathname: string, projectId: number): WorkspaceNavItem['id'] | null {
-  const prefix = `/projects/${projectId}`;
-  if (!pathname.startsWith(prefix)) {
-    return null;
-  }
-  const remainder = pathname.slice(prefix.length).replace(/^\//, '');
-  const firstSegment = remainder.split('/')[0] ?? '';
-  if (firstSegment === '' || firstSegment === 'overview') {
-    return 'overview';
-  }
-  if (firstSegment === 'setup') {
-    return 'setup';
-  }
-  if (firstSegment === 'characters') {
-    return 'characters';
-  }
-  if (firstSegment === 'voice' || firstSegment === 'pipeline-setup') {
-    return 'voice';
-  }
-  if (firstSegment === 'runs' || firstSegment === 'run-monitor') {
-    return 'runs';
-  }
-  if (firstSegment === 'exports' || firstSegment === 'export') {
-    return 'exports';
-  }
-  if (firstSegment === 'settings') {
-    return 'settings';
-  }
-  return null;
-}
-
-function resolveRequiredStepRoute(projectId: number, requiredStep: RequiredStepId | null): string {
-  if (requiredStep === 'initial_run') {
-    return `/projects/${projectId}/runs`;
-  }
-  if (requiredStep === 'restore') {
-    return `/projects/${projectId}/overview`;
-  }
-  return `/projects/${projectId}/setup`;
+  return { locked: false, message: null };
 }
 
 export function ProjectWorkspaceShell() {
@@ -197,135 +135,115 @@ export function ProjectWorkspaceShell() {
   const projectId = parseProjectIdParam(params.project_id);
   const setupStatusQuery = useProjectSetupStatusQuery(projectId);
   const projectActionsQuery = useProjectAllowedActionsQuery(projectId);
-  const currentWorkspaceItemId =
-    projectId !== null ? resolveCurrentWorkspaceItemId(location.pathname, projectId) : null;
-  const currentRouteLockState =
-    currentWorkspaceItemId !== null
-      ? resolveWorkspaceNavLockState(currentWorkspaceItemId, {
-          setupSteps: setupStatusQuery.data?.steps,
-          actionRequiredStep: projectActionsQuery.data?.required_step,
-          actionBlockedReason: projectActionsQuery.data?.blocked_reason,
-        })
-      : null;
+  const projectQuery = useProjectDetailQuery(projectId);
+  const projectTitle = projectQuery.data?.title ?? (projectId !== null ? `Project #${projectId}` : 'Project');
 
   useEffect(() => {
-    if (projectId === null || setupStatusQuery.error || setupStatusQuery.isLoading || setupStatusQuery.data === undefined) {
-      return;
+    if (projectId === null || setupStatusQuery.error || setupStatusQuery.isLoading || setupStatusQuery.data === undefined) return;
+    const setupPath = `/projects/${projectId}/setup`;
+    const modePath = `/projects/${projectId}/mode`;
+    const overviewPath = `/projects/${projectId}/overview`;
+    const steps = setupStatusQuery.data.steps ?? [];
+    const ingestionReady = steps.find((s) => s.step_id === 'ingestion')?.ready ?? false;
+    const isOnSetupOrMode = location.pathname === setupPath || location.pathname.startsWith(`${setupPath}/`) ||
+      location.pathname === modePath || location.pathname === overviewPath;
+    // Only force-redirect to /setup if ingestion itself hasn't been done yet.
+    // Pages that need mode_selection or initial_run show their own locked states via the sidebar.
+    if (!ingestionReady && !isOnSetupOrMode) {
+      navigate(setupPath, { replace: true });
     }
-    if (
-      setupStatusQuery.data.is_complete ||
-      isSetupPath(location.pathname, projectId) ||
-      isModePath(location.pathname, projectId)
-    ) {
-      return;
-    }
-    navigate(toProjectSetupPath(projectId), { replace: true });
-  }, [
-    location.pathname,
-    navigate,
-    projectId,
-    setupStatusQuery.data,
-    setupStatusQuery.error,
-    setupStatusQuery.isLoading,
-  ]);
+  }, [location.pathname, navigate, projectId, setupStatusQuery.data, setupStatusQuery.error, setupStatusQuery.isLoading]);
+
+  if (projectId === null) {
+    return (
+      <div className="flex h-full flex-col overflow-auto p-8">
+        <p className="text-sm text-muted-foreground">Invalid project ID.</p>
+      </div>
+    );
+  }
+
+  const navGroups = buildNavGroups(projectId);
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]" data-testid="project-workspace-shell">
-      <aside className="h-fit rounded-xl border border-panel-border/70 bg-card/55 p-3" data-testid="project-workspace-sidebar">
-        <p className="text-[11px] font-semibold tracking-[0.15em] text-muted-foreground uppercase">Project Workspace</p>
-        <p className="mt-2 text-sm font-semibold text-foreground" data-testid="project-workspace-shell-project-id">
-          Project #{projectId ?? 'n/a'}
-        </p>
+    <div className="flex h-full min-w-0" data-testid="project-workspace-shell">
+      {/* Project sidebar */}
+      <aside
+        aria-label="Project navigation"
+        className="flex w-56 shrink-0 flex-col border-r border-white/10 bg-sidebar overflow-y-auto"
+        data-testid="project-workspace-sidebar"
+      >
+        {/* Back to projects */}
+        <div className="shrink-0 border-b border-white/10 p-3">
+          <Link
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            to="/dashboard"
+          >
+            <ArrowLeft size={13} />
+            All Projects
+          </Link>
+          <p
+            className="mt-2 truncate px-2 text-sm font-semibold text-foreground"
+            data-testid="project-workspace-shell-project-id"
+          >
+            {projectTitle}
+          </p>
+        </div>
 
-        <nav aria-label="Project Workspace Navigation" className="mt-3 space-y-4">
-          {PROJECT_WORKSPACE_NAV_GROUPS.map((group) => (
-            <div data-testid={`project-workspace-nav-group-${group.id}`} key={group.id}>
-              <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.13em] text-muted-foreground uppercase">
+        {/* Nav groups */}
+        <nav aria-label="Project Workspace Navigation" className="flex-1 overflow-y-auto p-2">
+          {navGroups.map((group) => (
+            <div className="mb-3" data-testid={`project-workspace-nav-group-${group.id}`} key={group.id}>
+              <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
                 {group.label}
               </p>
-              <ul className="space-y-1.5">
-                {group.items.map((item) => (
-                  <li key={item.id}>
-                    {(() => {
-                      const lockState = resolveWorkspaceNavLockState(item.id, {
-                        setupSteps: setupStatusQuery.data?.steps,
-                        actionRequiredStep: projectActionsQuery.data?.required_step,
-                        actionBlockedReason: projectActionsQuery.data?.blocked_reason,
-                      });
-                      return (
-                    <NavLink
-                      className={({ isActive }) =>
-                        [
-                          'flex rounded-lg px-2.5 py-2 text-sm transition',
-                          isActive ? 'bg-sidebar-active/12 text-sidebar-active' : 'text-sidebar-foreground hover:bg-background/75',
-                          lockState.locked ? 'opacity-55' : '',
-                        ].join(' ')
-                      }
-                      aria-disabled={lockState.locked}
-                      data-testid={`project-workspace-nav-${item.id}`}
-                      end={item.end}
-                      onClick={(event) => {
-                        if (!lockState.locked) {
-                          return;
+              <ul className="space-y-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const lockState = resolveIsLocked(
+                    item.id,
+                    setupStatusQuery.data?.steps,
+                    projectActionsQuery.data?.required_step,
+                    projectActionsQuery.data?.blocked_reason,
+                  );
+                  return (
+                    <li key={item.id}>
+                      <NavLink
+                        aria-disabled={lockState.locked}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-100',
+                            isActive
+                              ? 'bg-sidebar-accent text-foreground'
+                              : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+                            lockState.locked && 'pointer-events-none opacity-40',
+                          )
                         }
-                        event.preventDefault();
-                      }}
-                      title={lockState.reason ?? undefined}
-                      to={item.to}
-                    >
-                      {item.label}
-                    </NavLink>
-                      );
-                    })()}
-                    {(() => {
-                      const lockState = resolveWorkspaceNavLockState(item.id, {
-                        setupSteps: setupStatusQuery.data?.steps,
-                        actionRequiredStep: projectActionsQuery.data?.required_step,
-                        actionBlockedReason: projectActionsQuery.data?.blocked_reason,
-                      });
-                      if (!lockState.reason) {
-                        return null;
-                      }
-                      return (
-                        <p
-                          className="mt-1 px-2 text-[11px] text-muted-foreground"
-                          data-testid={`project-workspace-nav-locked-reason-${item.id}`}
-                        >
-                          {lockState.reason}
-                        </p>
-                      );
-                    })()}
-                  </li>
-                ))}
+                        data-testid={`project-workspace-nav-${item.id}`}
+                        end={item.end}
+                        onClick={(e) => {
+                          if (lockState.locked) {
+                            e.preventDefault();
+                            toast.info(lockState.message ?? 'This step is locked');
+                          }
+                        }}
+                        to={item.to}
+                      >
+                        <Icon className="shrink-0" size={14} />
+                        <span>{item.label}</span>
+                        {lockState.locked && <Lock className="ml-auto shrink-0 text-muted-foreground/40" size={12} />}
+                      </NavLink>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
         </nav>
       </aside>
 
-      <section className="min-w-0">
-        {projectId !== null && currentRouteLockState?.locked && !isSetupPath(location.pathname, projectId) ? (
-          <Card data-testid="project-workspace-deep-link-guard">
-            <CardHeader>
-              <CardTitle>Route locked</CardTitle>
-              <CardDescription>
-                {currentRouteLockState.reason ?? 'This route is currently locked for this project.'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                data-testid="project-workspace-deep-link-guard-action"
-                onClick={() => {
-                  navigate(resolveRequiredStepRoute(projectId, currentRouteLockState.requiredStep));
-                }}
-              >
-                Go to required step
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <Outlet />
-        )}
+      {/* Page content */}
+      <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <Outlet />
       </section>
     </div>
   );

@@ -16,6 +16,8 @@ _NARRATIVE_SPEAKER_RE = re.compile(
     rf"\b(?P<name>{_NAME_RE.pattern})\s+{_SPEECH_VERB_PATTERN}\b",
     re.IGNORECASE,
 )
+_BRACKETED_NAME_RE = re.compile(rf"\[(?P<name>{_NAME_RE.pattern})\]")
+_HEX_ESCAPED_TEXT_RE = re.compile(r"^\\x[0-9a-fA-F]+$")
 
 _KNOWN_BAD_NAMES = {
     "i",
@@ -122,6 +124,25 @@ def _build_candidate_confidence(high_count: int, medium_count: int) -> float:
     return round(min(0.99, confidence), 4)
 
 
+def _decode_hex_escaped_chapter_text(text: str) -> str:
+    stripped = text.strip()
+    if not stripped or not _HEX_ESCAPED_TEXT_RE.fullmatch(stripped):
+        return text
+
+    hex_body = stripped[2:]
+    if not hex_body or len(hex_body) % 2 != 0:
+        return text
+
+    try:
+        decoded = bytes.fromhex(hex_body).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return text
+
+    if not re.search(r"[A-Za-z]{3,}", decoded):
+        return text
+    return decoded
+
+
 def _add_candidate(
     aggregates: dict[str, _CandidateAggregate],
     raw_name: str,
@@ -165,8 +186,9 @@ def extract_character_candidates_from_texts(
     for chapter_index, text in enumerate(chapter_texts, start=1):
         if not isinstance(text, str):
             continue
+        resolved_text = _decode_hex_escaped_chapter_text(text)
 
-        for match in _DIALOGUE_TRAILING_RE.finditer(text):
+        for match in _DIALOGUE_TRAILING_RE.finditer(resolved_text):
             _add_candidate(
                 aggregates=aggregates,
                 raw_name=match.group("name"),
@@ -174,10 +196,10 @@ def extract_character_candidates_from_texts(
                 start=match.start("name"),
                 end=match.end("name"),
                 kind="dialogue_attribution",
-                text=text,
+                text=resolved_text,
                 high=True,
             )
-        for match in _NARRATIVE_SPEAKER_RE.finditer(text):
+        for match in _NARRATIVE_SPEAKER_RE.finditer(resolved_text):
             _add_candidate(
                 aggregates=aggregates,
                 raw_name=match.group("name"),
@@ -185,7 +207,18 @@ def extract_character_candidates_from_texts(
                 start=match.start("name"),
                 end=match.end("name"),
                 kind="narrative_attribution",
-                text=text,
+                text=resolved_text,
+                high=False,
+            )
+        for match in _BRACKETED_NAME_RE.finditer(resolved_text):
+            _add_candidate(
+                aggregates=aggregates,
+                raw_name=match.group("name"),
+                chapter_index=chapter_index,
+                start=match.start("name"),
+                end=match.end("name"),
+                kind="bracketed_heading",
+                text=resolved_text,
                 high=False,
             )
 

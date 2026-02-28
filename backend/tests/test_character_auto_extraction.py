@@ -66,6 +66,25 @@ def test_unit_extract_character_candidates_filters_known_names_case_insensitive(
     assert any(trace.kind in {"dialogue_attribution", "narrative_attribution"} for trace in candidates[0].source_trace)
 
 
+def test_unit_extract_character_candidates_decodes_hex_escaped_chapter_text() -> None:
+    plain_text = '"Watch the horizon," Sunny said. Nephis replied.'
+    hex_escaped_text = "\\x" + plain_text.encode("utf-8").hex()
+
+    candidates = extract_character_candidates_from_texts([hex_escaped_text])
+
+    assert {candidate.name for candidate in candidates} == {"Sunny", "Nephis"}
+
+
+def test_unit_extract_character_candidates_detects_bracketed_character_headings() -> None:
+    candidates = extract_character_candidates_from_texts(
+        [
+            "[Kim Suho]\nA righteous man.\n\n[Shin Jonghak]\nAn elite heir.",
+        ]
+    )
+
+    assert {candidate.name for candidate in candidates} == {"Kim Suho", "Shin Jonghak"}
+
+
 def _create_project_with_ingested_text(client: TestClient, title: str) -> int:
     project_resp = client.post("/api/projects", json={"title": title})
     assert project_resp.status_code == 201
