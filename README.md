@@ -646,6 +646,8 @@ npm run test:e2e
 npm run test:visual
 ```
 
+`npm run test:visual` executes responsive visual baselines for desktop, tablet, and mobile projects.
+
 ## Notes
 
 - The project is currently in PoC stage and intentionally excludes full SRS mode expansion.

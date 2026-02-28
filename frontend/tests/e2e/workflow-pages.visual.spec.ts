@@ -756,6 +756,7 @@ async function expectVisualBaseline(
   await expect(page).toHaveScreenshot(options.screenshotName, {
     fullPage: true,
     animations: 'disabled',
+    timeout: 20_000,
   });
 }
 

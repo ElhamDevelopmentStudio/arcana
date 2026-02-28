@@ -41,6 +41,8 @@ npm run test:visual
 npm run test:frontend
 ```
 
+`test:visual` runs baseline comparisons for desktop, tablet, and mobile viewport projects.
+
 ## Test Layout
 
 - `tests/unit` - isolated utility and pure logic tests
