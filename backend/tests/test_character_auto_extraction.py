@@ -122,7 +122,10 @@ def test_integration_character_auto_extraction_returns_only_new_names() -> None:
         )
         assert import_resp.status_code == 200
 
-        extract_resp = client.post(f"/api/projects/{project_id}/characters/extract")
+        extract_resp = client.post(
+            f"/api/projects/{project_id}/characters/extract",
+            json={"auto_apply_to_character_map": False},
+        )
         assert extract_resp.status_code == 200
         payload = extract_resp.json()
         assert payload["project_id"] == project_id
@@ -132,6 +135,8 @@ def test_integration_character_auto_extraction_returns_only_new_names() -> None:
         assert names == {"Aria", "Nora"}
         assert all(entry["source"] == "auto" for entry in payload["candidates"])
         assert all(0.35 <= entry["confidence"] <= 0.99 for entry in payload["candidates"])
+        assert payload["proposal_count"] == 2
+        assert payload["extraction_batch_id"]
         for entry in payload["candidates"]:
             assert isinstance(entry["source_trace"], list)
             assert entry["source_trace"], "Expected at least one source trace per candidate."
@@ -145,6 +150,197 @@ def test_integration_character_auto_extraction_returns_only_new_names() -> None:
                 "weight",
             }
 
+        proposals_resp = client.get(f"/api/projects/{project_id}/characters/proposals")
+        assert proposals_resp.status_code == 200
+        proposals_payload = proposals_resp.json()
+        assert proposals_payload["proposal_count"] == 2
+        proposal_names = {entry["name"] for entry in proposals_payload["proposals"]}
+        assert proposal_names == {"Aria", "Nora"}
+
+        character_map_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert character_map_resp.status_code == 200
+        character_rows = character_map_resp.json()["characters"]
+        assert len(character_rows) == 1
+        assert character_rows[0]["name"] == "Mira"
+
+
+def test_integration_character_auto_extraction_repeat_keeps_proposals_populated() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Auto Extraction Repeat")
+
+        first_extract_resp = client.post(
+            f"/api/projects/{project_id}/characters/extract",
+            json={"auto_apply_to_character_map": False},
+        )
+        assert first_extract_resp.status_code == 200
+        first_payload = first_extract_resp.json()
+        assert first_payload["proposal_count"] > 0
+        first_names = {entry["name"] for entry in first_payload["candidates"]}
+
+        second_extract_resp = client.post(
+            f"/api/projects/{project_id}/characters/extract",
+            json={"auto_apply_to_character_map": False},
+        )
+        assert second_extract_resp.status_code == 200
+        second_payload = second_extract_resp.json()
+        assert second_payload["proposal_count"] > 0
+        second_names = {entry["name"] for entry in second_payload["candidates"]}
+        assert second_names == first_names
+
+        proposals_resp = client.get(f"/api/projects/{project_id}/characters/proposals")
+        assert proposals_resp.status_code == 200
+        proposals_payload = proposals_resp.json()
+        assert proposals_payload["proposal_count"] == len(first_names)
+        assert {entry["name"] for entry in proposals_payload["proposals"]} == first_names
+
+
+def test_integration_character_auto_extraction_auto_applies_strong_candidates_by_default() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Auto Extraction Auto Apply")
+
+        extract_resp = client.post(f"/api/projects/{project_id}/characters/extract")
+        assert extract_resp.status_code == 200
+        payload = extract_resp.json()
+        assert payload["auto_applied_count"] >= 1
+
+        character_map_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert character_map_resp.status_code == 200
+        names = {entry["name"] for entry in character_map_resp.json()["characters"]}
+        assert {"Aria", "Nora"} & names
+
+
+def test_integration_character_auto_extraction_uses_llm_first_pipeline(monkeypatch) -> None:
+    def _fake_llm_first(
+        *,
+        session,  # noqa: ARG001
+        project,  # noqa: ARG001
+        project_id,  # noqa: ARG001
+        chapter_rows,  # noqa: ARG001
+        existing_name_keys,  # noqa: ARG001
+        config,  # noqa: ARG001
+    ):
+        raw_payloads = [
+            {
+                "name": "Sunny",
+                "verbalized_form": "Sunny",
+                "gender": "unknown",
+                "aliases": [],
+                "notes": None,
+                "source": "auto",
+                "confidence": 0.87,
+                "inferred_gender": "unknown",
+                "inferred_confidence": 0.0,
+                "inferred_source_trace": [],
+                "source_trace": [
+                    {
+                        "kind": "llm_extraction",
+                        "chapter_index": 1,
+                        "span_start": 0,
+                        "span_end": 5,
+                        "excerpt": "Sunny watched the gate.",
+                        "weight": 0.87,
+                    }
+                ],
+            }
+        ]
+        return (raw_payloads, raw_payloads)
+
+    monkeypatch.setattr(app_main, "_extract_character_candidates_llm_first", _fake_llm_first)
+    monkeypatch.setattr(app_main, "_refine_character_payloads_with_llm", lambda **kwargs: kwargs["payloads"])
+
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "LLM First Extraction")
+        extract_resp = client.post(f"/api/projects/{project_id}/characters/extract")
+        assert extract_resp.status_code == 200
+        payload = extract_resp.json()
+        assert payload["candidate_count"] == 1
+        assert payload["candidates"][0]["name"] == "Sunny"
+        assert payload["proposal_count"] == 1
+        assert payload["auto_applied_count"] == 1
+
+        character_map_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert character_map_resp.status_code == 200
+        assert {row["name"] for row in character_map_resp.json()["characters"]} == {"Sunny"}
+
+
+def test_integration_character_auto_extraction_falls_back_when_llm_first_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(app_main, "_extract_character_candidates_llm_first", lambda **kwargs: None)
+
+    def _fake_rule_extractor(chapters, known_names=None, min_confidence=0.35, max_candidates=250):  # noqa: ARG001
+        return [
+            CandidateEvidence(
+                name="Aria",
+                confidence=0.82,
+                source_trace=[
+                    CandidateSourceTrace(
+                        kind="dialogue_attribution",
+                        chapter_index=1,
+                        span_start=0,
+                        span_end=4,
+                        excerpt="Aria said the gate is locked.",
+                        weight=0.82,
+                    )
+                ],
+            )
+        ]
+
+    monkeypatch.setattr(app_main, "extract_character_candidates_from_texts", _fake_rule_extractor)
+    monkeypatch.setattr(app_main, "_refine_character_payloads_with_llm", lambda **kwargs: kwargs["payloads"])
+
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Fallback Extraction")
+        extract_resp = client.post(
+            f"/api/projects/{project_id}/characters/extract",
+            json={"auto_apply_to_character_map": False},
+        )
+        assert extract_resp.status_code == 200
+        payload = extract_resp.json()
+        assert payload["candidate_count"] == 1
+        assert payload["candidates"][0]["name"] == "Aria"
+        assert payload["proposal_count"] == 1
+        assert payload["auto_applied_count"] == 0
+
+
+def test_integration_character_extraction_job_lifecycle_completes(monkeypatch) -> None:
+    def _run_inline(job_id: str):
+        app_main.run_character_extraction_job_by_id(job_id)
+        return ("thread", None)
+
+    monkeypatch.setattr(app_main, "_dispatch_character_extraction_job", _run_inline)
+
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Async Extraction Job")
+        start_resp = client.post(
+            f"/api/projects/{project_id}/characters/extract/jobs",
+            json={"auto_apply_to_character_map": False},
+        )
+        assert start_resp.status_code == 202
+        start_payload = start_resp.json()
+        assert start_payload["project_id"] == project_id
+        assert start_payload["job_id"]
+        assert start_payload["executor_name"] == "thread"
+
+        status_resp = client.get(
+            f"/api/projects/{project_id}/characters/extract/jobs/{start_payload['job_id']}",
+        )
+        assert status_resp.status_code == 200
+        status_payload = status_resp.json()
+        assert status_payload["status"] == "completed"
+        assert status_payload["progress"] == 100
+        assert status_payload["result"] is not None
+        assert status_payload["result"]["candidate_count"] >= 1
+        assert status_payload["result"]["proposal_count"] >= 1
+
+
+def test_integration_character_extraction_job_status_not_found() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Async Extraction Missing Job")
+        status_resp = client.get(
+            f"/api/projects/{project_id}/characters/extract/jobs/not-a-real-job-id",
+        )
+        assert status_resp.status_code == 404
+        assert status_resp.json()["detail"] == "Character extraction job not found."
+
 
 def test_integration_character_auto_extraction_rejects_empty_chapters() -> None:
     with TestClient(app) as client:
@@ -156,6 +352,72 @@ def test_integration_character_auto_extraction_rejects_empty_chapters() -> None:
         assert extract_resp.status_code == 400
         assert extract_resp.json()["detail"] == "No chapters available for character auto-extraction."
 
+
+def test_integration_character_proposal_review_approve_moves_into_character_map() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Proposal Review Approve")
+
+        extract_resp = client.post(
+            f"/api/projects/{project_id}/characters/extract",
+            json={"auto_apply_to_character_map": False},
+        )
+        assert extract_resp.status_code == 200
+        extract_payload = extract_resp.json()
+        assert extract_payload["proposal_count"] > 0
+
+        proposals_resp = client.get(f"/api/projects/{project_id}/characters/proposals")
+        assert proposals_resp.status_code == 200
+        proposals_payload = proposals_resp.json()
+        assert proposals_payload["proposal_count"] > 0
+        approve_id = proposals_payload["proposals"][0]["id"]
+
+        review_resp = client.post(
+            f"/api/projects/{project_id}/characters/proposals/review",
+            json={"approve_ids": [approve_id], "reject_ids": [], "reviewed_by": "test-suite"},
+        )
+        assert review_resp.status_code == 200
+        review_payload = review_resp.json()
+        assert review_payload["approved_count"] == 1
+        assert review_payload["rejected_count"] == 0
+        assert review_payload["character_map_finalized"] is False
+
+        character_map_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert character_map_resp.status_code == 200
+        assert len(character_map_resp.json()["characters"]) == 1
+
+        proposals_after_resp = client.get(f"/api/projects/{project_id}/characters/proposals")
+        assert proposals_after_resp.status_code == 200
+        assert proposals_after_resp.json()["proposal_count"] == max(proposals_payload["proposal_count"] - 1, 0)
+
+
+def test_integration_character_proposal_review_reject_keeps_character_map_unchanged() -> None:
+    with TestClient(app) as client:
+        project_id = _create_project_with_ingested_text(client, "Proposal Review Reject")
+
+        extract_resp = client.post(
+            f"/api/projects/{project_id}/characters/extract",
+            json={"auto_apply_to_character_map": False},
+        )
+        assert extract_resp.status_code == 200
+        proposals_resp = client.get(f"/api/projects/{project_id}/characters/proposals")
+        assert proposals_resp.status_code == 200
+        proposals_payload = proposals_resp.json()
+        assert proposals_payload["proposal_count"] > 0
+        reject_id = proposals_payload["proposals"][0]["id"]
+
+        review_resp = client.post(
+            f"/api/projects/{project_id}/characters/proposals/review",
+            json={"approve_ids": [], "reject_ids": [reject_id]},
+        )
+        assert review_resp.status_code == 200
+        review_payload = review_resp.json()
+        assert review_payload["approved_count"] == 0
+        assert review_payload["rejected_count"] == 1
+        assert review_payload["characters"] == []
+
+        character_map_resp = client.get(f"/api/projects/{project_id}/characters")
+        assert character_map_resp.status_code == 200
+        assert character_map_resp.json()["characters"] == []
 
 def test_integration_character_scrape_requires_warning_ack() -> None:
     with TestClient(app) as client:
@@ -427,6 +689,7 @@ def test_integration_character_merge_candidates_endpoint_merges_auto_and_scrape(
     def _fake_extract_character_candidates_from_texts(
         _chapter_texts: list[str],
         known_names: set[str] | None = None,
+        **_: object,
     ) -> list[CandidateEvidence]:
         del known_names
         return [
@@ -521,6 +784,7 @@ def test_integration_character_merge_candidates_endpoint_returns_canonical_merge
     def _fake_extract_character_candidates_from_texts(
         _chapter_texts: list[str],
         known_names: set[str] | None = None,
+        **_: object,
     ) -> list[CandidateEvidence]:
         del known_names
         return [
@@ -641,6 +905,7 @@ def test_integration_character_auto_extraction_reports_low_confidence_warning(mo
     def _fake_extract_character_candidates_from_texts(
         _: object,
         known_names: set[str] | None = None,  # noqa: ARG001
+        **__: object,
     ) -> list[CandidateEvidence]:
         return [
             CandidateEvidence(
@@ -694,6 +959,7 @@ def test_integration_character_auto_extraction_reports_duplicate_canonical_candi
     def _fake_extract_character_candidates_from_texts(
         _: object,
         known_names: set[str] | None = None,  # noqa: ARG001
+        **__: object,
     ) -> list[CandidateEvidence]:
         return [
             CandidateEvidence(
@@ -753,6 +1019,7 @@ def test_integration_character_merge_candidates_reports_low_confidence_warning(m
     def _fake_extract_character_candidates_from_texts(
         _: object,
         known_names: set[str] | None = None,  # noqa: ARG001
+        **__: object,
     ) -> list[CandidateEvidence]:
         return [
             CandidateEvidence(

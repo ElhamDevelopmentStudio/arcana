@@ -9,6 +9,7 @@ const importTrigger = vi.fn();
 const mutateCharacterMap = vi.fn();
 const saveCharactersMutationTrigger = vi.fn();
 const autoExtractCharactersMutationTrigger = vi.fn();
+const startCharacterExtractionJobMutationTrigger = vi.fn();
 const scrapeCharactersMutationTrigger = vi.fn();
 const mergeCharactersMutationTrigger = vi.fn();
 const inferCharacterGendersMutationTrigger = vi.fn();
@@ -20,6 +21,8 @@ const savePlacePronunciationDictionaryMutationTrigger = vi.fn();
 const saveCharacterPronunciationDictionaryMutationTrigger = vi.fn();
 const pronunciationPreviewMutationTrigger = vi.fn();
 const finalizeCharactersMutationTrigger = vi.fn();
+const reviewCharacterProposalsMutationTrigger = vi.fn();
+const mutateCharacterProposals = vi.fn();
 const defaultCharacterMapQueryData = {
   project_id: 101,
   characters: [
@@ -65,6 +68,57 @@ const characterAliasCollisionsQueryData = {
     },
   ],
 };
+const characterProposalsQueryData = {
+  project_id: 101,
+  proposal_count: 1,
+  proposals: [
+    {
+      id: 1001,
+      name: 'Mire',
+      verbalized_form: 'Mire',
+      gender: 'unknown',
+      aliases: [],
+      notes: null,
+      source: 'auto',
+      confidence: 0.72,
+      source_trace: [
+        {
+          kind: 'dialogue_attribution',
+          chapter_index: 2,
+          span_start: 10,
+          span_end: 14,
+          excerpt: 'Mire replied quietly.',
+          weight: 0.9,
+        },
+      ],
+      inferred_gender: 'unknown',
+      inferred_confidence: 0,
+      inferred_source_trace: [],
+      status: 'proposed',
+      extractor_version: 'v2',
+      extraction_batch_id: 'batch-001',
+      reviewed_at: null,
+      reviewed_by: null,
+      created_at: '2026-03-01T00:00:00Z',
+      updated_at: '2026-03-01T00:00:00Z',
+    },
+  ],
+};
+let characterExtractionJobStatusQueryData: {
+  project_id: number;
+  job_id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  progress: number;
+  message: string | null;
+  executor_name: string;
+  task_id: string | null;
+  error_message: string | null;
+  result: Record<string, unknown> | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+} | null = null;
 
 vi.mock('@/app/config/env', () => ({
   appEnv: {
@@ -84,6 +138,12 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isLoading: false,
     error: null,
     mutate: mutateCharacterMap,
+  }),
+  useCharacterProposalsQuery: () => ({
+    data: characterProposalsQueryData,
+    isLoading: false,
+    error: null,
+    mutate: mutateCharacterProposals,
   }),
   useCharacterGenderComparisonQuery: () => ({
     data: characterGenderComparisonQueryData,
@@ -190,6 +250,16 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isMutating: false,
     trigger: autoExtractCharactersMutationTrigger,
   }),
+  useStartCharacterExtractionJobMutation: () => ({
+    isMutating: false,
+    trigger: startCharacterExtractionJobMutationTrigger,
+  }),
+  useCharacterExtractionJobStatusQuery: () => ({
+    data: characterExtractionJobStatusQueryData,
+    isLoading: false,
+    error: null,
+    mutate: vi.fn(),
+  }),
   useScrapeCharactersMutation: () => ({
     isMutating: false,
     trigger: scrapeCharactersMutationTrigger,
@@ -230,6 +300,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
     isMutating: false,
     trigger: finalizeCharactersMutationTrigger,
   }),
+  useReviewCharacterProposalsMutation: () => ({
+    isMutating: false,
+    trigger: reviewCharacterProposalsMutationTrigger,
+  }),
   usePronunciationPreviewMutation: () => ({
     isMutating: false,
     trigger: pronunciationPreviewMutationTrigger,
@@ -260,6 +334,7 @@ describe('project characters page manual editor', () => {
     mutateCharacterMap.mockReset();
     saveCharactersMutationTrigger.mockReset();
     autoExtractCharactersMutationTrigger.mockReset();
+    startCharacterExtractionJobMutationTrigger.mockReset();
     scrapeCharactersMutationTrigger.mockReset();
     mergeCharactersMutationTrigger.mockReset();
     inferCharacterGendersMutationTrigger.mockReset();
@@ -271,6 +346,9 @@ describe('project characters page manual editor', () => {
     saveCharacterPronunciationDictionaryMutationTrigger.mockReset();
     pronunciationPreviewMutationTrigger.mockReset();
     finalizeCharactersMutationTrigger.mockReset();
+    reviewCharacterProposalsMutationTrigger.mockReset();
+    mutateCharacterProposals.mockReset();
+    characterExtractionJobStatusQueryData = null;
     saveCharactersMutationTrigger.mockResolvedValue({
       project_id: 101,
       characters: [

@@ -12,7 +12,13 @@ import {
   characterMapSchema,
   characterMapUpdateSchema,
   characterMapFinalizeSchema,
+  characterExtractionRequestSchema,
+  characterExtractionJobStartSchema,
+  characterExtractionJobStatusSchema,
   characterCandidatesMergeRequestSchema,
+  characterProposalListResponseSchema,
+  characterProposalReviewRequestSchema,
+  characterProposalReviewResponseSchema,
   characterAliasLookupRequestSchema,
   characterAliasLookupResponseSchema,
   characterAliasCollisionResponseSchema,
@@ -27,6 +33,8 @@ import {
   tensionGraphResponseSchema,
   polarityGraphResponseSchema,
   ingestResponseSchema,
+  projectIngestionJobStartSchema,
+  projectIngestionJobStatusSchema,
   modeCatalogSchema,
   healthSchema,
   projectControlPanelSummaryResponseSchema,
@@ -96,8 +104,14 @@ import {
   type CharacterMapDto,
   type CharacterMapUpdateDto,
   type CharacterMapFinalizeDto,
+  type CharacterExtractionRequestDto,
+  type CharacterExtractionJobStartDto,
+  type CharacterExtractionJobStatusDto,
   type CharacterScrapeRequestDto,
   type CharacterCandidatesMergeRequestDto,
+  type CharacterProposalListResponseDto,
+  type CharacterProposalReviewRequestDto,
+  type CharacterProposalReviewResponseDto,
   type CharacterAliasLookupRequestDto,
   type CharacterAliasLookupResponseDto,
   type CharacterAliasCollisionResponseDto,
@@ -106,6 +120,9 @@ import {
   type CharacterAnalyticsResponseDto,
   type CharacterCooccurrenceGraphResponseDto,
   type CharacterExtractionDto,
+  type ProjectIngestionSourceDto,
+  type ProjectIngestionJobStartDto,
+  type ProjectIngestionJobStatusDto,
   type CharacterGenderComparisonResponseDto,
   type PronunciationDictionaryPreviewRequestDto,
   type PronunciationDictionaryPreviewResponseDto,
@@ -753,6 +770,43 @@ export class NipeApiClient {
     }
   }
 
+  async startProjectIngestionJob(
+    projectId: number,
+    source: ProjectIngestionSourceDto,
+    options: { file?: File; files?: File[] } = {},
+  ): Promise<ProjectIngestionJobStartDto> {
+    const formData = new FormData();
+    formData.append('source', source);
+    if (options.file) {
+      const parsedSingle = singleFileUploadRequestSchema.parse({ file: options.file });
+      formData.append('file', parsedSingle.file);
+    }
+    if (options.files && options.files.length > 0) {
+      const parsedMulti = multiFileUploadRequestSchema.parse({ files: options.files });
+      for (const uploadFile of parsedMulti.files) {
+        formData.append('files', uploadFile);
+      }
+    }
+
+    try {
+      const response = await this.client.post(`/api/projects/${projectId}/ingest/jobs`, formData, {
+        timeout: NipeApiClient.ingestRequestTimeoutMs,
+      });
+      return projectIngestionJobStartSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getProjectIngestionJobStatus(projectId: number, jobId: string): Promise<ProjectIngestionJobStatusDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/ingest/jobs/${jobId}`);
+      return projectIngestionJobStatusSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
   async ingestTxt(projectId: number, file: File) {
     const parsedPayload = singleFileUploadRequestSchema.parse({ file });
     const formData = new FormData();
@@ -887,10 +941,80 @@ export class NipeApiClient {
     }
   }
 
-  async extractCharacters(projectId: number) {
+  async extractCharacters(projectId: number, payload?: CharacterExtractionRequestDto) {
     try {
-      const response = await this.client.post(`/api/projects/${projectId}/characters/extract`);
+      const parsedPayload = payload ? characterExtractionRequestSchema.parse(payload) : undefined;
+      const response = await this.client.post(`/api/projects/${projectId}/characters/extract`, parsedPayload, {
+        timeout: NipeApiClient.ingestRequestTimeoutMs,
+      });
       return characterExtractionSchema.parse(response.data) as CharacterExtractionDto;
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async startCharacterExtractionJob(
+    projectId: number,
+    payload?: CharacterExtractionRequestDto,
+  ): Promise<CharacterExtractionJobStartDto> {
+    try {
+      const parsedPayload = payload ? characterExtractionRequestSchema.parse(payload) : undefined;
+      const response = await this.client.post(
+        `/api/projects/${projectId}/characters/extract/jobs`,
+        parsedPayload,
+        { timeout: NipeApiClient.ingestRequestTimeoutMs },
+      );
+      return characterExtractionJobStartSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getCharacterExtractionJobStatus(
+    projectId: number,
+    jobId: string,
+  ): Promise<CharacterExtractionJobStatusDto> {
+    const normalizedJobId = String(jobId || '').trim();
+    if (!normalizedJobId) {
+      throw new Error('jobId is required');
+    }
+    try {
+      const response = await this.client.get(
+        `/api/projects/${projectId}/characters/extract/jobs/${encodeURIComponent(normalizedJobId)}`,
+      );
+      return characterExtractionJobStatusSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async getCharacterProposals(
+    projectId: number,
+    statuses: Array<'proposed' | 'approved' | 'rejected'> = ['proposed'],
+  ): Promise<CharacterProposalListResponseDto> {
+    try {
+      const response = await this.client.get(`/api/projects/${projectId}/characters/proposals`, {
+        params: {
+          statuses: statuses.join(','),
+        },
+      });
+      return characterProposalListResponseSchema.parse(response.data);
+    } catch (error) {
+      throw normalizeHttpError(error);
+    }
+  }
+
+  async reviewCharacterProposals(
+    projectId: number,
+    payload: CharacterProposalReviewRequestDto,
+  ): Promise<CharacterProposalReviewResponseDto> {
+    try {
+      const parsedPayload = characterProposalReviewRequestSchema.parse(payload);
+      const response = await this.client.post(
+        `/api/projects/${projectId}/characters/proposals/review`,
+        parsedPayload,
+      );
+      return characterProposalReviewResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
     }
@@ -1113,7 +1237,9 @@ export class NipeApiClient {
     const parsedPayload = runRequestSchema.parse(payload);
 
     try {
-      const response = await this.client.post(`/api/projects/${projectId}/runs`, parsedPayload);
+      const response = await this.client.post(`/api/projects/${projectId}/runs`, parsedPayload, {
+        params: { async: true },
+      });
       return runResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
@@ -1140,7 +1266,9 @@ export class NipeApiClient {
 
   async rerunRun(projectId: number, runId: number) {
     try {
-      const response = await this.client.post(`/api/projects/${projectId}/runs/${runId}/rerun`);
+      const response = await this.client.post(`/api/projects/${projectId}/runs/${runId}/rerun`, undefined, {
+        params: { async: true },
+      });
       return runResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);
@@ -1149,7 +1277,9 @@ export class NipeApiClient {
 
   async recoverRun(projectId: number, runId: number) {
     try {
-      const response = await this.client.post(`/api/projects/${projectId}/runs/${runId}/recover`);
+      const response = await this.client.post(`/api/projects/${projectId}/runs/${runId}/recover`, undefined, {
+        params: { async: true },
+      });
       return runResponseSchema.parse(response.data);
     } catch (error) {
       throw normalizeHttpError(error);

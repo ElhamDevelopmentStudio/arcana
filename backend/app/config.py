@@ -41,6 +41,20 @@ class Settings(BaseSettings):
     )
     data_encryption_key: str | None = Field(default=None, alias="DATA_ENCRYPTION_KEY")
     saas_mode: bool = Field(default=False, alias="SAAS_MODE")
+    character_extraction_async_executor: Literal["thread", "celery"] = Field(
+        default="thread",
+        alias="CHARACTER_EXTRACTION_ASYNC_EXECUTOR",
+    )
+    ingestion_async_executor: Literal["thread", "celery"] = Field(
+        default="thread",
+        alias="INGESTION_ASYNC_EXECUTOR",
+    )
+    pipeline_async_executor: Literal["thread", "celery"] = Field(
+        default="thread",
+        alias="PIPELINE_ASYNC_EXECUTOR",
+    )
+    celery_broker_url: str | None = Field(default=None, alias="CELERY_BROKER_URL")
+    celery_result_backend: str | None = Field(default=None, alias="CELERY_RESULT_BACKEND")
 
     @field_validator(
         "openrouter_api_keys",

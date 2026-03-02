@@ -20,6 +20,10 @@ This changelog is maintained for frontend maintainers to track backend/API contr
 | API-012 | 2026-02-27 | Added `GET /api/projects/{project_id}/setup-status` (`CP-007`) returning per-step setup readiness (`steps[]`) and aggregate `is_complete`. | Use setup-status as the source of truth for project setup gate routing, step checklist UI, and locked route redirects. | `backend/tests/test_project_setup_status_endpoint.py` | implemented |
 | API-013 | 2026-02-27 | Added `GET /api/projects/{project_id}/workspace-summary` (`CP-008`) returning project-shell counters/readiness context (`chapters_count`, `characters_count`, `voice_mappings_count`, run counters). | Hydrate project workspace sidebar badges and overview cards from one summary call instead of stitching multiple endpoint reads. | `backend/tests/test_project_workspace_summary_endpoint.py` | implemented |
 | API-014 | 2026-02-27 | Extended `GET /api/projects/{project_id}/actions` with optional gating metadata: `blocked_reason` and `required_step`. | Show actionable lock/guard messaging and route users directly to required setup step from blocked actions. | `backend/tests/test_action_gating_rerun_permissions_regression.py` | implemented |
+| API-015 | 2026-03-01 | Character extraction now persists reviewable proposals and adds proposal-review APIs: `GET /api/projects/{project_id}/characters/proposals`, `POST /api/projects/{project_id}/characters/proposals/review`; `POST /api/projects/{project_id}/characters/extract` accepts optional extraction config, returns `extraction_batch_id`/`proposal_count`, and now auto-applies strong candidates into canonical `/characters` by default (`auto_applied_count`). | Add proposal queue query/mutation hooks, review actions in characters workflow, and updated extraction request/response schemas (including `auto_apply_to_character_map` and `auto_apply_min_confidence`). | `backend/tests/test_character_auto_extraction.py`, `backend/tests/test_character_extraction_v2.py` | implemented |
+| API-016 | 2026-03-01 | Added async character extraction job endpoints: `POST /api/projects/{project_id}/characters/extract/jobs` and `GET /api/projects/{project_id}/characters/extract/jobs/{job_id}`. Jobs persist progress/status/result (`queued|running|completed|failed`) and execute via Celery when configured, with thread fallback. | Switch characters page extraction action to start-job + polling flow; add job start/status schemas and polling hook integration while preserving legacy sync `POST /characters/extract`. | `backend/tests/test_character_auto_extraction.py` | implemented |
+| API-017 | 2026-03-01 | Added async project ingestion job endpoints: `POST /api/projects/{project_id}/ingest/jobs` and `GET /api/projects/{project_id}/ingest/jobs/{job_id}`. Jobs persist uploaded file payloads, progress/status/result (`queued|running|completed|failed`), and execute via Celery when configured with thread fallback. | Switch project ingestion UI flows to start-job + polling (project wizard and setup page) so large uploads no longer rely on one long request timeout; add ingestion job start/status schemas, hooks, and API client methods. | `backend/tests/test_project_ingestion_jobs.py` | implemented |
+| API-018 | 2026-03-02 | Added async execution mode for pipeline run orchestration via `async=true` query parameter on existing endpoints: `POST /api/projects/{project_id}/runs`, `POST /api/projects/{project_id}/runs/{run_id}/rerun`, and `POST /api/projects/{project_id}/runs/{run_id}/recover`. Async dispatch now routes through Celery (`pipeline.execute_run`) when configured, with thread fallback. | Frontend run actions now call async mode by default and rely on run-status polling; global notification center tracks ingestion/extraction/pipeline jobs with per-job status and deep links. | `backend/tests/test_pipeline_async_runs.py` | implemented |
 
 ## Response examples (setup/workspace/action gating)
 
@@ -92,5 +96,83 @@ This changelog is maintained for frontend maintainers to track backend/API contr
   "allowed_actions": ["ingest", "select_mode", "configure", "archive"],
   "blocked_reason": "Source ingestion is required before setup and run actions are available.",
   "required_step": "ingestion"
+}
+```
+
+### `GET /api/projects/{project_id}/characters/proposals`
+
+```json
+{
+  "project_id": 42,
+  "proposal_count": 2,
+  "proposals": [
+    {
+      "id": 901,
+      "name": "Sunny",
+      "verbalized_form": "Sunny",
+      "gender": "unknown",
+      "aliases": [],
+      "notes": null,
+      "source": "auto",
+      "confidence": 0.81,
+      "source_trace": [
+        {
+          "kind": "dialogue_attribution",
+          "chapter_index": 3,
+          "span_start": 180,
+          "span_end": 186,
+          "excerpt": "...\"Watch out,\" Sunny said...",
+          "weight": 1.0
+        }
+      ],
+      "inferred_gender": "unknown",
+      "inferred_confidence": 0.0,
+      "inferred_source_trace": [],
+      "status": "proposed",
+      "extractor_version": "v2",
+      "extraction_batch_id": "d8a54b3404f5426f8f3f99d9877546f7",
+      "reviewed_at": null,
+      "reviewed_by": null,
+      "created_at": "2026-03-01T17:00:11.000000+00:00",
+      "updated_at": "2026-03-01T17:00:11.000000+00:00"
+    }
+  ]
+}
+```
+
+### `POST /api/projects/{project_id}/characters/proposals/review`
+
+Request:
+
+```json
+{
+  "approve_ids": [901],
+  "reject_ids": [902],
+  "reviewed_by": "editor@local"
+}
+```
+
+Response:
+
+```json
+{
+  "project_id": 42,
+  "approved_count": 1,
+  "rejected_count": 1,
+  "character_map_finalized": false,
+  "characters": [
+    {
+      "name": "Sunny",
+      "verbalized_form": "Sunny",
+      "gender": "unknown",
+      "aliases": [],
+      "notes": null,
+      "source": "auto",
+      "confidence": 0.81,
+      "source_trace": []
+    }
+  ],
+  "proposal_count": 0,
+  "proposals": []
 }
 ```

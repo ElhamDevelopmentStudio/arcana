@@ -13,6 +13,13 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - TXT ingestion and chapter detection
 - Basic normalization
 - Character map import (JSON/CSV)
+- Persisted character proposal queue for auto-extraction (`extract -> proposals -> approve/reject -> canonical map`)
+- Default auto-apply of strong extracted candidates into canonical character map for immediate `/characters` visibility
+- Deep character extraction V2 with multi-pass heuristics (dialogue attribution, bracket/list labels, narrative context) and deterministic clustering
+- Optional bounded LLM refinement for uncertain character candidates with deterministic fallback when no provider key is available
+- Async character extraction job workflow with polling (`POST /characters/extract/jobs` -> `GET /characters/extract/jobs/{job_id}`), Celery-backed when configured and thread fallback for local/dev
+- Async project ingestion job workflow with polling (`POST /ingest/jobs` -> `GET /ingest/jobs/{job_id}`), including persisted upload payloads for worker execution and Celery/thread executors
+- Async pipeline execution mode for run start/rerun/recover (`POST /runs?async=true`, `POST /runs/{run_id}/rerun?async=true`, `POST /runs/{run_id}/recover?async=true`) with Celery/thread dispatch and run-status polling
 - Pronunciation substitution
 - Segmentation for TTS
 - Basic tagging + speaker heuristic
@@ -40,7 +47,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Project setup route `/projects/{project_id}/setup` now renders backend-driven readiness checklist from `GET /api/projects/{project_id}/setup-status`
 - Project workspace routes now enforce setup gating and redirect incomplete projects to `/projects/{project_id}/setup`
 - Setup route now auto-redirects completed projects to `/projects/{project_id}/overview`
-- Setup route now supports initial source attach + TXT ingestion initiation and polls setup-status until completion
+- Setup route now supports initial source attach + async ingestion job initiation with realtime progress polling
 - Setup route now includes mode-selection completion using `/api/modes` + `PUT /api/projects/{project_id}/mode` with setup-status refresh
 - Setup route now includes character/voice readiness checks with explicit CTAs into characters and pipeline setup flows
 - Project overview route now uses `GET /api/projects/{project_id}` + `GET /api/projects/{project_id}/workspace-summary` contracts
@@ -49,6 +56,7 @@ Current codebase implements the PoC vertical slice from `PoC.md`:
 - Project workspace now shows a deep-link guard panel for locked routes with a “Go to required step” recovery action
 - Reusable API panel state primitives now standardize loading, empty, and error/retry UX for dashboard-backed panels
 - Global mutation event bus now dispatches centralized success/error notifications with recovery actions for shared mutations
+- Global job notification center now tracks ingestion, extraction, and pipeline jobs with shared polling and per-job status links
 - Global Tailwind-based design system in `frontend/src/styles/globals.css`
 - Frontend API/state foundations using Axios + SWR + Zustand + Zod + date-fns
 - Frontend test stack with centralized Vitest + Playwright suites (unit, integration, regression, e2e, visual)
@@ -126,6 +134,16 @@ pip install -r requirements.txt
 cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
+
+Optional worker process for async extraction jobs (Celery):
+
+```bash
+cd backend
+source .venv311/bin/activate
+celery -A app.celery_app:celery_app worker --loglevel=info
+```
+
+Set `CHARACTER_EXTRACTION_ASYNC_EXECUTOR=celery`, `INGESTION_ASYNC_EXECUTOR=celery`, and/or `PIPELINE_ASYNC_EXECUTOR=celery` with valid `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` in `backend/.env` to route async jobs through Celery.
 
 ### Local smoke test (one command)
 

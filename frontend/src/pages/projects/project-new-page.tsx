@@ -1,4 +1,4 @@
-import { type FormEvent, useState, useRef } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Upload, X, FileText, BookOpen, GraduationCap, Pen, Sliders } from 'lucide-react';
@@ -7,11 +7,11 @@ import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { useJobNotificationStore } from '@/features/workflow/state/job-notification-store';
 import {
   useCreateProjectDraftMutation,
-  useIngestTxtMutation,
-  useIngestMarkdownMutation,
-  useIngestEpubMutation,
+  useProjectIngestionJobStatusQuery,
+  useStartProjectIngestionJobMutation,
   useSwitchModeMutation,
 } from '@/features/workflow/api/workflow-hooks';
 
@@ -40,24 +40,60 @@ export function ProjectNewPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedMode, setSelectedMode] = useState<string>('audiobook');
+  const [activeIngestionJobId, setActiveIngestionJobId] = useState<string | null>(null);
+  const ingestionCompletionJobRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const projectId = useWorkspaceStore((state) => state.projectId);
   const setProject = useWorkspaceStore((state) => state.setProject);
   const setChapterCount = useWorkspaceStore((state) => state.setChapterCount);
+  const registerJob = useJobNotificationStore((state) => state.registerJob);
 
   const createDraftMutation = useCreateProjectDraftMutation();
-  const ingestTxtMutation = useIngestTxtMutation(projectId);
-  const ingestMarkdownMutation = useIngestMarkdownMutation(projectId);
-  const ingestEpubMutation = useIngestEpubMutation(projectId);
+  const startIngestionJobMutation = useStartProjectIngestionJobMutation(projectId);
+  const ingestionJobStatus = useProjectIngestionJobStatusQuery(projectId, activeIngestionJobId).data;
   const switchModeMutation = useSwitchModeMutation(projectId);
+  const ingestionJobIsActive = ingestionJobStatus?.status === 'queued' || ingestionJobStatus?.status === 'running';
+  const ingestionProgress = ingestionJobStatus?.progress ?? 0;
 
   const isBusy =
     createDraftMutation.isMutating ||
-    ingestTxtMutation.isMutating ||
-    ingestMarkdownMutation.isMutating ||
-    ingestEpubMutation.isMutating ||
+    startIngestionJobMutation.isMutating ||
+    ingestionJobIsActive ||
     switchModeMutation.isMutating;
+
+  useEffect(() => {
+    if (!activeIngestionJobId || !ingestionJobStatus) {
+      return;
+    }
+    if (ingestionCompletionJobRef.current === activeIngestionJobId) {
+      return;
+    }
+
+    if (ingestionJobStatus.status === 'completed') {
+      ingestionCompletionJobRef.current = activeIngestionJobId;
+      if (ingestionJobStatus.result) {
+        setChapterCount(ingestionJobStatus.result.chapter_count);
+        toast.success(`Ingested ${ingestionJobStatus.result.chapter_count} chapters.`);
+      } else {
+        toast.success('Ingestion completed.');
+      }
+      queueMicrotask(() => {
+        setActiveIngestionJobId(null);
+        setSelectedFile(null);
+        setStep(3);
+      });
+      return;
+    }
+
+    if (ingestionJobStatus.status === 'failed') {
+      ingestionCompletionJobRef.current = activeIngestionJobId;
+      queueMicrotask(() => {
+        setActiveIngestionJobId(null);
+      });
+      toast.error(ingestionJobStatus.error_message || 'Ingestion failed');
+    }
+  }, [activeIngestionJobId, ingestionJobStatus, setChapterCount]);
 
   async function handleStep1(e: FormEvent) {
     e.preventDefault();
@@ -76,13 +112,21 @@ export function ProjectNewPage() {
     if (!selectedFile) { toast.error('Please select a file to upload.'); return; }
     if (projectId === null) { toast.error('Project not created yet.'); return; }
     try {
-      let response;
-      if (ingestionSource === 'txt') response = await ingestTxtMutation.trigger({ file: selectedFile });
-      else if (ingestionSource === 'markdown') response = await ingestMarkdownMutation.trigger({ file: selectedFile });
-      else response = await ingestEpubMutation.trigger({ file: selectedFile });
-      setChapterCount(response.chapter_count);
-      toast.success(`Ingested ${response.chapter_count} chapters.`);
-      setStep(3);
+      const source = ingestionSource === 'txt'
+        ? 'txt'
+        : ingestionSource === 'markdown'
+          ? 'markdown'
+          : 'epub';
+      const job = await startIngestionJobMutation.trigger({ source, file: selectedFile });
+      ingestionCompletionJobRef.current = null;
+      setActiveIngestionJobId(job.job_id);
+      registerJob({
+        type: 'ingestion',
+        projectId,
+        jobId: job.job_id,
+        status: job.status,
+      });
+      toast.success('Ingestion started.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Ingestion failed');
     }
@@ -260,9 +304,14 @@ export function ProjectNewPage() {
                   Back
                 </Button>
                 <Button className="flex-1" data-testid="upload-txt-button" disabled={isBusy || !selectedFile} type="submit">
-                  {isBusy ? 'Uploading…' : 'Continue'}
+                  {startIngestionJobMutation.isMutating || ingestionJobIsActive ? 'Processing…' : 'Continue'}
                 </Button>
               </div>
+              {ingestionJobIsActive && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Ingestion progress: {ingestionProgress}%
+                </p>
+              )}
             </form>
           )}
 

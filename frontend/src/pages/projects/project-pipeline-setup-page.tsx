@@ -14,6 +14,7 @@ import {
 import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
 import { runRequestSchema } from '@/app/schemas/api';
 import type { RunRequestDto } from '@/app/schemas/api';
+import { useJobNotificationStore } from '@/features/workflow/state/job-notification-store';
 
 function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
@@ -43,6 +44,7 @@ export function ProjectPipelineSetupPage() {
   const selectedMode = useWorkspaceStore((state) => state.selectedMode);
   const setRunId = useWorkspaceStore((state) => state.setRunId);
   const projectId = routeProjectId ?? storeProjectId;
+  const registerJob = useJobNotificationStore((state) => state.registerJob);
 
   const llmSettingsQuery = useProjectLLMSettingsQuery(projectId);
   const providersQuery = useLLMProvidersQuery(projectId !== null);
@@ -81,6 +83,12 @@ export function ProjectPipelineSetupPage() {
     try {
       const result = await runMutation.trigger(runConfig);
       setRunId(result.run_id);
+      registerJob({
+        type: 'pipeline',
+        projectId,
+        jobId: String(result.run_id),
+        status: result.status,
+      });
       toast.success(`Run #${result.run_id} started.`);
       navigate(`/projects/${projectId}/runs`);
     } catch (err) {

@@ -1,11 +1,14 @@
 from datetime import datetime, timedelta, timezone
 from bisect import bisect_right
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 import hashlib
+import io
 import json
+import re
+from threading import Thread
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.exception_handlers import request_validation_exception_handler as fastapi_request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +23,10 @@ from app.modes import DEFAULT_MODE, get_mode_catalog, is_valid_mode
 from app.models import (
     Chapter,
     Character,
+    CharacterProposal,
+    CharacterExtractionJob,
+    ProjectIngestionJob,
+    ProjectIngestionJobFile,
     CharacterVoiceMap,
     ProjectAccess,
     CharacterMapSnapshot,
@@ -47,6 +54,7 @@ from app.schemas import (
     CharacterMapResponse,
     CharacterMapUpdateRequest,
     CharacterMapFinalizeResponse,
+    CharacterExtractionRequest,
     CharacterAliasLookupRequest,
     CharacterAliasLookupResponse,
     CharacterAliasCollisionItem,
@@ -58,7 +66,15 @@ from app.schemas import (
     PronunciationDictionaryResponse,
     PronunciationDictionaryUpdateRequest,
     IngestResponse,
+    ProjectIngestionJobStartResponse,
+    ProjectIngestionJobStatusResponse,
     CharacterExtractionResponse,
+    CharacterExtractionJobStartResponse,
+    CharacterExtractionJobStatusResponse,
+    CharacterProposalItem,
+    CharacterProposalListResponse,
+    CharacterProposalReviewRequest,
+    CharacterProposalReviewResponse,
     CharacterScrapeRequest,
     CharacterCandidatesMergeRequest,
     CharacterGenderComparisonItem,
@@ -115,7 +131,7 @@ from app.schemas import (
     VoiceConfigResponse,
 )
 from app.services.characters import parse_character_file
-from app.services.character_extraction import extract_character_candidates_from_texts
+from app.services.character_extraction import CandidateEvidence, extract_character_candidates_from_texts
 from app.services.character_scrape import extract_character_candidates_from_scrape_url
 from app.services.epub_ingestion import extract_epub_chapters
 from app.services.character_merge import build_canonical_name_merge_suggestions, merge_character_candidates
@@ -170,7 +186,14 @@ from app.services.mode_profiles import (
     build_run_config_snapshot,
     load_mode_profile,
 )
-from app.services.llm_router import get_provider_runtime_settings
+from app.services.llm_router import (
+    LLMProviderConfig,
+    LLMRequest,
+    LLMRouter,
+    get_provider_api_keys,
+    get_provider_priority_order,
+    get_provider_runtime_settings,
+)
 from app.services.mode_switch import mark_runs_stale_for_gender_edit, mark_runs_stale_for_mode_switch
 from app.services.character_analytics import build_character_occurrence_analytics
 from app.services.gender_comparison import compare_manual_and_inferred_gender_fields
@@ -211,10 +234,29 @@ from app.services.provider_toggle import (
 from app.services.project_setup_status import build_project_setup_status_response
 from app.services.voice import DEFAULT_VOICE_CONFIG, _normalize_internal_thought_voice_policy
 from app.services.phonetics import replace_pronunciations_with_counts
+from app.celery_app import celery_app, is_celery_available
 
 LOW_CONFIDENCE_STATE_VALUES = {"uncertain", "unknown"}
 LOW_CONFIDENCE_REGION_THRESHOLD = 0.8
 CHARACTER_EXTRACTION_LOW_CONFIDENCE_THRESHOLD = 0.7
+CHARACTER_EXTRACTION_DEFAULT_MIN_CONFIDENCE = 0.4
+CHARACTER_EXTRACTION_EXTRACTOR_VERSION = "v2"
+CHARACTER_EXTRACTION_LLM_DEFAULT_CHUNK_MAX_CHARS = 5600
+CHARACTER_EXTRACTION_LLM_DEFAULT_MAX_CHUNKS = 120
+CHARACTER_EXTRACTION_LLM_DEFAULT_VERIFICATION_BATCH_SIZE = 24
+CHARACTER_EXTRACTION_LLM_TRACE_LIMIT = 8
+CHARACTER_EXTRACTION_LLM_MIN_VALID_NAME_LENGTH = 2
+CHARACTER_EXTRACTION_LLM_MAX_VALID_NAME_LENGTH = 80
+CHARACTER_EXTRACTION_LLM_MIN_EXCERPT_LENGTH = 8
+CHARACTER_EXTRACTION_JOB_STATUS_QUEUED = "queued"
+CHARACTER_EXTRACTION_JOB_STATUS_RUNNING = "running"
+CHARACTER_EXTRACTION_JOB_STATUS_COMPLETED = "completed"
+CHARACTER_EXTRACTION_JOB_STATUS_FAILED = "failed"
+PROJECT_INGESTION_ALLOWED_SOURCES = {"txt", "markdown", "epub", "chapters-dir", "append-chapter"}
+PROJECT_INGESTION_JOB_STATUS_QUEUED = "queued"
+PROJECT_INGESTION_JOB_STATUS_RUNNING = "running"
+PROJECT_INGESTION_JOB_STATUS_COMPLETED = "completed"
+PROJECT_INGESTION_JOB_STATUS_FAILED = "failed"
 _RUN_RECOVERY_STALE_WINDOW_SECONDS = 600
 _PIPELINE_RECOVERY_CONFIG_KEY = "pipeline_recovery"
 _CORRELATION_ID_HEADER = "X-Correlation-Id"
@@ -1677,6 +1719,189 @@ def _build_character_map_item_payload_from_row(row: Character) -> CharacterMapIt
         inferred_confidence=row.inferred_confidence,
         inferred_source_trace=row.inferred_source_trace or [],
     )
+
+
+def _build_character_proposal_item_payload_from_row(row: CharacterProposal) -> CharacterProposalItem:
+    return CharacterProposalItem(
+        id=row.id,
+        name=row.name.strip(),
+        verbalized_form=row.verbalized_form.strip(),
+        gender="unknown",
+        aliases=row.aliases or [],
+        notes=row.notes.strip() if row.notes else None,
+        source=row.source,
+        confidence=row.confidence,
+        source_trace=row.source_trace or [],
+        inferred_gender=row.inferred_gender,
+        inferred_confidence=row.inferred_confidence,
+        inferred_source_trace=row.inferred_source_trace or [],
+        status=row.status,
+        extractor_version=row.extractor_version,
+        extraction_batch_id=row.extraction_batch_id,
+        reviewed_at=row.reviewed_at,
+        reviewed_by=row.reviewed_by,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _build_character_payload_from_proposal(row: CharacterProposal) -> dict[str, object]:
+    return {
+        "name": row.name.strip(),
+        "verbalized_form": row.verbalized_form.strip(),
+        "gender": "unknown",
+        "aliases": row.aliases or [],
+        "notes": row.notes.strip() if row.notes else None,
+        "source": row.source,
+        "confidence": row.confidence,
+        "source_trace": row.source_trace or [],
+        "inferred_gender": row.inferred_gender,
+        "inferred_confidence": row.inferred_confidence,
+        "inferred_source_trace": row.inferred_source_trace or [],
+    }
+
+
+def _persist_character_proposals(
+    *,
+    session: Session,
+    project_id: int,
+    candidate_payloads: list[dict[str, object]],
+    extraction_batch_id: str,
+    replace_existing_proposed: bool = True,
+) -> list[CharacterProposal]:
+    if replace_existing_proposed:
+        session.query(CharacterProposal).filter(
+            CharacterProposal.project_id == project_id,
+            CharacterProposal.status == "proposed",
+        ).delete()
+
+    persisted_rows: list[CharacterProposal] = []
+    for payload in candidate_payloads:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            continue
+
+        row = CharacterProposal(
+            project_id=project_id,
+            name=name,
+            normalized_name=normalize_candidate_key(name),
+            verbalized_form=str(payload.get("verbalized_form") or name).strip() or name,
+            aliases=list(payload.get("aliases") or []),
+            notes=(str(payload.get("notes")).strip() if payload.get("notes") is not None else None),
+            source=str(payload.get("source") or "auto").strip() or "auto",
+            confidence=float(payload.get("confidence") or 0.0),
+            source_trace=list(payload.get("source_trace") or []),
+            inferred_gender=str(payload.get("inferred_gender") or "unknown").strip().lower() or "unknown",
+            inferred_confidence=float(payload.get("inferred_confidence") or 0.0),
+            inferred_source_trace=list(payload.get("inferred_source_trace") or []),
+            status="proposed",
+            extractor_version=CHARACTER_EXTRACTION_EXTRACTOR_VERSION,
+            extraction_batch_id=extraction_batch_id,
+        )
+        session.add(row)
+        persisted_rows.append(row)
+
+    session.flush()
+    return persisted_rows
+
+
+def _payload_has_auto_apply_evidence(payload: dict[str, object]) -> bool:
+    source_trace = payload.get("source_trace")
+    if not isinstance(source_trace, list):
+        return False
+
+    strong_kinds = {
+        "dialogue_attribution",
+        "narrative_attribution",
+        "bracketed_heading",
+        "line_value_name",
+        "llm_extraction",
+        "llm_verification",
+    }
+    for row in source_trace:
+        if isinstance(row, dict) and str(row.get("kind") or "").strip() in strong_kinds:
+            return True
+    return False
+
+
+def _auto_apply_character_candidates(
+    *,
+    session: Session,
+    project_id: int,
+    candidate_payloads: list[dict[str, object]],
+    min_confidence: float,
+) -> int:
+    selected_payloads: list[dict[str, object]] = []
+    for payload in candidate_payloads:
+        confidence = float(payload.get("confidence") or 0.0)
+        if confidence < min_confidence:
+            continue
+        if not _payload_has_auto_apply_evidence(payload):
+            continue
+        selected_payloads.append(payload)
+
+    if not selected_payloads:
+        return 0
+
+    existing_rows = (
+        session.query(Character)
+        .filter(Character.project_id == project_id)
+        .order_by(Character.name.asc())
+        .all()
+    )
+    merged_payloads = merge_character_candidates(
+        [
+            _build_character_map_item_payload(
+                row=row,
+                source=row.source,
+                confidence=row.confidence,
+                source_trace=[],
+            )
+            for row in existing_rows
+        ]
+        + selected_payloads
+    )
+
+    session.query(Character).filter(Character.project_id == project_id).delete()
+    for row in merged_payloads:
+        session.add(
+            Character(
+                project_id=project_id,
+                name=str(row.get("name") or "").strip(),
+                verbalized_form=str(row.get("verbalized_form") or row.get("name") or "").strip(),
+                gender=str(row.get("gender") or "unknown").strip().lower() or "unknown",
+                aliases=list(row.get("aliases") or []),
+                notes=(str(row.get("notes")).strip() if row.get("notes") is not None else None),
+                source=str(row.get("source") or "auto").strip() or "auto",
+                confidence=float(row.get("confidence") or 0.0),
+                inferred_gender=str(row.get("inferred_gender") or "unknown").strip().lower() or "unknown",
+                inferred_confidence=float(row.get("inferred_confidence") or 0.0),
+                inferred_source_trace=list(row.get("inferred_source_trace") or []),
+            )
+        )
+
+    project = _get_project_or_404(session, project_id)
+    project.character_map_finalized = False
+    project_runs = session.query(Run).filter(Run.project_id == project.id).all()
+    mark_runs_stale_for_gender_edit(project_runs)
+    recompute_voice_previews_for_runs(session, project=project, runs=project_runs)
+    session.add(project)
+    session.add(
+        _persist_character_map_snapshot(
+            session=session,
+            project_id=project_id,
+            source="auto_extract",
+        )
+    )
+    session.add(
+        _persist_voice_map_snapshot(
+            session=session,
+            project_id=project_id,
+            source="auto_extract",
+        )
+    )
+
+    return len(selected_payloads)
 
 
 def _build_character_map_snapshot_payload(project_id: int, session: Session) -> dict[str, object]:
@@ -3483,6 +3708,909 @@ def _build_character_extraction_warnings(
     return warnings
 
 
+def _coerce_api_key_candidates(raw_value: object) -> list[str]:
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, (list, tuple, set)):
+        candidates = [str(item).strip() for item in raw_value]
+        return [candidate for candidate in candidates if candidate]
+    if isinstance(raw_value, str):
+        candidates = [item.strip() for item in raw_value.split(",")]
+        return [candidate for candidate in candidates if candidate]
+    value = str(raw_value).strip()
+    return [value] if value else []
+
+
+def _collect_character_extraction_provider_configs(
+    *,
+    session: Session,
+    project: Project,
+) -> tuple[LLMProviderConfig, ...]:
+    settings = get_settings()
+    project_provider_config = dict(project.llm_provider_config_json or {})
+
+    provider_configs: list[LLMProviderConfig] = []
+    seen_config_keys: set[tuple[str, str, str, str]] = set()
+
+    for provider_name in get_provider_priority_order(settings=settings):
+        normalized_provider = str(provider_name).strip().lower()
+        if not normalized_provider or not is_supported_provider(normalized_provider):
+            continue
+        if not is_provider_enabled(session=session, provider=normalized_provider):
+            continue
+
+        base_url, model_identifier, runtime_api_key = get_provider_runtime_settings(
+            settings=settings,
+            provider_name=normalized_provider,
+        )
+        override_config = project_provider_config.get(normalized_provider)
+        if isinstance(override_config, Mapping):
+            override_base_url = str(override_config.get("base_url") or "").strip()
+            if override_base_url:
+                base_url = override_base_url
+            override_model_identifier = str(override_config.get("model") or "").strip()
+            if override_model_identifier:
+                model_identifier = override_model_identifier
+
+        if not str(base_url).strip() or not str(model_identifier).strip():
+            continue
+
+        provider_api_keys = get_provider_api_keys(settings=settings, provider_name=normalized_provider)
+        if isinstance(override_config, Mapping):
+            override_api_keys = _coerce_api_key_candidates(override_config.get("api_keys"))
+            if not override_api_keys:
+                override_api_keys = _coerce_api_key_candidates(override_config.get("api_key"))
+            if override_api_keys:
+                provider_api_keys = override_api_keys
+        if not provider_api_keys and runtime_api_key:
+            provider_api_keys = [str(runtime_api_key).strip()]
+
+        normalized_keys = list(dict.fromkeys(key for key in provider_api_keys if str(key).strip()))
+        if not normalized_keys:
+            continue
+
+        for api_key in normalized_keys:
+            dedupe_key = (normalized_provider, str(base_url).strip(), str(model_identifier).strip(), api_key)
+            if dedupe_key in seen_config_keys:
+                continue
+            seen_config_keys.add(dedupe_key)
+            provider_configs.append(
+                LLMProviderConfig(
+                    provider_name=normalized_provider,
+                    base_url=str(base_url).strip(),
+                    model_identifier=str(model_identifier).strip(),
+                    api_key=api_key,
+                )
+            )
+
+    return tuple(provider_configs)
+
+
+def _split_text_for_character_extraction_chunks(text: str, max_chars: int) -> list[str]:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return []
+
+    segments: list[str] = []
+    cursor = 0
+    total_length = len(normalized)
+    while cursor < total_length:
+        limit = min(total_length, cursor + max_chars)
+        if limit < total_length:
+            window = normalized[cursor:limit]
+            candidate_offsets = [
+                window.rfind("\n\n"),
+                window.rfind(". "),
+                window.rfind("! "),
+                window.rfind("? "),
+                window.rfind("; "),
+                window.rfind(", "),
+                window.rfind(" "),
+            ]
+            valid_offsets = [offset for offset in candidate_offsets if offset > max_chars // 4]
+            split_offset = max(valid_offsets) if valid_offsets else -1
+            if split_offset > 0:
+                limit = cursor + split_offset + 1
+
+        chunk = normalized[cursor:limit].strip()
+        if chunk:
+            segments.append(chunk)
+        cursor = max(limit, cursor + 1)
+
+    return segments
+
+
+def _build_llm_character_extraction_chunks(
+    *,
+    chapter_rows: list[tuple[int, str]],
+    chunk_max_chars: int,
+    max_chunks: int,
+) -> list[dict[str, object]]:
+    chunks: list[dict[str, object]] = []
+    chunk_parts: list[str] = []
+    chunk_chapter_indices: list[int] = []
+    chunk_size = 0
+
+    def _flush_chunk() -> None:
+        nonlocal chunk_parts, chunk_chapter_indices, chunk_size
+        if not chunk_parts or len(chunks) >= max_chunks:
+            chunk_parts = []
+            chunk_chapter_indices = []
+            chunk_size = 0
+            return
+
+        ordered_indices = sorted(set(chunk_chapter_indices))
+        chunks.append(
+            {
+                "chunk_index": len(chunks) + 1,
+                "text": "\n\n".join(chunk_parts).strip(),
+                "chapter_indices": ordered_indices,
+            }
+        )
+        chunk_parts = []
+        chunk_chapter_indices = []
+        chunk_size = 0
+
+    for chapter_index, chapter_text in chapter_rows:
+        if len(chunks) >= max_chunks:
+            break
+
+        segments = _split_text_for_character_extraction_chunks(
+            chapter_text,
+            max_chars=max(chunk_max_chars // 2, 1200),
+        )
+        if not segments:
+            continue
+
+        for segment in segments:
+            chunk_fragment = f"[Chapter {int(chapter_index)}]\n{segment}"
+            fragment_size = len(chunk_fragment)
+            if chunk_parts and chunk_size + fragment_size > chunk_max_chars:
+                _flush_chunk()
+                if len(chunks) >= max_chunks:
+                    break
+
+            chunk_parts.append(chunk_fragment)
+            chunk_chapter_indices.append(int(chapter_index))
+            chunk_size += fragment_size + 2
+
+        if len(chunks) >= max_chunks:
+            break
+
+    if len(chunks) < max_chunks:
+        _flush_chunk()
+
+    return chunks[:max_chunks]
+
+
+def _clamp_confidence(value: object, *, fallback: float = 0.0) -> float:
+    if isinstance(value, bool):
+        return fallback
+    if not isinstance(value, (int, float)):
+        return fallback
+    return max(0.0, min(float(value), 1.0))
+
+
+def _normalize_llm_character_name(raw_name: object) -> str | None:
+    name = str(raw_name or "").strip()
+    if not name:
+        return None
+    name = re.sub(r"\s+", " ", name).strip(" \"'`[](){}:;,.!?")
+    if not name:
+        return None
+    if len(name) < CHARACTER_EXTRACTION_LLM_MIN_VALID_NAME_LENGTH:
+        return None
+    if len(name) > CHARACTER_EXTRACTION_LLM_MAX_VALID_NAME_LENGTH:
+        return None
+    if not re.search(r"[A-Za-z]", name):
+        return None
+
+    normalized_lower = name.lower()
+    rejected_single_tokens = {
+        "name",
+        "rank",
+        "aspect",
+        "attribute",
+        "attributes",
+        "ability",
+        "abilities",
+        "description",
+        "chapter",
+        "section",
+        "status",
+        "system",
+    }
+    if " " not in normalized_lower and normalized_lower in rejected_single_tokens:
+        return None
+
+    return name
+
+
+def _normalize_llm_aliases(raw_aliases: object, *, canonical_name: str) -> list[str]:
+    if not isinstance(raw_aliases, list):
+        return []
+    aliases: list[str] = []
+    for alias in raw_aliases:
+        normalized = _normalize_llm_character_name(alias)
+        if normalized is None:
+            continue
+        if normalize_candidate_key(normalized) == normalize_candidate_key(canonical_name):
+            continue
+        aliases.append(normalized)
+    return list(dict.fromkeys(aliases))
+
+
+def _build_source_trace_excerpt(text: str, *, start: int, end: int) -> str:
+    safe_start = max(0, min(start, len(text)))
+    safe_end = max(safe_start, min(end, len(text)))
+    left = max(0, safe_start - 90)
+    right = min(len(text), safe_end + 90)
+    excerpt = text[left:right].replace("\n", " ").strip()
+    return excerpt[:380] if excerpt else text[:380].replace("\n", " ").strip()
+
+
+def _locate_candidate_in_chapter_text(
+    *,
+    candidate_name: str,
+    evidence_excerpt: str,
+    chapter_indices_hint: list[int],
+    chapter_text_by_index: dict[int, str],
+) -> tuple[int, int, int, str]:
+    normalized_evidence = evidence_excerpt.strip()
+    normalized_candidate = candidate_name.strip()
+
+    ordered_chapter_indices: list[int] = []
+    for chapter_index in chapter_indices_hint:
+        if chapter_index in chapter_text_by_index and chapter_index not in ordered_chapter_indices:
+            ordered_chapter_indices.append(chapter_index)
+    for chapter_index in sorted(chapter_text_by_index.keys()):
+        if chapter_index not in ordered_chapter_indices:
+            ordered_chapter_indices.append(chapter_index)
+
+    if not ordered_chapter_indices:
+        return (1, 0, max(1, len(normalized_candidate)), normalized_candidate[:380])
+
+    name_pattern = re.escape(normalized_candidate).replace(r"\ ", r"\s+")
+    name_regex = re.compile(rf"(?<!\w){name_pattern}(?!\w)", re.IGNORECASE)
+
+    def _locate_in_text(chapter_text: str) -> tuple[int, int] | None:
+        if normalized_evidence and len(normalized_evidence) >= CHARACTER_EXTRACTION_LLM_MIN_EXCERPT_LENGTH:
+            start = chapter_text.lower().find(normalized_evidence.lower())
+            if start >= 0:
+                return (start, start + len(normalized_evidence))
+        match = name_regex.search(chapter_text)
+        if match is not None:
+            return (match.start(), match.end())
+        return None
+
+    for chapter_index in ordered_chapter_indices:
+        chapter_text = chapter_text_by_index.get(chapter_index, "")
+        if not chapter_text:
+            continue
+        located = _locate_in_text(chapter_text)
+        if located is None:
+            continue
+        start, end = located
+        excerpt = _build_source_trace_excerpt(chapter_text, start=start, end=end)
+        return (chapter_index, start, end, excerpt)
+
+    fallback_chapter = ordered_chapter_indices[0]
+    fallback_text = chapter_text_by_index.get(fallback_chapter, "")
+    if not fallback_text:
+        return (fallback_chapter, 0, max(1, len(normalized_candidate)), normalized_candidate[:380])
+
+    fallback_excerpt = fallback_text[:380].replace("\n", " ").strip()
+    return (fallback_chapter, 0, min(len(fallback_text), max(1, len(normalized_candidate))), fallback_excerpt)
+
+
+def _build_llm_source_trace(
+    *,
+    candidate_name: str,
+    evidence_excerpt: object,
+    chapter_index_hint: object,
+    chapter_indices_hint: list[int],
+    chapter_text_by_index: dict[int, str],
+    confidence: float,
+    kind: str,
+) -> dict[str, object]:
+    if isinstance(chapter_index_hint, bool):
+        chapter_index_value = None
+    elif isinstance(chapter_index_hint, int | float):
+        chapter_index_value = int(chapter_index_hint)
+    elif isinstance(chapter_index_hint, str) and chapter_index_hint.strip().isdigit():
+        chapter_index_value = int(chapter_index_hint.strip())
+    else:
+        chapter_index_value = None
+
+    chapter_hints = [chapter_index_value] if chapter_index_value is not None else []
+    chapter_hints.extend(chapter_indices_hint)
+    chapter_hints = [hint for hint in chapter_hints if isinstance(hint, int) and hint >= 1]
+
+    chapter_index, span_start, span_end, excerpt = _locate_candidate_in_chapter_text(
+        candidate_name=candidate_name,
+        evidence_excerpt=str(evidence_excerpt or ""),
+        chapter_indices_hint=chapter_hints,
+        chapter_text_by_index=chapter_text_by_index,
+    )
+    trace_weight = max(0.2, min(1.0, confidence))
+    return {
+        "kind": kind,
+        "chapter_index": int(chapter_index),
+        "span_start": int(span_start),
+        "span_end": int(max(span_start, span_end)),
+        "excerpt": excerpt,
+        "weight": round(trace_weight, 4),
+    }
+
+
+def _extract_llm_character_items(parsed_output: dict[str, object]) -> list[dict[str, object]]:
+    raw_items = parsed_output.get("characters")
+    if not isinstance(raw_items, list):
+        return []
+
+    extracted: list[dict[str, object]] = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            extracted.append(dict(item))
+        elif isinstance(item, str):
+            extracted.append({"name": item})
+    return extracted
+
+
+def _run_llm_primary_character_extraction(
+    *,
+    project_id: int,
+    chapter_rows: list[tuple[int, str]],
+    provider_configs: tuple[LLMProviderConfig, ...],
+    config: CharacterExtractionRequest,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    if not provider_configs:
+        return ([], [])
+
+    chapter_text_by_index = {
+        int(chapter_index): str(chapter_text or "")
+        for chapter_index, chapter_text in chapter_rows
+        if str(chapter_text or "").strip()
+    }
+    chunks = _build_llm_character_extraction_chunks(
+        chapter_rows=chapter_rows,
+        chunk_max_chars=config.llm_chunk_max_chars,
+        max_chunks=config.llm_max_chunks,
+    )
+    if not chunks:
+        return ([], [])
+
+    settings = get_settings()
+    router = LLMRouter(openrouter_base_url=settings.openrouter_base_url)
+    raw_candidate_payloads: list[dict[str, object]] = []
+
+    for chunk in chunks:
+        chunk_text = str(chunk.get("text") or "").strip()
+        if not chunk_text:
+            continue
+
+        prompt = (
+            "Extract human novel characters from this excerpt.\n"
+            "Return strict JSON with keys:\n"
+            "- characters: array of objects.\n"
+            "- confidence: number between 0 and 1.\n"
+            "Each character object keys:\n"
+            "- name: string (canonical if known).\n"
+            "- aliases: array of strings.\n"
+            "- confidence: number between 0 and 1.\n"
+            "- chapter_index: integer chapter index from markers.\n"
+            "- evidence: short quote from the text.\n"
+            "Rules:\n"
+            "- Include only people/characters (named individuals).\n"
+            "- Exclude places, institutions, powers, items, skills, ranks, field labels.\n"
+            "- Keep names concise and exact.\n\n"
+            f"TEXT:\n{chunk_text}"
+        )
+        request = LLMRequest(
+            request_id=str(uuid4()),
+            project_id=project_id,
+            task_type="character_extraction",
+            input_text=prompt,
+            expected_schema={
+                "characters": "array",
+                "confidence": "number",
+            },
+            configuration_snapshot_id=f"character-extraction-{project_id}",
+            max_tokens=800,
+        )
+        response = router.call_with_failover(
+            request=request,
+            provider_configs=provider_configs,
+        )
+        if not response.success_flag:
+            continue
+        parsed_output = response.parsed_output if isinstance(response.parsed_output, dict) else {}
+        llm_items = _extract_llm_character_items(parsed_output)
+        chunk_indices = [int(value) for value in list(chunk.get("chapter_indices") or []) if isinstance(value, int)]
+        for item in llm_items:
+            candidate_name = _normalize_llm_character_name(
+                item.get("name") or item.get("canonical_name") or item.get("character_name")
+            )
+            if candidate_name is None:
+                continue
+
+            candidate_confidence = _clamp_confidence(
+                item.get("confidence"),
+                fallback=max(0.45, _clamp_confidence(parsed_output.get("confidence"), fallback=0.55)),
+            )
+            aliases = _normalize_llm_aliases(item.get("aliases"), canonical_name=candidate_name)
+            source_trace = _build_llm_source_trace(
+                candidate_name=candidate_name,
+                evidence_excerpt=item.get("evidence") or item.get("excerpt") or item.get("reason"),
+                chapter_index_hint=item.get("chapter_index"),
+                chapter_indices_hint=chunk_indices,
+                chapter_text_by_index=chapter_text_by_index,
+                confidence=candidate_confidence,
+                kind="llm_extraction",
+            )
+            raw_candidate_payloads.append(
+                {
+                    "name": candidate_name,
+                    "verbalized_form": candidate_name,
+                    "gender": "unknown",
+                    "aliases": aliases,
+                    "notes": None,
+                    "source": "auto",
+                    "confidence": round(candidate_confidence, 4),
+                    "inferred_gender": "unknown",
+                    "inferred_confidence": 0.0,
+                    "inferred_source_trace": [],
+                    "source_trace": [source_trace],
+                }
+            )
+
+    if not raw_candidate_payloads:
+        return ([], [])
+
+    return (raw_candidate_payloads, merge_character_candidates(raw_candidate_payloads))
+
+
+def _build_llm_verification_trace(
+    *,
+    payload: dict[str, object],
+    verification_reason: str,
+    verification_confidence: float,
+) -> dict[str, object]:
+    source_trace = list(payload.get("source_trace") or [])
+    if source_trace and isinstance(source_trace[0], dict):
+        base_trace = source_trace[0]
+        chapter_index = int(base_trace.get("chapter_index") or 1)
+        span_start = int(base_trace.get("span_start") or 0)
+        span_end = int(base_trace.get("span_end") or span_start)
+        base_excerpt = str(base_trace.get("excerpt") or "").strip()
+    else:
+        chapter_index = 1
+        span_start = 0
+        span_end = max(1, len(str(payload.get("name") or "")))
+        base_excerpt = str(payload.get("name") or "").strip()
+
+    reason_excerpt = verification_reason.strip()
+    if reason_excerpt:
+        excerpt = f"{base_excerpt} | verify: {reason_excerpt}"[:380]
+    else:
+        excerpt = base_excerpt[:380]
+
+    return {
+        "kind": "llm_verification",
+        "chapter_index": max(1, chapter_index),
+        "span_start": max(0, span_start),
+        "span_end": max(max(0, span_start), span_end),
+        "excerpt": excerpt or str(payload.get("name") or "")[:380],
+        "weight": round(max(0.2, min(1.0, verification_confidence)), 4),
+    }
+
+
+def _run_llm_character_verification(
+    *,
+    project_id: int,
+    payloads: list[dict[str, object]],
+    provider_configs: tuple[LLMProviderConfig, ...],
+    batch_size: int,
+) -> list[dict[str, object]]:
+    if not payloads or not provider_configs:
+        return payloads
+
+    settings = get_settings()
+    router = LLMRouter(openrouter_base_url=settings.openrouter_base_url)
+    sorted_payloads = sorted(
+        [dict(payload) for payload in payloads],
+        key=lambda payload: (-float(payload.get("confidence", 0.0)), str(payload.get("name", "")).lower()),
+    )
+    verified_payloads: list[dict[str, object]] = []
+
+    for index in range(0, len(sorted_payloads), batch_size):
+        batch = sorted_payloads[index : index + batch_size]
+        if not batch:
+            continue
+
+        candidate_lines: list[str] = []
+        for item_index, payload in enumerate(batch, start=1):
+            source_trace = list(payload.get("source_trace") or [])
+            evidence_excerpt = ""
+            chapter_index = None
+            if source_trace and isinstance(source_trace[0], dict):
+                evidence_excerpt = str(source_trace[0].get("excerpt") or "").strip()
+                chapter_index = source_trace[0].get("chapter_index")
+            candidate_lines.append(
+                f"{item_index}. name={str(payload.get('name') or '').strip()} | "
+                f"confidence={float(payload.get('confidence') or 0.0):.2f} | "
+                f"chapter={chapter_index} | evidence={evidence_excerpt}"
+            )
+
+        prompt = (
+            "Validate whether each candidate is a human character in a novel.\n"
+            "Return strict JSON with keys:\n"
+            "- results: array of objects.\n"
+            "- confidence: number between 0 and 1.\n"
+            "Each result object keys:\n"
+            "- name: string (must match one candidate name).\n"
+            "- is_character: boolean.\n"
+            "- canonical_name: string.\n"
+            "- aliases: array of strings.\n"
+            "- confidence: number between 0 and 1.\n"
+            "- reason: short string.\n"
+            "Reject places, organizations, items, powers, stats, and field labels.\n\n"
+            "CANDIDATES:\n"
+            + "\n".join(candidate_lines)
+        )
+        request = LLMRequest(
+            request_id=str(uuid4()),
+            project_id=project_id,
+            task_type="character_extraction",
+            input_text=prompt,
+            expected_schema={
+                "results": "array",
+                "confidence": "number",
+            },
+            configuration_snapshot_id=f"character-extraction-verify-{project_id}",
+            max_tokens=600,
+        )
+        response = router.call_with_failover(
+            request=request,
+            provider_configs=provider_configs,
+        )
+        if not response.success_flag:
+            verified_payloads.extend(batch)
+            continue
+
+        parsed_output = response.parsed_output if isinstance(response.parsed_output, dict) else {}
+        raw_results = parsed_output.get("results")
+        if not isinstance(raw_results, list):
+            verified_payloads.extend(batch)
+            continue
+
+        verdict_by_name: dict[str, dict[str, object]] = {}
+        for raw_verdict in raw_results:
+            if not isinstance(raw_verdict, dict):
+                continue
+            verdict_name = _normalize_llm_character_name(raw_verdict.get("name"))
+            if verdict_name is None:
+                continue
+            verdict_by_name[normalize_candidate_key(verdict_name)] = raw_verdict
+
+        for payload in batch:
+            payload_name = _normalize_llm_character_name(payload.get("name"))
+            if payload_name is None:
+                continue
+
+            verdict = verdict_by_name.get(normalize_candidate_key(payload_name))
+            if verdict is None:
+                verified_payloads.append(payload)
+                continue
+
+            is_character = bool(verdict.get("is_character", True))
+            verdict_confidence = _clamp_confidence(
+                verdict.get("confidence"),
+                fallback=float(payload.get("confidence") or 0.0),
+            )
+            if not is_character:
+                continue
+
+            canonical_name = _normalize_llm_character_name(verdict.get("canonical_name")) or payload_name
+            updated_payload = dict(payload)
+            if normalize_candidate_key(canonical_name) != normalize_candidate_key(payload_name):
+                aliases = list(updated_payload.get("aliases") or [])
+                aliases.append(payload_name)
+                updated_payload["name"] = canonical_name
+                updated_payload["verbalized_form"] = canonical_name
+                updated_payload["aliases"] = list(dict.fromkeys(aliases))
+
+            llm_aliases = _normalize_llm_aliases(verdict.get("aliases"), canonical_name=canonical_name)
+            if llm_aliases:
+                aliases = list(updated_payload.get("aliases") or [])
+                aliases.extend(llm_aliases)
+                updated_payload["aliases"] = list(dict.fromkeys(aliases))
+
+            current_confidence = _clamp_confidence(updated_payload.get("confidence"), fallback=0.0)
+            bounded_delta = max(-0.2, min(0.25, verdict_confidence - current_confidence))
+            updated_payload["confidence"] = round(max(0.0, min(1.0, current_confidence + bounded_delta)), 4)
+
+            verification_trace = _build_llm_verification_trace(
+                payload=updated_payload,
+                verification_reason=str(verdict.get("reason") or ""),
+                verification_confidence=verdict_confidence,
+            )
+            updated_source_trace = list(updated_payload.get("source_trace") or [])
+            updated_source_trace.append(verification_trace)
+            updated_payload["source_trace"] = updated_source_trace
+            verified_payloads.append(updated_payload)
+
+    return verified_payloads
+
+
+def _consolidate_character_extraction_payloads(
+    *,
+    payloads: list[dict[str, object]],
+    min_confidence: float,
+    max_candidates: int,
+) -> list[dict[str, object]]:
+    if not payloads:
+        return []
+
+    merged_payloads = merge_character_candidates(payloads)
+    scored_payloads: list[tuple[dict[str, object], float, int, int]] = []
+
+    for payload in merged_payloads:
+        candidate_name = _normalize_llm_character_name(payload.get("name"))
+        if candidate_name is None:
+            continue
+
+        normalized_payload = dict(payload)
+        normalized_payload["name"] = candidate_name
+        normalized_payload["verbalized_form"] = (
+            _normalize_llm_character_name(payload.get("verbalized_form")) or candidate_name
+        )
+        normalized_payload["aliases"] = _normalize_llm_aliases(
+            list(payload.get("aliases") or []),
+            canonical_name=candidate_name,
+        )
+
+        source_trace = [
+            trace
+            for trace in list(normalized_payload.get("source_trace") or [])
+            if isinstance(trace, dict) and str(trace.get("excerpt") or "").strip()
+        ]
+        source_trace = sorted(
+            source_trace,
+            key=lambda trace: (
+                -_clamp_confidence(trace.get("weight"), fallback=0.0),
+                int(trace.get("chapter_index") or 0),
+                int(trace.get("span_start") or 0),
+            ),
+        )[:CHARACTER_EXTRACTION_LLM_TRACE_LIMIT]
+        normalized_payload["source_trace"] = source_trace
+
+        mention_count = len(source_trace)
+        chapter_spread = len({int(trace.get("chapter_index") or 0) for trace in source_trace if int(trace.get("chapter_index") or 0) > 0})
+        avg_weight = (
+            sum(_clamp_confidence(trace.get("weight"), fallback=0.0) for trace in source_trace) / mention_count
+            if mention_count > 0
+            else 0.0
+        )
+        base_confidence = _clamp_confidence(normalized_payload.get("confidence"), fallback=0.0)
+        alias_count = len(list(normalized_payload.get("aliases") or []))
+        mention_feature = min(1.0, mention_count / 6.0)
+        spread_feature = min(1.0, chapter_spread / 4.0)
+        alias_feature = min(1.0, alias_count / 4.0)
+        scored_confidence = (
+            (0.35 * base_confidence)
+            + (0.30 * mention_feature)
+            + (0.20 * spread_feature)
+            + (0.10 * avg_weight)
+            + (0.05 * alias_feature)
+        )
+        normalized_payload["confidence"] = round(max(0.0, min(1.0, scored_confidence)), 4)
+        if float(normalized_payload["confidence"]) < min_confidence:
+            continue
+
+        scored_payloads.append((normalized_payload, float(normalized_payload["confidence"]), mention_count, chapter_spread))
+
+    scored_payloads.sort(
+        key=lambda row: (
+            -row[1],
+            -row[2],
+            -row[3],
+            str(row[0].get("name") or "").lower(),
+        )
+    )
+    return [row[0] for row in scored_payloads[:max_candidates]]
+
+
+def _extract_character_candidates_llm_first(
+    *,
+    session: Session,
+    project: Project,
+    project_id: int,
+    chapter_rows: list[tuple[int, str]],
+    existing_name_keys: set[str],
+    config: CharacterExtractionRequest,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]] | None:
+    if not config.llm_primary_extraction_enabled:
+        return None
+
+    provider_configs = _collect_character_extraction_provider_configs(
+        session=session,
+        project=project,
+    )
+    if not provider_configs:
+        return None
+
+    raw_llm_payloads, candidate_payloads = _run_llm_primary_character_extraction(
+        project_id=project_id,
+        chapter_rows=chapter_rows,
+        provider_configs=provider_configs,
+        config=config,
+    )
+    if not candidate_payloads:
+        return None
+
+    if config.llm_verification_enabled:
+        candidate_payloads = _run_llm_character_verification(
+            project_id=project_id,
+            payloads=candidate_payloads,
+            provider_configs=provider_configs,
+            batch_size=config.llm_verification_batch_size,
+        )
+
+    consolidated_payloads = _consolidate_character_extraction_payloads(
+        payloads=candidate_payloads,
+        min_confidence=config.min_confidence,
+        max_candidates=config.max_candidates,
+    )
+    if not consolidated_payloads:
+        return None
+
+    filtered_consolidated_payloads = [
+        payload
+        for payload in consolidated_payloads
+        if normalize_candidate_key(str(payload.get("name") or "")) not in existing_name_keys
+    ]
+    filtered_raw_payloads = [
+        payload
+        for payload in raw_llm_payloads
+        if normalize_candidate_key(str(payload.get("name") or "")) not in existing_name_keys
+    ]
+    return (filtered_raw_payloads, filtered_consolidated_payloads)
+
+
+def _resolve_character_extraction_api_key() -> str | None:
+    settings = get_settings()
+    if settings.openrouter_api_key:
+        return settings.openrouter_api_key
+    if settings.openrouter_api_keys:
+        for key in settings.openrouter_api_keys:
+            normalized_key = str(key).strip()
+            if normalized_key:
+                return normalized_key
+    return None
+
+
+def _refine_character_payloads_with_llm(
+    *,
+    project_id: int,
+    payloads: list[dict[str, object]],
+    config: CharacterExtractionRequest,
+) -> list[dict[str, object]]:
+    if not config.llm_refinement_enabled:
+        return payloads
+
+    settings = get_settings()
+    provider_configs: list[LLMProviderConfig] = []
+    for provider_name in get_provider_priority_order(settings=settings):
+        normalized_provider = str(provider_name).strip().lower()
+        if not normalized_provider or not is_supported_provider(normalized_provider):
+            continue
+        base_url, model_identifier, runtime_api_key = get_provider_runtime_settings(
+            settings=settings,
+            provider_name=normalized_provider,
+        )
+        if not str(base_url).strip() or not str(model_identifier).strip():
+            continue
+        api_keys = get_provider_api_keys(settings=settings, provider_name=normalized_provider)
+        if not api_keys and runtime_api_key:
+            api_keys = [str(runtime_api_key).strip()]
+        if not api_keys:
+            continue
+        for api_key in api_keys:
+            if not str(api_key).strip():
+                continue
+            provider_configs.append(
+                LLMProviderConfig(
+                    provider_name=normalized_provider,
+                    base_url=str(base_url).strip(),
+                    model_identifier=str(model_identifier).strip(),
+                    api_key=str(api_key).strip(),
+                )
+            )
+    if not provider_configs:
+        return payloads
+
+    router = LLMRouter(openrouter_base_url=settings.openrouter_base_url)
+    refined_payloads = [dict(payload) for payload in payloads]
+    candidates = sorted(
+        [
+            payload
+            for payload in refined_payloads
+            if config.llm_refinement_min_confidence <= float(payload.get("confidence", 0.0)) <= config.llm_refinement_max_confidence
+        ],
+        key=lambda payload: (-float(payload.get("confidence", 0.0)), str(payload.get("name", "")).lower()),
+    )[: config.llm_refinement_max_candidates]
+
+    for payload in candidates:
+        candidate_name = str(payload.get("name") or "").strip()
+        if not candidate_name:
+            continue
+
+        source_traces = list(payload.get("source_trace") or [])
+        evidence_excerpt = ""
+        if source_traces:
+            first_trace = source_traces[0]
+            if isinstance(first_trace, dict):
+                evidence_excerpt = str(first_trace.get("excerpt") or "").strip()
+        prompt = (
+            f"Candidate name: {candidate_name}\n"
+            f"Evidence excerpt: {evidence_excerpt}\n"
+            "Return whether this is a character person/entity reference for a novel character map."
+        )
+        request = LLMRequest(
+            request_id=str(uuid4()),
+            project_id=project_id,
+            task_type="character_extraction",
+            input_text=prompt,
+            expected_schema={
+                "is_character": "boolean",
+                "canonical_name": "string",
+                "aliases": "array",
+                "confidence": "number",
+                "reason": "string",
+            },
+            configuration_snapshot_id=f"character-extraction-{project_id}",
+            max_tokens=180,
+        )
+        response = router.call_with_failover(
+            request=request,
+            provider_configs=tuple(provider_configs),
+        )
+        if not response.success_flag:
+            continue
+        parsed_output = response.parsed_output
+        if not isinstance(parsed_output, dict):
+            continue
+
+        current_confidence = float(payload.get("confidence") or 0.0)
+        is_character = bool(parsed_output.get("is_character", True))
+        if not is_character:
+            payload["confidence"] = round(max(0.0, min(current_confidence, 0.2)), 4)
+            continue
+
+        llm_candidate_name = str(parsed_output.get("canonical_name") or "").strip()
+        if llm_candidate_name and llm_candidate_name.lower() != candidate_name.lower():
+            aliases = list(payload.get("aliases") or [])
+            aliases.append(candidate_name)
+            payload["name"] = llm_candidate_name
+            payload["verbalized_form"] = llm_candidate_name
+            payload["aliases"] = list(dict.fromkeys([alias.strip() for alias in aliases if str(alias).strip()]))
+
+        llm_aliases = parsed_output.get("aliases")
+        if isinstance(llm_aliases, list):
+            aliases = list(payload.get("aliases") or [])
+            aliases.extend([str(alias).strip() for alias in llm_aliases if str(alias).strip()])
+            payload["aliases"] = list(dict.fromkeys(aliases))
+
+        llm_confidence = parsed_output.get("confidence")
+        if isinstance(llm_confidence, int | float):
+            confidence_target = max(0.0, min(float(llm_confidence), 1.0))
+            bounded_delta = max(-0.15, min(0.15, confidence_target - current_confidence))
+            payload["confidence"] = round(max(0.0, min(1.0, current_confidence + bounded_delta)), 4)
+
+    return refined_payloads
+
+
 @app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(payload: ProjectCreate, session: Session = Depends(get_session)) -> ProjectResponse:
     project = Project(
@@ -5281,6 +6409,165 @@ def append_chapter(
 
 
 @app.post(
+    "/api/projects/{project_id}/ingest/jobs",
+    response_model=ProjectIngestionJobStartResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_project_ingestion_job(
+    project_id: int,
+    source: str = Form(...),
+    file: UploadFile | None = File(default=None),
+    files: list[UploadFile] | None = File(default=None),
+    session: Session = Depends(get_session),
+) -> ProjectIngestionJobStartResponse:
+    _get_project_or_404(session, project_id)
+    normalized_source = str(source).strip().lower()
+    if normalized_source == "directory":
+        normalized_source = "chapters-dir"
+    if normalized_source not in PROJECT_INGESTION_ALLOWED_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="source must be one of: txt, markdown, epub, chapters-dir, append-chapter",
+        )
+
+    existing_active_job = (
+        session.query(ProjectIngestionJob)
+        .filter(
+            ProjectIngestionJob.project_id == project_id,
+            ProjectIngestionJob.status.in_(
+                [
+                    PROJECT_INGESTION_JOB_STATUS_QUEUED,
+                    PROJECT_INGESTION_JOB_STATUS_RUNNING,
+                ]
+            ),
+        )
+        .order_by(ProjectIngestionJob.created_at.desc(), ProjectIngestionJob.id.desc())
+        .first()
+    )
+    if existing_active_job is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Ingestion is already running for this project. "
+                f"Wait for job {existing_active_job.job_id} to complete before starting a new upload."
+            ),
+        )
+
+    selected_files: list[UploadFile] = []
+    if normalized_source == "chapters-dir":
+        selected_files.extend(files or [])
+        if file is not None:
+            selected_files.append(file)
+        if not selected_files:
+            raise MissingChaptersIngestionError(detail="At least one chapter file is required")
+    else:
+        selected_file = file
+        if selected_file is None and files:
+            selected_file = files[0]
+        if selected_file is None:
+            raise MissingChaptersIngestionError(detail="A source file is required")
+        selected_files.append(selected_file)
+
+    file_payload_rows: list[tuple[int, str, str | None, bytes]] = []
+    for file_index, upload in enumerate(selected_files):
+        file_payload_rows.append(
+            (
+                file_index,
+                str(upload.filename or "").strip() or f"upload-{file_index + 1}.txt",
+                str(upload.content_type).strip() if upload.content_type else None,
+                upload.file.read(),
+            )
+        )
+
+    request_payload = {
+        "source": normalized_source,
+        "file_count": len(file_payload_rows),
+        "filenames": [row[1] for row in file_payload_rows],
+    }
+    job_row = ProjectIngestionJob(
+        job_id=uuid4().hex,
+        project_id=project_id,
+        source=normalized_source,
+        status=PROJECT_INGESTION_JOB_STATUS_QUEUED,
+        progress=0,
+        message="Queued for ingestion",
+        executor_name="thread",
+        task_id=None,
+        request_payload_json=request_payload,
+        result_payload_json=None,
+        error_message=None,
+    )
+    session.add(job_row)
+    session.flush()
+
+    for file_index, filename, content_type, payload_blob in file_payload_rows:
+        session.add(
+            ProjectIngestionJobFile(
+                job_id=job_row.id,
+                file_index=file_index,
+                filename=filename,
+                content_type=content_type,
+                payload_blob=payload_blob,
+            )
+        )
+
+    session.commit()
+    session.refresh(job_row)
+
+    executor_name, task_id = _dispatch_project_ingestion_job(job_row.job_id)
+    job_row.executor_name = executor_name
+    job_row.task_id = task_id
+    session.add(job_row)
+    session.commit()
+    session.refresh(job_row)
+
+    return ProjectIngestionJobStartResponse(
+        project_id=job_row.project_id,
+        source=job_row.source,
+        job_id=job_row.job_id,
+        status=job_row.status,
+        executor_name=job_row.executor_name,
+        task_id=job_row.task_id,
+        created_at=job_row.created_at,
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/ingest/jobs/{job_id}",
+    response_model=ProjectIngestionJobStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_ingestion_job_status(
+    project_id: int,
+    job_id: str,
+    session: Session = Depends(get_session),
+) -> ProjectIngestionJobStatusResponse:
+    _get_project_or_404(session, project_id)
+    normalized_job_id = str(job_id).strip()
+    if not normalized_job_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="job_id must not be blank.",
+        )
+
+    job_row = (
+        session.query(ProjectIngestionJob)
+        .filter(
+            ProjectIngestionJob.project_id == project_id,
+            ProjectIngestionJob.job_id == normalized_job_id,
+        )
+        .one_or_none()
+    )
+    if job_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project ingestion job not found.",
+        )
+
+    return _build_project_ingestion_job_status_response(job_row)
+
+
+@app.post(
     "/api/projects/{project_id}/characters/import",
     response_model=CharacterImportResponse,
     status_code=status.HTTP_200_OK,
@@ -5299,6 +6586,10 @@ def import_characters(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     session.query(Character).filter(Character.project_id == project_id).delete()
+    session.query(CharacterProposal).filter(
+        CharacterProposal.project_id == project_id,
+        CharacterProposal.status == "proposed",
+    ).delete()
 
     for row in parsed:
         session.add(
@@ -5369,6 +6660,197 @@ def list_characters(
     )
 
 
+@app.get(
+    "/api/projects/{project_id}/characters/proposals",
+    response_model=CharacterProposalListResponse,
+    status_code=status.HTTP_200_OK,
+)
+def list_character_proposals(
+    project_id: int,
+    statuses: str | None = Query(default="proposed"),
+    session: Session = Depends(get_session),
+) -> CharacterProposalListResponse:
+    _get_project_or_404(session, project_id)
+
+    allowed_statuses = {"proposed", "approved", "rejected"}
+    selected_statuses = {
+        status_value.strip().lower()
+        for status_value in (statuses or "").split(",")
+        if status_value.strip()
+    }
+    if not selected_statuses:
+        selected_statuses = {"proposed"}
+    invalid_statuses = sorted(selected_statuses - allowed_statuses)
+    if invalid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Invalid statuses requested. Supported values are: proposed, approved, rejected. "
+                f"Invalid values: {', '.join(invalid_statuses)}"
+            ),
+        )
+
+    proposal_rows = (
+        session.query(CharacterProposal)
+        .filter(
+            CharacterProposal.project_id == project_id,
+            CharacterProposal.status.in_(sorted(selected_statuses)),
+        )
+        .order_by(CharacterProposal.created_at.desc(), CharacterProposal.id.desc())
+        .all()
+    )
+
+    proposal_items = [_build_character_proposal_item_payload_from_row(row) for row in proposal_rows]
+    return CharacterProposalListResponse(
+        project_id=project_id,
+        proposal_count=len(proposal_items),
+        proposals=proposal_items,
+    )
+
+
+@app.post(
+    "/api/projects/{project_id}/characters/proposals/review",
+    response_model=CharacterProposalReviewResponse,
+    status_code=status.HTTP_200_OK,
+)
+def review_character_proposals(
+    project_id: int,
+    payload: CharacterProposalReviewRequest,
+    session: Session = Depends(get_session),
+) -> CharacterProposalReviewResponse:
+    project = _get_project_or_404(session, project_id)
+
+    approve_ids = set(payload.approve_ids)
+    reject_ids = set(payload.reject_ids) - approve_ids
+    selected_ids = sorted(approve_ids | reject_ids)
+    if not selected_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one proposal ID must be provided in approve_ids or reject_ids.",
+        )
+
+    proposal_rows = (
+        session.query(CharacterProposal)
+        .filter(
+            CharacterProposal.project_id == project_id,
+            CharacterProposal.id.in_(selected_ids),
+        )
+        .all()
+    )
+    found_ids = {row.id for row in proposal_rows}
+    missing_ids = [proposal_id for proposal_id in selected_ids if proposal_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Character proposal IDs not found for this project: {', '.join(str(value) for value in missing_ids)}",
+        )
+
+    reviewed_at = datetime.now(timezone.utc)
+    reviewed_by = payload.reviewed_by.strip() if payload.reviewed_by else "user"
+    approved_rows: list[CharacterProposal] = []
+    rejected_rows: list[CharacterProposal] = []
+    for row in proposal_rows:
+        if row.id in approve_ids:
+            row.status = "approved"
+            approved_rows.append(row)
+        elif row.id in reject_ids:
+            row.status = "rejected"
+            rejected_rows.append(row)
+        else:
+            continue
+        row.reviewed_at = reviewed_at
+        row.reviewed_by = reviewed_by
+        session.add(row)
+
+    approved_count = len(approved_rows)
+    rejected_count = len(rejected_rows)
+    if approved_count > 0:
+        existing_rows = (
+            session.query(Character)
+            .filter(Character.project_id == project_id)
+            .order_by(Character.name.asc())
+            .all()
+        )
+        merged_payloads = merge_character_candidates(
+            [
+                _build_character_map_item_payload(
+                    row=row,
+                    source=row.source,
+                    confidence=row.confidence,
+                    source_trace=[],
+                )
+                for row in existing_rows
+            ]
+            + [_build_character_payload_from_proposal(row) for row in approved_rows]
+        )
+
+        session.query(Character).filter(Character.project_id == project_id).delete()
+        for row in merged_payloads:
+            session.add(
+                Character(
+                    project_id=project_id,
+                    name=str(row.get("name") or "").strip(),
+                    verbalized_form=str(row.get("verbalized_form") or row.get("name") or "").strip(),
+                    gender=str(row.get("gender") or "unknown").strip().lower() or "unknown",
+                    aliases=list(row.get("aliases") or []),
+                    notes=(str(row.get("notes")).strip() if row.get("notes") is not None else None),
+                    source=str(row.get("source") or "auto").strip() or "auto",
+                    confidence=float(row.get("confidence") or 0.0),
+                    inferred_gender=str(row.get("inferred_gender") or "unknown").strip().lower() or "unknown",
+                    inferred_confidence=float(row.get("inferred_confidence") or 0.0),
+                    inferred_source_trace=list(row.get("inferred_source_trace") or []),
+                )
+            )
+
+        project.character_map_finalized = False
+        project_runs = session.query(Run).filter(Run.project_id == project.id).all()
+        mark_runs_stale_for_gender_edit(project_runs)
+        recompute_voice_previews_for_runs(session, project=project, runs=project_runs)
+        session.add(project)
+        session.add(
+            _persist_character_map_snapshot(
+                session=session,
+                project_id=project_id,
+                source="proposal_review",
+            )
+        )
+        session.add(
+            _persist_voice_map_snapshot(
+                session=session,
+                project_id=project_id,
+                source="proposal_review",
+            )
+        )
+
+    session.commit()
+
+    character_rows = (
+        session.query(Character)
+        .filter(Character.project_id == project_id)
+        .order_by(Character.name.asc())
+        .all()
+    )
+    proposal_rows = (
+        session.query(CharacterProposal)
+        .filter(
+            CharacterProposal.project_id == project_id,
+            CharacterProposal.status == "proposed",
+        )
+        .order_by(CharacterProposal.created_at.desc(), CharacterProposal.id.desc())
+        .all()
+    )
+
+    return CharacterProposalReviewResponse(
+        project_id=project_id,
+        approved_count=approved_count,
+        rejected_count=rejected_count,
+        character_map_finalized=project.character_map_finalized,
+        characters=[_build_character_map_item_payload_from_row(row) for row in character_rows],
+        proposal_count=len(proposal_rows),
+        proposals=[_build_character_proposal_item_payload_from_row(row) for row in proposal_rows],
+    )
+
+
 @app.post(
     "/api/projects/{project_id}/characters/finalize",
     response_model=CharacterMapFinalizeResponse,
@@ -5387,19 +6869,347 @@ def finalize_character_map(project_id: int, session: Session = Depends(get_sessi
     )
 
 
-@app.post(
-    "/api/projects/{project_id}/characters/extract",
-    response_model=CharacterExtractionResponse,
-    status_code=status.HTTP_200_OK,
-)
-def auto_extract_characters(
-    project_id: int,
-    session: Session = Depends(get_session),
-) -> CharacterExtractionResponse:
-    _get_project_or_404(session, project_id)
+def _build_project_ingestion_job_status_response(
+    row: ProjectIngestionJob,
+) -> ProjectIngestionJobStatusResponse:
+    ingestion_result: IngestResponse | None = None
+    if row.status == PROJECT_INGESTION_JOB_STATUS_COMPLETED and isinstance(row.result_payload_json, dict):
+        try:
+            ingestion_result = IngestResponse(**row.result_payload_json)
+        except Exception:  # noqa: BLE001
+            ingestion_result = None
 
+    return ProjectIngestionJobStatusResponse(
+        project_id=row.project_id,
+        source=row.source,
+        job_id=row.job_id,
+        status=row.status,
+        progress=max(0, min(int(row.progress), 100)),
+        message=row.message,
+        executor_name=row.executor_name,
+        task_id=row.task_id,
+        error_message=row.error_message,
+        result=ingestion_result,
+        created_at=row.created_at,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _update_project_ingestion_job_state(
+    *,
+    job_id: str,
+    status_value: str | None = None,
+    progress_value: int | None = None,
+    message_value: str | None = None,
+    error_message_value: str | None = None,
+    result_payload_json: dict[str, object] | None = None,
+    started_at: datetime | None = None,
+    finished_at: datetime | None = None,
+) -> None:
+    update_session = get_session_factory()()
+    try:
+        job_row = (
+            update_session.query(ProjectIngestionJob)
+            .filter(ProjectIngestionJob.job_id == job_id)
+            .one_or_none()
+        )
+        if job_row is None:
+            return
+
+        if status_value is not None:
+            job_row.status = status_value
+        if progress_value is not None:
+            job_row.progress = max(0, min(int(progress_value), 100))
+        if message_value is not None:
+            job_row.message = message_value[:255] if message_value else None
+        if error_message_value is not None:
+            job_row.error_message = error_message_value.strip() or None
+        if result_payload_json is not None:
+            job_row.result_payload_json = dict(result_payload_json)
+        if started_at is not None:
+            job_row.started_at = started_at
+        if finished_at is not None:
+            job_row.finished_at = finished_at
+
+        job_row.updated_at = datetime.now(timezone.utc)
+        update_session.add(job_row)
+        update_session.commit()
+    finally:
+        update_session.close()
+
+
+def _run_project_ingestion_pipeline(
+    *,
+    session: Session,
+    project_id: int,
+    source: str,
+    upload_files: list[UploadFile],
+    progress_callback: Callable[[int, str], None] | None,
+) -> IngestResponse:
+    def _report(progress: int, message: str) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(max(0, min(progress, 100)), message.strip())
+
+    _report(8, "Validating source payload")
+    if source == "txt":
+        if not upload_files:
+            raise MissingChaptersIngestionError(detail="A TXT file is required")
+        _report(35, "Parsing TXT source")
+        response = ingest_txt(project_id=project_id, file=upload_files[0], session=session)
+    elif source == "markdown":
+        if not upload_files:
+            raise MissingChaptersIngestionError(detail="A Markdown file is required")
+        _report(35, "Parsing Markdown source")
+        response = ingest_markdown(project_id=project_id, file=upload_files[0], session=session)
+    elif source == "epub":
+        if not upload_files:
+            raise MissingChaptersIngestionError(detail="An EPUB file is required")
+        _report(35, "Parsing EPUB source")
+        response = ingest_epub(project_id=project_id, file=upload_files[0], session=session)
+    elif source == "chapters-dir":
+        if not upload_files:
+            raise MissingChaptersIngestionError(detail="At least one chapter file is required")
+        _report(35, "Parsing chapter directory")
+        response = ingest_chapters_dir(project_id=project_id, files=upload_files, session=session)
+    elif source == "append-chapter":
+        if not upload_files:
+            raise MissingChaptersIngestionError(detail="A chapter file is required")
+        _report(35, "Appending chapter")
+        response = append_chapter(project_id=project_id, file=upload_files[0], session=session)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported ingestion source: {source}",
+        )
+
+    _report(95, "Finalizing ingestion result")
+    return response
+
+
+def run_project_ingestion_job_by_id(job_id: str) -> None:
+    normalized_job_id = str(job_id).strip()
+    if not normalized_job_id:
+        return
+
+    worker_session = get_session_factory()()
+    upload_files: list[UploadFile] = []
+    try:
+        job_row = (
+            worker_session.query(ProjectIngestionJob)
+            .filter(ProjectIngestionJob.job_id == normalized_job_id)
+            .one_or_none()
+        )
+        if job_row is None:
+            return
+        if job_row.status in {
+            PROJECT_INGESTION_JOB_STATUS_RUNNING,
+            PROJECT_INGESTION_JOB_STATUS_COMPLETED,
+        }:
+            return
+
+        _update_project_ingestion_job_state(
+            job_id=normalized_job_id,
+            status_value=PROJECT_INGESTION_JOB_STATUS_RUNNING,
+            progress_value=3,
+            message_value="Starting ingestion",
+            error_message_value="",
+            started_at=datetime.now(timezone.utc),
+        )
+
+        file_rows = (
+            worker_session.query(ProjectIngestionJobFile)
+            .filter(ProjectIngestionJobFile.job_id == job_row.id)
+            .order_by(ProjectIngestionJobFile.file_index.asc())
+            .all()
+        )
+        for file_row in file_rows:
+            upload_files.append(
+                UploadFile(
+                    filename=(str(file_row.filename or "").strip() or "upload.txt"),
+                    file=io.BytesIO(bytes(file_row.payload_blob or b"")),
+                )
+            )
+
+        ingestion_result = _run_project_ingestion_pipeline(
+            session=worker_session,
+            project_id=job_row.project_id,
+            source=job_row.source,
+            upload_files=upload_files,
+            progress_callback=lambda progress, message: _update_project_ingestion_job_state(
+                job_id=normalized_job_id,
+                status_value=PROJECT_INGESTION_JOB_STATUS_RUNNING,
+                progress_value=progress,
+                message_value=message,
+            ),
+        )
+        _update_project_ingestion_job_state(
+            job_id=normalized_job_id,
+            status_value=PROJECT_INGESTION_JOB_STATUS_COMPLETED,
+            progress_value=100,
+            message_value="Ingestion completed",
+            error_message_value="",
+            result_payload_json=ingestion_result.model_dump(mode="json"),
+            finished_at=datetime.now(timezone.utc),
+        )
+    except Exception as exc:  # noqa: BLE001
+        worker_session.rollback()
+        if isinstance(exc, HTTPException):
+            detail = str(exc.detail)
+        else:
+            detail = str(exc)
+        _update_project_ingestion_job_state(
+            job_id=normalized_job_id,
+            status_value=PROJECT_INGESTION_JOB_STATUS_FAILED,
+            progress_value=100,
+            message_value="Ingestion failed",
+            error_message_value=detail[:4000],
+            finished_at=datetime.now(timezone.utc),
+        )
+    finally:
+        for upload_file in upload_files:
+            try:
+                upload_file.file.close()
+            except Exception:  # noqa: BLE001
+                pass
+        worker_session.close()
+
+
+def _dispatch_project_ingestion_job(job_id: str) -> tuple[str, str | None]:
+    settings = get_settings()
+    preferred_executor = str(settings.ingestion_async_executor or "thread").strip().lower()
+    if (
+        preferred_executor == "celery"
+        and is_celery_available()
+        and celery_app is not None
+    ):
+        try:
+            async_result = celery_app.send_task(
+                "project_ingestion.execute_job",
+                kwargs={"job_id": job_id},
+            )
+            task_id = str(getattr(async_result, "id", "")).strip() or None
+            return ("celery", task_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+    worker = Thread(
+        target=run_project_ingestion_job_by_id,
+        args=(job_id,),
+        daemon=True,
+        name=f"project-ingestion-{job_id[:10]}",
+    )
+    worker.start()
+    return ("thread", None)
+
+
+def run_pipeline_run_by_id(
+    run_id: int,
+    *,
+    principal_type: str | None = None,
+    principal_id: str | None = None,
+) -> None:
+    try:
+        normalized_run_id = int(run_id)
+    except (TypeError, ValueError):
+        return
+    if normalized_run_id <= 0:
+        return
+
+    worker_session = get_session_factory()()
+    try:
+        run = worker_session.query(Run).filter(Run.id == normalized_run_id).one_or_none()
+        if run is None:
+            return
+        if run.status in {RUN_STATUS_COMPLETED, RUN_STATUS_FAILED, RUN_STATUS_CANCELLED}:
+            return
+
+        project = worker_session.query(Project).filter(Project.id == run.project_id).one_or_none()
+        if project is None:
+            return
+
+        if run.status == RUN_STATUS_QUEUED:
+            run.status = RUN_STATUS_RUNNING
+            if run.started_at is None:
+                run.started_at = datetime.now(timezone.utc)
+            run.finished_at = None
+            worker_session.add(run)
+            worker_session.commit()
+            worker_session.refresh(run)
+
+        try:
+            _execute_pipeline_and_finalize_run(
+                session=worker_session,
+                project=project,
+                run=run,
+                principal_type=principal_type,
+                principal_id=principal_id,
+            )
+        except HTTPException:
+            return
+    finally:
+        worker_session.close()
+
+
+def _dispatch_pipeline_run_execution(
+    *,
+    run_id: int,
+    principal_type: str | None,
+    principal_id: str | None,
+) -> tuple[str, str | None]:
+    settings = get_settings()
+    preferred_executor = str(settings.pipeline_async_executor or "thread").strip().lower()
+    if (
+        preferred_executor == "celery"
+        and is_celery_available()
+        and celery_app is not None
+    ):
+        try:
+            async_result = celery_app.send_task(
+                "pipeline.execute_run",
+                kwargs={
+                    "run_id": int(run_id),
+                    "principal_type": principal_type,
+                    "principal_id": principal_id,
+                },
+            )
+            task_id = str(getattr(async_result, "id", "")).strip() or None
+            return ("celery", task_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+    worker = Thread(
+        target=run_pipeline_run_by_id,
+        args=(int(run_id),),
+        kwargs={
+            "principal_type": principal_type,
+            "principal_id": principal_id,
+        },
+        daemon=True,
+        name=f"pipeline-run-{int(run_id)}",
+    )
+    worker.start()
+    return ("thread", None)
+
+
+def _execute_character_extraction_pipeline(
+    *,
+    session: Session,
+    project: Project,
+    project_id: int,
+    extraction_config: CharacterExtractionRequest,
+    progress_callback: Callable[[int, str], None] | None,
+) -> CharacterExtractionResponse:
+    def _report(progress: int, message: str) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(max(0, min(progress, 100)), message.strip())
+
+    _report(5, "Loading chapters")
     chapter_rows = (
-        session.query(Chapter.normalized_text)
+        session.query(Chapter.chapter_index, Chapter.normalized_text)
         .filter(Chapter.project_id == project_id)
         .order_by(Chapter.chapter_index.asc())
         .all()
@@ -5410,26 +7220,79 @@ def auto_extract_characters(
             detail="No chapters available for character auto-extraction.",
         )
 
-    existing_names = {
-        row.name.strip().lower()
+    _report(15, "Collecting existing canonical names")
+    existing_name_keys = {
+        normalize_candidate_key(row.name)
         for row in session.query(Character.name).filter(Character.project_id == project_id).all()
+        if str(row.name or "").strip()
     }
 
-    candidates = extract_character_candidates_from_texts(
-        [row.normalized_text for row in chapter_rows],
-        known_names=existing_names,
+    _report(35, "Extracting candidates")
+    llm_first_result = _extract_character_candidates_llm_first(
+        session=session,
+        project=project,
+        project_id=project_id,
+        chapter_rows=[(int(row.chapter_index), str(row.normalized_text or "")) for row in chapter_rows],
+        existing_name_keys=existing_name_keys,
+        config=extraction_config,
     )
-    candidate_payloads = _build_mergeable_candidates_from_candidates(
-        candidates,
-        source="auto",
-    )
+    if llm_first_result is None:
+        _report(50, "Running deterministic fallback extraction")
+        candidates = extract_character_candidates_from_texts(
+            [str(row.normalized_text or "") for row in chapter_rows],
+            known_names=existing_name_keys,
+            min_confidence=extraction_config.min_confidence,
+            max_candidates=extraction_config.max_candidates,
+        )
+        raw_candidate_payloads = _build_mergeable_candidates_from_candidates(
+            candidates,
+            source="auto",
+        )
+        candidate_payloads = merge_character_candidates(raw_candidate_payloads)
+        candidate_payloads = _refine_character_payloads_with_llm(
+            project_id=project_id,
+            payloads=candidate_payloads,
+            config=extraction_config,
+        )
+        candidate_payloads = merge_character_candidates(candidate_payloads)
+    else:
+        raw_candidate_payloads, candidate_payloads = llm_first_result
+
+    extraction_batch_id: str | None = None
+    proposal_count = 0
+    auto_applied_count = 0
+    if extraction_config.persist_proposals:
+        _report(75, "Persisting extraction proposals")
+        extraction_batch_id = uuid4().hex
+        proposal_rows = _persist_character_proposals(
+            session=session,
+            project_id=project_id,
+            candidate_payloads=candidate_payloads,
+            extraction_batch_id=extraction_batch_id,
+            replace_existing_proposed=True,
+        )
+        proposal_count = len(proposal_rows)
+
+    if extraction_config.auto_apply_to_character_map:
+        _report(88, "Applying high-confidence candidates")
+        auto_applied_count = _auto_apply_character_candidates(
+            session=session,
+            project_id=project_id,
+            candidate_payloads=candidate_payloads,
+            min_confidence=extraction_config.auto_apply_min_confidence,
+        )
+
+    if extraction_config.persist_proposals or auto_applied_count > 0:
+        session.commit()
+
+    _report(95, "Building extraction response")
     mapped_candidates = [
         CharacterMapItem(**candidate_payload)
         for candidate_payload in candidate_payloads
     ]
     warnings = _build_character_extraction_warnings(
         canonical_payloads=candidate_payloads,
-        candidate_payloads=candidate_payloads,
+        candidate_payloads=raw_candidate_payloads,
         source="characters.extract",
     )
 
@@ -5437,8 +7300,286 @@ def auto_extract_characters(
         project_id=project_id,
         status="complete",
         candidate_count=len(mapped_candidates),
+        auto_applied_count=auto_applied_count,
         candidates=mapped_candidates,
+        extraction_batch_id=extraction_batch_id,
+        proposal_count=proposal_count,
+        proposed_characters=mapped_candidates,
         warnings=warnings,
+    )
+
+
+def _build_character_extraction_job_status_response(
+    row: CharacterExtractionJob,
+) -> CharacterExtractionJobStatusResponse:
+    extraction_result: CharacterExtractionResponse | None = None
+    if row.status == CHARACTER_EXTRACTION_JOB_STATUS_COMPLETED and isinstance(row.result_payload_json, dict):
+        try:
+            extraction_result = CharacterExtractionResponse(**row.result_payload_json)
+        except Exception:  # noqa: BLE001
+            extraction_result = None
+
+    return CharacterExtractionJobStatusResponse(
+        project_id=row.project_id,
+        job_id=row.job_id,
+        status=row.status,
+        progress=max(0, min(int(row.progress), 100)),
+        message=row.message,
+        executor_name=row.executor_name,
+        task_id=row.task_id,
+        error_message=row.error_message,
+        result=extraction_result,
+        created_at=row.created_at,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _update_character_extraction_job_state(
+    *,
+    job_id: str,
+    status_value: str | None = None,
+    progress_value: int | None = None,
+    message_value: str | None = None,
+    error_message_value: str | None = None,
+    result_payload_json: dict[str, object] | None = None,
+    started_at: datetime | None = None,
+    finished_at: datetime | None = None,
+) -> None:
+    update_session = get_session_factory()()
+    try:
+        job_row = (
+            update_session.query(CharacterExtractionJob)
+            .filter(CharacterExtractionJob.job_id == job_id)
+            .one_or_none()
+        )
+        if job_row is None:
+            return
+
+        if status_value is not None:
+            job_row.status = status_value
+        if progress_value is not None:
+            job_row.progress = max(0, min(int(progress_value), 100))
+        if message_value is not None:
+            job_row.message = message_value[:255] if message_value else None
+        if error_message_value is not None:
+            job_row.error_message = error_message_value.strip() or None
+        if result_payload_json is not None:
+            job_row.result_payload_json = dict(result_payload_json)
+        if started_at is not None:
+            job_row.started_at = started_at
+        if finished_at is not None:
+            job_row.finished_at = finished_at
+
+        job_row.updated_at = datetime.now(timezone.utc)
+        update_session.add(job_row)
+        update_session.commit()
+    finally:
+        update_session.close()
+
+
+def run_character_extraction_job_by_id(job_id: str) -> None:
+    normalized_job_id = str(job_id).strip()
+    if not normalized_job_id:
+        return
+
+    worker_session = get_session_factory()()
+    try:
+        job_row = (
+            worker_session.query(CharacterExtractionJob)
+            .filter(CharacterExtractionJob.job_id == normalized_job_id)
+            .one_or_none()
+        )
+        if job_row is None:
+            return
+        if job_row.status in {
+            CHARACTER_EXTRACTION_JOB_STATUS_RUNNING,
+            CHARACTER_EXTRACTION_JOB_STATUS_COMPLETED,
+        }:
+            return
+
+        request_payload = dict(job_row.request_payload_json or {})
+        project = worker_session.query(Project).filter(Project.id == job_row.project_id).one_or_none()
+        if project is None:
+            raise ValueError("Project not found for extraction job.")
+
+        extraction_config = CharacterExtractionRequest(**request_payload)
+        _update_character_extraction_job_state(
+            job_id=normalized_job_id,
+            status_value=CHARACTER_EXTRACTION_JOB_STATUS_RUNNING,
+            progress_value=3,
+            message_value="Starting extraction",
+            error_message_value="",
+            started_at=datetime.now(timezone.utc),
+        )
+
+        extraction_result = _execute_character_extraction_pipeline(
+            session=worker_session,
+            project=project,
+            project_id=job_row.project_id,
+            extraction_config=extraction_config,
+            progress_callback=lambda progress, message: _update_character_extraction_job_state(
+                job_id=normalized_job_id,
+                status_value=CHARACTER_EXTRACTION_JOB_STATUS_RUNNING,
+                progress_value=progress,
+                message_value=message,
+            ),
+        )
+        _update_character_extraction_job_state(
+            job_id=normalized_job_id,
+            status_value=CHARACTER_EXTRACTION_JOB_STATUS_COMPLETED,
+            progress_value=100,
+            message_value="Character extraction completed",
+            error_message_value="",
+            result_payload_json=extraction_result.model_dump(mode="json"),
+            finished_at=datetime.now(timezone.utc),
+        )
+    except Exception as exc:  # noqa: BLE001
+        worker_session.rollback()
+        if isinstance(exc, HTTPException):
+            detail = str(exc.detail)
+        else:
+            detail = str(exc)
+        _update_character_extraction_job_state(
+            job_id=normalized_job_id,
+            status_value=CHARACTER_EXTRACTION_JOB_STATUS_FAILED,
+            progress_value=100,
+            message_value="Character extraction failed",
+            error_message_value=detail[:4000],
+            finished_at=datetime.now(timezone.utc),
+        )
+    finally:
+        worker_session.close()
+
+
+def _dispatch_character_extraction_job(job_id: str) -> tuple[str, str | None]:
+    settings = get_settings()
+    preferred_executor = str(settings.character_extraction_async_executor or "thread").strip().lower()
+    if (
+        preferred_executor == "celery"
+        and is_celery_available()
+        and celery_app is not None
+    ):
+        try:
+            async_result = celery_app.send_task(
+                "character_extraction.execute_job",
+                kwargs={"job_id": job_id},
+            )
+            task_id = str(getattr(async_result, "id", "")).strip() or None
+            return ("celery", task_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+    worker = Thread(
+        target=run_character_extraction_job_by_id,
+        args=(job_id,),
+        daemon=True,
+        name=f"character-extraction-{job_id[:10]}",
+    )
+    worker.start()
+    return ("thread", None)
+
+
+@app.post(
+    "/api/projects/{project_id}/characters/extract/jobs",
+    response_model=CharacterExtractionJobStartResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_character_extraction_job(
+    project_id: int,
+    payload: CharacterExtractionRequest | None = None,
+    session: Session = Depends(get_session),
+) -> CharacterExtractionJobStartResponse:
+    _get_project_or_404(session, project_id)
+    extraction_config = payload or CharacterExtractionRequest()
+
+    job_row = CharacterExtractionJob(
+        job_id=uuid4().hex,
+        project_id=project_id,
+        status=CHARACTER_EXTRACTION_JOB_STATUS_QUEUED,
+        progress=0,
+        message="Queued for extraction",
+        executor_name="thread",
+        task_id=None,
+        request_payload_json=extraction_config.model_dump(mode="json"),
+        result_payload_json=None,
+        error_message=None,
+    )
+    session.add(job_row)
+    session.commit()
+    session.refresh(job_row)
+
+    executor_name, task_id = _dispatch_character_extraction_job(job_row.job_id)
+    job_row.executor_name = executor_name
+    job_row.task_id = task_id
+    session.add(job_row)
+    session.commit()
+    session.refresh(job_row)
+
+    return CharacterExtractionJobStartResponse(
+        project_id=job_row.project_id,
+        job_id=job_row.job_id,
+        status=job_row.status,
+        executor_name=job_row.executor_name,
+        task_id=job_row.task_id,
+        created_at=job_row.created_at,
+    )
+
+
+@app.get(
+    "/api/projects/{project_id}/characters/extract/jobs/{job_id}",
+    response_model=CharacterExtractionJobStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_character_extraction_job_status(
+    project_id: int,
+    job_id: str,
+    session: Session = Depends(get_session),
+) -> CharacterExtractionJobStatusResponse:
+    _get_project_or_404(session, project_id)
+    normalized_job_id = str(job_id).strip()
+    if not normalized_job_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="job_id must not be blank.",
+        )
+
+    job_row = (
+        session.query(CharacterExtractionJob)
+        .filter(
+            CharacterExtractionJob.project_id == project_id,
+            CharacterExtractionJob.job_id == normalized_job_id,
+        )
+        .one_or_none()
+    )
+    if job_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Character extraction job not found.",
+        )
+
+    return _build_character_extraction_job_status_response(job_row)
+
+
+@app.post(
+    "/api/projects/{project_id}/characters/extract",
+    response_model=CharacterExtractionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def auto_extract_characters(
+    project_id: int,
+    payload: CharacterExtractionRequest | None = None,
+    session: Session = Depends(get_session),
+) -> CharacterExtractionResponse:
+    project = _get_project_or_404(session, project_id)
+    extraction_config = payload or CharacterExtractionRequest()
+    return _execute_character_extraction_pipeline(
+        session=session,
+        project=project,
+        project_id=project_id,
+        extraction_config=extraction_config,
+        progress_callback=None,
     )
 
 
@@ -5607,6 +7748,10 @@ def upsert_characters(
         deduped[row.name.strip().lower()] = row
 
     session.query(Character).filter(Character.project_id == project_id).delete()
+    session.query(CharacterProposal).filter(
+        CharacterProposal.project_id == project_id,
+        CharacterProposal.status == "proposed",
+    ).delete()
     for row in deduped.values():
         session.add(
             Character(
@@ -6377,6 +8522,7 @@ def _create_and_dispatch_run(
     run_config: Mapping[str, object],
     request: Request,
     rerun_lineage_metadata: dict[str, object] | None = None,
+    async_dispatch: bool = False,
 ) -> RunResponse:
     resolved_run_config: dict[str, object] = dict(run_config)
     correlation_id = _resolve_request_correlation_id(request)
@@ -6586,17 +8732,27 @@ def _create_and_dispatch_run(
             "recovery": False,
         },
     )
-    segment_count = submit_background_job(
-        job_name="pipeline_execute_run",
-        execute=lambda: _execute_pipeline_and_finalize_run(
-            session=session,
-            project=project,
-            run=run,
+    if async_dispatch:
+        executor_name, task_id = _dispatch_pipeline_run_execution(
+            run_id=run.id,
             principal_type=principal_type,
             principal_id=principal_id,
-        ),
-        correlation_id=correlation_id,
-    )
+        )
+        segment_count = session.query(Segment).filter(Segment.run_id == run.id).count()
+    else:
+        segment_count = submit_background_job(
+            job_name="pipeline_execute_run",
+            execute=lambda: _execute_pipeline_and_finalize_run(
+                session=session,
+                project=project,
+                run=run,
+                principal_type=principal_type,
+                principal_id=principal_id,
+            ),
+            correlation_id=correlation_id,
+        )
+        executor_name = "inline"
+        task_id = None
     _emit_service_log(
         service="run_orchestration",
         event="run_execution_submit_completed",
@@ -6608,6 +8764,9 @@ def _create_and_dispatch_run(
             "mode": str(resolved_run_config.get("mode", DEFAULT_MODE)),
             "segment_count": segment_count,
             "recovery": False,
+            "async_dispatch": async_dispatch,
+            "executor_name": executor_name,
+            "task_id": task_id,
         },
     )
 
@@ -6628,6 +8787,7 @@ def create_run(
     project_id: int,
     payload: RunCreateRequest,
     request: Request,
+    run_async: bool = Query(default=False, alias="async"),
     session: Session = Depends(get_session),
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
@@ -6717,6 +8877,7 @@ def create_run(
         project=project,
         run_config=run_config,
         request=request,
+        async_dispatch=run_async,
     )
 
 
@@ -6793,6 +8954,7 @@ def rerun_from_snapshot(
     project_id: int,
     run_id: int,
     request: Request,
+    run_async: bool = Query(default=False, alias="async"),
     session: Session = Depends(get_session),
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
@@ -6814,6 +8976,7 @@ def rerun_from_snapshot(
         run_config=cloned_run_config,
         request=request,
         rerun_lineage_metadata=rerun_lineage_metadata,
+        async_dispatch=run_async,
     )
 
 
@@ -6826,6 +8989,7 @@ def recover_run(
     project_id: int,
     run_id: int,
     request: Request,
+    run_async: bool = Query(default=False, alias="async"),
     session: Session = Depends(get_session),
 ) -> RunResponse:
     project = _get_project_or_404(session, project_id)
@@ -6926,17 +9090,27 @@ def recover_run(
     )
     session.commit()
 
-    segment_count = submit_background_job(
-        job_name="pipeline_recover_run",
-        execute=lambda: _execute_pipeline_and_finalize_run(
-            session=session,
-            project=project,
-            run=run,
+    if run_async:
+        executor_name, task_id = _dispatch_pipeline_run_execution(
+            run_id=run.id,
             principal_type=principal_type,
             principal_id=principal_id,
-        ),
-        correlation_id=correlation_id,
-    )
+        )
+        segment_count = session.query(Segment).filter(Segment.run_id == run.id).count()
+    else:
+        segment_count = submit_background_job(
+            job_name="pipeline_recover_run",
+            execute=lambda: _execute_pipeline_and_finalize_run(
+                session=session,
+                project=project,
+                run=run,
+                principal_type=principal_type,
+                principal_id=principal_id,
+            ),
+            correlation_id=correlation_id,
+        )
+        executor_name = "inline"
+        task_id = None
     _emit_service_log(
         service="run_orchestration",
         event="run_recovery_submit_completed",
@@ -6948,6 +9122,9 @@ def recover_run(
             "attempt": next_attempt,
             "segment_count": segment_count,
             "recovery": True,
+            "async_dispatch": run_async,
+            "executor_name": executor_name,
+            "task_id": task_id,
         },
     )
 

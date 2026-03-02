@@ -260,6 +260,41 @@ export const ingestResponseSchema = z.object({
   normalization_report: z.record(z.string(), z.unknown()).default({}),
 });
 
+export const projectIngestionSourceSchema = z.enum([
+  'txt',
+  'markdown',
+  'epub',
+  'chapters-dir',
+  'append-chapter',
+]);
+
+export const projectIngestionJobStartSchema = z.object({
+  project_id: z.number().int().positive(),
+  source: projectIngestionSourceSchema,
+  job_id: z.string().min(1).max(64),
+  status: z.enum(['queued', 'running', 'completed', 'failed']),
+  executor_name: z.string().min(1).max(40),
+  task_id: z.string().max(255).nullable().optional().default(null),
+  created_at: z.string().datetime({ offset: true }),
+});
+
+export const projectIngestionJobStatusSchema = z.object({
+  project_id: z.number().int().positive(),
+  source: projectIngestionSourceSchema,
+  job_id: z.string().min(1).max(64),
+  status: z.enum(['queued', 'running', 'completed', 'failed']),
+  progress: z.number().int().min(0).max(100),
+  message: z.string().max(255).nullable().optional().default(null),
+  executor_name: z.string().min(1).max(40),
+  task_id: z.string().max(255).nullable().optional().default(null),
+  error_message: z.string().nullable().optional().default(null),
+  result: ingestResponseSchema.nullable().optional().default(null),
+  created_at: z.string().datetime({ offset: true }),
+  started_at: z.string().datetime({ offset: true }).nullable().optional().default(null),
+  finished_at: z.string().datetime({ offset: true }).nullable().optional().default(null),
+  updated_at: z.string().datetime({ offset: true }),
+});
+
 export const singleFileUploadRequestSchema = z.object({
   file: z.custom<File>((value) => typeof File !== 'undefined' && value instanceof File, {
     message: 'Expected a File payload.',
@@ -364,6 +399,23 @@ export const characterMapFinalizeSchema = z.object({
   character_map_finalized: z.boolean(),
 });
 
+export const characterExtractionRequestSchema = z.object({
+  persist_proposals: z.boolean().default(true),
+  min_confidence: z.number().min(0).max(1).default(0.35),
+  max_candidates: z.number().int().min(1).max(1000).default(250),
+  auto_apply_to_character_map: z.boolean().default(true),
+  auto_apply_min_confidence: z.number().min(0).max(1).default(0.55),
+  llm_primary_extraction_enabled: z.boolean().default(true),
+  llm_verification_enabled: z.boolean().default(true),
+  llm_chunk_max_chars: z.number().int().min(1200).max(20000).default(5600),
+  llm_max_chunks: z.number().int().min(1).max(500).default(120),
+  llm_verification_batch_size: z.number().int().min(1).max(200).default(24),
+  llm_refinement_enabled: z.boolean().default(false),
+  llm_refinement_min_confidence: z.number().min(0).max(1).default(0.45),
+  llm_refinement_max_confidence: z.number().min(0).max(1).default(0.75),
+  llm_refinement_max_candidates: z.number().int().min(1).max(200).default(24),
+});
+
 export const characterScrapeRequestSchema = z.object({
   source_url: z.string().min(1).max(2048).url(),
   acknowledge_source_risk: z.boolean(),
@@ -455,7 +507,10 @@ export const characterExtractionSchema = z.object({
   project_id: z.number().int(),
   status: z.string(),
   candidate_count: z.number().int().nonnegative(),
+  auto_applied_count: z.number().int().nonnegative().default(0),
   candidates: z.array(characterMapItemSchema),
+  extraction_batch_id: z.string().min(1).max(64).nullable().optional().default(null),
+  proposal_count: z.number().int().nonnegative().default(0),
   proposed_characters: z.array(characterMapItemSchema).default([]),
   warnings: z.array(characterWarningSchema).optional().default([]),
   canonical_merge_suggestions: z
@@ -470,6 +525,77 @@ export const characterExtractionSchema = z.object({
       }),
     )
     .default([]),
+});
+
+export const characterExtractionJobStartSchema = z.object({
+  project_id: z.number().int().positive(),
+  job_id: z.string().min(1).max(64),
+  status: z.enum(['queued', 'running', 'completed', 'failed']),
+  executor_name: z.string().min(1).max(40),
+  task_id: z.string().max(255).nullable().optional().default(null),
+  created_at: z.string().datetime({ offset: true }),
+});
+
+export const characterExtractionJobStatusSchema = z.object({
+  project_id: z.number().int().positive(),
+  job_id: z.string().min(1).max(64),
+  status: z.enum(['queued', 'running', 'completed', 'failed']),
+  progress: z.number().int().min(0).max(100),
+  message: z.string().max(255).nullable().optional().default(null),
+  executor_name: z.string().min(1).max(40),
+  task_id: z.string().max(255).nullable().optional().default(null),
+  error_message: z.string().nullable().optional().default(null),
+  result: characterExtractionSchema.nullable().optional().default(null),
+  created_at: z.string().datetime({ offset: true }),
+  started_at: z.string().datetime({ offset: true }).nullable().optional().default(null),
+  finished_at: z.string().datetime({ offset: true }).nullable().optional().default(null),
+  updated_at: z.string().datetime({ offset: true }),
+});
+
+export const characterProposalStatusSchema = z.enum(['proposed', 'approved', 'rejected']);
+
+export const characterProposalItemSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string().min(1),
+  verbalized_form: z.string().min(1),
+  gender: characterGenderSchema,
+  aliases: z.array(z.string()).default([]),
+  notes: z.string().nullable().optional().default(null),
+  source: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  source_trace: z.array(characterSourceTraceSchema).default([]),
+  inferred_gender: characterGenderSchema.default('unknown'),
+  inferred_confidence: z.number().min(0).max(1).default(0),
+  inferred_source_trace: z.array(characterSourceTraceSchema).default([]),
+  status: characterProposalStatusSchema,
+  extractor_version: z.string().min(1).max(80),
+  extraction_batch_id: z.string().min(1).max(64),
+  reviewed_at: z.string().datetime({ offset: true }).nullable().optional().default(null),
+  reviewed_by: z.string().max(255).nullable().optional().default(null),
+  created_at: z.string().datetime({ offset: true }),
+  updated_at: z.string().datetime({ offset: true }),
+});
+
+export const characterProposalListResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  proposal_count: z.number().int().nonnegative(),
+  proposals: z.array(characterProposalItemSchema).default([]),
+});
+
+export const characterProposalReviewRequestSchema = z.object({
+  approve_ids: z.array(z.number().int().positive()).default([]),
+  reject_ids: z.array(z.number().int().positive()).default([]),
+  reviewed_by: z.string().max(255).optional(),
+});
+
+export const characterProposalReviewResponseSchema = z.object({
+  project_id: z.number().int().positive(),
+  approved_count: z.number().int().nonnegative(),
+  rejected_count: z.number().int().nonnegative(),
+  character_map_finalized: z.boolean(),
+  characters: z.array(characterMapItemSchema).default([]),
+  proposal_count: z.number().int().nonnegative(),
+  proposals: z.array(characterProposalItemSchema).default([]),
 });
 
 export const voiceConfigSchema = z.object({
@@ -1053,6 +1179,9 @@ export type LLMProvidersResponseDto = z.infer<typeof llmProvidersResponseSchema>
 export type ProjectModeSwitchResponseDto = z.infer<typeof projectModeSwitchResponseSchema>;
 export type ProjectModeSwitchRequestDto = z.infer<typeof projectModeSwitchRequestSchema>;
 export type IngestResponseDto = z.infer<typeof ingestResponseSchema>;
+export type ProjectIngestionSourceDto = z.infer<typeof projectIngestionSourceSchema>;
+export type ProjectIngestionJobStartDto = z.infer<typeof projectIngestionJobStartSchema>;
+export type ProjectIngestionJobStatusDto = z.infer<typeof projectIngestionJobStatusSchema>;
 export type SingleFileUploadRequestDto = z.infer<typeof singleFileUploadRequestSchema>;
 export type MultiFileUploadRequestDto = z.infer<typeof multiFileUploadRequestSchema>;
 export type CharacterImportDto = z.infer<typeof characterImportSchema>;
@@ -1062,8 +1191,15 @@ export type CharacterGenderComparisonItemDto = z.infer<typeof characterGenderCom
 export type CharacterGenderComparisonResponseDto = z.infer<typeof characterGenderComparisonResponseSchema>;
 export type CharacterMapUpdateDto = z.infer<typeof characterMapUpdateSchema>;
 export type CharacterMapFinalizeDto = z.infer<typeof characterMapFinalizeSchema>;
+export type CharacterExtractionRequestDto = z.infer<typeof characterExtractionRequestSchema>;
+export type CharacterExtractionJobStartDto = z.infer<typeof characterExtractionJobStartSchema>;
+export type CharacterExtractionJobStatusDto = z.infer<typeof characterExtractionJobStatusSchema>;
 export type CharacterScrapeRequestDto = z.infer<typeof characterScrapeRequestSchema>;
 export type CharacterCandidatesMergeRequestDto = z.infer<typeof characterCandidatesMergeRequestSchema>;
+export type CharacterProposalItemDto = z.infer<typeof characterProposalItemSchema>;
+export type CharacterProposalListResponseDto = z.infer<typeof characterProposalListResponseSchema>;
+export type CharacterProposalReviewRequestDto = z.infer<typeof characterProposalReviewRequestSchema>;
+export type CharacterProposalReviewResponseDto = z.infer<typeof characterProposalReviewResponseSchema>;
 export type CharacterAliasLookupRequestDto = z.infer<typeof characterAliasLookupRequestSchema>;
 export type CharacterAliasLookupResponseDto = z.infer<typeof characterAliasLookupResponseSchema>;
 export type CharacterAliasCollisionItemDto = z.infer<typeof characterAliasCollisionItemSchema>;

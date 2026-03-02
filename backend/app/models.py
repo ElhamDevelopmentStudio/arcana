@@ -61,6 +61,21 @@ class Project(Base):
         cascade="all, delete-orphan",
     )
     characters: Mapped[list["Character"]] = relationship("Character", back_populates="project")
+    character_proposals: Mapped[list["CharacterProposal"]] = relationship(
+        "CharacterProposal",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    character_extraction_jobs: Mapped[list["CharacterExtractionJob"]] = relationship(
+        "CharacterExtractionJob",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    project_ingestion_jobs: Mapped[list["ProjectIngestionJob"]] = relationship(
+        "ProjectIngestionJob",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
     runs: Mapped[list["Run"]] = relationship("Run", back_populates="project")
     run_configuration_snapshots: Mapped[list["RunConfigurationSnapshot"]] = relationship(
         "RunConfigurationSnapshot",
@@ -265,6 +280,147 @@ class Character(Base):
     )
 
     project: Mapped[Project] = relationship("Project", back_populates="characters")
+
+
+class CharacterProposal(Base):
+    __tablename__ = "character_proposals"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('proposed', 'approved', 'rejected')",
+            name="ck_character_proposal_status_allowed",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    verbalized_form: Mapped[str] = mapped_column(String(255), nullable=False)
+    aliases: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(120), nullable=False, default="auto")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    source_trace: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list, nullable=False)
+    inferred_gender: Mapped[str] = mapped_column(String(50), nullable=False, default="unknown")
+    inferred_confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    inferred_source_trace: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="proposed", index=True)
+    extractor_version: Mapped[str] = mapped_column(String(80), nullable=False, default="v2")
+    extraction_batch_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="character_proposals")
+
+
+class CharacterExtractionJob(Base):
+    __tablename__ = "character_extraction_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'completed', 'failed')",
+            name="ck_character_extraction_job_status_allowed",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="queued", index=True)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    message: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    executor_name: Mapped[str] = mapped_column(String(40), nullable=False, default="thread")
+    task_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    request_payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    result_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="character_extraction_jobs")
+
+
+class ProjectIngestionJob(Base):
+    __tablename__ = "project_ingestion_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('txt', 'markdown', 'epub', 'chapters-dir', 'append-chapter')",
+            name="ck_project_ingestion_job_source_allowed",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'completed', 'failed')",
+            name="ck_project_ingestion_job_status_allowed",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="queued", index=True)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    message: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    executor_name: Mapped[str] = mapped_column(String(40), nullable=False, default="thread")
+    task_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    request_payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    result_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="project_ingestion_jobs")
+    files: Mapped[list["ProjectIngestionJobFile"]] = relationship(
+        "ProjectIngestionJobFile",
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="ProjectIngestionJobFile.file_index",
+    )
+
+
+class ProjectIngestionJobFile(Base):
+    __tablename__ = "project_ingestion_job_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[int] = mapped_column(
+        ForeignKey("project_ingestion_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    file_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payload_blob: Mapped[bytes] = mapped_column(EncryptedBinary(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    job: Mapped[ProjectIngestionJob] = relationship("ProjectIngestionJob", back_populates="files")
 
 
 class CharacterVoiceMap(Base):
