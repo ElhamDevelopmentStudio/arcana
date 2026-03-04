@@ -17,6 +17,10 @@ Usage rules:
 - When backend work ships without UI in the same slice, a deferred FE task ID is mandatory.
 - For every API/data-model change, either implement matching frontend behavior in the same slice or log an explicit deferred FE task ID.
 
+Active exception note (2026-03-01):
+- Extraction defect remediation was explicitly user-prioritized and executed before unresolved Playwright platform tasks (`PW-030`, `PW-031`, `PW-032`).
+- Follow-up: keep Playwright platform tasks as next default priority after extraction stabilization work.
+
 Definition of done for each task:
 - Code/config/docs are committed.
 - Tests for that task are added/updated.
@@ -95,6 +99,7 @@ Definition of done for each task:
 - [x] [ING-019] Add backend endpoint to attach first ingestion source to an existing draft project.
 - [x] [ING-020] Add backend endpoint to update project metadata (`title`, `description`, `tags`) without re-ingestion.
 - [x] [ING-021] Add integration tests for draft -> ingest -> metadata edit lifecycle continuity on one `project_id`.
+- [x] [ING-022] Add async ingestion job workflow with persisted upload payloads and status polling endpoints (`POST/GET /api/projects/{project_id}/ingest/jobs`).
 
 ## 4.2 Deep Normalization (Ref: SRS.md §4.2)
 - [x] [NORM-001] Implement chapter detection from file boundaries.
@@ -142,6 +147,16 @@ Definition of done for each task:
 - [x] [CHAR-020] Compute dialogue line counts where speaker attribution exists.
 - [x] [CHAR-021] Add API endpoint for character occurrence analytics.
 - [x] [CHAR-022] Add tests for merge, alias conflict, and finalize workflow.
+- [x] [CHAR-023] Add `character_proposals` persistence model and migration for reviewable extraction output.
+- [x] [CHAR-024] Update `POST /api/projects/{project_id}/characters/extract` to persist proposal rows and return extraction batch metadata.
+- [x] [CHAR-025] Add `GET /api/projects/{project_id}/characters/proposals` for status-filtered proposal queue retrieval.
+- [x] [CHAR-026] Add `POST /api/projects/{project_id}/characters/proposals/review` bulk approve/reject workflow.
+- [x] [CHAR-027] Merge approved proposals into canonical character map and trigger character-map stale/finalization reset behavior.
+- [x] [CHAR-028] Implement deep extraction V2 multi-pass candidate mining (dialogue, headings, labels, narrative context).
+- [x] [CHAR-029] Implement deterministic candidate clustering/ranking with preserved evidence traces and confidence scoring.
+- [x] [CHAR-030] Add optional bounded LLM refinement pass with deterministic fallback when providers/keys are unavailable.
+- [x] [CHAR-031] Extend characters page with proposal queue review controls (approve selected, reject selected, approve high confidence).
+- [x] [CHAR-032] Add extraction quality fixtures and gates (recall floor + false-positive ceiling) for regression control.
 
 ## 4.4 Gender Tagging and Ambiguity (Ref: SRS.md §4.4)
 - [x] [GEN-001] Restrict gender values to `male/female/neutral/unknown/custom`.
@@ -624,6 +639,7 @@ Definition of done for each task:
 - [x] [FE-128] Build mode selection route `/projects/{project_id}/mode` using `GET /api/modes` and `PUT /api/projects/{project_id}/mode`.
 - [x] [FE-129] Add explicit downstream stale-artifact confirmation UX on mode switch.
 - [x] [FE-129A] Add ingestion concurrency safety + UI upload lock state for long-running ingest operations (`409 in_progress` guard, global upload disable while ingest mutation active, extended ingest request timeout).
+- [x] [FE-129B] Route project ingestion UI through async ingestion jobs with polling progress, while preserving sync ingestion endpoints for backward compatibility.
 
 ### 13.5 LLM, Providers, and Access Controls
 - [x] [FE-130] Build project LLM settings panel using `GET/PUT /api/projects/{project_id}/llm`.
