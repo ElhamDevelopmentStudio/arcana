@@ -19,6 +19,12 @@ React + Vite client for the NIPE workflow.
 - shadcn/ui component base (customized locally)
 - Axios + SWR + Zustand + Zod + date-fns
 
+## Environment
+
+- `VITE_API_BASE_URL` (default: `http://localhost:8000`)
+- `VITE_FEATURE_SCRAPE_ENABLED` (`true` or `false`, default: `false`)
+- `VITE_INGEST_REQUEST_TIMEOUT_MS` (optional, milliseconds; `0` disables timeout and allows long-running uploads)
+
 ## Design System
 
 - Core tokens live in `src/styles/globals.css` (`:root`, `.dark`, `@theme inline`).
@@ -40,6 +46,8 @@ npm run test:e2e
 npm run test:visual
 npm run test:frontend
 ```
+
+`test:visual` runs baseline comparisons for desktop, tablet, and mobile viewport projects.
 
 ## Test Layout
 

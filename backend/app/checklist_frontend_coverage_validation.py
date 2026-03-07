@@ -5,6 +5,8 @@ import re
 
 
 REQUIRED_PARALLEL_RULE = "Implement backend and frontend in parallel for each feature slice"
+REQUIRED_ACCEPTANCE_NOTES_RULE = "Every feature slice must include backend + frontend acceptance notes"
+REQUIRED_DEFERRED_FE_TASK_RULE = "When backend work ships without UI in the same slice, a deferred FE task ID is mandatory"
 REQUIRED_DONE_RULE = "For user-visible behavior, API + frontend UX + integration evidence are all present"
 REQUIRED_FRONTEND_SECTION_PATTERN = re.compile(r"(?m)^##\s+13\.\s+Frontend Parallel Delivery Track\s+")
 REQUIRED_PLAYWRIGHT_SUBSECTION_PATTERN = re.compile(r"(?m)^###\s+13\.10\s+Playwright Visual and E2E Suite")
@@ -31,6 +33,16 @@ def validate_checklist_frontend_coverage(path: Path) -> dict[str, int]:
 
     if REQUIRED_PARALLEL_RULE not in markdown:
         raise ChecklistFrontendCoverageValidationError("Checklist is missing required backend/frontend parallel delivery rule.")
+
+    if REQUIRED_ACCEPTANCE_NOTES_RULE not in markdown:
+        raise ChecklistFrontendCoverageValidationError(
+            "Checklist is missing required backend+frontend acceptance-notes policy."
+        )
+
+    if REQUIRED_DEFERRED_FE_TASK_RULE not in markdown:
+        raise ChecklistFrontendCoverageValidationError(
+            "Checklist is missing required deferred FE task ID policy."
+        )
 
     if REQUIRED_DONE_RULE not in markdown:
         raise ChecklistFrontendCoverageValidationError("Checklist is missing required user-visible API+frontend DoD rule.")

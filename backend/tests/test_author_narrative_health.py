@@ -1,0 +1,925 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+from app.schemas import NarrativeHealthActionableFinding, NarrativeHealthReport
+from app.services.export import (
+    _build_author_narrative_health_report,
+    _build_chapter_type_classification,
+    _build_character_dominance_findings,
+    _build_disappearing_character_findings,
+    _build_dialogue_density_anomaly_findings,
+    _build_emotional_monotony_findings,
+    _build_chapter_level_character_dominance,
+    _build_monotony_risk_findings,
+)
+
+
+def _build_segments_for_test(
+    values: list[tuple[float, float, float]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    segments: list[dict[str, object]] = []
+    tension_curve: list[dict[str, object]] = []
+    for index, (tension, valence, intensity) in enumerate(values, start=1):
+        segments.append(
+            {
+                "chapter_id": 1,
+                "segment_index": index,
+                "segment_id": f"1-{index}",
+                "emotion_valence": valence,
+                "emotion_intensity": intensity,
+                "emotion_primary_label": "neutral",
+            }
+        )
+        tension_curve.append(
+            {
+                "position": index,
+                "segment_id": f"1-{index}",
+                "segment_index": index,
+                "chapter_id": 1,
+                "smoothed_tension": tension,
+            }
+        )
+    return segments, tension_curve
+
+
+def _build_segments_for_labels_test(
+    values: list[tuple[str, float, float]],
+) -> list[dict[str, object]]:
+    segments: list[dict[str, object]] = []
+    for index, (label, valence, intensity) in enumerate(values, start=1):
+        segments.append(
+            {
+                "chapter_id": 1,
+                "segment_index": index,
+                "segment_id": f"1-{index}",
+                "emotion_primary_label": label,
+                "emotion_valence": valence,
+                "emotion_intensity": intensity,
+            }
+        )
+    return segments
+
+
+def _build_segments_for_dominance_test(
+    chapter_id: int,
+    segments: list[tuple[str, float | None]],
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for index, (speaker, dominance) in enumerate(segments, start=1):
+        result.append(
+            {
+                "chapter_id": chapter_id,
+                "segment_index": index,
+                "segment_id": f"{chapter_id}-{index}",
+                "speaker": speaker,
+                "speaker_id": index,
+                "dominance_contribution": {"value": dominance},
+            }
+        )
+    return result
+
+
+def _build_segments_for_disappearance_test(
+    segments: list[tuple[int, str]],
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for chapter_id, speaker in segments:
+        result.append(
+            {
+                "chapter_id": chapter_id,
+                "segment_index": len(result) + 1,
+                "segment_id": f"{chapter_id}-{len(result) + 1}",
+                "speaker": speaker,
+            }
+        )
+    return result
+
+
+def _build_segments_for_dialogue_density_test(
+    chapters: list[tuple[int, int, int]],
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    segment_count = 0
+    for chapter_id, total_segments, dialogue_segments in chapters:
+        for index in range(1, total_segments + 1):
+            segment_count += 1
+            segment_type = "dialogue" if index <= dialogue_segments else "narration"
+            result.append(
+                {
+                    "chapter_id": chapter_id,
+                    "segment_index": index,
+                    "segment_id": f"segment-{segment_count}",
+                    "type": segment_type,
+                }
+            )
+    return result
+
+
+def test_unit_build_dialogue_density_anomaly_findings_detects_sustained_anomaly() -> None:
+    segments = _build_segments_for_dialogue_density_test(
+        [
+            (1, 8, 4),
+            (2, 8, 4),
+            (3, 8, 8),
+            (4, 8, 8),
+            (5, 8, 4),
+        ]
+    )
+    findings = _build_dialogue_density_anomaly_findings(segments)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["requirement_id"] == "ADR-006"
+    assert finding["requirement_name"] == "dialogue_density_anomaly_detector"
+    assert finding["trigger_metric"] == "elevated_dialogue_density"
+    assert finding["location"]["start_chapter"] == 3
+    assert finding["location"]["end_chapter"] == 4
+    assert finding["evidence"]["anomaly_direction"] == "dialogue_heavy"
+    assert finding["evidence"]["chapter_window"] == 2
+    assert finding["severity"] > 0.5
+
+
+def test_unit_build_dialogue_density_anomaly_findings_rejects_uniform_dialogue_distribution() -> None:
+    segments = _build_segments_for_dialogue_density_test(
+        [
+            (1, 8, 4),
+            (2, 8, 4),
+            (3, 8, 4),
+            (4, 8, 4),
+            (5, 8, 4),
+        ]
+    )
+    findings = _build_dialogue_density_anomaly_findings(segments)
+    assert findings == []
+
+
+def test_unit_build_character_dominance_findings_detects_over_dominant_character() -> None:
+    segments = _build_segments_for_dominance_test(
+        3,
+        [
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Narrator", 0.1),
+            ("Hero", 1.0),
+            ("Sidekick", 0.2),
+            ("Narrator", 0.1),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+        ],
+    )
+    chapter_level_character_dominance = _build_chapter_level_character_dominance(
+        segments=segments,
+        top_characters_limit=3,
+    )
+    findings = _build_character_dominance_findings(chapter_level_character_dominance)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["requirement_id"] == "ADR-003"
+    assert finding["requirement_name"] == "character_imbalance_alerts"
+    assert finding["location"]["start_chapter"] == 3
+    assert finding["location"]["end_chapter"] == 3
+    assert finding["trigger_metric"] == "character_dominance_outlier"
+    assert finding["evidence"]["top_character"] == "Hero"
+    assert finding["evidence"]["lead_share_gap"] > 0.4
+    assert finding["severity"] > 0.7
+
+
+def test_unit_build_character_dominance_findings_skips_balanced_dialogue() -> None:
+    segments = _build_segments_for_dominance_test(
+        3,
+        [
+            ("Hero", 1.0),
+            ("Hero", 1.0),
+            ("Sidekick", 1.0),
+            ("Sidekick", 1.0),
+            ("Hero", 1.0),
+            ("Sidekick", 1.0),
+            ("Narrator", 0.8),
+            ("Narrator", 0.8),
+        ],
+    )
+    chapter_level_character_dominance = _build_chapter_level_character_dominance(
+        segments=segments,
+        top_characters_limit=3,
+    )
+    findings = _build_character_dominance_findings(chapter_level_character_dominance)
+
+    assert findings == []
+
+
+def test_unit_build_disappearing_character_findings_detects_late_disappearance() -> None:
+    segments = _build_segments_for_disappearance_test(
+        [
+            (1, "Lena"),
+            (1, "Lena"),
+            (1, "Lena"),
+            (2, "Lena"),
+            (2, "Lena"),
+            (2, "Lena"),
+            (3, "Lena"),
+            (3, "Lena"),
+            (4, "Lena"),
+            (3, "Crow"),
+            (4, "Crow"),
+            (5, "Crow"),
+            (5, "Narrator"),
+            (6, "Narrator"),
+        ]
+    )
+    findings = _build_disappearing_character_findings(segments)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["requirement_id"] == "ADR-005"
+    assert finding["requirement_name"] == "revision_priority_queue"
+    assert finding["trigger_metric"] == "character_disappearance"
+    assert finding["location"]["start_chapter"] == 5
+    assert finding["location"]["end_chapter"] == 6
+    assert finding["evidence"]["speaker"] == "Lena"
+    assert finding["evidence"]["last_seen_chapter"] == 4
+    assert finding["evidence"]["disappearance_end_chapter"] == 6
+    assert finding["evidence"]["missing_chapter_count"] == 2
+    assert finding["severity"] > 0.5
+
+
+def test_unit_build_disappearing_character_findings_skips_characters_without_clear_disappearance() -> None:
+    segments = _build_segments_for_disappearance_test(
+        [
+            (1, "Lena"),
+            (2, "Lena"),
+            (3, "Lena"),
+            (4, "Lena"),
+        ]
+    )
+    findings = _build_disappearing_character_findings(segments)
+    assert findings == []
+
+
+def test_unit_build_monotony_risk_findings_detects_flatline_region() -> None:
+    values = [
+        (0.42, 0.02, 0.31),
+        (0.44, 0.03, 0.30),
+        (0.43, 0.01, 0.32),
+        (0.41, 0.00, 0.31),
+        (0.42, 0.04, 0.30),
+        (0.43, 0.02, 0.33),
+        (0.44, 0.03, 0.34),
+        (0.42, 0.01, 0.29),
+    ]
+    segments, tension_curve = _build_segments_for_test(values)
+    findings = _build_monotony_risk_findings(
+        segments=segments,
+        smoothed_tension_curve=tension_curve,
+    )
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["requirement_id"] == "ADR-002"
+    assert finding["requirement_name"] == "monotony_risk_detector"
+    assert finding["location"]["start_segment"] == 1
+    assert finding["location"]["end_segment"] == len(values)
+    assert finding["trigger_metric"] == "low_tension_and_emotion_variance_window"
+    assert finding["severity"] > 0.5
+    assert finding["evidence"]["window_length"] == len(values)
+    assert finding["evidence"]["tension_range"] < 0.06
+
+
+def test_unit_build_emotional_monotony_findings_detects_repeated_tone_pattern() -> None:
+    segments = _build_segments_for_labels_test(
+        [
+            ("calm", 0.06, 0.18),
+            ("calm", 0.04, 0.20),
+            ("calm", 0.05, 0.19),
+            ("calm", 0.07, 0.22),
+            ("calm", 0.03, 0.17),
+            ("calm", 0.08, 0.21),
+            ("calm", 0.06, 0.20),
+            ("tense", 0.09, 0.18),
+        ]
+    )
+    findings = _build_emotional_monotony_findings(segments)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["requirement_id"] == "ADR-002"
+    assert finding["trigger_metric"] == "repeated_tone_pattern"
+    assert finding["location"]["start_segment"] == 1
+    assert finding["location"]["end_segment"] == 8
+    assert finding["evidence"]["window_length"] == 8
+    assert finding["evidence"]["dominant_tone"] == "calm"
+    assert finding["evidence"]["dominant_tone_ratio"] >= 0.85
+
+
+def test_unit_build_emotional_monotony_findings_rejects_varied_tones() -> None:
+    segments = _build_segments_for_labels_test(
+        [
+            ("calm", 0.10, 0.10),
+            ("tense", 0.60, 0.80),
+            ("joy", 0.90, 0.90),
+            ("sorrow", -0.70, 0.20),
+            ("anger", -0.20, 0.80),
+            ("joy", 0.70, 0.75),
+            ("tense", 0.65, 0.70),
+            ("calm", 0.20, 0.30),
+        ]
+    )
+    findings = _build_emotional_monotony_findings(segments)
+    assert findings == []
+
+
+def test_unit_build_monotony_risk_findings_no_flatline_for_variable_series() -> None:
+    values = [
+        (0.12, -0.8, 0.10),
+        (0.32, 0.40, 0.55),
+        (0.71, -0.20, 0.80),
+        (0.30, 0.55, 0.20),
+        (0.88, -0.05, 0.90),
+        (0.16, 0.10, 0.35),
+        (0.64, -0.45, 0.72),
+        (0.48, 0.35, 0.40),
+    ]
+    segments, tension_curve = _build_segments_for_test(values)
+    findings = _build_monotony_risk_findings(
+        segments=segments,
+        smoothed_tension_curve=tension_curve,
+    )
+    assert findings == []
+
+
+def test_unit_narrative_health_report_includes_emotional_monotony_findings() -> None:
+    values = [
+        (0.42, 0.02, 0.31),
+        (0.44, 0.03, 0.30),
+        (0.43, 0.01, 0.32),
+        (0.41, 0.00, 0.31),
+        (0.42, 0.04, 0.30),
+        (0.43, 0.02, 0.33),
+        (0.44, 0.03, 0.34),
+    ]
+    segments, tension_curve = _build_segments_for_test(values)
+    monotony_findings = _build_monotony_risk_findings(
+        segments=segments,
+        smoothed_tension_curve=tension_curve,
+    )
+    emotional_findings = _build_emotional_monotony_findings(
+        _build_segments_for_labels_test(
+            [
+                ("calm", 0.02, 0.31),
+                ("calm", 0.03, 0.30),
+                ("calm", 0.01, 0.32),
+                ("calm", 0.00, 0.31),
+                ("calm", 0.04, 0.30),
+                ("calm", 0.02, 0.33),
+                ("calm", 0.03, 0.34),
+            ]
+        )
+    )
+
+    project = SimpleNamespace(id=101, title="Monotony Project", selected_mode="author", selected_modes=["author"])
+    run = SimpleNamespace(id=202, status="completed")
+    report = _build_author_narrative_health_report(
+        project=project,
+        run=run,
+        generated_at=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        segment_count=len(segments),
+        monotony_findings=monotony_findings,
+        emotional_monotony_findings=emotional_findings,
+    )
+    parsed_report = NarrativeHealthReport.model_validate(report)
+
+    requirement_lookup = {entry.requirement_id: entry for entry in parsed_report.requirements}
+    assert requirement_lookup["ADR-002"].status == "implemented"
+    assert requirement_lookup["ADR-003"].status == "implemented"
+    assert requirement_lookup["ADR-005"].status == "implemented"
+    assert requirement_lookup["ADR-006"].status == "implemented"
+    assert requirement_lookup["ADR-003"].finding_count == 0
+    assert requirement_lookup["ADR-005"].finding_count == 0
+    assert requirement_lookup["ADR-006"].finding_count == 0
+    assert len(requirement_lookup["ADR-002"].findings) == 2
+    assert len(requirement_lookup["ADR-003"].findings) == 0
+    assert len(requirement_lookup["ADR-005"].findings) == 0
+    assert len(requirement_lookup["ADR-006"].findings) == 0
+    assert len(parsed_report.findings) == 2
+    assert parsed_report.findings[0].requirement_id == "ADR-002"
+    possible_severities = {monotony_findings[0]["severity"], emotional_findings[0]["severity"]}
+    assert parsed_report.findings[0].severity in possible_severities
+
+
+def test_unit_narrative_health_actionable_flag_schema_uses_evidence_field() -> None:
+    finding = NarrativeHealthActionableFinding.model_validate(
+        {
+            "requirement_id": "ADR-002",
+            "requirement_name": "monotony_risk_detector",
+            "location": {
+                "start_chapter": 1,
+                "end_chapter": 1,
+                "start_segment": 1,
+                "end_segment": 3,
+            },
+            "trigger_metric": "low_tension_and_emotion_variance_window",
+            "severity": 0.62,
+            "evidence": {"window_length": 8},
+        }
+    )
+
+    assert finding.evidence == {"window_length": 8}
+    assert finding.trigger_metric == "low_tension_and_emotion_variance_window"
+    assert finding.location.start_chapter == 1
+
+
+def test_unit_narrative_health_actionable_flag_schema_allows_legacy_evidence_trace_key() -> None:
+    finding = NarrativeHealthActionableFinding.model_validate(
+        {
+            "requirement_id": "ADR-002",
+            "requirement_name": "monotony_risk_detector",
+            "location": {
+                "start_chapter": 1,
+                "end_chapter": 1,
+            },
+            "trigger_metric": "low_tension_and_emotion_variance_window",
+            "severity": 0.62,
+            "evidence_trace": {"legacy_signal": "dialogue"},
+        }
+    )
+
+    assert finding.evidence == {"legacy_signal": "dialogue"}
+
+
+def test_unit_narrative_health_report_findings_include_chapter_range_locators() -> None:
+    monotony_segments, monotony_tension_curve = _build_segments_for_test(
+        [
+            (0.42, 0.02, 0.31),
+            (0.44, 0.03, 0.30),
+            (0.43, 0.01, 0.32),
+            (0.41, 0.00, 0.31),
+            (0.42, 0.04, 0.30),
+            (0.43, 0.02, 0.33),
+            (0.44, 0.03, 0.34),
+            (0.42, 0.01, 0.29),
+        ]
+    )
+    monotony_findings = _build_monotony_risk_findings(
+        segments=monotony_segments,
+        smoothed_tension_curve=monotony_tension_curve,
+    )
+    emotional_findings = _build_emotional_monotony_findings(
+        _build_segments_for_labels_test(
+            [
+                ("calm", 0.02, 0.31),
+                ("calm", 0.03, 0.30),
+                ("calm", 0.01, 0.32),
+                ("calm", 0.00, 0.31),
+                ("calm", 0.04, 0.30),
+                ("calm", 0.02, 0.33),
+                ("calm", 0.03, 0.34),
+            ]
+        )
+    )
+    dominance_findings = _build_character_dominance_findings(
+        _build_chapter_level_character_dominance(
+            _build_segments_for_dominance_test(
+                3,
+                [
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Narrator", 0.1),
+                    ("Hero", 1.0),
+                    ("Sidekick", 0.2),
+                    ("Narrator", 0.1),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                ],
+            )
+        )
+    )
+    disappearing_findings = _build_disappearing_character_findings(
+        _build_segments_for_disappearance_test(
+            [
+                (1, "Lena"),
+                (1, "Lena"),
+                (2, "Lena"),
+                (2, "Lena"),
+                (3, "Lena"),
+                (3, "Lena"),
+                (4, "Lena"),
+                (4, "Lena"),
+                (5, "Lena"),
+                (3, "Crow"),
+                (4, "Crow"),
+                (5, "Crow"),
+                (6, "Crow"),
+                (6, "Narrator"),
+                (7, "Narrator"),
+            ]
+        )
+    )
+    dialogue_findings = _build_dialogue_density_anomaly_findings(
+        _build_segments_for_dialogue_density_test(
+            [
+                (1, 8, 4),
+                (2, 8, 4),
+                (3, 8, 7),
+                (4, 8, 7),
+                (5, 8, 2),
+            ]
+        )
+    )
+
+    project = SimpleNamespace(id=303, title="Chapter Locator", selected_mode="author", selected_modes=["author"])
+    run = SimpleNamespace(id=404, status="completed")
+    report = _build_author_narrative_health_report(
+        project=project,
+        run=run,
+        generated_at=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        segment_count=30,
+        monotony_findings=monotony_findings,
+        emotional_monotony_findings=emotional_findings,
+        character_dominance_findings=dominance_findings,
+        disappearing_character_findings=disappearing_findings,
+        dialogue_density_findings=dialogue_findings,
+    )
+    parsed_report = NarrativeHealthReport.model_validate(report)
+
+    assert len(parsed_report.findings) > 0
+    for finding in parsed_report.findings:
+        assert finding.location.start_chapter is not None
+        assert finding.location.end_chapter is not None
+        assert finding.location.start_chapter >= 1
+        assert finding.location.end_chapter >= finding.location.start_chapter
+
+
+def test_unit_narrative_health_findings_have_scored_severity() -> None:
+    monotony_findings = _build_monotony_risk_findings(
+        segments=_build_segments_for_test(
+            [
+                (0.41, 0.03, 0.32),
+                (0.42, 0.02, 0.31),
+                (0.43, 0.03, 0.33),
+                (0.42, 0.03, 0.31),
+                (0.41, 0.02, 0.30),
+                (0.40, 0.01, 0.29),
+            ]
+        )[0],
+        smoothed_tension_curve=_build_segments_for_test(
+            [
+                (0.41, 0.03, 0.32),
+                (0.42, 0.02, 0.31),
+                (0.43, 0.03, 0.33),
+                (0.42, 0.03, 0.31),
+                (0.41, 0.02, 0.30),
+                (0.40, 0.01, 0.29),
+            ]
+        )[1],
+    )
+    emotional_findings = _build_emotional_monotony_findings(
+        _build_segments_for_labels_test(
+            [
+                ("calm", 0.04, 0.18),
+                ("calm", 0.03, 0.19),
+                ("calm", 0.02, 0.20),
+                ("calm", 0.04, 0.21),
+                ("calm", 0.03, 0.18),
+                ("calm", 0.02, 0.22),
+                ("calm", 0.03, 0.19),
+            ]
+        )
+    )
+    dominance_findings = _build_character_dominance_findings(
+        _build_chapter_level_character_dominance(
+            _build_segments_for_dominance_test(
+                2,
+                [
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Villain", 0.1),
+                    ("Hero", 1.0),
+                    ("Sidekick", 0.2),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                ],
+            ),
+        )
+    )
+    disappearing_findings = _build_disappearing_character_findings(
+        _build_segments_for_disappearance_test(
+            [
+                (1, "Lena"),
+                (1, "Lena"),
+                (1, "Lena"),
+                (2, "Lena"),
+                (2, "Lena"),
+                (2, "Lena"),
+                (3, "Lena"),
+                (3, "Lena"),
+                (4, "Lena"),
+                (4, "Lena"),
+                (5, "Lena"),
+                (6, "Narrator"),
+                (7, "Narrator"),
+                (8, "Narrator"),
+            ]
+        )
+    )
+    dialogue_findings = _build_dialogue_density_anomaly_findings(
+        _build_segments_for_dialogue_density_test(
+            [
+                (1, 8, 4),
+                (2, 8, 4),
+                (3, 8, 7),
+                (4, 8, 1),
+                (5, 8, 1),
+            ]
+        )
+    )
+
+    all_findings = (
+        monotony_findings
+        + emotional_findings
+        + dominance_findings
+        + disappearing_findings
+        + dialogue_findings
+    )
+    assert all_findings
+
+    for finding in all_findings:
+        assert 0.0 <= finding["severity"] <= 1.0
+        assert finding["severity"] >= 0.0
+
+
+def test_unit_narrative_health_findings_include_evidence() -> None:
+    monotony_findings = _build_monotony_risk_findings(
+        segments=_build_segments_for_test(
+            [
+                (0.42, 0.03, 0.32),
+                (0.42, 0.02, 0.31),
+                (0.41, 0.03, 0.33),
+                (0.42, 0.03, 0.31),
+                (0.41, 0.02, 0.30),
+                (0.40, 0.01, 0.29),
+            ]
+        )[0],
+        smoothed_tension_curve=_build_segments_for_test(
+            [
+                (0.42, 0.03, 0.32),
+                (0.42, 0.02, 0.31),
+                (0.41, 0.03, 0.33),
+                (0.42, 0.03, 0.31),
+                (0.41, 0.02, 0.30),
+                (0.40, 0.01, 0.29),
+            ]
+        )[1],
+    )
+    emotional_findings = _build_emotional_monotony_findings(
+        _build_segments_for_labels_test(
+            [
+                ("calm", 0.04, 0.18),
+                ("calm", 0.03, 0.19),
+                ("calm", 0.02, 0.20),
+                ("calm", 0.04, 0.21),
+                ("calm", 0.03, 0.18),
+                ("calm", 0.02, 0.22),
+                ("calm", 0.03, 0.19),
+            ]
+        )
+    )
+    dominance_findings = _build_character_dominance_findings(
+        _build_chapter_level_character_dominance(
+            _build_segments_for_dominance_test(
+                2,
+                [
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Villain", 0.1),
+                    ("Hero", 1.0),
+                    ("Sidekick", 0.2),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                    ("Hero", 1.0),
+                ],
+            )
+        )
+    )
+    disappearing_findings = _build_disappearing_character_findings(
+        _build_segments_for_disappearance_test(
+            [
+                (1, "Lena"),
+                (1, "Lena"),
+                (1, "Lena"),
+                (2, "Lena"),
+                (2, "Lena"),
+                (2, "Lena"),
+                (3, "Lena"),
+                (3, "Lena"),
+                (4, "Lena"),
+                (4, "Lena"),
+                (5, "Lena"),
+                (6, "Narrator"),
+                (7, "Narrator"),
+                (8, "Narrator"),
+            ]
+        )
+    )
+    dialogue_findings = _build_dialogue_density_anomaly_findings(
+        _build_segments_for_dialogue_density_test(
+            [
+                (1, 8, 4),
+                (2, 8, 4),
+                (3, 8, 7),
+                (4, 8, 1),
+                (5, 8, 1),
+            ]
+        )
+    )
+
+    all_findings = (
+        monotony_findings
+        + emotional_findings
+        + dominance_findings
+        + disappearing_findings
+        + dialogue_findings
+    )
+    assert all_findings
+
+    for finding in all_findings:
+        assert "evidence" in finding
+        assert isinstance(finding["evidence"], dict)
+        assert len(finding["evidence"]) >= 1
+
+
+def test_unit_narrative_health_report_findings_include_evidence() -> None:
+    monotony_findings = _build_monotony_risk_findings(
+        segments=_build_segments_for_test(
+            [
+                (0.42, 0.02, 0.31),
+                (0.44, 0.03, 0.30),
+                (0.43, 0.01, 0.32),
+                (0.41, 0.00, 0.31),
+                (0.42, 0.04, 0.30),
+                (0.43, 0.02, 0.33),
+                (0.44, 0.03, 0.34),
+            ]
+        )[0],
+        smoothed_tension_curve=_build_segments_for_test(
+            [
+                (0.42, 0.02, 0.31),
+                (0.44, 0.03, 0.30),
+                (0.43, 0.01, 0.32),
+                (0.41, 0.00, 0.31),
+                (0.42, 0.04, 0.30),
+                (0.43, 0.02, 0.33),
+                (0.44, 0.03, 0.34),
+            ]
+        )[1],
+    )
+    emotional_findings = _build_emotional_monotony_findings(
+        _build_segments_for_labels_test(
+            [
+                ("calm", 0.02, 0.31),
+                ("calm", 0.03, 0.30),
+                ("calm", 0.01, 0.32),
+                ("calm", 0.00, 0.31),
+                ("calm", 0.04, 0.30),
+                ("calm", 0.02, 0.33),
+                ("calm", 0.03, 0.34),
+            ]
+        )
+    )
+    project = SimpleNamespace(id=101, title="Evidence Test", selected_mode="author", selected_modes=["author"])
+    run = SimpleNamespace(id=202, status="completed")
+    report = _build_author_narrative_health_report(
+        project=project,
+        run=run,
+        generated_at=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        segment_count=7,
+        monotony_findings=monotony_findings,
+        emotional_monotony_findings=emotional_findings,
+    )
+    parsed_report = NarrativeHealthReport.model_validate(report)
+    assert parsed_report.findings
+    for finding in parsed_report.findings:
+        assert finding.evidence is not None
+        assert isinstance(finding.evidence, dict)
+        assert len(finding.evidence) >= 1
+
+
+def test_unit_chapter_type_classification_for_story_arc() -> None:
+    segments: list[dict[str, object]] = [
+        {"chapter_id": 1, "segment_index": 1, "segment_id": "1-1", "emotion_valence": 0.0, "emotion_intensity": 0.3, "emotion_primary_label": "neutral", "type": "narrative", "tension_contribution": {"value": 0.18}},
+        {"chapter_id": 1, "segment_index": 2, "segment_id": "1-2", "emotion_valence": 0.05, "emotion_intensity": 0.35, "emotion_primary_label": "neutral", "type": "narration", "tension_contribution": {"value": 0.22}},
+        {"chapter_id": 2, "segment_index": 1, "segment_id": "2-1", "emotion_valence": 0.1, "emotion_intensity": 0.45, "emotion_primary_label": "curious", "type": "narrative", "tension_contribution": {"value": 0.32}},
+        {"chapter_id": 2, "segment_index": 2, "segment_id": "2-2", "emotion_valence": 0.12, "emotion_intensity": 0.48, "emotion_primary_label": "curious", "type": "narrative", "tension_contribution": {"value": 0.36}},
+        {"chapter_id": 3, "segment_index": 1, "segment_id": "3-1", "emotion_valence": 0.15, "emotion_intensity": 0.65, "emotion_primary_label": "tense", "type": "dialogue", "tension_contribution": {"value": 0.72}},
+        {"chapter_id": 3, "segment_index": 2, "segment_id": "3-2", "emotion_valence": 0.18, "emotion_intensity": 0.72, "emotion_primary_label": "tense", "type": "dialogue", "tension_contribution": {"value": 0.78}},
+        {"chapter_id": 4, "segment_index": 1, "segment_id": "4-1", "emotion_valence": 0.20, "emotion_intensity": 0.60, "emotion_primary_label": "worried", "type": "dialogue", "tension_contribution": {"value": 0.68}},
+        {"chapter_id": 4, "segment_index": 2, "segment_id": "4-2", "emotion_valence": 0.22, "emotion_intensity": 0.58, "emotion_primary_label": "worried", "type": "dialogue", "tension_contribution": {"value": 0.62}},
+        {"chapter_id": 5, "segment_index": 1, "segment_id": "5-1", "emotion_valence": 0.08, "emotion_intensity": 0.38, "emotion_primary_label": "calm", "type": "narrative", "tension_contribution": {"value": 0.35}},
+        {"chapter_id": 5, "segment_index": 2, "segment_id": "5-2", "emotion_valence": 0.04, "emotion_intensity": 0.34, "emotion_primary_label": "calm", "type": "narrative", "tension_contribution": {"value": 0.28}},
+    ]
+
+    classifications = _build_chapter_type_classification(segments)
+    assert len(classifications) == 5
+
+    assert {classification["chapter_id"] for classification in classifications} == {1, 2, 3, 4, 5}
+    allowed_types = {"setup", "build-up", "confrontation", "resolution", "transitional"}
+    classification_types = {classification["chapter_type"] for classification in classifications}
+    assert classification_types.issubset(allowed_types)
+
+    for classification in classifications:
+        assert 0.0 <= float(classification["confidence"]) <= 1.0
+        assert classification["reasons"]
+        assert len(classification["features"]) >= 3
+
+
+def test_unit_narrative_health_report_includes_chapter_type_classification() -> None:
+    segments, _ = _build_segments_for_test(
+        [
+            (0.42, 0.02, 0.31),
+            (0.44, 0.03, 0.30),
+            (0.43, 0.01, 0.32),
+            (0.41, 0.00, 0.31),
+            (0.42, 0.04, 0.30),
+            (0.43, 0.02, 0.33),
+        ]
+    )
+    monotony_findings = _build_monotony_risk_findings(
+        segments=segments,
+        smoothed_tension_curve=_build_segments_for_test(
+            [
+                (0.42, 0.02, 0.31),
+                (0.44, 0.03, 0.30),
+                (0.43, 0.01, 0.32),
+                (0.41, 0.00, 0.31),
+                (0.42, 0.04, 0.30),
+                (0.43, 0.02, 0.33),
+            ]
+        )[1],
+    )
+    project = SimpleNamespace(id=404, title="Arc Classification Report", selected_mode="author", selected_modes=["author"])
+    run = SimpleNamespace(id=505, status="completed")
+    chapter_classification = _build_chapter_type_classification(
+        [
+            {
+                "chapter_id": 1,
+                "segment_index": 1,
+                "segment_id": "1-1",
+                "emotion_valence": 0.02,
+                "emotion_intensity": 0.31,
+                "emotion_primary_label": "neutral",
+                "type": "narrative",
+                "tension_contribution": {"value": 0.42},
+            },
+            {
+                "chapter_id": 1,
+                "segment_index": 2,
+                "segment_id": "1-2",
+                "emotion_valence": 0.03,
+                "emotion_intensity": 0.30,
+                "emotion_primary_label": "neutral",
+                "type": "narrative",
+                "tension_contribution": {"value": 0.41},
+            },
+            {
+                "chapter_id": 2,
+                "segment_index": 1,
+                "segment_id": "2-1",
+                "emotion_valence": 0.01,
+                "emotion_intensity": 0.32,
+                "emotion_primary_label": "neutral",
+                "type": "dialogue",
+                "tension_contribution": {"value": 0.43},
+            },
+        ]
+    )
+    report = _build_author_narrative_health_report(
+        project=project,
+        run=run,
+        generated_at=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        segment_count=6,
+        monotony_findings=monotony_findings,
+        chapter_type_classification=chapter_classification,
+    )
+    parsed_report = NarrativeHealthReport.model_validate(report)
+
+    assert len(parsed_report.chapter_type_classification) == 2
+    for chapter_type in parsed_report.chapter_type_classification:
+        assert chapter_type.chapter_type in {"setup", "build-up", "confrontation", "resolution", "transitional"}
+        assert 0.0 <= chapter_type.confidence <= 1.0
+        assert chapter_type.features

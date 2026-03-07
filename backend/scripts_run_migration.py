@@ -8,16 +8,14 @@ from app.config import get_settings
 def main() -> None:
     settings = get_settings()
     engine = create_engine(settings.database_url)
-    migration_file = Path(__file__).parent / "migrations" / "001_initial.sql"
-    sql = migration_file.read_text(encoding="utf-8")
-
-    statements = [part.strip() for part in sql.split(";\n\n") if part.strip()]
-
     with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
-
-    print("Applied migration: 001_initial.sql")
+        migration_dir = Path(__file__).parent / "migrations"
+        for migration_file in sorted(migration_dir.glob("*.sql")):
+            sql = migration_file.read_text(encoding="utf-8")
+            statements = [part.strip() for part in sql.split(";") if part.strip()]
+            for statement in statements:
+                connection.execute(text(statement))
+            print(f"Applied migration: {migration_file.name}")
 
 
 if __name__ == "__main__":

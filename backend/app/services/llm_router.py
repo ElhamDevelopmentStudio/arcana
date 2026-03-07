@@ -1,8 +1,313 @@
+from __future__ import annotations
+
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from typing import Any, Callable, Mapping
 
 import requests
+from sqlalchemy.orm import Session
+
+from app.services.llm_task_types import LLMTaskType, LLMTaskTypeError, normalize_task_type
+from app.services import quota
+
+
+_SILICONFLOW_BASE_URL_DEFAULT = "https://api.siliconflow.cn/v1"
+_DEFAULT_ERROR_RETRY_ATTEMPTS: dict[str, int] = {
+    "timeout": 2,
+    "service_unavailable": 2,
+    "other": 1,
+}
+_DEFAULT_FAILOVER_ERROR_CODES = {"rate_limit", "quota", "timeout", "service_unavailable", "other"}
+_UNSUPPORTED_PROVIDER_ERROR_CODE = "unsupported_provider"
+_INVALID_REQUEST_ERROR_CODE = "invalid_request"
+_INVALID_RESPONSE_ERROR_CODE = "invalid_response"
+LLM_STANDARD_RESPONSE_FIELDS: tuple[str, ...] = (
+    "provider_used",
+    "model_identifier",
+    "raw_output",
+    "parsed_output",
+    "confidence",
+    "token_usage_estimate",
+    "success_flag",
+    "error_code",
+    "timestamp",
+)
+
+
+@dataclass(frozen=True)
+class LLMRouterUsageMetric:
+    request_id: str
+    project_id: int
+    task_type: str
+    provider: str
+    model_identifier: str
+    attempt_index: int
+    success: bool
+    error_code: str | None
+    provider_base_url: str
+    elapsed_ms: float
+    token_usage_estimate: int | None = None
+
+
+@dataclass(frozen=True)
+class LLMDispatchRequest:
+    endpoint: str
+    payload: dict[str, Any]
+    headers: dict[str, str]
+
+
+@dataclass(frozen=True)
+class LLMDispatchResponse:
+    status_code: int | None
+    body: dict[str, Any] | None
+    headers: dict[str, str]
+    transport_error: str | None = None
+
+
+class LLMDispatcher:
+    def dispatch(self, request: LLMDispatchRequest) -> LLMDispatchResponse:
+        try:
+            response = requests.post(
+                request.endpoint,
+                json=request.payload,
+                headers=request.headers,
+                timeout=20,
+            )
+            return LLMDispatchResponse(
+                status_code=getattr(response, "status_code", 200),
+                body=_coerce_json_response(response=response),
+                headers={
+                    str(header_key): str(header_value)
+                    for header_key, header_value in getattr(response, "headers", {}).items()
+                },
+            )
+        except requests.Timeout:
+            return LLMDispatchResponse(
+                status_code=None,
+                body=None,
+                headers={},
+                transport_error="timeout",
+            )
+        except requests.RequestException as exc:
+            response = getattr(exc, "response", None)
+            if response is None:
+                return LLMDispatchResponse(
+                    status_code=None,
+                    body=None,
+                    headers={},
+                    transport_error="other",
+                )
+
+            return LLMDispatchResponse(
+                status_code=getattr(response, "status_code", 200),
+                body=_coerce_json_response(response=response),
+                headers={
+                    str(header_key): str(header_value)
+                    for header_key, header_value in getattr(response, "headers", {}).items()
+                },
+                transport_error="provider_error",
+            )
+
+
+class LLMResponseParser:
+    def parse(
+        self,
+        request: LLMRequest,
+        provider_name: str,
+        model_identifier: str,
+        dispatch_response: LLMDispatchResponse,
+    ) -> LLMResponse:
+        provider = _normalize_provider_name(provider_name)
+        status_code = dispatch_response.status_code
+        headers = dispatch_response.headers
+        body = dispatch_response.body or {}
+        transport_error = dispatch_response.transport_error
+
+        if status_code == 429:
+            rate_limit_reset_at = _extract_rate_limit_reset_timestamp(response=headers)
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="rate_limit",
+                rate_limit_reset_at=rate_limit_reset_at,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if status_code is not None and status_code >= 400:
+            error_code, rate_limit_reset_at = _classify_provider_error(
+                status_code=status_code,
+                headers=headers,
+                body=body,
+            )
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=error_code,
+                rate_limit_reset_at=rate_limit_reset_at,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if status_code is None:
+            if transport_error == "timeout":
+                return LLMResponse(
+                    provider_used=provider,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="timeout",
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+            if transport_error is not None:
+                return LLMResponse(
+                    provider_used=provider,
+                    model_identifier=model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code="other",
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="other",
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if status_code is not None and status_code < 200:
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="other",
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        choices = body.get("choices", [])
+        raw_output = ""
+        if choices:
+            message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+            raw_output = message.get("content", "") if isinstance(message, dict) else ""
+
+        token_usage = body.get("usage", {}).get("total_tokens") if isinstance(body.get("usage", {}), dict) else None
+        parsed_output, confidence = _extract_and_validate_payload(
+            raw_output=raw_output,
+            expected_schema=request.expected_schema,
+        )
+        if parsed_output is None:
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output=raw_output,
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=token_usage,
+                success_flag=False,
+                error_code=_INVALID_RESPONSE_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        return LLMResponse(
+            provider_used=provider,
+            model_identifier=model_identifier,
+            raw_output=raw_output,
+            parsed_output=parsed_output,
+            confidence=confidence,
+            token_usage_estimate=token_usage,
+            success_flag=True,
+            error_code=None,
+            rate_limit_reset_at=None,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+
+
+class DefaultLLMDispatcher(LLMDispatcher):
+    pass
+
+
+class DefaultLLMResponseParser(LLMResponseParser):
+    pass
+
+
+@dataclass(frozen=True)
+class LLMProviderMetadata:
+    settings_base_url_key: str
+    settings_model_key: str
+    settings_key_key: str
+    requires_api_key: bool = True
+    settings_key_list_key: str | None = None
+    request_header_factory: Callable[[str | None], dict[str, str]] | None = None
+    request_payload_builder: Callable[[str, str, str, int | None], dict[str, Any]] | None = None
+
+
+_LLM_PROVIDER_REGISTRY: dict[str, LLMProviderMetadata] = {
+    "openrouter": LLMProviderMetadata(
+        settings_base_url_key="openrouter_base_url",
+        settings_model_key="openrouter_model",
+        settings_key_key="openrouter_api_key",
+        settings_key_list_key="openrouter_api_keys",
+    ),
+    "siliconflow": LLMProviderMetadata(
+        settings_base_url_key="siliconflow_base_url",
+        settings_model_key="siliconflow_model",
+        settings_key_key="siliconflow_api_key",
+        settings_key_list_key="siliconflow_api_keys",
+    ),
+    "groq": LLMProviderMetadata(
+        settings_base_url_key="groq_base_url",
+        settings_model_key="groq_model",
+        settings_key_key="groq_api_key",
+        settings_key_list_key="groq_api_keys",
+    ),
+}
+
+
+def register_llm_provider(
+    provider_name: str,
+    metadata: LLMProviderMetadata,
+    *,
+    overwrite: bool = False,
+) -> None:
+    normalized = _normalize_provider_name(provider_name)
+    if not normalized:
+        raise ValueError("provider_name must be provided")
+
+    if not overwrite and normalized in _LLM_PROVIDER_REGISTRY:
+        raise ValueError(f"Provider '{normalized}' is already registered.")
+
+    _LLM_PROVIDER_REGISTRY[normalized] = metadata
 
 
 @dataclass
@@ -13,6 +318,7 @@ class LLMRequest:
     input_text: str
     expected_schema: dict[str, Any]
     configuration_snapshot_id: str
+    max_tokens: int | None = None
 
 
 @dataclass
@@ -25,12 +331,38 @@ class LLMResponse:
     token_usage_estimate: int | None
     success_flag: bool
     error_code: str | None
+    rate_limit_reset_at: datetime | None
     timestamp: str
+
+    def to_standardized_payload(self) -> dict[str, Any]:
+        return {field: getattr(self, field) for field in LLM_STANDARD_RESPONSE_FIELDS}
+
+
+@dataclass(frozen=True)
+class LLMProviderConfig:
+    provider_name: str
+    base_url: str
+    model_identifier: str
+    api_key: str | None
 
 
 class LLMRouter:
-    def __init__(self, openrouter_base_url: str) -> None:
-        self.openrouter_base_url = openrouter_base_url.rstrip("/")
+    def __init__(
+        self,
+        openrouter_base_url: str,
+        *,
+        dispatcher: LLMDispatcher | None = None,
+        response_parser: LLMResponseParser | None = None,
+        error_class_retry_attempts: Mapping[str, int] | None = None,
+        usage_metric_hooks: tuple[Callable[[LLMRouterUsageMetric], None], ...] | None = None,
+    ) -> None:
+        self.base_url = openrouter_base_url.rstrip("/")
+        self.dispatcher = dispatcher or DefaultLLMDispatcher()
+        self.response_parser = response_parser or DefaultLLMResponseParser()
+        self.error_class_retry_attempts = dict(_DEFAULT_ERROR_RETRY_ATTEMPTS)
+        self.usage_metric_hooks = usage_metric_hooks or ()
+        if error_class_retry_attempts is not None:
+            self.error_class_retry_attempts.update(error_class_retry_attempts)
 
     def call(
         self,
@@ -39,9 +371,203 @@ class LLMRouter:
         model_identifier: str,
         api_key: str | None,
     ) -> LLMResponse:
-        provider = provider_name.lower()
+        request_validation_error = _validate_llm_request(request=request)
+        if request_validation_error is not None:
+            return LLMResponse(
+                provider_used=provider_name,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_INVALID_REQUEST_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
 
-        if provider != "openrouter":
+        provider_name = _normalize_provider_name(provider_name)
+        if not provider_name:
+            return LLMResponse(
+                provider_used=provider_name,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_INVALID_REQUEST_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if not model_identifier or not str(model_identifier).strip():
+            return LLMResponse(
+                provider_used=provider_name,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_INVALID_REQUEST_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        try:
+            task_type = normalize_task_type(request.task_type)
+        except LLMTaskTypeError:
+            return LLMResponse(
+                provider_used=provider_name,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="unsupported_task_type",
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        return self._call_provider_with_retry(
+            request=request,
+            provider_name=provider_name,
+            model_identifier=model_identifier,
+            api_key=api_key,
+            base_url=self.base_url,
+            task_type=task_type,
+        )
+
+    def call_with_failover(
+        self,
+        request: LLMRequest,
+        provider_configs: tuple[LLMProviderConfig, ...],
+    ) -> LLMResponse:
+        request_validation_error = _validate_llm_request(request=request)
+        if request_validation_error is not None:
+            requested_provider = ""
+            requested_model = ""
+            if provider_configs:
+                requested_provider = provider_configs[0].provider_name
+                requested_model = provider_configs[0].model_identifier
+            return LLMResponse(
+                provider_used=requested_provider,
+                model_identifier=requested_model,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_INVALID_REQUEST_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if not provider_configs:
+            return LLMResponse(
+                provider_used="",
+                model_identifier="",
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_UNSUPPORTED_PROVIDER_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        try:
+            task_type = normalize_task_type(request.task_type)
+        except LLMTaskTypeError:
+            return LLMResponse(
+                provider_used=provider_configs[0].provider_name,
+                model_identifier=provider_configs[0].model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code="unsupported_task_type",
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        final_response: LLMResponse | None = None
+        for provider_config in provider_configs:
+            if not _normalize_provider_name(provider_config.provider_name):
+                return LLMResponse(
+                    provider_used=provider_config.provider_name,
+                    model_identifier=provider_config.model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code=_INVALID_REQUEST_ERROR_CODE,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+            if not provider_config.base_url or not str(provider_config.base_url).strip():
+                return LLMResponse(
+                    provider_used=provider_config.provider_name,
+                    model_identifier=provider_config.model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code=_INVALID_REQUEST_ERROR_CODE,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+            if not provider_config.model_identifier or not str(provider_config.model_identifier).strip():
+                return LLMResponse(
+                    provider_used=provider_config.provider_name,
+                    model_identifier=provider_config.model_identifier,
+                    raw_output="",
+                    parsed_output={},
+                    confidence=None,
+                    token_usage_estimate=None,
+                    success_flag=False,
+                    error_code=_INVALID_REQUEST_ERROR_CODE,
+                    rate_limit_reset_at=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+            response = self._call_provider_with_retry(
+                request=request,
+                provider_name=provider_config.provider_name,
+                model_identifier=provider_config.model_identifier,
+                api_key=provider_config.api_key,
+                base_url=provider_config.base_url,
+                task_type=task_type,
+            )
+            final_response = response
+            if response.success_flag:
+                return response
+            if response.error_code not in _DEFAULT_FAILOVER_ERROR_CODES:
+                return response
+
+        assert final_response is not None
+        return final_response
+
+    def _call_provider_with_retry(
+        self,
+        *,
+        request: LLMRequest,
+        provider_name: str,
+        model_identifier: str,
+        api_key: str | None,
+        base_url: str,
+        task_type: str,
+    ) -> LLMResponse:
+        provider = _normalize_provider_name(provider_name)
+        if not is_supported_provider(provider):
             return LLMResponse(
                 provider_used=provider,
                 model_identifier=model_identifier,
@@ -50,11 +576,27 @@ class LLMRouter:
                 confidence=None,
                 token_usage_estimate=None,
                 success_flag=False,
-                error_code="unsupported_provider",
+                error_code=_UNSUPPORTED_PROVIDER_ERROR_CODE,
+                rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
-        if not api_key:
+        metadata = _LLM_PROVIDER_REGISTRY.get(provider)
+        if metadata is None:
+            return LLMResponse(
+                provider_used=provider,
+                model_identifier=model_identifier,
+                raw_output="",
+                parsed_output={},
+                confidence=None,
+                token_usage_estimate=None,
+                success_flag=False,
+                error_code=_UNSUPPORTED_PROVIDER_ERROR_CODE,
+                rate_limit_reset_at=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        if metadata.requires_api_key and not api_key:
             return LLMResponse(
                 provider_used=provider,
                 model_identifier=model_identifier,
@@ -64,64 +606,695 @@ class LLMRouter:
                 token_usage_estimate=None,
                 success_flag=False,
                 error_code="missing_api_key",
+                rate_limit_reset_at=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
-        endpoint = f"{self.openrouter_base_url}/chat/completions"
-        payload = {
-            "model": model_identifier,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a classifier. Respond with JSON only: "
-                        '{"sentiment":"positive|negative|neutral","confidence":0.0-1.0}'
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"Classify this text for valence only: {request.input_text}",
-                },
-            ],
-            "temperature": 0,
-            "max_tokens": 60,
-        }
+        system_prompt, user_prompt = _build_task_prompts(task_type=task_type, input_text=request.input_text)
+        endpoint = f"{base_url.rstrip('/')}/chat/completions"
+        payload_builder = metadata.request_payload_builder or _build_default_request_payload
+        payload = payload_builder(
+            model_identifier=model_identifier,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=request.max_tokens,
+        )
+        headers = _build_default_request_headers(api_key=api_key, metadata=metadata)
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        dispatch_request = LLMDispatchRequest(endpoint=endpoint, payload=payload, headers=headers)
+        attempt = 0
+        while True:
+            attempt += 1
+            started_at = datetime.now(timezone.utc)
+            dispatch_response = self.dispatcher.dispatch(request=dispatch_request)
+            response = self.response_parser.parse(
+                request=request,
+                provider_name=provider,
+                model_identifier=model_identifier,
+                dispatch_response=dispatch_response,
+            )
+            elapsed_ms = (datetime.now(timezone.utc) - started_at).total_seconds() * 1000
+
+            if response.success_flag:
+                self._emit_usage_metric(
+                    request=request,
+                    provider=provider,
+                    model_identifier=model_identifier,
+                    base_url=base_url,
+                    attempt_index=attempt,
+                    success=True,
+                    error_code=None,
+                    elapsed_ms=elapsed_ms,
+                    token_usage_estimate=response.token_usage_estimate,
+                )
+                return response
+
+            max_attempts = self.error_class_retry_attempts.get(response.error_code or "", 1)
+            self._emit_usage_metric(
+                request=request,
+                provider=provider,
+                model_identifier=model_identifier,
+                base_url=base_url,
+                attempt_index=attempt,
+                success=False,
+                error_code=response.error_code,
+                elapsed_ms=elapsed_ms,
+                token_usage_estimate=response.token_usage_estimate,
+            )
+            if response.error_code is None or attempt >= max_attempts:
+                return response
+
+            continue
+
+    def _emit_usage_metric(
+        self,
+        *,
+        request: LLMRequest,
+        provider: str,
+        model_identifier: str,
+        base_url: str,
+        attempt_index: int,
+        success: bool,
+        error_code: str | None,
+        elapsed_ms: float,
+        token_usage_estimate: int | None,
+    ) -> None:
+        if not self.usage_metric_hooks:
+            return
+
+        metric = LLMRouterUsageMetric(
+            request_id=request.request_id,
+            project_id=request.project_id,
+            task_type=request.task_type,
+            provider=provider,
+            model_identifier=model_identifier,
+            attempt_index=attempt_index,
+            success=success,
+            error_code=error_code,
+            provider_base_url=base_url.rstrip("/"),
+            elapsed_ms=elapsed_ms,
+            token_usage_estimate=token_usage_estimate,
+        )
+        for hook in self.usage_metric_hooks:
+            hook(metric)
+
+
+def _validate_llm_request(request: LLMRequest) -> str | None:
+    if not str(request.request_id).strip():
+        return "request_id must be provided"
+    if not isinstance(request.project_id, int) or request.project_id < 0:
+        return "project_id must be a non-negative integer"
+    if not isinstance(request.task_type, str) or not request.task_type.strip():
+        return "task_type must be provided"
+    if not isinstance(request.input_text, str) or not request.input_text.strip():
+        return "input_text must be provided"
+    if not isinstance(request.expected_schema, dict):
+        return "expected_schema must be a dictionary"
+    if not isinstance(request.configuration_snapshot_id, str) or not request.configuration_snapshot_id.strip():
+        return "configuration_snapshot_id must be provided"
+    if request.max_tokens is not None and (not isinstance(request.max_tokens, int) or request.max_tokens <= 0):
+        return "max_tokens must be a positive integer"
+    if request.max_tokens is not None and request.max_tokens > 1_000_000:
+        return "max_tokens exceeds allowed maximum"
+    return None
+
+
+def _extract_and_validate_payload(
+    raw_output: str,
+    expected_schema: dict[str, Any],
+) -> tuple[dict[str, Any] | None, float | None]:
+    parsed_output = _coerce_json_payload(raw_output)
+    if parsed_output is None:
+        return None, None
+
+    if not _payload_matches_expected_schema(parsed_output=parsed_output, expected_schema=expected_schema):
+        return None, None
+
+    return parsed_output, _extract_confidence(parsed_output=parsed_output)
+
+
+def _coerce_json_payload(raw_output: str) -> dict[str, Any] | None:
+    candidate = raw_output.strip()
+    if not candidate:
+        return None
+
+    parsed = _try_parse_json_text(candidate)
+    if parsed is not None and isinstance(parsed, dict):
+        return parsed
+
+    fenced = _strip_fenced_json(candidate)
+    if fenced != candidate:
+        parsed = _try_parse_json_text(fenced)
+        if parsed is not None and isinstance(parsed, dict):
+            return parsed
+
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start == -1 or end <= start:
+        return None
+
+    parsed = _try_parse_json_text(candidate[start : end + 1])
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _strip_fenced_json(candidate: str) -> str:
+    if not candidate.startswith("```"):
+        return candidate
+
+    unwrapped = candidate.replace("```", "").strip()
+    if unwrapped.startswith("json"):
+        unwrapped = unwrapped[4:].strip()
+    return unwrapped
+
+
+def _try_parse_json_text(candidate: str) -> Any | None:
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+
+
+def _payload_matches_expected_schema(
+    parsed_output: dict[str, Any],
+    expected_schema: dict[str, Any],
+) -> bool:
+    for key, expected_type in expected_schema.items():
+        if key not in parsed_output:
+            return False
+
+        actual = parsed_output[key]
+        if not _value_matches_expected_type(value=actual, expected_type=expected_type):
+            return False
+
+    return True
+
+
+def _value_matches_expected_type(value: Any, expected_type: Any) -> bool:
+    normalized_type = str(expected_type).strip().lower()
+    if normalized_type == "string":
+        return isinstance(value, str)
+    if normalized_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if normalized_type == "boolean":
+        return isinstance(value, bool)
+    if normalized_type == "object":
+        return isinstance(value, dict)
+    if normalized_type == "array":
+        return isinstance(value, list)
+    return True
+
+
+def _extract_confidence(parsed_output: dict[str, Any]) -> float | None:
+    confidence = parsed_output.get("confidence")
+    if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+        return None
+    return float(confidence)
+
+
+def _coerce_json_response(response: object) -> dict[str, Any] | None:
+    if response is None:
+        return None
+
+    body = getattr(response, "json", None)
+    if not callable(body):
+        return None
+
+    try:
+        payload = body()
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _classify_provider_error(
+    status_code: int,
+    headers: dict[str, str],
+    body: dict[str, Any],
+) -> tuple[str, datetime | None]:
+    if status_code in (400, 422):
+        if _contains_indicator(
+            body=body,
+            headers=headers,
+            indicators=(
+                "invalid_request",
+                "invalid request",
+                "bad request",
+                "malformed",
+                "validation",
+                "validation failed",
+                "missing",
+                "required",
+            ),
+        ):
+            return "invalid_request", None
+
+    if status_code == 408:
+        return "timeout", None
+
+    if status_code in (500, 502, 503, 504):
+        return "service_unavailable", None
+
+    if status_code in (401, 402, 403):
+        if _contains_indicator(body=body, headers=headers, indicators=("quota", "limit", "billing", "credit")):
+            return "quota", None
+        if _contains_indicator(
+            body=body,
+            headers=headers,
+            indicators=(
+                "invalid_request",
+                "invalid request",
+                "bad request",
+                "unsupported",
+                "malformed",
+            ),
+        ):
+            return "invalid_request", None
+        if _contains_indicator(
+            body=body,
+            headers=headers,
+            indicators=("rate limit", "too many requests", "requests per minute", "rps"),
+        ):
+            return "rate_limit", None
+        return "other", None
+
+    if _contains_indicator(
+        body=body,
+        headers=headers,
+        indicators=(
+            "invalid_request",
+            "invalid request",
+            "bad request",
+            "validation",
+            "malformed",
+            "required",
+            "missing",
+        ),
+    ):
+        return "invalid_request", None
+
+    if _contains_indicator(
+        body=body,
+        headers=headers,
+        indicators=("rate limit", "too many requests", "requests per minute", "rps"),
+    ):
+        return "rate_limit", None
+
+    if _contains_indicator(
+        body=body,
+        headers=headers,
+        indicators=("quota", "limit", "billing", "credit"),
+    ):
+        return "quota", None
+
+    if status_code >= 500:
+        return "service_unavailable", None
+
+    return "other", None
+
+
+def _contains_indicator(body: dict[str, Any], headers: dict[str, str], indicators: tuple[str, ...]) -> bool:
+    for text in _collect_error_messages(body=body, headers=headers):
+        normalized = text.strip().lower()
+        if not normalized:
+            continue
+        if any(indicator in normalized for indicator in indicators):
+            return True
+    return False
+
+
+def _collect_error_messages(body: dict[str, Any], headers: dict[str, str]) -> tuple[str, ...]:
+    texts: list[str] = []
+    for value in headers.values():
+        if isinstance(value, str):
+            texts.append(value)
+
+    if isinstance(body, dict):
+        root_message = body.get("message")
+        if isinstance(root_message, str):
+            texts.append(root_message)
+
+        error_block = body.get("error")
+        if isinstance(error_block, str):
+            texts.append(error_block)
+        elif isinstance(error_block, dict):
+            for key in ("message", "code", "type", "error", "name"):
+                message_part = error_block.get(key)
+                if isinstance(message_part, str):
+                    texts.append(message_part)
+
+        for text_candidate in (body.get("detail"), body.get("title")):
+            if isinstance(text_candidate, str):
+                texts.append(text_candidate)
+
+    return tuple(texts)
+
+
+def _normalize_provider_name(value: str) -> str:
+    return str(value).strip().lower()
+
+
+def _extract_rate_limit_reset_timestamp(response: Any) -> datetime | None:
+    if isinstance(response, dict):
+        headers = response
+    else:
+        headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+
+    reset_candidates = (
+        headers.get("x-ratelimit-reset"),
+        headers.get("x-ratelimit-reset-requests"),
+        headers.get("x-rate-limit-reset"),
+        headers.get("retry-after"),
+        headers.get("x-rate-limit-reset-requests"),
+    )
+
+    for candidate in reset_candidates:
+        parsed = _coerce_rate_limit_reset_timestamp(candidate)
+        if parsed is not None:
+            return parsed
+
+    return None
+
+
+def _coerce_rate_limit_reset_timestamp(value: object) -> datetime | None:
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+
+        if text.isdigit():
+            return datetime.fromtimestamp(float(text), tz=timezone.utc)
 
         try:
-            response = requests.post(endpoint, json=payload, headers=headers, timeout=20)
-            response.raise_for_status()
-            body = response.json()
-            choices = body.get("choices", [])
-            raw_output = ""
-            if choices:
-                raw_output = choices[0].get("message", {}).get("content", "")
+            value_as_float = float(text)
+        except ValueError:
+            value_as_float = None
+        if value_as_float is not None:
+            return datetime.fromtimestamp(value_as_float, tz=timezone.utc)
 
-            token_usage = body.get("usage", {}).get("total_tokens")
-            return LLMResponse(
-                provider_used=provider,
-                model_identifier=model_identifier,
-                raw_output=raw_output,
-                parsed_output={"raw": raw_output},
-                confidence=None,
-                token_usage_estimate=token_usage,
-                success_flag=True,
-                error_code=None,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            )
-        except requests.RequestException:
-            return LLMResponse(
-                provider_used=provider,
-                model_identifier=model_identifier,
-                raw_output="",
-                parsed_output={},
-                confidence=None,
-                token_usage_estimate=None,
-                success_flag=False,
-                error_code="provider_error",
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            )
+        for date_format in ("%a, %d %b %Y %H:%M:%S %Z", "%a, %d %b %Y %H:%M:%S GMT"):
+            try:
+                return datetime.strptime(text, date_format).replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
+
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    return None
+
+
+def is_supported_provider(provider_name: str) -> bool:
+    return _normalize_provider_name(provider_name) in _LLM_PROVIDER_REGISTRY
+
+
+def get_supported_providers() -> tuple[str, ...]:
+    return tuple(sorted(_LLM_PROVIDER_REGISTRY.keys()))
+
+
+def _coerce_provider_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        candidates = [str(item).strip() for item in value]
+        return [candidate for candidate in candidates if candidate]
+    if isinstance(value, tuple):
+        candidates = [str(item).strip() for item in value]
+        return [candidate for candidate in candidates if candidate]
+    if isinstance(value, str):
+        candidates = [item.strip() for item in value.split(",")]
+        return [candidate for candidate in candidates if candidate]
+    candidate = str(value).strip()
+    return [candidate] if candidate else []
+
+
+def get_provider_priority_order(settings: Any) -> tuple[str, ...]:
+    configured_order = _coerce_provider_list(getattr(settings, "llm_provider_priority_order", None))
+    normalized_order: list[str] = []
+    seen: set[str] = set()
+    for value in configured_order:
+        normalized = _normalize_provider_name(value)
+        if not normalized or normalized not in _LLM_PROVIDER_REGISTRY or normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_order.append(normalized)
+
+    if normalized_order:
+        return tuple(normalized_order)
+
+    return get_supported_providers()
+
+
+def _coerce_api_key_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        candidates = [str(item).strip() for item in value]
+        return [candidate for candidate in candidates if candidate]
+    if isinstance(value, tuple):
+        candidates = [str(item).strip() for item in value]
+        return [candidate for candidate in candidates if candidate]
+    if isinstance(value, str):
+        parts = [item.strip() for item in value.split(",")]
+        return [part for part in parts if part]
+    return [str(value).strip()] if str(value).strip() else []
+
+
+def _resolve_api_key_list(settings: Any, metadata: LLMProviderMetadata) -> list[str]:
+    if metadata.settings_key_list_key is not None:
+        candidate_keys = _coerce_api_key_list(getattr(settings, metadata.settings_key_list_key, None))
+        if candidate_keys:
+            return candidate_keys
+
+    api_key = getattr(settings, metadata.settings_key_key, None)
+    if api_key is not None and str(api_key).strip():
+        return [str(api_key).strip()]
+    return []
+
+
+def get_provider_api_keys(settings: Any, provider_name: str) -> list[str]:
+    metadata = _LLM_PROVIDER_REGISTRY.get(_normalize_provider_name(provider_name))
+    if metadata is None:
+        return []
+
+    return _resolve_api_key_list(settings=settings, metadata=metadata)
+
+
+def is_provider_requestable(
+    session: Session,
+    settings: Any,
+    provider_name: str,
+    max_calls_per_day: int,
+    *,
+    project_id: int | str | None = None,
+    principal_type: str | None = None,
+    principal_id: str | None = None,
+) -> tuple[bool, str | None]:
+    provider = _normalize_provider_name(provider_name)
+    if not is_supported_provider(provider):
+        return False, "unsupported_provider"
+
+    from app.services.provider_toggle import is_provider_enabled
+
+    if not is_provider_enabled(session=session, provider=provider):
+        return False, "provider_disabled"
+
+    if not quota.is_provider_available_for_request(
+        session=session,
+        provider=provider,
+        max_calls_per_day=max_calls_per_day,
+        project_id=project_id,
+        principal_type=principal_type,
+        principal_id=principal_id,
+    ):
+        return False, "quota_reached"
+
+    _, _, runtime_api_key = get_provider_runtime_settings(settings=settings, provider_name=provider)
+    api_keys = get_provider_api_keys(settings=settings, provider_name=provider)
+    if not api_keys and runtime_api_key:
+        api_keys = [runtime_api_key]
+
+    if not api_keys:
+        return True, None
+
+    for key in api_keys:
+        if not quota.is_api_key_available_for_request(
+            session=session,
+            provider=provider,
+            provider_api_key=key,
+            max_calls_per_day=max_calls_per_day,
+            project_id=project_id,
+            principal_type=principal_type,
+            principal_id=principal_id,
+        ):
+            continue
+        return True, None
+
+    return False, "quota_reached"
+
+
+def select_probe_provider_candidates(
+    session: Session,
+    settings: Any,
+    requested_provider: str,
+    max_calls_per_day: int,
+    *,
+    project_id: int | str | None = None,
+    principal_type: str | None = None,
+    principal_id: str | None = None,
+) -> tuple[str, ...]:
+    requested = _normalize_provider_name(requested_provider)
+    candidate_order = [requested]
+    for provider in get_provider_priority_order(settings=settings):
+        normalized = _normalize_provider_name(provider)
+        if normalized and normalized not in candidate_order:
+            candidate_order.append(normalized)
+
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    for provider in candidate_order:
+        if not provider or provider in seen:
+            continue
+        seen.add(provider)
+        requestable, _ = is_provider_requestable(
+            session=session,
+            settings=settings,
+            provider_name=provider,
+            max_calls_per_day=max_calls_per_day,
+            project_id=project_id,
+            principal_type=principal_type,
+            principal_id=principal_id,
+        )
+        if requestable:
+            selected.append(provider)
+
+    return tuple(selected)
+
+
+def get_provider_runtime_settings(settings: Any, provider_name: str) -> tuple[str, str, str | None]:
+    normalized_provider = _normalize_provider_name(provider_name)
+    metadata = _LLM_PROVIDER_REGISTRY.get(normalized_provider)
+
+    if metadata is None:
+        return (
+            settings.openrouter_base_url,
+            settings.openrouter_model,
+            settings.openrouter_api_key,
+        )
+
+    base_url = str(getattr(settings, metadata.settings_base_url_key))
+    if normalized_provider == "siliconflow" and not base_url:
+        base_url = _SILICONFLOW_BASE_URL_DEFAULT
+
+    model_identifier = str(getattr(settings, metadata.settings_model_key))
+    provider_api_keys = get_provider_api_keys(settings=settings, provider_name=normalized_provider)
+    api_key = provider_api_keys[0] if provider_api_keys else None
+    if api_key is None:
+        fallback = getattr(settings, "openrouter_api_key", None)
+        api_key = str(fallback) if isinstance(fallback, str) else None
+
+    return (base_url, model_identifier, api_key)
+
+
+def _build_task_prompts(task_type: str, input_text: str) -> tuple[str, str]:
+    if task_type == LLMTaskType.SENTIMENT_PROBE.value:
+        return (
+            "You are a classifier. Respond with JSON only: "
+            '{"sentiment":"positive|negative|neutral","confidence":0.0-1.0}',
+            f"Classify this text for valence only: {input_text}",
+        )
+    if task_type == LLMTaskType.EMOTION_REFINEMENT.value:
+        return (
+            (
+                "You are a literary emotion analyst. Respond with JSON only using the keys "
+                '"emotion_primary","emotion_secondary","confidence".'
+            ),
+            f"Refine emotional analysis for this text with nuanced literary context: {input_text}",
+        )
+    if task_type == LLMTaskType.SPEAKER_RESOLUTION.value:
+        return (
+            (
+                "You are a speaker-attribution analyst. Respond with JSON only using keys "
+                '"speaker","confidence","evidence".'
+            ),
+            f"Resolve likely speaker attribution for this text and provide confidence: {input_text}",
+        )
+    if task_type == LLMTaskType.CHARACTER_EXTRACTION.value:
+        return (
+            (
+                "You are a character mention extractor. Respond with JSON only using keys "
+                '"character_name","confidence","evidence".'
+            ),
+            f"Identify the principal character references in this text: {input_text}",
+        )
+    if task_type == LLMTaskType.EDGE_CASE_STRUCTURAL_INTERPRETATION.value:
+        return (
+            (
+                "You are a narrative structure analyst. Respond with JSON only using keys "
+                '"structure_type","confidence","evidence".'
+            ),
+            f"Interpret possible structural edge case in this text: {input_text}",
+        )
+    if task_type == LLMTaskType.SCENE_CLASSIFICATION.value:
+        return (
+            (
+                "You are a scene-stage classifier. Respond with JSON only using keys "
+                '"scene_type","confidence","evidence".'
+            ),
+            f"Classify scene structure for this text: {input_text}",
+        )
+    return (
+        "You are a classifier. Respond with JSON only.",
+        f"Classify this text: {input_text}",
+    )
+
+
+def _build_default_request_payload(
+    model_identifier: str,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int | None,
+) -> dict[str, Any]:
+    return {
+        "model": model_identifier,
+        "messages": [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": user_prompt,
+            },
+        ],
+        "temperature": 0,
+        "max_tokens": max_tokens if max_tokens is not None else 60,
+    }
+
+
+def _build_default_request_headers(api_key: str | None, metadata: LLMProviderMetadata) -> dict[str, str]:
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if metadata.request_header_factory is not None:
+        headers.update(metadata.request_header_factory(api_key))
+
+    if metadata.requires_api_key:
+        if api_key is None:
+            return headers
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    return headers

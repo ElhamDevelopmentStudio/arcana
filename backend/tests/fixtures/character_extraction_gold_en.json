@@ -1,0 +1,10 @@
+{
+  "chapters": [
+    "Chapter 1\nSunny stared at the rain-soaked street. Sunny moved slowly toward the gate.",
+    "Chapter 2\n\"Hold the line,\" Nephis said. Sunny replied and Nephis nodded.",
+    "Chapter 3\nCassie walked beside Sunny in silence. Cassie warned him about the ambush.",
+    "Chapter 4\nRain rushed into the room. \"We have to leave,\" Rain said while Cassie watched."
+  ],
+  "expected_names": ["Sunny", "Nephis", "Cassie", "Rain"],
+  "allowed_false_positive_count": 2
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "chapter_id": 1,
+    "segment_index": 1,
+    "segment_id": "emotion-1-1",
+    "emotion_valence": 0.18,
+    "emotion_intensity": 0.52,
+    "emotion_primary_label": "concerned",
+    "tension_contribution": {
+      "value": 0.34
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 2,
+    "segment_id": "emotion-1-2",
+    "emotion_valence": 0.16,
+    "emotion_intensity": 0.53,
+    "emotion_primary_label": "concerned",
+    "tension_contribution": {
+      "value": 0.35
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 3,
+    "segment_id": "emotion-1-3",
+    "emotion_valence": 0.20,
+    "emotion_intensity": 0.51,
+    "emotion_primary_label": "concerned",
+    "tension_contribution": {
+      "value": 0.33
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 4,
+    "segment_id": "emotion-1-4",
+    "emotion_valence": 0.17,
+    "emotion_intensity": 0.50,
+    "emotion_primary_label": "concerned",
+    "tension_contribution": {
+      "value": 0.36
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 5,
+    "segment_id": "emotion-1-5",
+    "emotion_valence": 0.19,
+    "emotion_intensity": 0.49,
+    "emotion_primary_label": "concerned",
+    "tension_contribution": {
+      "value": 0.35
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 6,
+    "segment_id": "emotion-1-6",
+    "emotion_valence": 0.21,
+    "emotion_intensity": 0.54,
+    "emotion_primary_label": "concerned",
+    "tension_contribution": {
+      "value": 0.34
+    }
+  },
+  {
+    "chapter_id": 1,
+    "segment_index": 7,
+    "segment_id": "emotion-1-7",
+    "emotion_valence": 0.18,
+    "emotion_intensity": 0.52,
+    "emotion_primary_label": "concerned",
+    "tension_contribution": {
+      "value": 0.35
+    }
+  }
+]

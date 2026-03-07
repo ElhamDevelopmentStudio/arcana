@@ -60,7 +60,11 @@ def test_integration_append_chapter_endpoint_increments_chapter_count() -> None:
             files={"file": ("chapter_2.txt", io.BytesIO(b"Chapter 2\nAppended content"), "text/plain")},
         )
         assert append_resp.status_code == 200
-        assert append_resp.json() == {"project_id": project_id, "chapter_count": 2}
+        payload = append_resp.json()
+        assert payload["project_id"] == project_id
+        assert payload["chapter_count"] == 2
+        assert isinstance(payload["warnings"], list)
+        assert isinstance(payload["normalization_report"], dict)
 
 
 def test_e2e_append_chapter_uses_filename_title_fallback_for_plain_text_payload() -> None:

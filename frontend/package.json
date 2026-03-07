@@ -9,11 +9,13 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:unit": "vitest run tests/unit",
+    "test:unit:coverage": "vitest run tests/unit --coverage --coverage.reporter=text --coverage.reporter=json-summary",
+    "test:unit:coverage:thresholds": "npm run test:unit:coverage && node scripts/validate-unit-coverage-thresholds.mjs",
     "test:integration": "vitest run tests/integration",
     "test:regression": "vitest run tests/regression",
     "test:vitest": "vitest run",
     "test:e2e": "playwright test --config tests/playwright/playwright.config.ts --project=e2e",
-    "test:visual": "playwright test --config tests/playwright/playwright.config.ts --project=visual",
+    "test:visual": "playwright test --config tests/playwright/playwright.config.ts --project=visual --project=visual-tablet --project=visual-mobile --workers=1",
     "test:frontend": "npm run test:vitest && npm run test:e2e && npm run test:visual"
   },
   "dependencies": {

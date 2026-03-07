@@ -44,7 +44,9 @@ def test_unit_project_response_includes_selected_mode_field() -> None:
         title="Mode Persistence Unit",
         selected_mode="academic",
         selected_modes=["audiobook", "academic"],
+        llm_enabled=False,
         configuration_snapshot_id="project-1-config-initial",
+        character_map_finalized=False,
         ingestion_timestamp=None,
         created_at=datetime.now(timezone.utc),
     )

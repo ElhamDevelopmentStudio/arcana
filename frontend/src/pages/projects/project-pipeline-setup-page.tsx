@@ -1,19 +1,40 @@
-import { type FormEvent, useState } from 'react';
-
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Mic2, Zap } from 'lucide-react';
 
 import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
-import { Switch } from '@/components/ui/switch';
-import { useRunPipelineMutation, useSaveVoicesMutation } from '@/features/workflow/api/workflow-hooks';
-import { parseProjectIdParam, projectRoute } from '@/features/workflow/utils/project-route';
+import {
+  useProjectLLMSettingsQuery,
+  useLLMProvidersQuery,
+  useUpdateProjectLLMSettingsMutation,
+  useRunPipelineMutation,
+  useModeCatalogQuery,
+} from '@/features/workflow/api/workflow-hooks';
+import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
+import { runRequestSchema } from '@/app/schemas/api';
+import type { RunRequestDto } from '@/app/schemas/api';
+import { useJobNotificationStore } from '@/features/workflow/state/job-notification-store';
+
+function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-6 border-b border-white/5 py-4 last:border-0">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+const DEFAULT_RUN_CONFIG = runRequestSchema.parse({
+  mode: 'audiobook',
+  max_segment_chars: 150,
+  llm_enabled: true,
+  provider_name: 'openai',
+  max_calls_per_day: 500,
+}) satisfies RunRequestDto;
 
 export function ProjectPipelineSetupPage() {
   const navigate = useNavigate();
@@ -22,168 +43,137 @@ export function ProjectPipelineSetupPage() {
   const storeProjectId = useWorkspaceStore((state) => state.projectId);
   const selectedMode = useWorkspaceStore((state) => state.selectedMode);
   const setRunId = useWorkspaceStore((state) => state.setRunId);
-
   const projectId = routeProjectId ?? storeProjectId;
+  const registerJob = useJobNotificationStore((state) => state.registerJob);
 
-  const [narratorVoice, setNarratorVoice] = useState('narrator_default');
-  const [maleVoice, setMaleVoice] = useState('male_default');
-  const [femaleVoice, setFemaleVoice] = useState('female_default');
-  const [maxSegmentChars, setMaxSegmentChars] = useState(255);
-  const [llmEnabled, setLlmEnabled] = useState(false);
-  const [providerName, setProviderName] = useState('openrouter');
-  const [maxCallsPerDay, setMaxCallsPerDay] = useState(25);
+  const llmSettingsQuery = useProjectLLMSettingsQuery(projectId);
+  const providersQuery = useLLMProvidersQuery(projectId !== null);
+  const modeCatalogQuery = useModeCatalogQuery(projectId !== null);
+  const updateLLMMutation = useUpdateProjectLLMSettingsMutation(projectId);
+  const runMutation = useRunPipelineMutation(projectId);
 
-  const saveVoicesMutation = useSaveVoicesMutation(projectId);
-  const runPipelineMutation = useRunPipelineMutation(projectId);
-  const isRunLocked = selectedMode === null;
+  const providers = providersQuery.data?.providers ?? [];
+  const llmEnabled = llmSettingsQuery.data?.llm_enabled ?? false;
+  const effectiveMode = selectedMode ?? 'audiobook';
+  const modeProfile = modeCatalogQuery.data?.mode_profiles?.[effectiveMode];
+  const isBusy = updateLLMMutation.isMutating || runMutation.isMutating;
 
-  async function handleSaveVoices(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (projectId === null) {
-      toast.error('Project is missing.');
-      return;
-    }
-
+  async function handleToggleLLM() {
+    if (!projectId) return;
     try {
-      await saveVoicesMutation.trigger({
-        narrator_voice: narratorVoice,
-        male_default_voice: maleVoice,
-        female_default_voice: femaleVoice,
-      });
-      toast.success('Voice configuration saved.');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to save voices');
+      await updateLLMMutation.trigger({ llm_enabled: !llmEnabled });
+      toast.success(`LLM ${!llmEnabled ? 'enabled' : 'disabled'}.`);
+      await llmSettingsQuery.mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update failed');
     }
   }
 
-  async function handleRunPipeline(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (projectId === null) {
-      toast.error('Project is missing.');
-      return;
-    }
-    if (selectedMode === null) {
-      toast.error('Select a mode before running the pipeline.');
-      return;
-    }
-
+  async function handleRun() {
+    if (!projectId) return;
+    const firstEnabledProvider = providers.find((p) => p.enabled)?.provider ?? 'openai';
+    const runConfig: RunRequestDto = {
+      ...DEFAULT_RUN_CONFIG,
+      mode: effectiveMode,
+      llm_enabled: llmEnabled,
+      provider_name: modeProfile?.provider_name ?? firstEnabledProvider,
+      max_segment_chars: modeProfile?.max_segment_chars ?? DEFAULT_RUN_CONFIG.max_segment_chars,
+      max_calls_per_day: modeProfile?.max_calls_per_day ?? DEFAULT_RUN_CONFIG.max_calls_per_day,
+    };
     try {
-      const run = await runPipelineMutation.trigger({
-        mode: selectedMode,
-        max_segment_chars: maxSegmentChars,
-        llm_enabled: llmEnabled,
-        provider_name: providerName,
-        max_calls_per_day: maxCallsPerDay,
+      const result = await runMutation.trigger(runConfig);
+      setRunId(result.run_id);
+      registerJob({
+        type: 'pipeline',
+        projectId,
+        jobId: String(result.run_id),
+        status: result.status,
       });
-      setRunId(run.run_id);
-      toast.success(`Run #${run.run_id} completed with ${run.segment_count} segments.`);
-      navigate(projectRoute(projectId, 'run-monitor'));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Pipeline run failed.');
+      toast.success(`Run #${result.run_id} started.`);
+      navigate(`/projects/${projectId}/runs`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start run');
     }
   }
 
   return (
     <WorkflowPageShell
-      step="Step 04"
+      breadcrumb={`All Projects › Project #${projectId ?? '—'} › Pipeline`}
       title="Pipeline Setup"
-      description="Configure run settings and trigger execution. This page owns run configuration only."
-      action={
-        <p className="text-sm text-muted-foreground">{projectId !== null ? `Project #${projectId}` : 'Project required'}</p>
-      }
+      description="Review configuration and trigger a new pipeline run."
     >
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mic2 className="size-4 text-primary" />
-              Voice and Segmentation Config
-            </CardTitle>
-            <CardDescription>Defaults used for downstream voice mapping and segment generation.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="grid gap-3" onSubmit={handleSaveVoices}>
-              <div className="grid gap-2">
-                <Label htmlFor="narrator-voice">Narrator voice</Label>
-                <Input id="narrator-voice" value={narratorVoice} onChange={(event) => setNarratorVoice(event.target.value)} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="male-voice">Default male voice</Label>
-                <Input id="male-voice" value={maleVoice} onChange={(event) => setMaleVoice(event.target.value)} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="female-voice">Default female voice</Label>
-                <Input id="female-voice" value={femaleVoice} onChange={(event) => setFemaleVoice(event.target.value)} />
-              </div>
-              <Button disabled={saveVoicesMutation.isMutating || projectId === null} type="submit">
-                {saveVoicesMutation.isMutating ? 'Saving...' : 'Save Voice Config'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+      <div className="max-w-2xl space-y-2">
+        {/* Run Config Summary */}
+        <div className="rounded-xl border border-white/10 bg-card px-5">
+          <p className="pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Run Configuration</p>
+          <SettingRow label="Mode">
+            <span className="text-sm font-medium capitalize text-foreground">{effectiveMode}</span>
+          </SettingRow>
+          {modeProfile && (
+            <>
+              <SettingRow label="Max segment chars">
+                <span className="font-mono text-sm text-foreground">{modeProfile.max_segment_chars}</span>
+              </SettingRow>
+              <SettingRow label="Provider">
+                <span className="text-sm text-foreground">{modeProfile.provider_name}</span>
+              </SettingRow>
+              <SettingRow label="Daily call cap">
+                <span className="font-mono text-sm text-foreground">{modeProfile.max_calls_per_day}</span>
+              </SettingRow>
+            </>
+          )}
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="size-4 text-primary" />
-              Run Trigger
-            </CardTitle>
-            <CardDescription>Run mode snapshot and execution controls for the current project.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="grid gap-3" onSubmit={handleRunPipeline}>
-              <div className="grid gap-2">
-                <Label htmlFor="run-mode">Selected mode</Label>
-                <Input id="run-mode" disabled value={selectedMode ?? 'not selected'} />
+        {/* LLM Config */}
+        <div className="rounded-xl border border-white/10 bg-card px-5">
+          <p className="pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">LLM</p>
+          <SettingRow
+            label="LLM processing"
+            description="Enable LLM-powered speaker and emotion tagging"
+          >
+            <button
+              className="flex h-6 w-11 items-center rounded-full border border-white/20 bg-white/10 px-0.5 transition-colors data-[enabled=true]:border-green-400/40 data-[enabled=true]:bg-green-400/20"
+              data-enabled={llmEnabled}
+              disabled={isBusy}
+              onClick={() => void handleToggleLLM()}
+              type="button"
+            >
+              <span
+                className="size-5 rounded-full bg-white/40 transition-transform data-[enabled=true]:translate-x-5 data-[enabled=true]:bg-green-400"
+                data-enabled={llmEnabled}
+              />
+            </button>
+          </SettingRow>
+          {providers.length > 0 && (
+            <SettingRow label="Providers">
+              <div className="flex flex-wrap gap-1.5">
+                {providers.map((p) => (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-xs text-muted-foreground"
+                    key={p.provider}
+                  >
+                    <span className={`size-1.5 rounded-full ${p.enabled ? 'bg-green-400' : 'bg-white/20'}`} />
+                    {p.provider}
+                  </span>
+                ))}
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="max-segment-chars">Max segment chars</Label>
-                <Input
-                  id="max-segment-chars"
-                  min={64}
-                  max={1000}
-                  type="number"
-                  value={maxSegmentChars}
-                  onChange={(event) => setMaxSegmentChars(Number(event.target.value))}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="provider-name">Provider</Label>
-                <NativeSelect id="provider-name" value={providerName} onChange={(event) => setProviderName(event.target.value)}>
-                  <option value="openrouter">openrouter</option>
-                  <option value="siliconflow">siliconflow (placeholder)</option>
-                  <option value="groq">groq (placeholder)</option>
-                </NativeSelect>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="max-calls">Max calls per day</Label>
-                <Input
-                  id="max-calls"
-                  min={1}
-                  type="number"
-                  value={maxCallsPerDay}
-                  onChange={(event) => setMaxCallsPerDay(Number(event.target.value))}
-                />
-              </div>
-              <label className="inline-flex items-center justify-between gap-2 rounded-xl bg-background/70 px-3 py-2 text-sm">
-                <span>Enable LLM-assisted refinement</span>
-                <Switch checked={llmEnabled} onCheckedChange={setLlmEnabled} />
-              </label>
-              <Button
-                data-testid="run-pipeline-button"
-                disabled={runPipelineMutation.isMutating || projectId === null || isRunLocked}
-                type="submit"
-              >
-                {runPipelineMutation.isMutating ? 'Running...' : 'Run Pipeline'}
-              </Button>
-              {isRunLocked ? (
-                <p className="text-sm text-muted-foreground" data-testid="mode-lock-hint">
-                  Return to the mode page and make an explicit mode selection before running.
-                </p>
-              ) : null}
-            </form>
-          </CardContent>
-        </Card>
+            </SettingRow>
+          )}
+        </div>
+
+        {/* Start run */}
+        <div className="flex items-center gap-3 pt-2">
+          <Button
+            data-testid="run-pipeline-button"
+            disabled={isBusy}
+            onClick={() => void handleRun()}
+          >
+            {runMutation.isMutating ? 'Starting…' : 'Start Run'}
+          </Button>
+          {!selectedMode && (
+            <p className="text-xs text-muted-foreground">Select a mode in Mode Setup before running.</p>
+          )}
+        </div>
       </div>
     </WorkflowPageShell>
   );

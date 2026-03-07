@@ -1,0 +1,6 @@
+{
+  "mode": "audiobook",
+  "max_segment_chars": 140,
+  "llm_enabled": false,
+  "allow_unfinalized_character_map": true
+}

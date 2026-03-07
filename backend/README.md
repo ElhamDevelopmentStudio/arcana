@@ -31,12 +31,37 @@ cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
+## Quick onboarding seed fixtures
+
+Seed fixture bundle for first-run local onboarding:
+
+- `seed_fixtures/quick_onboarding/minimal-novel.txt`
+- `seed_fixtures/quick_onboarding/characters-minimal.json`
+- `seed_fixtures/quick_onboarding/run-request.json`
+
+These fixtures are validated by `backend/tests/test_onboarding_seed_fixtures.py`.
+
+## Local smoke test (one command)
+
+From repository root:
+
+```bash
+python3 backend/scripts_run_local_smoke.py
+```
+
+This starts a temporary backend instance (SQLite), runs backend smoke API coverage, and runs a focused frontend live-backend contract Playwright smoke case.
+
 ## Optional SQL migration script
 
 ```bash
 cd backend
 python scripts_run_migration.py
 ```
+
+Migration naming convention:
+- Pattern: `NNN_snake_case_description.sql`
+- Sequence starts at `001` and must be contiguous with no gaps.
+- Files live in `backend/migrations/`.
 
 ## API Summary
 
@@ -49,8 +74,11 @@ python scripts_run_migration.py
 - `POST /api/projects/{project_id}/ingest/epub`
 - `POST /api/projects/{project_id}/ingest/append-chapter`
 - `POST /api/projects/{project_id}/characters/import`
+- `POST /api/projects/{project_id}/characters/lookup-alias`
+- `GET /api/projects/{project_id}/characters/alias-collisions`
 - `PUT /api/projects/{project_id}/voices`
 - `POST /api/projects/{project_id}/runs`
+- `POST /api/projects/{project_id}/runs/{run_id}/cancel`
 - `GET /api/projects/{project_id}/runs/{run_id}`
 - `GET /api/projects/{project_id}/exports/{run_id}.json`
 
@@ -63,6 +91,7 @@ Mode persistence behavior:
 - Project creation sets `configuration_snapshot_id` reference (initial format: `project-<id>-config-initial`).
 - Each run snapshots mode in `runs.config_json.mode`.
 - Each run stores immutable defaults at `runs.config_json.mode_profile_snapshot`.
+- Run status lifecycle follows `queued` -> `running` -> terminal `completed|failed|cancelled`.
 
 Ingestion title fallback behavior:
 - If project title is a placeholder (`Untitled Project` / `New Project`), TXT ingestion attempts title detection from source text.
@@ -136,6 +165,18 @@ Acceptance KPI validation (`SRS.md §1.3` criteria mapping vs `docs/acceptance_k
 python scripts_validate_acceptance_kpis.py
 ```
 
+Migration framework validation (`backend/migrations` ordering + naming convention):
+
+```bash
+python scripts_validate_migration_framework.py
+```
+
+Architecture decision records validation (`docs/adrs` coverage and ADR structure):
+
+```bash
+python scripts_validate_adrs.py
+```
+
 Persona flow validation (`SRS.md §2.1` vs `docs/persona_end_to_end_flows.md`):
 
 ```bash
@@ -178,6 +219,68 @@ Checklist frontend+Playwright coverage validation (parallel delivery guardrail):
 python scripts_validate_checklist_frontend_coverage.py
 ```
 
+Contributor guide validation for adding a new tag type (`X-014`):
+
+```bash
+python scripts_validate_tag_type_contributor_doc.py
+```
+
+Contributor guide validation for adding a new LLM provider adapter (`X-015`):
+
+```bash
+python scripts_validate_llm_provider_adapter_contributor_doc.py
+```
+
+Contributor guide validation for evolving export schema safely (`X-016`):
+
+```bash
+python scripts_validate_export_schema_contributor_doc.py
+```
+
+Release checklist validation for migrations and backward compatibility (`X-017`):
+
+```bash
+python scripts_validate_release_migration_checklist.py
+```
+
+Release rollback plan template validation (`X-018`):
+
+```bash
+python scripts_validate_release_rollback_plan.py
+```
+
+Release security review checklist validation (`X-019`):
+
+```bash
+python scripts_validate_release_security_checklist.py
+```
+
+Core pipeline performance regression gate (`X-020`):
+
+```bash
+python scripts_run_performance_regression_gate.py
+```
+
+Thresholds are configured in `backend/performance_regression_thresholds.json` and enforced in CI via `.github/workflows/performance-regression-gate.yml`.
+
+PR template frontend-impact validation (`FE-001`):
+
+```bash
+python scripts_validate_pr_template_frontend_impact.py
+```
+
+API contract changelog validation for frontend maintainers (`FE-003`):
+
+```bash
+python scripts_validate_api_contract_changelog.py
+```
+
+UI impact matrix validation for SRS-to-frontend mapping (`FE-004`):
+
+```bash
+python scripts_validate_ui_impact_matrix.py
+```
+
 UC-1 traceability execution (`USE-006`, Shadow Slave -> Audiobook export):
 
 ```bash
@@ -206,6 +309,13 @@ Optional slow test execution for USE-009:
 
 ```bash
 RUN_SLOW_TRACEABILITY=1 pytest tests/test_large_corpus_traceability_regression.py -q
+```
+
+Backend module-level unit coverage thresholds:
+
+```bash
+pytest tests -q --cov=app --cov-report=json:coverage.unit.json
+python scripts_validate_unit_coverage_thresholds.py --coverage-json coverage.unit.json --thresholds unit_coverage_thresholds.json
 ```
 
 Ingestion path matrix validation (`ING-016`, TXT/dir/markdown/encoding/append coverage):

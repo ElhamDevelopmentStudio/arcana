@@ -1,0 +1,205 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { ProjectSettingsPage } from '@/pages/projects/project-settings-page';
+import { resetWorkspaceStore } from '../vitest/workspace-store-test-utils';
+
+const useLLMProvidersQueryMock = vi.fn();
+const useGrantProjectAccessMutationMock = vi.fn();
+const useProjectAccessListQueryMock = vi.fn();
+const useProjectLLMSettingsQueryMock = vi.fn();
+const useUpdateLLMProviderStatusMutationMock = vi.fn();
+const useUpdateProjectLLMSettingsMutationMock = vi.fn();
+const grantProjectAccessTriggerMock = vi.fn();
+const updateLLMProviderStatusTriggerMock = vi.fn();
+const updateProjectLLMSettingsTriggerMock = vi.fn();
+
+vi.mock('@/features/workflow/api/workflow-hooks', () => ({
+  useGrantProjectAccessMutation: (...args: Parameters<typeof useGrantProjectAccessMutationMock>) =>
+    useGrantProjectAccessMutationMock(...args),
+  useLLMProvidersQuery: (...args: Parameters<typeof useLLMProvidersQueryMock>) =>
+    useLLMProvidersQueryMock(...args),
+  useProjectAccessListQuery: (...args: Parameters<typeof useProjectAccessListQueryMock>) =>
+    useProjectAccessListQueryMock(...args),
+  useProjectLLMSettingsQuery: (...args: Parameters<typeof useProjectLLMSettingsQueryMock>) =>
+    useProjectLLMSettingsQueryMock(...args),
+  useUpdateLLMProviderStatusMutation: (...args: Parameters<typeof useUpdateLLMProviderStatusMutationMock>) =>
+    useUpdateLLMProviderStatusMutationMock(...args),
+  useUpdateProjectLLMSettingsMutation: (...args: Parameters<typeof useUpdateProjectLLMSettingsMutationMock>) =>
+    useUpdateProjectLLMSettingsMutationMock(...args),
+}));
+
+function renderProjectSettingsPage() {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/projects/:project_id/settings',
+        element: <ProjectSettingsPage />,
+      },
+    ],
+    { initialEntries: ['/projects/77/settings'] },
+  );
+
+  render(<RouterProvider router={router} />);
+}
+
+describe('project settings page', () => {
+  beforeEach(() => {
+    resetWorkspaceStore();
+    useGrantProjectAccessMutationMock.mockReset();
+    useLLMProvidersQueryMock.mockReset();
+    useProjectAccessListQueryMock.mockReset();
+    useProjectLLMSettingsQueryMock.mockReset();
+    useUpdateLLMProviderStatusMutationMock.mockReset();
+    useUpdateProjectLLMSettingsMutationMock.mockReset();
+    grantProjectAccessTriggerMock.mockReset();
+    updateLLMProviderStatusTriggerMock.mockReset();
+    updateProjectLLMSettingsTriggerMock.mockReset();
+
+    useLLMProvidersQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      data: {
+        providers: [
+          {
+            provider: 'openrouter',
+            enabled: true,
+          },
+        ],
+      },
+    });
+    useProjectAccessListQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      data: {
+        project_id: 77,
+        grants: [
+          {
+            id: 13,
+            project_id: 77,
+            principal_type: 'user',
+            principal_id: 'qa-owner',
+            role: 'owner',
+            created_at: '2026-02-27T00:00:00Z',
+          },
+        ],
+      },
+    });
+    useProjectLLMSettingsQueryMock.mockReturnValue({
+      isLoading: false,
+      error: undefined,
+      data: {
+        project_id: 77,
+        llm_enabled: false,
+      },
+    });
+    useUpdateLLMProviderStatusMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: updateLLMProviderStatusTriggerMock,
+    });
+    useGrantProjectAccessMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: grantProjectAccessTriggerMock,
+    });
+    useUpdateProjectLLMSettingsMutationMock.mockReturnValue({
+      isMutating: false,
+      trigger: updateProjectLLMSettingsTriggerMock,
+    });
+  });
+
+  it('renders loading state while project LLM settings query is pending', () => {
+    useProjectLLMSettingsQueryMock.mockReturnValue({
+      isLoading: true,
+      error: undefined,
+      data: undefined,
+    });
+
+    renderProjectSettingsPage();
+
+    expect(screen.getByTestId('project-settings-llm-loading')).toBeInTheDocument();
+  });
+
+  it('updates project LLM setting through save action', async () => {
+    const user = userEvent.setup();
+    updateProjectLLMSettingsTriggerMock.mockResolvedValue({
+      project_id: 77,
+      llm_enabled: true,
+    });
+
+    renderProjectSettingsPage();
+
+    const saveButton = screen.getByTestId('project-settings-llm-save');
+    expect(saveButton).toBeDisabled();
+    expect(screen.getByTestId('project-settings-llm-current')).toHaveTextContent('disabled');
+
+    await user.click(screen.getByTestId('project-settings-llm-toggle'));
+    expect(screen.getByTestId('project-settings-llm-draft')).toHaveTextContent('enabled');
+    expect(saveButton).toBeEnabled();
+
+    await user.click(saveButton);
+    expect(updateProjectLLMSettingsTriggerMock).toHaveBeenCalledWith({ llm_enabled: true });
+  });
+
+  it('updates provider status through save action', async () => {
+    const user = userEvent.setup();
+    updateLLMProviderStatusTriggerMock.mockResolvedValue({
+      provider: 'openrouter',
+      enabled: false,
+    });
+
+    renderProjectSettingsPage();
+
+    const saveButton = screen.getByTestId('project-settings-provider-save-openrouter');
+    expect(saveButton).toBeDisabled();
+    expect(screen.getByTestId('project-settings-provider-current-openrouter')).toHaveTextContent('Current: enabled');
+    expect(screen.getByTestId('project-settings-provider-current-openrouter')).toHaveTextContent('Draft: enabled');
+
+    await user.click(screen.getByTestId('project-settings-provider-toggle-openrouter'));
+    expect(screen.getByTestId('project-settings-provider-current-openrouter')).toHaveTextContent('Draft: disabled');
+    expect(saveButton).toBeEnabled();
+
+    await user.click(saveButton);
+    expect(updateLLMProviderStatusTriggerMock).toHaveBeenCalledWith({
+      provider_name: 'openrouter',
+      enabled: false,
+    });
+  });
+
+  it('renders project access grants from access listing query', () => {
+    renderProjectSettingsPage();
+
+    expect(screen.getByTestId('project-settings-access-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('project-settings-access-no-auth-notice')).toHaveTextContent(
+      'Authentication is not enabled in this environment.',
+    );
+    expect(screen.getByTestId('project-settings-access-grant-13')).toHaveTextContent('qa-owner');
+    expect(screen.getByTestId('project-settings-access-grant-13')).toHaveTextContent('role: owner');
+  });
+
+  it('submits project access grant through save action', async () => {
+    const user = userEvent.setup();
+    grantProjectAccessTriggerMock.mockResolvedValue({
+      id: 14,
+      project_id: 77,
+      principal_type: 'service',
+      principal_id: 'queue-worker',
+      role: 'editor',
+      created_at: '2026-02-27T00:00:00Z',
+    });
+
+    renderProjectSettingsPage();
+
+    await user.type(screen.getByTestId('project-settings-access-principal-id'), 'queue-worker');
+    await user.selectOptions(screen.getByTestId('project-settings-access-principal-type'), 'service');
+    await user.selectOptions(screen.getByTestId('project-settings-access-role'), 'editor');
+    await user.click(screen.getByTestId('project-settings-access-grant-submit'));
+
+    expect(grantProjectAccessTriggerMock).toHaveBeenCalledWith({
+      principal_id: 'queue-worker',
+      principal_type: 'service',
+      role: 'editor',
+    });
+  });
+});

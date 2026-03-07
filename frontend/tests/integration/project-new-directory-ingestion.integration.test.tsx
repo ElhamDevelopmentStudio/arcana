@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createProjectTrigger = vi.fn();
+const createProjectDraftTrigger = vi.fn();
 const ingestTxtTrigger = vi.fn();
 const ingestDirectoryTrigger = vi.fn();
 const ingestMarkdownTrigger = vi.fn();
@@ -14,6 +15,10 @@ vi.mock('@/features/workflow/api/workflow-hooks', () => ({
   useCreateProjectMutation: () => ({
     isMutating: false,
     trigger: createProjectTrigger,
+  }),
+  useCreateProjectDraftMutation: () => ({
+    isMutating: false,
+    trigger: createProjectDraftTrigger,
   }),
   useIngestTxtMutation: () => ({
     isMutating: false,
@@ -61,6 +66,7 @@ describe('project new page directory ingestion', () => {
   beforeEach(() => {
     resetWorkspaceStore();
     createProjectTrigger.mockReset();
+    createProjectDraftTrigger.mockReset();
     ingestTxtTrigger.mockReset();
     ingestDirectoryTrigger.mockReset();
     ingestMarkdownTrigger.mockReset();
@@ -71,9 +77,24 @@ describe('project new page directory ingestion', () => {
       title: 'Shadow Slave PoC',
       selected_mode: 'audiobook',
       selected_modes: ['audiobook'],
+      do_not_store_source_text: false,
       configuration_snapshot_id: 'project-101-config-initial',
       ingestion_timestamp: null,
       created_at: '2026-02-25T00:00:00Z',
+    });
+    createProjectDraftTrigger.mockResolvedValue({
+      id: 401,
+      title: 'Shadow Slave PoC',
+      selected_mode: 'audiobook',
+      selected_modes: ['audiobook'],
+      do_not_store_source_text: false,
+      configuration_snapshot_id: 'project-401-config-initial',
+      ingestion_timestamp: null,
+      created_at: '2026-02-25T00:00:00Z',
+    });
+    ingestTxtTrigger.mockResolvedValue({
+      project_id: 101,
+      chapter_count: 2,
     });
     ingestDirectoryTrigger.mockResolvedValue({
       project_id: 101,
@@ -91,6 +112,62 @@ describe('project new page directory ingestion', () => {
       project_id: 101,
       chapter_count: 3,
     });
+  });
+
+  it('defaults to user-upload TXT ingestion path', async () => {
+    const user = userEvent.setup();
+    renderProjectNewPage();
+
+    expect(screen.getByTestId('project-creation-mode-select')).toHaveValue('project');
+    await user.click(screen.getByTestId('create-project-button'));
+
+    expect(createProjectTrigger).toHaveBeenCalledTimes(1);
+    expect(createProjectTrigger).toHaveBeenCalledWith({
+      title: 'Shadow Slave PoC',
+      do_not_store_source_text: false,
+    });
+    expect(createProjectDraftTrigger).not.toHaveBeenCalled();
+
+    expect(screen.getByTestId('ingestion-source-select')).toHaveValue('txt');
+    const txtFile = new File(['chapter one'], 'novel.txt', { type: 'text/plain' });
+    await user.upload(screen.getByTestId('txt-upload-input'), txtFile);
+
+    await user.click(screen.getByTestId('upload-txt-button'));
+
+    expect(ingestTxtTrigger).toHaveBeenCalledTimes(1);
+    expect(ingestTxtTrigger).toHaveBeenCalledWith({ file: txtFile });
+    expect(screen.getByTestId('chapter-count-state')).toHaveTextContent('Detected chapters: 2');
+  });
+
+  it('sends do_not_store_source_text flag when enabled', async () => {
+    const user = userEvent.setup();
+    renderProjectNewPage();
+
+    const doNotStoreCheckbox = screen.getByRole('checkbox', { name: /store only derived metrics/i });
+    await user.click(doNotStoreCheckbox);
+
+    await user.click(screen.getByTestId('create-project-button'));
+
+    expect(createProjectTrigger).toHaveBeenCalledTimes(1);
+    expect(createProjectTrigger).toHaveBeenCalledWith({
+      title: 'Shadow Slave PoC',
+      do_not_store_source_text: true,
+    });
+  });
+
+  it('uses draft creation endpoint mutation when creation type is draft', async () => {
+    const user = userEvent.setup();
+    renderProjectNewPage();
+
+    await user.selectOptions(screen.getByTestId('project-creation-mode-select'), 'draft');
+    await user.click(screen.getByTestId('create-project-button'));
+
+    expect(createProjectDraftTrigger).toHaveBeenCalledTimes(1);
+    expect(createProjectDraftTrigger).toHaveBeenCalledWith({
+      title: 'Shadow Slave PoC',
+      do_not_store_source_text: false,
+    });
+    expect(createProjectTrigger).not.toHaveBeenCalled();
   });
 
   it('uses chapter-directory ingestion mutation when source type is directory', async () => {

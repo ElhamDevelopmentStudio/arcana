@@ -8,9 +8,22 @@ from app.modes import DEFAULT_MODE, MODE_DEFAULT_PROFILES, MODE_VALUES, ModeDefa
 PROFILE_CONFIG_KEYS: tuple[str, ...] = (
     "max_segment_chars",
     "llm_enabled",
+    "export_formats",
+    "export_chunk_size",
     "provider_name",
     "max_calls_per_day",
+    "llm_confidence_threshold",
+    "speaker_confidence_threshold",
+    "high_ambiguity_dialogue_flag_threshold",
+    "unstable_emotion_shift_transition_threshold",
+    "unstable_emotion_shift_density_threshold",
+    "deep_semantic_refinement",
+    "deterministic_mode",
+    "contradiction_review_required",
+    "web_scraping_enabled",
 )
+
+RUN_CONFIG_SCHEMA_VERSION: str = "1.0.0"
 
 
 def normalize_mode_value(mode: str | None) -> str:
@@ -49,6 +62,7 @@ def build_run_config_snapshot(mode: str | None, overrides: Mapping[str, Any] | N
 
     return {
         "mode": normalized_mode,
+        "config_schema_version": RUN_CONFIG_SCHEMA_VERSION,
         **resolved_profile_config,
         "mode_profile_snapshot": profile_snapshot,
     }

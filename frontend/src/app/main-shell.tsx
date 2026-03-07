@@ -1,167 +1,199 @@
-import { useState } from 'react';
-import { Outlet, useLocation, useParams } from 'react-router-dom';
-import { DashboardSquare02Icon, PanelLeftCloseIcon, PanelLeftOpenIcon, Search01Icon } from 'hugeicons-react';
+import { Profiler, useCallback, useEffect, useRef, useState } from 'react';
+import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
+import { LayoutDashboard, Plus, Settings, ChevronLeft, ChevronRight, BookOpenText } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { ProjectStepNav } from '@/app/project-step-nav';
+import { parseProjectIdParam } from '@/features/workflow/utils/project-route';
+import { useCriticalRoutePrefetch } from '@/features/workflow/prefetch/critical-route-prefetch';
+import {
+  completeRouteNavigationMeasurement,
+  reportRenderCostMetric,
+  startRouteNavigationMeasurement,
+} from '@/features/workflow/performance/performance-instrumentation';
+import { useUiRouteStateStore } from '@/app/state/ui-route-state-store';
+
+type GlobalNavItem = {
+  to: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string; size?: number }>;
+  end?: boolean;
+};
+
+const GLOBAL_NAV: GlobalNavItem[] = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/projects/new', label: 'New Project', icon: Plus },
+];
 
 function getProjectIdFromPath(pathname: string, fallback: string | undefined): string | null {
-  if (fallback) {
-    return fallback;
-  }
+  if (fallback) return fallback;
   const match = pathname.match(/\/projects\/([^/]+)/);
-  if (!match || match[1] === 'new') {
-    return null;
-  }
+  if (!match || match[1] === 'new') return null;
   return match[1];
 }
 
-const ROUTE_META: Array<{ pattern: RegExp; title: string; description: string }> = [
-  {
-    pattern: /\/projects\/new$/,
-    title: 'Project Onboarding',
-    description: 'Start by creating a project and ingesting source text.',
-  },
-  {
-    pattern: /\/projects\/[^/]+\/mode$/,
-    title: 'Mode Calibration',
-    description: 'Set the narrative processing mode before downstream steps.',
-  },
-  {
-    pattern: /\/projects\/[^/]+\/characters$/,
-    title: 'Character Intelligence',
-    description: 'Shape voice-ready identity data through import and manual curation.',
-  },
-  {
-    pattern: /\/projects\/[^/]+\/pipeline-setup$/,
-    title: 'Pipeline Control',
-    description: 'Tune runtime behavior and trigger deterministic generation runs.',
-  },
-  {
-    pattern: /\/projects\/[^/]+\/run-monitor$/,
-    title: 'Run Observability',
-    description: 'Track run status, segment counts, and operational details.',
-  },
-  {
-    pattern: /\/projects\/[^/]+\/export$/,
-    title: 'Export Delivery',
-    description: 'Review readiness and package outputs for downstream consumers.',
-  },
-  {
-    pattern: /\/projects\/[^/]+\/dashboards$/,
-    title: 'Narrative Analytics',
-    description: 'Inspect tension, valence, and dominance trends across the corpus.',
-  },
-];
-
-function resolveRouteMeta(pathname: string) {
-  const matched = ROUTE_META.find((item) => item.pattern.test(pathname));
-  if (matched) {
-    return matched;
-  }
-  return {
-    title: 'Narrative Pipeline Workspace',
-    description: 'Move through each workflow step in sequence.',
-  };
-}
-
 export function MainShell() {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const routePathWithSearch = `${location.pathname}${location.search}`;
   const params = useParams<{ project_id?: string }>();
   const projectId = getProjectIdFromPath(location.pathname, params.project_id);
-  const routeMeta = resolveRouteMeta(location.pathname);
+  const currentProjectId = parseProjectIdParam(projectId ?? undefined);
+  const setProjectLastRoute = useUiRouteStateStore((state) => state.setProjectLastRoute);
+  const pendingNavigationPathRef = useRef<string | null>(null);
+
+  useCriticalRoutePrefetch({ pathname: location.pathname, projectId: currentProjectId });
+
+  useEffect(() => {
+    const handleLinkNavigationStart = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (!(event.target instanceof Element)) return;
+      const anchor = event.target.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (anchor.target && anchor.target !== '_self') return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#')) return;
+      let nextUrl: URL;
+      try { nextUrl = new URL(anchor.href, window.location.origin); } catch { return; }
+      if (nextUrl.origin !== window.location.origin) return;
+      const nextPathWithSearch = `${nextUrl.pathname}${nextUrl.search}`;
+      const currentPathWithSearch = `${window.location.pathname}${window.location.search}`;
+      if (nextPathWithSearch === currentPathWithSearch) return;
+      pendingNavigationPathRef.current = nextPathWithSearch;
+      startRouteNavigationMeasurement(nextPathWithSearch);
+    };
+    document.addEventListener('click', handleLinkNavigationStart, true);
+    return () => document.removeEventListener('click', handleLinkNavigationStart, true);
+  }, []);
+
+  useEffect(() => {
+    if (pendingNavigationPathRef.current !== routePathWithSearch) return;
+    completeRouteNavigationMeasurement(routePathWithSearch);
+    pendingNavigationPathRef.current = null;
+  }, [routePathWithSearch]);
+
+  const handleRouteRender = useCallback(
+    (_id: string, phase: 'mount' | 'update' | 'nested-update', actualDuration: number) => {
+      reportRenderCostMetric({ component: 'main-shell-route-content', phase, actualDurationMs: actualDuration, routePath: routePathWithSearch });
+    },
+    [routePathWithSearch],
+  );
+
+  useEffect(() => {
+    if (currentProjectId === null) return;
+    const routePrefix = `/projects/${currentProjectId}/`;
+    if (!location.pathname.startsWith(routePrefix)) return;
+    setProjectLastRoute(currentProjectId, `${location.pathname}${location.search}`);
+  }, [currentProjectId, location.pathname, location.search, setProjectLastRoute]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="h-screen w-full">
-        <div
-          className="nipe-shell-frame grid h-full min-h-0 overflow-hidden rounded-none border-0 shadow-none"
-          style={{
-            gridTemplateColumns: isSidebarCollapsed ? '112px minmax(0, 1fr)' : '296px minmax(0, 1fr)',
-            gridTemplateRows: '112px minmax(0, 1fr)',
-          }}
-        >
-          <div className="nipe-sidebar border-r border-b border-panel-border/70">
-            {isSidebarCollapsed ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 px-2 py-3">
-                <span className="nipe-logo-chip">
-                  <DashboardSquare02Icon size={18} strokeWidth={1.9} />
-                </span>
-                <Button
-                  aria-label="Expand sidebar"
-                  className="size-9 rounded-2xl border border-panel-border/80 bg-background/70"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setIsSidebarCollapsed(false)}
-                >
-                  <PanelLeftOpenIcon size={16} />
-                </Button>
-              </div>
-            ) : (
-              <div className="flex h-full items-center justify-between gap-3 px-5 py-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="nipe-logo-chip">
-                    <DashboardSquare02Icon size={18} strokeWidth={1.9} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">NIPE</p>
-                    <h1 className="truncate text-lg font-bold tracking-tight">Narrative Pipeline</h1>
-                  </div>
-                </div>
-                <Button
-                  aria-label="Collapse sidebar"
-                  className="size-8 rounded-xl"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setIsSidebarCollapsed(true)}
-                >
-                  <PanelLeftCloseIcon size={16} />
-                </Button>
-              </div>
+    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+      <a
+        className="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm font-medium text-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        data-testid="skip-to-main-link"
+        href="#app-main-content"
+      >
+        Skip to main content
+      </a>
+
+      {/* Sidebar */}
+      <aside
+        aria-label="Global navigation"
+        className={cn(
+          'flex flex-col border-r border-white/10 bg-sidebar transition-all duration-200',
+          collapsed ? 'w-16' : 'w-60',
+        )}
+      >
+        {/* Logo */}
+        <div className={cn('flex h-14 shrink-0 items-center border-b border-white/10', collapsed ? 'justify-center px-0' : 'gap-2.5 px-4')}>
+          <Link
+            aria-label="Nipe home"
+            className="flex items-center gap-2.5"
+            to="/dashboard"
+          >
+            <span className="grid size-7 shrink-0 place-items-center rounded bg-foreground text-background">
+              <BookOpenText size={14} />
+            </span>
+            {!collapsed && (
+              <span className="text-sm font-semibold tracking-tight text-foreground">nipe</span>
             )}
-          </div>
-
-          <header className="nipe-min-header">
-            <div className="min-w-0 text-sm">
-              <span className="text-muted-foreground">Projects</span>
-              <span className="px-2 text-muted-foreground/70">/</span>
-              <span className="font-semibold text-foreground">{routeMeta.title}</span>
-            </div>
-
-            <div className="nipe-search-shell">
-              <Search01Icon size={17} className="text-muted-foreground" />
-              <Input
-                aria-label="Search"
-                className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                placeholder="Search"
-              />
-              <kbd className="rounded-md border border-panel-border bg-background px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                ⌘K
-              </kbd>
-            </div>
-          </header>
-
-          <aside className={cn('nipe-sidebar flex min-h-0 flex-col border-r border-panel-border/70', isSidebarCollapsed ? 'w-[112px]' : 'w-[296px]')}>
-            <div className="flex-1 overflow-auto p-3">
-              <ProjectStepNav collapsed={isSidebarCollapsed} projectId={projectId} />
-            </div>
-
-            {!isSidebarCollapsed ? (
-              <div className="border-t border-panel-border/70 px-4 py-3">
-                <p className="text-xs text-muted-foreground">Current flow</p>
-                <p className="mt-1 text-sm font-medium text-foreground">{routeMeta.title}</p>
-              </div>
-            ) : null}
-          </aside>
-
-          <main className="min-h-0 overflow-auto p-5 lg:p-7">
-            <Outlet />
-          </main>
+          </Link>
         </div>
-      </div>
+
+        {/* Nav items */}
+        <nav aria-label="Main navigation" className="flex-1 space-y-0.5 overflow-y-auto p-2">
+          {GLOBAL_NAV.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.to}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors duration-100',
+                    isActive
+                      ? 'bg-sidebar-accent text-foreground'
+                      : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+                    collapsed && 'justify-center px-0',
+                  )
+                }
+                end={item.end}
+                title={collapsed ? item.label : undefined}
+                to={item.to}
+              >
+                <Icon className="shrink-0" size={16} />
+                {!collapsed && <span>{item.label}</span>}
+              </NavLink>
+            );
+          })}
+        </nav>
+
+        {/* Bottom: settings + collapse */}
+        <div className={cn('shrink-0 border-t border-white/10 p-2 space-y-0.5')}>
+          <NavLink
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors duration-100',
+                isActive
+                  ? 'bg-sidebar-accent text-foreground'
+                  : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+                collapsed && 'justify-center px-0',
+              )
+            }
+            title={collapsed ? 'Settings' : undefined}
+            to="/settings"
+          >
+            <Settings className="shrink-0" size={16} />
+            {!collapsed && <span>Settings</span>}
+          </NavLink>
+
+          <button
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-100 hover:bg-sidebar-accent/60 hover:text-foreground"
+            onClick={() => setCollapsed((c) => !c)}
+            type="button"
+          >
+            {collapsed ? (
+              <ChevronRight className="mx-auto shrink-0" size={16} />
+            ) : (
+              <>
+                <ChevronLeft className="shrink-0" size={16} />
+                <span>Collapse</span>
+              </>
+            )}
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main
+        aria-labelledby="app-route-title"
+        className="flex min-w-0 flex-1 flex-col overflow-hidden"
+        id="app-main-content"
+        tabIndex={-1}
+      >
+        <Profiler id="main-shell-route-content" onRender={handleRouteRender}>
+          <Outlet />
+        </Profiler>
+      </main>
     </div>
   );
 }

@@ -1,333 +1,362 @@
-import { type FormEvent, useState } from 'react';
-
-import { useNavigate } from 'react-router-dom';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { BookOpenText, FileText } from 'lucide-react';
+import { Upload, X, FileText, BookOpen, GraduationCap, Pen, Sliders } from 'lucide-react';
 
-import { WorkflowPageShell } from '@/app/workflow-page-shell';
 import { useWorkspaceStore } from '@/app/state/workspace-store';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
+import { cn } from '@/lib/utils';
+import { useJobNotificationStore } from '@/features/workflow/state/job-notification-store';
 import {
-  useAppendChapterMutation,
-  useCreateProjectMutation,
-  useIngestChapterDirectoryMutation,
-  useIngestEpubMutation,
-  useIngestMarkdownMutation,
-  useIngestTxtMutation,
+  useCreateProjectDraftMutation,
+  useProjectIngestionJobStatusQuery,
+  useStartProjectIngestionJobMutation,
+  useSwitchModeMutation,
 } from '@/features/workflow/api/workflow-hooks';
-import { projectRoute } from '@/features/workflow/utils/project-route';
 
-type IngestionSource = 'txt' | 'directory' | 'markdown' | 'epub';
+type WizardStep = 1 | 2 | 3;
+type IngestionSource = 'txt' | 'markdown' | 'epub';
+
+const MODES = [
+  { id: 'audiobook', label: 'Audiobook', description: 'Optimized for novels and narrative fiction', icon: BookOpen },
+  { id: 'academic', label: 'Academic', description: 'Structured for papers and scholarly texts', icon: GraduationCap },
+  { id: 'author', label: 'Author', description: 'Balanced processing for authored content', icon: Pen },
+  { id: 'custom', label: 'Custom', description: 'Manual configuration of all pipeline parameters', icon: Sliders },
+] as const;
+
+const SOURCE_TABS: { id: IngestionSource; label: string; accept: string }[] = [
+  { id: 'txt', label: 'TXT', accept: '.txt' },
+  { id: 'markdown', label: 'Markdown', accept: '.md,.markdown' },
+  { id: 'epub', label: 'EPUB', accept: '.epub' },
+];
 
 export function ProjectNewPage() {
   const navigate = useNavigate();
-  const [title, setTitle] = useState('Shadow Slave PoC');
+  const [step, setStep] = useState<WizardStep>(1);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [ingestionSource, setIngestionSource] = useState<IngestionSource>('txt');
-  const [txtFile, setTxtFile] = useState<File | null>(null);
-  const [directoryFiles, setDirectoryFiles] = useState<File[]>([]);
-  const [markdownFile, setMarkdownFile] = useState<File | null>(null);
-  const [epubFile, setEpubFile] = useState<File | null>(null);
-  const [appendChapterFile, setAppendChapterFile] = useState<File | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [selectedMode, setSelectedMode] = useState<string>('audiobook');
+  const [activeIngestionJobId, setActiveIngestionJobId] = useState<string | null>(null);
+  const ingestionCompletionJobRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const projectId = useWorkspaceStore((state) => state.projectId);
-  const chapterCount = useWorkspaceStore((state) => state.chapterCount);
   const setProject = useWorkspaceStore((state) => state.setProject);
   const setChapterCount = useWorkspaceStore((state) => state.setChapterCount);
+  const registerJob = useJobNotificationStore((state) => state.registerJob);
 
-  const createProjectMutation = useCreateProjectMutation();
-  const ingestTxtMutation = useIngestTxtMutation(projectId);
-  const ingestDirectoryMutation = useIngestChapterDirectoryMutation(projectId);
-  const ingestMarkdownMutation = useIngestMarkdownMutation(projectId);
-  const ingestEpubMutation = useIngestEpubMutation(projectId);
-  const appendChapterMutation = useAppendChapterMutation(projectId);
+  const createDraftMutation = useCreateProjectDraftMutation();
+  const startIngestionJobMutation = useStartProjectIngestionJobMutation(projectId);
+  const ingestionJobStatus = useProjectIngestionJobStatusQuery(projectId, activeIngestionJobId).data;
+  const switchModeMutation = useSwitchModeMutation(projectId);
+  const ingestionJobIsActive = ingestionJobStatus?.status === 'queued' || ingestionJobStatus?.status === 'running';
+  const ingestionProgress = ingestionJobStatus?.progress ?? 0;
 
   const isBusy =
-    createProjectMutation.isMutating ||
-    ingestTxtMutation.isMutating ||
-    ingestDirectoryMutation.isMutating ||
-    ingestMarkdownMutation.isMutating ||
-    ingestEpubMutation.isMutating ||
-    appendChapterMutation.isMutating;
-  const canContinue = projectId !== null && chapterCount !== null;
+    createDraftMutation.isMutating ||
+    startIngestionJobMutation.isMutating ||
+    ingestionJobIsActive ||
+    switchModeMutation.isMutating;
 
-  async function handleCreateProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!title.trim()) {
-      toast.error('Project title is required.');
+  useEffect(() => {
+    if (!activeIngestionJobId || !ingestionJobStatus) {
+      return;
+    }
+    if (ingestionCompletionJobRef.current === activeIngestionJobId) {
       return;
     }
 
-    try {
-      const project = await createProjectMutation.trigger({ title: title.trim() });
-      setProject({
-        projectId: project.id,
-        projectTitle: project.title,
-        selectedMode: null,
+    if (ingestionJobStatus.status === 'completed') {
+      ingestionCompletionJobRef.current = activeIngestionJobId;
+      if (ingestionJobStatus.result) {
+        setChapterCount(ingestionJobStatus.result.chapter_count);
+        toast.success(`Ingested ${ingestionJobStatus.result.chapter_count} chapters.`);
+      } else {
+        toast.success('Ingestion completed.');
+      }
+      queueMicrotask(() => {
+        setActiveIngestionJobId(null);
+        setSelectedFile(null);
+        setStep(3);
       });
-      toast.success(`Project created: #${project.id}`);
+      return;
+    }
+
+    if (ingestionJobStatus.status === 'failed') {
+      ingestionCompletionJobRef.current = activeIngestionJobId;
+      queueMicrotask(() => {
+        setActiveIngestionJobId(null);
+      });
+      toast.error(ingestionJobStatus.error_message || 'Ingestion failed');
+    }
+  }, [activeIngestionJobId, ingestionJobStatus, setChapterCount]);
+
+  async function handleStep1(e: FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) { toast.error('Project name is required.'); return; }
+    try {
+      const project = await createDraftMutation.trigger({ title: title.trim(), do_not_store_source_text: false });
+      setProject({ projectId: project.id, projectTitle: project.title, selectedMode: null });
+      setStep(2);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to create project');
     }
   }
 
-  async function handleIngestTxt(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (projectId === null) {
-      toast.error('Create a project first.');
-      return;
+  async function handleStep2(e: FormEvent) {
+    e.preventDefault();
+    if (!selectedFile) { toast.error('Please select a file to upload.'); return; }
+    if (projectId === null) { toast.error('Project not created yet.'); return; }
+    try {
+      const source = ingestionSource === 'txt'
+        ? 'txt'
+        : ingestionSource === 'markdown'
+          ? 'markdown'
+          : 'epub';
+      const job = await startIngestionJobMutation.trigger({ source, file: selectedFile });
+      ingestionCompletionJobRef.current = null;
+      setActiveIngestionJobId(job.job_id);
+      registerJob({
+        type: 'ingestion',
+        projectId,
+        jobId: job.job_id,
+        status: job.status,
+      });
+      toast.success('Ingestion started.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Ingestion failed');
     }
-
-    if (ingestionSource === 'txt') {
-      if (!txtFile) {
-        toast.error('Choose a TXT file before upload.');
-        return;
-      }
-
-      try {
-        const response = await ingestTxtMutation.trigger({ file: txtFile });
-        setChapterCount(response.chapter_count);
-        toast.success(`Ingestion complete: ${response.chapter_count} chapters detected.`);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'TXT ingestion failed.');
-      }
-      return;
-    }
-
-    if (ingestionSource === 'directory') {
-      if (directoryFiles.length === 0) {
-        toast.error('Choose chapter TXT files before upload.');
-        return;
-      }
-
-      try {
-        const response = await ingestDirectoryMutation.trigger({ files: directoryFiles });
-        setChapterCount(response.chapter_count);
-        toast.success(`Directory ingestion complete: ${response.chapter_count} chapters detected.`);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Chapter directory ingestion failed.');
-      }
-      return;
-    }
-
-    if (ingestionSource === 'markdown') {
-      if (!markdownFile) {
-        toast.error('Choose a Markdown file before upload.');
-        return;
-      }
-
-      try {
-        const response = await ingestMarkdownMutation.trigger({ file: markdownFile });
-        setChapterCount(response.chapter_count);
-        toast.success(`Markdown ingestion complete: ${response.chapter_count} chapters detected.`);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Markdown ingestion failed.');
-      }
-      return;
-    }
-
-    if (ingestionSource === 'epub') {
-      if (!epubFile) {
-        toast.error('Choose an EPUB file before upload.');
-        return;
-      }
-
-      try {
-        const response = await ingestEpubMutation.trigger({ file: epubFile });
-        setChapterCount(response.chapter_count);
-        toast.success(`EPUB ingestion complete: ${response.chapter_count} chapters detected.`);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'EPUB ingestion failed.');
-      }
-      return;
-    }
-
-    toast.info('This ingestion source is not available yet.');
   }
 
-  async function handleAppendChapter() {
-    if (projectId === null) {
-      toast.error('Create a project first.');
-      return;
-    }
-    if (!appendChapterFile) {
-      toast.error('Choose a chapter TXT file before append.');
-      return;
-    }
-
+  async function handleStep3(e: FormEvent) {
+    e.preventDefault();
+    if (projectId === null) { toast.error('Project not found.'); return; }
     try {
-      const response = await appendChapterMutation.trigger({ file: appendChapterFile });
-      setChapterCount(response.chapter_count);
-      setAppendChapterFile(null);
-      toast.success(`Chapter appended. Total chapters: ${response.chapter_count}.`);
+      await switchModeMutation.trigger({ mode: selectedMode });
+      toast.success('Project created successfully.');
+      navigate(`/projects/${projectId}/overview`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Append chapter failed.');
+      toast.error(error instanceof Error ? error.message : 'Failed to set mode');
     }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) setSelectedFile(file);
   }
 
   return (
-    <WorkflowPageShell
-      step="Step 01"
-      title="Create Project"
-      description="Complete two actions in order: create a project, then ingest text."
-      action={
-        canContinue && projectId !== null ? (
-          <Button onClick={() => navigate(projectRoute(projectId, 'mode'))}>Continue to Mode Selection</Button>
-        ) : (
-          <p className="text-sm text-muted-foreground">Complete both actions to continue.</p>
-        )
-      }
-    >
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="size-4 text-primary" />
-              Project Setup
-            </CardTitle>
-            <CardDescription>Create a project to obtain a project ID.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex h-full flex-col">
-            <form className="flex h-full flex-col gap-4" onSubmit={handleCreateProject}>
-              <div className="grid gap-2">
-                <Label htmlFor="project-title">Project title</Label>
-                <Input
-                  id="project-title"
-                  data-testid="project-title-input"
-                  placeholder="e.g., Shadow Slave PoC"
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                />
-              </div>
+    <div className="flex h-full flex-col overflow-auto bg-background">
+      {/* Close button */}
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-6">
+        <Link className="text-sm font-semibold text-foreground" to="/dashboard">nipe</Link>
+        <Link
+          aria-label="Cancel and go to dashboard"
+          className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+          to="/dashboard"
+        >
+          <X size={16} />
+        </Link>
+      </div>
 
-              <div className="mt-auto space-y-2">
-                <Button data-testid="create-project-button" disabled={isBusy} type="submit">
-                  {createProjectMutation.isMutating ? 'Creating...' : 'Create Project'}
-                </Button>
-                {projectId !== null ? (
-                  <p className="text-sm text-muted-foreground" data-testid="project-created-state">
-                    Current project ID: <strong>{projectId}</strong>
-                  </p>
-                ) : null}
-                <p className="text-sm text-muted-foreground">{projectId !== null ? 'Project created.' : 'Create a project to continue.'}</p>
+      <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
+        <div className="w-full max-w-lg">
+          {/* Step indicator */}
+          <div className="mb-10 flex items-center justify-center gap-2">
+            {([1, 2, 3] as const).map((s, i) => (
+              <div key={s} className="flex items-center gap-2">
+                <div className={cn(
+                  'flex size-7 items-center justify-center rounded-full text-xs font-medium transition-colors',
+                  step === s ? 'bg-foreground text-background' :
+                  step > s ? 'bg-white/20 text-foreground' : 'bg-white/5 text-muted-foreground',
+                )}>
+                  {step > s ? '✓' : s}
+                </div>
+                <span className={cn('hidden text-xs sm:inline', step === s ? 'text-foreground' : 'text-muted-foreground')}>
+                  {s === 1 ? 'Name' : s === 2 ? 'Upload' : 'Mode'}
+                </span>
+                {i < 2 && <div className="h-px w-8 bg-white/10" />}
               </div>
+            ))}
+          </div>
+
+          {/* Step 1: Name */}
+          {step === 1 && (
+            <form onSubmit={handleStep1} className="animate-fade-in-up space-y-6">
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">Name your project</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Give your project a descriptive name. You can change this later.</p>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground" htmlFor="project-title">Project name</label>
+                  <Input
+                    autoFocus
+                    data-testid="project-title-input"
+                    id="project-title"
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g., Shadow Slave Vol. 1"
+                    required
+                    value={title}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground" htmlFor="project-desc">Description <span className="text-muted-foreground">(optional)</span></label>
+                  <textarea
+                    className="w-full resize-none rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none transition-[border-color] focus:border-white/30"
+                    id="project-desc"
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Brief description of the source material"
+                    rows={3}
+                    value={description}
+                  />
+                </div>
+              </div>
+              <Button className="w-full" disabled={isBusy} type="submit">
+                {createDraftMutation.isMutating ? 'Creating…' : 'Continue'}
+              </Button>
             </form>
-          </CardContent>
-        </Card>
+          )}
 
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BookOpenText className="size-4 text-primary" />
-              Ingestion
-            </CardTitle>
-            <CardDescription>Upload source text and verify detected chapter count.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex h-full flex-col">
-            <form className="flex h-full flex-col gap-4" onSubmit={handleIngestTxt}>
-              <div className="grid gap-2">
-                <Label htmlFor="ingestion-source">Source type</Label>
-                <NativeSelect
-                  id="ingestion-source"
-                  data-testid="ingestion-source-select"
-                  value={ingestionSource}
-                  onChange={(event) => setIngestionSource(event.target.value as IngestionSource)}
-                >
-                  <option value="txt">TXT file</option>
-                  <option value="directory">Chapter directory</option>
-                  <option value="markdown">Markdown</option>
-                  <option value="epub">EPUB</option>
-                </NativeSelect>
+          {/* Step 2: Upload */}
+          {step === 2 && (
+            <form onSubmit={handleStep2} className="animate-fade-in-up space-y-6">
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">Add your source text</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Upload a file or switch between supported formats.</p>
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="txt-upload">
-                  {ingestionSource === 'directory'
-                    ? 'Upload chapter TXT files'
-                    : ingestionSource === 'markdown'
-                      ? 'Upload Markdown file'
-                      : ingestionSource === 'epub'
-                        ? 'Upload EPUB file'
-                        : 'Upload TXT'}
-                </Label>
-                {ingestionSource === 'directory' ? (
-                  <Input
-                    id="txt-upload"
-                    accept=".txt"
-                    data-testid="directory-upload-input"
-                    multiple
-                    onChange={(event) => setDirectoryFiles(Array.from(event.target.files ?? []))}
-                    type="file"
-                  />
-                ) : ingestionSource === 'markdown' ? (
-                  <Input
-                    id="txt-upload"
-                    accept=".md,.markdown"
-                    data-testid="markdown-upload-input"
-                    onChange={(event) => setMarkdownFile(event.target.files?.[0] ?? null)}
-                    type="file"
-                  />
-                ) : ingestionSource === 'epub' ? (
-                  <Input
-                    id="txt-upload"
-                    accept=".epub"
-                    data-testid="epub-upload-input"
-                    onChange={(event) => setEpubFile(event.target.files?.[0] ?? null)}
-                    type="file"
-                  />
-                ) : (
-                  <Input
-                    id="txt-upload"
-                    accept=".txt"
-                    data-testid="txt-upload-input"
-                    disabled={ingestionSource !== 'txt'}
-                    onChange={(event) => setTxtFile(event.target.files?.[0] ?? null)}
-                    type="file"
-                  />
+              {/* Format tabs */}
+              <div className="flex gap-1 rounded-lg border border-white/10 bg-card p-1">
+                {SOURCE_TABS.map((tab) => (
+                  <button
+                    className={cn(
+                      'flex-1 rounded-md py-1.5 text-sm transition-colors',
+                      ingestionSource === tab.id ? 'bg-white/10 text-foreground' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                    key={tab.id}
+                    onClick={() => { setIngestionSource(tab.id); setSelectedFile(null); }}
+                    type="button"
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Drop zone */}
+              <div
+                className={cn(
+                  'flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-12 text-center transition-colors',
+                  isDragging ? 'border-white/40 bg-white/5' : 'border-white/15 hover:border-white/25',
                 )}
-              </div>
-
-              <div className="mt-auto space-y-2">
-                <Button data-testid="upload-txt-button" disabled={isBusy || projectId === null} type="submit">
-                  {ingestTxtMutation.isMutating ||
-                  ingestDirectoryMutation.isMutating ||
-                  ingestMarkdownMutation.isMutating ||
-                  ingestEpubMutation.isMutating
-                    ? 'Uploading...'
-                    : 'Upload & Parse'}
-                </Button>
-                <p className="text-sm text-muted-foreground" data-testid="chapter-count-state">
-                  {chapterCount !== null ? `Detected chapters: ${chapterCount}` : 'Detected chapters: not available yet'}
-                </p>
-                <div className="mt-3 rounded-xl border border-border/70 bg-muted/20 p-3">
-                  <p className="text-sm font-medium text-foreground">Append one chapter</p>
-                  <p className="text-xs text-muted-foreground">Use this after initial ingestion for incremental chapter additions.</p>
-                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <Input
-                      accept=".txt"
-                      data-testid="append-chapter-upload-input"
-                      onChange={(event) => setAppendChapterFile(event.target.files?.[0] ?? null)}
-                      type="file"
-                    />
-                    <Button
-                      data-testid="append-chapter-button"
-                      disabled={isBusy || projectId === null}
-                      onClick={handleAppendChapter}
+                onClick={() => fileInputRef.current?.click()}
+                onDragLeave={() => setIsDragging(false)}
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDrop={handleDrop}
+              >
+                {selectedFile ? (
+                  <>
+                    <FileText className="text-muted-foreground" size={28} />
+                    <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(0)} KB</p>
+                    <button
+                      className="text-xs text-muted-foreground underline hover:text-foreground"
+                      onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
                       type="button"
                     >
-                      {appendChapterMutation.isMutating ? 'Appending...' : 'Append Chapter'}
-                    </Button>
-                  </div>
-                </div>
-                {canContinue ? <p className="text-sm text-primary">Ready to continue.</p> : null}
+                      Remove file
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="text-muted-foreground" size={28} />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Drop your file here, or click to browse</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {SOURCE_TABS.find((t) => t.id === ingestionSource)?.accept ?? '.txt'} up to 50 MB
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+              <input
+                accept={SOURCE_TABS.find((t) => t.id === ingestionSource)?.accept}
+                className="hidden"
+                data-testid="txt-upload-input"
+                onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+                ref={fileInputRef}
+                type="file"
+              />
+
+              <div className="flex gap-3">
+                <Button
+                  className="flex-1"
+                  onClick={() => setStep(1)}
+                  type="button"
+                  variant="outline"
+                >
+                  Back
+                </Button>
+                <Button className="flex-1" data-testid="upload-txt-button" disabled={isBusy || !selectedFile} type="submit">
+                  {startIngestionJobMutation.isMutating || ingestionJobIsActive ? 'Processing…' : 'Continue'}
+                </Button>
+              </div>
+              {ingestionJobIsActive && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Ingestion progress: {ingestionProgress}%
+                </p>
+              )}
+            </form>
+          )}
+
+          {/* Step 3: Mode */}
+          {step === 3 && (
+            <form onSubmit={handleStep3} className="animate-fade-in-up space-y-6">
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">Choose a processing mode</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Each mode optimizes the pipeline for a specific type of content.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {MODES.map((mode) => {
+                  const Icon = mode.icon;
+                  return (
+                    <button
+                      className={cn(
+                        'flex flex-col gap-2 rounded-xl border p-4 text-left transition-all',
+                        selectedMode === mode.id
+                          ? 'border-white/50 bg-white/5'
+                          : 'border-white/10 hover:border-white/20',
+                      )}
+                      data-testid={`mode-card-${mode.id}`}
+                      key={mode.id}
+                      onClick={() => setSelectedMode(mode.id)}
+                      type="button"
+                    >
+                      <Icon className="text-muted-foreground" size={18} />
+                      <p className="text-sm font-semibold text-foreground">{mode.label}</p>
+                      <p className="text-xs text-muted-foreground">{mode.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-3">
+                <Button className="flex-1" onClick={() => setStep(2)} type="button" variant="outline">Back</Button>
+                <Button className="flex-1" data-testid="create-project-button" disabled={isBusy} type="submit">
+                  {switchModeMutation.isMutating ? 'Creating…' : 'Create Project'}
+                </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       </div>
-    </WorkflowPageShell>
+    </div>
   );
 }
