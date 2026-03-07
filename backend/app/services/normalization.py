@@ -158,6 +158,10 @@ def build_segment_level_offset_map(
 
     return segment_offset_map
 
+DEFAULT_COPY_ARTIFACT_PATTERN_SET = (
+    r"^\s*Page\s+\d+\s*$||^\s*<<<[^>]+>>>\s*$||^\s*\[?Advertisement\]?\s*$"
+)
+
 
 def normalize_line_breaks_and_paragraph_separators(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
